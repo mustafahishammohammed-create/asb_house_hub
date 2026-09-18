@@ -2585,6 +2585,7 @@ class _HomeScreenState extends State<HomeScreen>
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.redAccent,
                 foregroundColor: Colors.white,
+                minimumSize: const Size(80, 36),
               ),
               onPressed: () async {
                 await _firestore.collection('settings').doc('ticker').set({
@@ -3416,6 +3417,7 @@ class _HomeScreenState extends State<HomeScreen>
                         style: ElevatedButton.styleFrom(
                           backgroundColor: color.withValues(alpha: 0.15),
                           foregroundColor: color,
+                          minimumSize: const Size(0, 36),
                           elevation: 0,
                           padding: const EdgeInsets.symmetric(
                             horizontal: 12,

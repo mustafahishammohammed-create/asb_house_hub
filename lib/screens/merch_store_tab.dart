@@ -928,6 +928,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                                         style: ElevatedButton.styleFrom(
                                           backgroundColor: widget.houseColor,
                                           foregroundColor: Colors.white,
+                                          minimumSize: const Size(0, 36),
                                           shape: RoundedRectangleBorder(
                                             borderRadius: BorderRadius.circular(
                                               12,

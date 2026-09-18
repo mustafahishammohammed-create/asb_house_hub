@@ -177,6 +177,7 @@ class _StudentBehaviorEvaluationScreenState
               style: ElevatedButton.styleFrom(
                 backgroundColor: houseColor,
                 foregroundColor: Colors.white,
+                minimumSize: const Size(80, 36),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
                 ),

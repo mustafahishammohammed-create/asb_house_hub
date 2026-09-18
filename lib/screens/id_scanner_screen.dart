@@ -453,6 +453,7 @@ class _IdScannerScreenState extends State<IdScannerScreen>
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.blueAccent,
                             foregroundColor: Colors.white,
+                            minimumSize: const Size(0, 36),
                             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
@@ -512,6 +513,7 @@ class _IdScannerScreenState extends State<IdScannerScreen>
                         style: ElevatedButton.styleFrom(
                           backgroundColor: HouseColors.ruby,
                           foregroundColor: Colors.white,
+                          minimumSize: const Size(0, 48),
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                         ),

@@ -267,6 +267,7 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blueAccent,
                     foregroundColor: Colors.white,
+                    minimumSize: const Size(0, 36),
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -757,6 +758,7 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.white,
                           foregroundColor: Colors.black,
+                          minimumSize: const Size(0, 44),
                           padding: const EdgeInsets.symmetric(vertical: 14),
                         ),
                         onPressed: () {
@@ -783,6 +785,7 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
                         style: ElevatedButton.styleFrom(
                           backgroundColor: accentColor,
                           foregroundColor: Colors.white,
+                          minimumSize: const Size(0, 44),
                           padding: const EdgeInsets.symmetric(vertical: 14),
                         ),
                         onPressed: () {
