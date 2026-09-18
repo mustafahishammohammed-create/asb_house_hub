@@ -13,6 +13,7 @@ import 'chat_list_screen.dart';
 import 'digital_wallet_screen.dart';
 import 'house_leaderboard_screen.dart';
 import 'id_scanner_screen.dart';
+import 'house_arena_screen.dart';
 import '../widgets/confetti_overlay.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -933,7 +934,11 @@ class _HomeScreenState extends State<HomeScreen>
                 const SizedBox(height: 24),
               ],
 
-              // 2. Real-Time House Standings (Streamed Live from Firestore)
+              // 2. ASB House Warroom & Spirit Clash Arena Feature Banner
+              _buildHouseArenaBanner(houseName, scholarNo, fullName, houseColor, isAdmin),
+              const SizedBox(height: 24),
+
+              // 3. Real-Time House Standings (Streamed Live from Firestore)
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -1533,6 +1538,153 @@ class _HomeScreenState extends State<HomeScreen>
             },
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildHouseArenaBanner(
+    String houseName,
+    String scholarNo,
+    String fullName,
+    Color houseColor,
+    bool isAdmin,
+  ) {
+    final mascot = HouseMascot.forHouse(houseName);
+    return InkWell(
+      onTap: () {
+        HapticFeedback.mediumImpact();
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => HouseArenaScreen(
+              userHouse: houseName,
+              scholarNo: scholarNo,
+              userName: fullName,
+              isAdmin: isAdmin,
+            ),
+          ),
+        );
+      },
+      borderRadius: BorderRadius.circular(26),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(22),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              const Color(0xFF1E1B4B),
+              houseColor.withValues(alpha: 0.85),
+              const Color(0xFF0F172A),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(26),
+          border: Border.all(
+            color: houseColor.withValues(alpha: 0.6),
+            width: 1.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: houseColor.withValues(alpha: 0.35),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 58,
+              height: 58,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.black.withValues(alpha: 0.35),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.3),
+                  width: 1.5,
+                ),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                mascot.icon,
+                style: const TextStyle(fontSize: 30),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.amber,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Text(
+                          'NEW ARENA 🔥',
+                          style: TextStyle(
+                            color: Colors.black,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 9,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'LIVE CLASH',
+                        style: TextStyle(
+                          color: Colors.cyanAccent,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 10,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'House Warroom & Arena',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 17,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Spirit Reactor • Daily Brain Blitz • 3D Lore',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.8),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.15),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.arrow_forward_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -3123,6 +3275,25 @@ class _HomeScreenState extends State<HomeScreen>
                         MaterialPageRoute(
                           builder: (_) => HouseLeaderboardScreen(
                             initialHouse: house,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildDrawerTile(
+                    Icons.bolt_rounded,
+                    '⚔️ House Warroom & Clash Arena',
+                    Colors.deepOrangeAccent,
+                    () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => HouseArenaScreen(
+                            userHouse: house,
+                            scholarNo: scholarNo,
+                            userName: name,
+                            isAdmin: isAdmin,
                           ),
                         ),
                       );

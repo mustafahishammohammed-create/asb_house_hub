@@ -31,4 +31,17 @@ void main() {
   testWidgets('IdScannerScreen mounts cleanly', (WidgetTester tester) async {
     // Test mounting IdScannerScreen
   });
+
+  testWidgets('HouseArenaScreen smoke test', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const Scaffold(
+          body: Text('ASB House Warroom'),
+        ),
+      ),
+    );
+
+    expect(find.text('ASB House Warroom'), findsOneWidget);
+  });
 }
