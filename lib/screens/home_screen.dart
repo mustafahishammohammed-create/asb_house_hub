@@ -1463,13 +1463,15 @@ class _HomeScreenState extends State<HomeScreen>
           ),
           const Divider(color: Colors.white24, height: 28),
           StreamBuilder<DocumentSnapshot>(
-            stream: _firestore
-                .collection('house_contributors')
-                .doc(scholarNo)
-                .snapshots(),
+            stream: (scholarNo.isNotEmpty && scholarNo != '---')
+                ? _firestore
+                    .collection('house_contributors')
+                    .doc(scholarNo)
+                    .snapshots()
+                : null,
             builder: (context, snap) {
               int pts = 0;
-              if (snap.hasData && snap.data!.exists) {
+              if (snap.hasData && snap.data != null && snap.data!.exists) {
                 final d = snap.data!.data() as Map<String, dynamic>?;
                 pts = (d?['total_contributed'] as num?)?.toInt() ?? 0;
               }
@@ -2008,16 +2010,20 @@ class _HomeScreenState extends State<HomeScreen>
 
           // Real-time metrics counters
           StreamBuilder<DocumentSnapshot>(
-            stream: _firestore
-                .collection('house_contributors')
-                .doc(scholarNo)
-                .snapshots(),
+            stream: (scholarNo.isNotEmpty && scholarNo != '---')
+                ? _firestore
+                    .collection('house_contributors')
+                    .doc(scholarNo)
+                    .snapshots()
+                : null,
             builder: (context, snapshot) {
               int totalPoints = 0;
               int merits = 0;
               int demerits = 0;
 
-              if (snapshot.hasData && snapshot.data!.exists) {
+              if (snapshot.hasData &&
+                  snapshot.data != null &&
+                  snapshot.data!.exists) {
                 final data = snapshot.data!.data() as Map<String, dynamic>?;
                 if (data != null) {
                   totalPoints =
@@ -2177,7 +2183,7 @@ class _HomeScreenState extends State<HomeScreen>
           const SizedBox(height: 10),
 
           // Stream of conduct logs
-          StreamBuilder<QuerySnapshot>(
+          StreamBuilder<List<QueryDocumentSnapshot>>(
             stream: _authService.getStudentConductStream(scholarNo),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
@@ -2193,7 +2199,7 @@ class _HomeScreenState extends State<HomeScreen>
                 );
               }
 
-              final docs = snapshot.hasData ? snapshot.data!.docs : [];
+              final docs = snapshot.data ?? [];
               if (docs.isEmpty) {
                 return Container(
                   width: double.infinity,

@@ -356,13 +356,29 @@ class AuthService {
     } catch (_) {}
   }
 
-  /// Stream conduct history for a specific student.
-  Stream<QuerySnapshot> getStudentConductStream(String scholarNo) {
+  /// Stream conduct history for a specific student without requiring composite indexes.
+  Stream<List<QueryDocumentSnapshot>> getStudentConductStream(String scholarNo) {
+    if (scholarNo.trim().isEmpty || scholarNo == '---') {
+      return Stream.value(<QueryDocumentSnapshot>[]);
+    }
     return _firestore
         .collection('student_conduct')
         .where('scholar_no', isEqualTo: scholarNo)
-        .orderBy('timestamp', descending: true)
-        .snapshots();
+        .snapshots()
+        .map((snapshot) {
+          final docs = snapshot.docs.toList();
+          docs.sort((a, b) {
+            final dataA = a.data() as Map<String, dynamic>?;
+            final dataB = b.data() as Map<String, dynamic>?;
+            final tA = dataA?['timestamp'] as Timestamp?;
+            final tB = dataB?['timestamp'] as Timestamp?;
+            if (tA == null && tB == null) return 0;
+            if (tA == null) return 1;
+            if (tB == null) return -1;
+            return tB.compareTo(tA);
+          });
+          return docs;
+        });
   }
 
   /// Stream contributors for a house leaderboard.

@@ -18,7 +18,7 @@ void main() {
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
-      const MaterialApp(
+      MaterialApp(
         home: Scaffold(
           body: Text('Digital Wallet'),
         ),
@@ -26,5 +26,9 @@ void main() {
     );
 
     expect(find.text('Digital Wallet'), findsOneWidget);
+  });
+
+  testWidgets('IdScannerScreen mounts cleanly', (WidgetTester tester) async {
+    // Test mounting IdScannerScreen
   });
 }

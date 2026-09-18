@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
@@ -89,6 +91,24 @@ class _IdScannerScreenState extends State<IdScannerScreen>
   }
 
   Future<void> _initCamera() async {
+    // On Desktop (Windows, macOS, Linux), mobile camera plugin is not available.
+    // Gracefully switch to desktop input mode without calling missing plugin channels.
+    final isDesktop = !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.windows ||
+         defaultTargetPlatform == TargetPlatform.linux ||
+         defaultTargetPlatform == TargetPlatform.macOS);
+
+    if (isDesktop) {
+      if (mounted) {
+        setState(() {
+          _isCameraInitializing = false;
+          _cameraErrorMessage =
+              'Desktop Mode: Hardware camera feed active on mobile devices.\nUse Manual Scholar # search, QR image upload, or preset chips below.';
+        });
+      }
+      return;
+    }
+
     try {
       final cameras = await availableCameras();
       if (cameras.isEmpty) {
@@ -117,7 +137,7 @@ class _IdScannerScreenState extends State<IdScannerScreen>
       if (mounted) {
         setState(() {
           _isCameraInitializing = false;
-          _cameraErrorMessage = 'Camera permission unavailable or denied.';
+          _cameraErrorMessage = 'Camera unavailable or access restricted.';
         });
       }
     }
@@ -338,13 +358,16 @@ class _IdScannerScreenState extends State<IdScannerScreen>
                             size: 80,
                             color: Colors.white.withValues(alpha: 0.3),
                           ),
-                          const SizedBox(height: 12),
-                          Text(
-                            _cameraErrorMessage ?? 'Ready to scan student ID QR',
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.7),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            child: Text(
+                              _cameraErrorMessage ?? 'Ready to scan student ID QR',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.8),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
                         ],

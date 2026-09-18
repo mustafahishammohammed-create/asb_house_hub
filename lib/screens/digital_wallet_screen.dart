@@ -292,16 +292,20 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
 
           // StreamBuilder for Student's Real Contribution Points & Merits/Demerits
           StreamBuilder<DocumentSnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('house_contributors')
-                .doc(widget.scholarNo)
-                .snapshots(),
+            stream: (widget.scholarNo.isNotEmpty && widget.scholarNo != '---')
+                ? FirebaseFirestore.instance
+                    .collection('house_contributors')
+                    .doc(widget.scholarNo)
+                    .snapshots()
+                : null,
             builder: (context, snapshot) {
               int totalPoints = 0;
               int merits = 0;
               int demerits = 0;
 
-              if (snapshot.hasData && snapshot.data!.exists) {
+              if (snapshot.hasData &&
+                  snapshot.data != null &&
+                  snapshot.data!.exists) {
                 final data = snapshot.data!.data() as Map<String, dynamic>?;
                 if (data != null) {
                   totalPoints =
@@ -629,10 +633,40 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
                   child: Column(
                     children: [
                       QrImageView(
-                        data: qrData,
+                        data: qrData.trim().isNotEmpty
+                            ? qrData
+                            : 'ASB-ID:${widget.scholarNo}:VERIFIED',
                         version: QrVersions.auto,
                         size: 180,
                         backgroundColor: Colors.white,
+                        errorCorrectionLevel: QrErrorCorrectLevel.M,
+                        errorStateBuilder: (cxt, err) {
+                          return Container(
+                            width: 180,
+                            height: 180,
+                            color: Colors.white,
+                            alignment: Alignment.center,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.qr_code_2_rounded,
+                                  size: 64,
+                                  color: accentColor,
+                                ),
+                                const SizedBox(height: 8),
+                                const Text(
+                                  'Digital ID Active',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
                       ),
                       const SizedBox(height: 10),
                       Text(

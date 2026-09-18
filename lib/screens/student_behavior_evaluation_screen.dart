@@ -619,7 +619,7 @@ class _StudentBehaviorEvaluationScreenState
               style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
             ),
             const SizedBox(height: 8),
-            StreamBuilder<QuerySnapshot>(
+            StreamBuilder<List<QueryDocumentSnapshot>>(
               stream: _authService.getStudentConductStream(widget.scholarNo),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
@@ -630,7 +630,7 @@ class _StudentBehaviorEvaluationScreenState
                     ),
                   );
                 }
-                final docs = snapshot.data?.docs ?? [];
+                final docs = snapshot.data ?? [];
                 if (docs.isEmpty) {
                   return Container(
                     padding: const EdgeInsets.all(16),
