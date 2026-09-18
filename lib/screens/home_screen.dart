@@ -643,6 +643,15 @@ class _HomeScreenState extends State<HomeScreen>
         roleStr == 'council' ||
         roleStr == 'prefect' ||
         isAuthorizedName;
+    final isCouncilOrTeacher = isAdmin ||
+        isSuperAdmin ||
+        roleStr.contains('council') ||
+        roleStr.contains('teacher') ||
+        roleStr.contains('faculty') ||
+        roleStr.contains('staff') ||
+        roleStr.contains('captain') ||
+        roleStr.contains('prefect') ||
+        roleStr.contains('admin');
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     if (_loading) {
@@ -1099,24 +1108,25 @@ class _HomeScreenState extends State<HomeScreen>
         ),
         centerTitle: true,
         actions: [
-          IconButton(
-            icon: const Icon(
-              Icons.qr_code_scanner_rounded,
-              color: Colors.blueAccent,
-              size: 26,
-            ),
-            tooltip: 'Campus Digital ID Scanner',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => IdScannerScreen(
-                    evaluatorName: fullName.isNotEmpty ? fullName : 'Faculty Lead',
+          if (isCouncilOrTeacher)
+            IconButton(
+              icon: const Icon(
+                Icons.qr_code_scanner_rounded,
+                color: Colors.blueAccent,
+                size: 26,
+              ),
+              tooltip: 'Campus Digital ID Scanner (Faculty & Council)',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => IdScannerScreen(
+                      evaluatorName: fullName.isNotEmpty ? fullName : 'Faculty Lead',
+                    ),
                   ),
-                ),
-              );
-            },
-          ),
+                );
+              },
+            ),
           IconButton(
             icon: const Icon(
               Icons.wallet_rounded,
@@ -1133,6 +1143,9 @@ class _HomeScreenState extends State<HomeScreen>
                     userHouse: houseName,
                     scholarNo: scholarNo,
                     isAdmin: isAdmin,
+                    classLevel: classLevel != '--' ? '$classLevel $division'.trim() : 'Grade 11-D',
+                    canScanQr: isCouncilOrTeacher,
+                    userRole: roleStr.isNotEmpty ? roleStr : (isAdmin ? 'Council' : 'Student'),
                   ),
                 ),
               );
@@ -1191,6 +1204,7 @@ class _HomeScreenState extends State<HomeScreen>
         houseDark,
         isAdmin,
         isSuperAdmin,
+        isCouncilOrTeacher,
       ),
       body: ConfettiOverlay(
         show: _selectedIndex == 2 && _isMyHouseFirstPlace,
@@ -2907,8 +2921,9 @@ class _HomeScreenState extends State<HomeScreen>
     Color color,
     Color darkColor,
     bool isAdmin,
-    bool isSuperAdmin,
-  ) {
+    bool isSuperAdmin, [
+    bool isCouncilOrTeacher = false,
+  ]) {
     return Drawer(
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.horizontal(right: Radius.circular(28)),
@@ -3051,6 +3066,7 @@ class _HomeScreenState extends State<HomeScreen>
                             userHouse: house,
                             scholarNo: scholarNo,
                             isAdmin: isAdmin,
+                            canScanQr: isCouncilOrTeacher,
                             initialIndex: 0,
                           ),
                         ),
@@ -3071,29 +3087,31 @@ class _HomeScreenState extends State<HomeScreen>
                             userHouse: house,
                             scholarNo: scholarNo,
                             isAdmin: isAdmin,
+                            canScanQr: isCouncilOrTeacher,
                             initialIndex: 1,
                           ),
                         ),
                       );
                     },
                   ),
-                  _buildDrawerTile(
-                    Icons.qr_code_scanner_rounded,
-                    '📷 Scan Student ID (Conduct / Merits)',
-                    Colors.blueAccent,
-                    () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => IdScannerScreen(
-                            evaluatorName:
-                                name.isNotEmpty ? name : 'Faculty Lead',
+                  if (isCouncilOrTeacher)
+                    _buildDrawerTile(
+                      Icons.qr_code_scanner_rounded,
+                      '📷 Scan Student ID (Conduct / Merits)',
+                      Colors.blueAccent,
+                      () {
+                        Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => IdScannerScreen(
+                              evaluatorName:
+                                  name.isNotEmpty ? name : 'Faculty Lead',
+                            ),
                           ),
-                        ),
-                      );
-                    },
-                  ),
+                        );
+                      },
+                    ),
                   _buildDrawerTile(
                     Icons.leaderboard_rounded,
                     '🏆 Inter-House Leaderboards',
@@ -3124,6 +3142,7 @@ class _HomeScreenState extends State<HomeScreen>
                             userHouse: house,
                             scholarNo: scholarNo,
                             isAdmin: isAdmin,
+                            canScanQr: isCouncilOrTeacher,
                             initialIndex: 2,
                           ),
                         ),

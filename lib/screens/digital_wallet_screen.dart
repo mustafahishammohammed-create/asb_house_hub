@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -11,6 +12,9 @@ class DigitalWalletScreen extends StatefulWidget {
   final String scholarNo;
   final bool isAdmin;
   final int initialIndex;
+  final String classLevel;
+  final bool canScanQr;
+  final String userRole;
 
   const DigitalWalletScreen({
     super.key,
@@ -19,6 +23,9 @@ class DigitalWalletScreen extends StatefulWidget {
     this.scholarNo = '2310910',
     this.isAdmin = false,
     this.initialIndex = 0,
+    this.classLevel = 'Grade 11-D',
+    this.canScanQr = false,
+    this.userRole = 'Student',
   });
 
   @override
@@ -28,6 +35,18 @@ class DigitalWalletScreen extends StatefulWidget {
 class _DigitalWalletScreenState extends State<DigitalWalletScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+
+  bool get _canScanQr {
+    if (widget.canScanQr || widget.isAdmin) return true;
+    final r = widget.userRole.trim().toLowerCase();
+    return r.contains('teacher') ||
+        r.contains('council') ||
+        r.contains('faculty') ||
+        r.contains('staff') ||
+        r.contains('captain') ||
+        r.contains('prefect') ||
+        r.contains('admin');
+  }
 
   @override
   void initState() {
@@ -90,25 +109,26 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
           ],
         ),
         actions: [
-          IconButton(
-            icon: const Icon(
-              Icons.qr_code_scanner_rounded,
-              color: Colors.blueAccent,
-            ),
-            tooltip: 'Scan Student Digital ID',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => IdScannerScreen(
-                    evaluatorName: widget.userName.isNotEmpty
-                        ? widget.userName
-                        : 'Faculty Lead',
+          if (_canScanQr)
+            IconButton(
+              icon: const Icon(
+                Icons.qr_code_scanner_rounded,
+                color: Colors.blueAccent,
+              ),
+              tooltip: 'Scan Student Digital ID (Faculty & Council)',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => IdScannerScreen(
+                      evaluatorName: widget.userName.isNotEmpty
+                          ? widget.userName
+                          : 'Faculty Lead',
+                    ),
                   ),
-                ),
-              );
-            },
-          ),
+                );
+              },
+            ),
           if (GlobalWalletStore.orders.isNotEmpty)
             IconButton(
               icon: const Icon(
@@ -201,94 +221,155 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
   }
 
   Widget _buildCampusIdTab(Color houseColor) {
-    final qrFormatted =
-        'ASB-ID:${widget.scholarNo}:${widget.userHouse.toUpperCase()}:${widget.userName.isNotEmpty ? widget.userName.replaceAll(':', ' ') : "Mustafa Hisham"}:VERIFIED';
+    // Official, verified scannable JSON QR payload for the student
+    final studentQrData = jsonEncode({
+      'type': 'asb_student_id',
+      'scholar_no': widget.scholarNo.trim(),
+      'name': widget.userName.trim().isNotEmpty ? widget.userName.trim() : 'Student',
+      'house': widget.userHouse.trim().isNotEmpty ? widget.userHouse.trim().toUpperCase() : 'RUBY',
+      'class': widget.classLevel.trim().isNotEmpty ? widget.classLevel.trim() : 'Grade 11-D',
+      'valid': '2026/2027',
+    });
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
         children: [
-          // Faculty / Council / Student Action Bar
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  Colors.blue.withValues(alpha: 0.2),
-                  Colors.indigo.withValues(alpha: 0.1),
-                ],
+          // Banner: Shows Scanner controls for Council/Faculty, or Student Identity Pass for Students
+          if (_canScanQr)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.blue.withValues(alpha: 0.2),
+                    Colors.indigo.withValues(alpha: 0.1),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
               ),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.blueAccent.withValues(alpha: 0.2),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.qr_code_scanner_rounded,
-                    color: Colors.blueAccent,
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 14),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Faculty & Council Scanner',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 14,
-                        ),
-                      ),
-                      Text(
-                        'Scan student QR to award merits or deduct demerits.',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.camera_alt_rounded, size: 16),
-                  label: const Text(
-                    'Scan ID',
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blueAccent,
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size(0, 36),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.blueAccent.withValues(alpha: 0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.qr_code_scanner_rounded,
+                      color: Colors.blueAccent,
+                      size: 24,
                     ),
                   ),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => IdScannerScreen(
-                          evaluatorName: widget.userName.isNotEmpty
-                              ? widget.userName
-                              : 'Faculty Lead',
+                  const SizedBox(width: 14),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Faculty & Council Scanner',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 14,
+                          ),
                         ),
+                        Text(
+                          'Scan student QR to award merits or deduct demerits.',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.camera_alt_rounded, size: 16),
+                    label: const Text(
+                      'Scan ID',
+                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blueAccent,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size(0, 36),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                    );
-                  },
+                    ),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => IdScannerScreen(
+                            evaluatorName: widget.userName.isNotEmpty
+                                ? widget.userName
+                                : 'Faculty Lead',
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    houseColor.withValues(alpha: 0.2),
+                    const Color(0xFF1F2937).withValues(alpha: 0.6),
+                  ],
                 ),
-              ],
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: houseColor.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: houseColor.withValues(alpha: 0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.verified_user_rounded,
+                      color: houseColor,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Official Student Identity Card',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 14,
+                          ),
+                        ),
+                        Text(
+                          'Present your verified QR pass to Teachers or Council to track merits.',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
           const SizedBox(height: 20),
 
           // StreamBuilder for Student's Real Contribution Points & Merits/Demerits
@@ -484,9 +565,9 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
                         : 'VERIFIED STUDENT 🟢',
                     statusColor:
                         widget.isAdmin ? Colors.amber : Colors.greenAccent,
-                    qrData: qrFormatted,
+                    qrData: studentQrData,
                     details:
-                        'Scholar Number: ${widget.scholarNo}\nHouse Affiliation: ${widget.userHouse.toUpperCase()}\nHouse Contribution: +$totalPoints Pts\nAccess Tier: Master Campus Pass',
+                        'Scholar Number: ${widget.scholarNo}\nHouse Affiliation: ${widget.userHouse.toUpperCase()}\nClass / Section: ${widget.classLevel}\nHouse Contribution: +$totalPoints Pts\nAccess Tier: Official Campus Pass',
                     totalInfo: 'Valid Thru: 2026/2027 Academic Year',
                     accentColor: houseColor,
                     isIdCard: true,
@@ -671,7 +752,9 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
                       ),
                       const SizedBox(height: 10),
                       Text(
-                        qrData,
+                        isIdCard
+                            ? 'SCHOLAR #${widget.scholarNo} • ${widget.userHouse.toUpperCase()} • ${widget.classLevel.toUpperCase()}'
+                            : qrData,
                         style: const TextStyle(
                           fontFamily: 'monospace',
                           fontSize: 10,

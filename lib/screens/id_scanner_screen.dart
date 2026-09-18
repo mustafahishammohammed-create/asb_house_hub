@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart'
     show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
@@ -178,7 +179,27 @@ class _IdScannerScreenState extends State<IdScannerScreen>
 
     setState(() => _isSearching = true);
     try {
-      // 1. Check if input is formatted QR token e.g. "ASB-ID:2310910:RUBY:VERIFIED"
+      // 1. Check if input is structured JSON student QR code
+      if (query.startsWith('{') && query.endsWith('}')) {
+        try {
+          final Map<String, dynamic> data = jsonDecode(query);
+          final scholar = (data['scholar_no'] ?? data['scholarNo'] ?? '').toString().trim();
+          final name = (data['name'] ?? data['studentName'] ?? 'Student').toString().trim();
+          final house = (data['house'] ?? data['houseName'] ?? 'Ruby').toString().trim();
+          final cls = (data['class'] ?? data['classLevel'] ?? 'Grade 11').toString().trim();
+          if (scholar.isNotEmpty) {
+            _navigateToEvaluation(
+              scholarNo: scholar,
+              studentName: name,
+              houseName: house,
+              classLevel: cls,
+            );
+            return;
+          }
+        } catch (_) {}
+      }
+
+      // 2. Check if input is legacy formatted QR token e.g. "ASB-ID:2310910:RUBY:VERIFIED"
       if (query.startsWith('ASB-ID')) {
         final parts = query.split(':');
         if (parts.length >= 3) {
@@ -195,7 +216,7 @@ class _IdScannerScreenState extends State<IdScannerScreen>
         }
       }
 
-      // 2. Query Firestore users collection by scholar_no
+      // 3. Query Firestore users collection by scholar_no
       final snap = await FirebaseFirestore.instance
           .collection('users')
           .where('scholar_no', isEqualTo: query)
@@ -218,7 +239,7 @@ class _IdScannerScreenState extends State<IdScannerScreen>
         return;
       }
 
-      // 3. Fallback check inside preset demo students
+      // 4. Fallback check inside preset demo students
       final match = _demoStudents.firstWhere(
         (s) => s['scholar'] == query || s['name']!.toLowerCase().contains(query.toLowerCase()),
         orElse: () => {},
