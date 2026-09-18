@@ -1,0 +1,14 @@
+{
+  "name": "asb-house-hub-functions",
+  "description": "Background verification system for ASB House Hub using Cloud Vision API",
+  "engines": {
+    "node": ">=18"
+  },
+  "main": "index.js",
+  "dependencies": {
+    "firebase-admin": "^12.0.0",
+    "firebase-functions": "^5.0.0",
+    "@google-cloud/vision": "^4.0.0"
+  },
+  "private": true
+}

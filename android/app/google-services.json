@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "586530902705",
+    "project_id": "asb-house-hub",
+    "storage_bucket": "asb-house-hub.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:586530902705:android:ab99aac36bcb6b1dc68890",
+        "android_client_info": {
+          "package_name": "bh.asianschool.asb_house_hub"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDE-WnuYn-fO-iZELKpPK-7kJ2IjtGfBfY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
