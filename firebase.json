@@ -1,0 +1,34 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "asb-house-hub",
+          "appId": "1:586530902705:android:ab99aac36bcb6b1dc68890",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "asb-house-hub",
+          "configurations": {
+            "android": "1:586530902705:android:ab99aac36bcb6b1dc68890",
+            "ios": "1:586530902705:ios:af3b28ae0d29409dc68890"
+          }
+        }
+      }
+    }
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log"
+      ]
+    }
+  ]
+}
