@@ -14,6 +14,7 @@ import 'digital_wallet_screen.dart';
 import 'house_leaderboard_screen.dart';
 import 'id_scanner_screen.dart';
 import 'house_arena_screen.dart';
+import 'house_ai_chat_screen.dart';
 import '../widgets/confetti_overlay.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -1167,6 +1168,42 @@ class _HomeScreenState extends State<HomeScreen>
               onPressed: () => _showEditTickerModal('', false),
             ),
           ],
+          IconButton(
+            icon: Container(
+              padding: const EdgeInsets.all(5),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Colors.purpleAccent, Colors.deepPurpleAccent],
+                ),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.purpleAccent.withValues(alpha: 0.4),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.auto_awesome_rounded,
+                color: Colors.white,
+                size: 16,
+              ),
+            ),
+            tooltip: '🤖 ASB House AI Advisor (Gemini)',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => HouseAiChatScreen(
+                    userHouse: houseName,
+                    studentName: fullName,
+                    scholarNo: scholarNo,
+                  ),
+                ),
+              );
+            },
+          ),
           IconButton(
             icon: Stack(
               children: [
@@ -3294,6 +3331,24 @@ class _HomeScreenState extends State<HomeScreen>
                             scholarNo: scholarNo,
                             userName: name,
                             isAdmin: isAdmin,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildDrawerTile(
+                    Icons.auto_awesome_rounded,
+                    '🤖 ASB House AI Advisor (Gemini)',
+                    Colors.purpleAccent,
+                    () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => HouseAiChatScreen(
+                            userHouse: house,
+                            studentName: name,
+                            scholarNo: scholarNo,
                           ),
                         ),
                       );

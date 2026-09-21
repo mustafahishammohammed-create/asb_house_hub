@@ -43,6 +43,8 @@ dependencies:
   cached_network_image: ^3.4.1
   shared_preferences: ^2.5.5
   qr_flutter: ^4.1.0
+  google_generative_ai: ^0.4.7
+  http: ^1.6.0
 
 dev_dependencies:
   flutter_test:
