@@ -36,29 +36,48 @@ class _HouseAiChatScreenState extends State<HouseAiChatScreen> {
   final ScrollController _scrollController = ScrollController();
   final List<ChatMessage> _messages = [];
   bool _isGenerating = false;
+  bool _hasApiKey = false;
 
   final List<String> _suggestedPrompts = [
     '🏆 How can I earn 50 points for my house?',
     '🔥 Write an epic battle cry for sports day',
     '🧠 Give me a high-focus exam revision routine',
     '📜 Tips to get my competition claim approved',
+    '⚡ Explain a tricky science or math concept',
+    '🎭 Write a 1-minute speech on house unity',
   ];
 
   @override
   void initState() {
     super.initState();
+    _checkApiKeyStatus();
     _addInitialGreeting();
   }
 
-  void _addInitialGreeting() {
-    _messages.add(
-      ChatMessage(
-        text:
-            'Greetings, ${widget.studentName}! I am your **${widget.userHouse.toUpperCase()} House AI Advisor** powered by Gemini. Ask me for house strategies, battle chants, study plans, or competition advice!',
-        isUser: false,
-        timestamp: DateTime.now(),
-      ),
-    );
+  Future<void> _checkApiKeyStatus() async {
+    final hasKey = await GeminiAiService.hasConfiguredApiKey();
+    if (mounted) {
+      setState(() {
+        _hasApiKey = hasKey;
+      });
+    }
+  }
+
+  void _addInitialGreeting() async {
+    final hasKey = await GeminiAiService.hasConfiguredApiKey();
+    if (!mounted) return;
+    setState(() {
+      _hasApiKey = hasKey;
+      _messages.add(
+        ChatMessage(
+          text: hasKey
+              ? '✨ Greetings, ${widget.studentName}! I am your **${widget.userHouse.toUpperCase()} House AI Advisor** powered by **Google Gemini Live**.\n\nAsk me anything: house strategies, study routines, debate arguments, code, or creative ideas!'
+              : 'Greetings, ${widget.studentName}! I am your **${widget.userHouse.toUpperCase()} House AI Advisor**.\n\nCurrently operating with offline house guidance. To unlock full open-ended Gemini conversational intelligence, tap the 🔑 icon above to connect your Google Gemini API key!',
+          isUser: false,
+          timestamp: DateTime.now(),
+        ),
+      );
+    });
   }
 
   @override
@@ -158,84 +177,205 @@ class _HouseAiChatScreenState extends State<HouseAiChatScreen> {
       backgroundColor: Colors.transparent,
       builder: (ctx) {
         final isDark = Theme.of(ctx).brightness == Brightness.dark;
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom,
-          ),
-          child: Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF141C2E) : Colors.white,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        bool isChecking = false;
+        String? statusMsg;
+        bool isSuccess = false;
+
+        return StatefulBuilder(
+          builder: (modalContext, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(modalContext).viewInsets.bottom,
+              ),
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF141C2E) : Colors.white,
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Google Gemini API Key',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.auto_awesome_rounded, color: Colors.purpleAccent, size: 22),
+                            SizedBox(width: 8),
+                            Text(
+                              'Google Gemini API Key',
+                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                            ),
+                          ],
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded),
+                          onPressed: () => Navigator.pop(modalContext),
+                        ),
+                      ],
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.close_rounded),
-                      onPressed: () => Navigator.pop(ctx),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Paste your Google AI Studio Gemini API Key here to enable real-time, open-ended conversational AI for ASB House Hub:',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: controller,
+                      obscureText: false,
+                      decoration: InputDecoration(
+                        hintText: 'Paste Gemini Key (e.g. AIzaSy... or AQ....)',
+                        filled: true,
+                        fillColor: isDark ? Colors.black26 : const Color(0xFFF1F5F9),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                        prefixIcon: const Icon(Icons.key_rounded, size: 20),
+                        suffixIcon: controller.text.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear, size: 18),
+                                onPressed: () {
+                                  controller.clear();
+                                  setModalState(() {});
+                                },
+                              )
+                            : null,
+                      ),
+                      onChanged: (_) => setModalState(() {}),
+                    ),
+                    if (statusMsg != null) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: isSuccess
+                              ? Colors.green.withValues(alpha: 0.12)
+                              : Colors.redAccent.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              isSuccess ? Icons.check_circle_rounded : Icons.error_outline_rounded,
+                              color: isSuccess ? Colors.green : Colors.redAccent,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                statusMsg!,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: isSuccess ? Colors.green : Colors.redAccent,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        if (currentKey.isNotEmpty) ...[
+                          OutlinedButton(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.redAccent,
+                              side: const BorderSide(color: Colors.redAccent),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            ),
+                            onPressed: () async {
+                              final messenger = ScaffoldMessenger.of(context);
+                              await GeminiAiService.saveApiKey('');
+                              await _checkApiKeyStatus();
+                              if (modalContext.mounted) {
+                                Navigator.pop(modalContext);
+                              }
+                              if (mounted) {
+                                messenger.showSnackBar(
+                                  const SnackBar(content: Text('Gemini API Key removed. Running in offline mode.')),
+                                );
+                              }
+                            },
+                            child: const Text('Clear Key', style: TextStyle(fontWeight: FontWeight.bold)),
+                          ),
+                          const SizedBox(width: 12),
+                        ],
+                        Expanded(
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: HouseColors.getHouseColor(widget.userHouse),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            ),
+                            onPressed: isChecking
+                                ? null
+                                : () async {
+                                    final messenger = ScaffoldMessenger.of(context);
+                                    final key = controller.text.trim();
+                                    if (key.isEmpty) {
+                                      setModalState(() {
+                                        statusMsg = 'Please paste an API key first.';
+                                        isSuccess = false;
+                                      });
+                                      return;
+                                    }
+
+                                    setModalState(() {
+                                      isChecking = true;
+                                      statusMsg = 'Validating key with Google Gemini servers...';
+                                      isSuccess = false;
+                                    });
+
+                                    final val = await GeminiAiService.validateApiKey(key);
+
+                                    if (modalContext.mounted) {
+                                      setModalState(() {
+                                        isChecking = false;
+                                        statusMsg = val.message;
+                                        isSuccess = val.isValid;
+                                      });
+                                    }
+
+                                    if (val.isValid) {
+                                      await GeminiAiService.saveApiKey(key);
+                                      await _checkApiKeyStatus();
+                                      await Future.delayed(const Duration(milliseconds: 500));
+                                      if (modalContext.mounted) {
+                                        Navigator.pop(modalContext);
+                                      }
+                                      if (mounted) {
+                                        messenger.showSnackBar(
+                                          const SnackBar(
+                                            content: Text('✅ Connected! Real Gemini conversational AI is active.'),
+                                            backgroundColor: Colors.green,
+                                          ),
+                                        );
+                                      }
+                                    }
+                                  },
+                            child: isChecking
+                                ? const SizedBox(
+                                    height: 18,
+                                    width: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                  )
+                                : const Text('Verify & Save', style: TextStyle(fontWeight: FontWeight.w800)),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                const Text(
-                  'The AI Companion works automatically with built-in ASB intelligence. To enable open-ended web reasoning, paste your free Google Gemini API key here:',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: controller,
-                  obscureText: true,
-                  decoration: InputDecoration(
-                    hintText: 'AIzaSy...',
-                    filled: true,
-                    fillColor: isDark ? Colors.black26 : const Color(0xFFF1F5F9),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide.none,
-                    ),
-                    prefixIcon: const Icon(Icons.key_rounded, size: 20),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: HouseColors.getHouseColor(widget.userHouse),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    ),
-                    onPressed: () async {
-                      final messenger = ScaffoldMessenger.of(context);
-                      await GeminiAiService.saveApiKey(controller.text);
-                      if (mounted) {
-                        if (ctx.mounted) {
-                          Navigator.pop(ctx);
-                        }
-                        messenger.showSnackBar(
-                          const SnackBar(
-                            content: Text('Gemini API Key updated successfully!'),
-                            backgroundColor: Colors.green,
-                          ),
-                        );
-                      }
-                    },
-                    child: const Text('Save & Apply', style: TextStyle(fontWeight: FontWeight.w800)),
-                  ),
-                ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );
@@ -270,13 +410,28 @@ class _HouseAiChatScreenState extends State<HouseAiChatScreen> {
                   'ASB House AI Advisor',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
                 ),
-                Text(
-                  '${widget.userHouse.toUpperCase()} House Mentor • Gemini AI',
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: houseColor,
-                    fontWeight: FontWeight.w700,
-                  ),
+                Row(
+                  children: [
+                    Container(
+                      width: 7,
+                      height: 7,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: _hasApiKey ? Colors.greenAccent : Colors.orangeAccent,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _hasApiKey
+                          ? '${widget.userHouse.toUpperCase()} Mentor • Gemini Live'
+                          : '${widget.userHouse.toUpperCase()} Mentor • Offline Mode',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: _hasApiKey ? Colors.greenAccent : houseColor,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -286,8 +441,12 @@ class _HouseAiChatScreenState extends State<HouseAiChatScreen> {
         backgroundColor: Colors.transparent,
         actions: [
           IconButton(
-            icon: const Icon(Icons.vpn_key_rounded, size: 20),
-            tooltip: 'Configure Gemini API Key',
+            icon: Icon(
+              Icons.vpn_key_rounded,
+              size: 20,
+              color: _hasApiKey ? Colors.greenAccent : null,
+            ),
+            tooltip: _hasApiKey ? 'Gemini API Key Active' : 'Configure Gemini API Key',
             onPressed: _showApiKeyModal,
           ),
           IconButton(
