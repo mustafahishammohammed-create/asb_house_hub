@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_theme.dart';
 import '../widgets/confetti_overlay.dart';
 import '../widgets/apple_fitness_badges_vault.dart';
+import '../widgets/mascot_3d_stage.dart';
 
 /// Interactive Mascot Data
 class HouseMascot {
@@ -161,9 +162,6 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
   double _emeraldSpirit = 360;
   double _topazSpirit = 410;
 
-  // 3D Tilt Matrix Coordinates for Mascot Card
-  double _tiltX = 0.0;
-  double _tiltY = 0.0;
 
   // Daily Brain Blitz Quiz State
   int _blitzQuestionIndex = 0;
@@ -1317,195 +1315,13 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
   }
 
   // ===========================================================================
-  // TAB 5: MASCOT LORE & 3D INTERACTIVE CREST
+  // TAB 5: MASCOT LORE & 3D MOVABLE STAGE
   // ===========================================================================
   Widget _buildMascotLoreTab(HouseMascot mascot, Color houseColor) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        children: [
-          // 3D Perspective Tilt Card
-          GestureDetector(
-            onPanUpdate: (details) {
-              setState(() {
-                _tiltY += details.delta.dx * 0.005;
-                _tiltX -= details.delta.dy * 0.005;
-                _tiltX = _tiltX.clamp(-0.25, 0.25);
-                _tiltY = _tiltY.clamp(-0.25, 0.25);
-              });
-            },
-            onPanEnd: (_) {
-              setState(() {
-                _tiltX = 0;
-                _tiltY = 0;
-              });
-            },
-            child: Transform(
-              alignment: Alignment.center,
-              transform: Matrix4.identity()
-                ..setEntry(3, 2, 0.0012)
-                ..rotateX(_tiltX)
-                ..rotateY(_tiltY),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      houseColor.withValues(alpha: 0.4),
-                      const Color(0xFF141D2E),
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(28),
-                  border: Border.all(color: houseColor.withValues(alpha: 0.6), width: 2),
-                  boxShadow: [
-                    BoxShadow(
-                      color: houseColor.withValues(alpha: 0.3),
-                      blurRadius: 28,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    Text(
-                      mascot.icon,
-                      style: const TextStyle(fontSize: 72),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      mascot.name,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 22,
-                        letterSpacing: -0.3,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      mascot.title,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: mascot.accentColor,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 12,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.35),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        'ELEMENT: ${mascot.element.toUpperCase()}',
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            'Drag finger or mouse across the crest for 3D holographic tilt',
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 10),
-          ),
-          const SizedBox(height: 24),
-
-          // Battle Cry Button
-          ElevatedButton.icon(
-            icon: const Icon(Icons.volume_up_rounded, size: 20),
-            label: Text(
-              'RALLY: "${mascot.battleCry}"',
-              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12),
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: houseColor,
-              foregroundColor: Colors.white,
-              minimumSize: const Size(double.infinity, 48),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            ),
-            onPressed: () {
-              HapticFeedback.heavyImpact();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(mascot.battleCry),
-                  backgroundColor: houseColor,
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
-            },
-          ),
-          const SizedBox(height: 20),
-
-          // Lore Description
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: const Color(0xFF131A29),
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Row(
-                  children: [
-                    Icon(Icons.auto_stories_rounded, color: Colors.amber, size: 18),
-                    SizedBox(width: 8),
-                    Text(
-                      'Ancient House Lore',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  mascot.description,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.8),
-                    fontSize: 13,
-                    height: 1.5,
-                  ),
-                ),
-                const Divider(color: Colors.white12, height: 24),
-                Row(
-                  children: [
-                    const Icon(Icons.format_quote_rounded, color: Colors.white38, size: 20),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        mascot.motto,
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontStyle: FontStyle.italic,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return Mascot3DStage(
+      userHouse: widget.userHouse,
+      userName: widget.userName,
+      scholarNo: widget.scholarNo,
     );
   }
 }

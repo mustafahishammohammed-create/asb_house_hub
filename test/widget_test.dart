@@ -4,6 +4,7 @@ import 'package:asb_house_hub/theme/app_theme.dart';
 import 'package:asb_house_hub/services/gemini_ai_service.dart';
 import 'package:asb_house_hub/screens/house_ai_chat_screen.dart';
 import 'package:asb_house_hub/widgets/apple_fitness_badges_vault.dart';
+import 'package:asb_house_hub/widgets/mascot_3d_stage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -110,6 +111,38 @@ void main() {
     expect(find.text('TITAN VAULT'), findsOneWidget);
     expect(find.text('All Badges'), findsOneWidget);
     expect(find.text('House Centurion'), findsOneWidget);
+  });
+
+  testWidgets('Mascot3DStage mounts and displays 3D movable stage and lore codex', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: Mascot3DStage(
+            userHouse: 'ruby',
+            userName: 'Mustafa Hisham',
+            scholarNo: 'ASB-2026',
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Verify mascot stage HUD & identity
+    expect(find.text('Ignis the Crimson Dragon'), findsOneWidget);
+    expect(find.text('360° Spin'), findsOneWidget);
+    expect(find.text('Roar!'), findsOneWidget);
+    expect(find.text('Mascot Power Attributes'), findsOneWidget);
+    expect(find.text('The Cinder Core Sceptre'), findsOneWidget);
+    expect(find.text('Founding Era Chronicles'), findsOneWidget);
+
+    // Switch to Sapphire
+    await tester.tap(find.text('Sapphire'));
+    await tester.pump();
+
+    expect(find.text('Zephyr the Tempest Gryphon'), findsOneWidget);
+    expect(find.text('The Aegis of Tempest Skies'), findsOneWidget);
   });
 }
 
