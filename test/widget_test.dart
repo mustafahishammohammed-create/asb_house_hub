@@ -287,5 +287,36 @@ void main() {
       'Student Member',
     );
   });
+
+  testWidgets('HouseAiChatScreen retains TextField focus upon message submission', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: HouseAiChatScreen(
+          userHouse: 'ruby',
+          studentName: 'Mustafa',
+          scholarNo: '2310910',
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final textFieldFinder = find.byType(TextField);
+    expect(textFieldFinder, findsOneWidget);
+
+    // Tap the text field to focus it
+    await tester.tap(textFieldFinder);
+    await tester.pump();
+    expect(tester.widget<TextField>(textFieldFinder).focusNode?.hasFocus, isTrue);
+
+    // Enter text and submit
+    await tester.enterText(textFieldFinder, 'Hello AI Advisor');
+    await tester.testTextInput.receiveAction(TextInputAction.send);
+    await tester.pump();
+
+    // Verify focus is securely retained so user never has to re-tap
+    expect(tester.widget<TextField>(textFieldFinder).focusNode?.hasFocus, isTrue);
+  });
 }
 

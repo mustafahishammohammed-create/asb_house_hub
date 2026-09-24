@@ -1521,7 +1521,8 @@ class _HomeScreenState extends State<HomeScreen>
             builder: (context, snap) {
               int pts = 0;
               if (snap.hasData && snap.data != null && snap.data!.exists) {
-                final d = snap.data!.data() as Map<String, dynamic>?;
+                final raw = snap.data!.data();
+                final d = raw is Map ? Map<String, dynamic>.from(raw) : null;
                 pts = (d?['total_contributed'] as num?)?.toInt() ?? 0;
               }
               return Row(
@@ -1741,9 +1742,10 @@ class _HomeScreenState extends State<HomeScreen>
 
         if (snapshot.hasData && snapshot.data!.docs.isNotEmpty) {
           for (var doc in snapshot.data!.docs) {
-            final data = doc.data() as Map<String, dynamic>;
+            final raw = doc.data();
+            final data = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
             final h = (data['house_name'] ?? doc.id).toString().toLowerCase();
-            final pts = (data['total_points'] ?? 0) as int;
+            final pts = (data['total_points'] as num?)?.toInt() ?? 0;
             pointsMap[h] = pts;
           }
         }
@@ -2210,7 +2212,8 @@ class _HomeScreenState extends State<HomeScreen>
               if (snapshot.hasData &&
                   snapshot.data != null &&
                   snapshot.data!.exists) {
-                final data = snapshot.data!.data() as Map<String, dynamic>?;
+                final raw = snapshot.data!.data();
+                final data = raw is Map ? Map<String, dynamic>.from(raw) : null;
                 if (data != null) {
                   totalPoints =
                       (data['total_contributed'] as num?)?.toInt() ?? 0;
@@ -2411,10 +2414,11 @@ class _HomeScreenState extends State<HomeScreen>
                 separatorBuilder: (context, index) =>
                     const SizedBox(height: 8),
                 itemBuilder: (context, index) {
-                  final data = docs[index].data() as Map<String, dynamic>;
+                  final raw = docs[index].data();
+                  final data = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
                   final type = data['type'] ?? 'merit';
                   final isMerit = type == 'merit';
-                  final pts = (data['points'] ?? 0) as int;
+                  final pts = (data['points'] as num?)?.toInt() ?? 0;
                   final reason = data['reason'] ?? 'Conduct Record';
                   final teacher = data['teacher_name'] ?? 'Faculty';
 
@@ -2547,7 +2551,8 @@ class _HomeScreenState extends State<HomeScreen>
           separatorBuilder: (context, index) => const SizedBox(height: 12),
           itemBuilder: (context, index) {
             final doc = snapshot.data!.docs[index];
-            final data = doc.data() as Map<String, dynamic>;
+            final raw = doc.data();
+            final data = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
             final title = data['title'] ?? 'School Announcement';
             final desc = data['content'] ?? '';
             final date = data['date'] ?? 'Recent';
@@ -2630,7 +2635,8 @@ class _HomeScreenState extends State<HomeScreen>
         String msg = '';
         bool active = false;
         if (snapshot.hasData && snapshot.data!.exists) {
-          final data = snapshot.data!.data() as Map<String, dynamic>?;
+          final raw = snapshot.data!.data();
+          final data = raw is Map ? Map<String, dynamic>.from(raw) : null;
           if (data != null) {
             msg = data['message'] ?? '';
             active = data['active'] ?? false;
@@ -2817,7 +2823,8 @@ class _HomeScreenState extends State<HomeScreen>
 
         final docs = snapshot.hasData ? snapshot.data!.docs : [];
         final visibleDocs = docs.where((d) {
-          final data = d.data() as Map<String, dynamic>;
+          final raw = d.data();
+          final data = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
           final status = data['status'] ?? 'pending';
           return status == 'approved' || isAdmin;
         }).toList();
@@ -2846,13 +2853,14 @@ class _HomeScreenState extends State<HomeScreen>
           separatorBuilder: (context, index) => const SizedBox(height: 16),
           itemBuilder: (context, index) {
             final doc = visibleDocs[index];
-            final data = doc.data() as Map<String, dynamic>;
+            final raw = doc.data();
+            final data = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
             final name = data['student_name'] ?? 'Student';
             final house = data['house_name'] ?? 'Ruby';
             final caption = data['caption'] ?? '';
             final imgUrl = data['image_url'] ?? '';
             final status = data['status'] ?? 'pending';
-            final likes = (data['likes'] ?? 0) as int;
+            final likes = (data['likes'] as num?)?.toInt() ?? 0;
 
             return Container(
               decoration: BoxDecoration(

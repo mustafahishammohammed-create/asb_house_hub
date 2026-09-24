@@ -445,7 +445,12 @@ class _HouseLeaderboardScreenState extends State<HouseLeaderboardScreen> {
                         );
                       }
 
-                      var docs = snapshot.data?.docs.map((d) => d.data() as Map<String, dynamic>).toList() ?? [];
+                      var docs = snapshot.data?.docs.map((d) {
+                        final raw = d.data();
+                        if (raw is Map<String, dynamic>) return raw;
+                        if (raw is Map) return Map<String, dynamic>.from(raw);
+                        return <String, dynamic>{};
+                      }).where((m) => m.isNotEmpty).toList() ?? [];
 
                       // Sort by total_contributed descending
                       docs.sort((a, b) {

@@ -22,6 +22,7 @@ class ChatRoomScreen extends StatefulWidget {
 class _ChatRoomScreenState extends State<ChatRoomScreen> {
   final _chatService = ChatService();
   final _msgController = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
 
   Color _getRoleAccent(String role) {
@@ -58,6 +59,12 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     if (text.isEmpty) return;
     AppHaptics.light();
     _msgController.clear();
+    _focusNode.requestFocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _focusNode.requestFocus();
+      }
+    });
     await _chatService.sendMessage(widget.roomId, text);
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
@@ -70,6 +77,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
 
   @override
   void dispose() {
+    _focusNode.dispose();
     _msgController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -415,6 +423,8 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                   Expanded(
                     child: TextField(
                       controller: _msgController,
+                      focusNode: _focusNode,
+                      textInputAction: TextInputAction.send,
                       textCapitalization: TextCapitalization.sentences,
                       decoration: InputDecoration(
                         hintText: 'Type an encrypted message...',

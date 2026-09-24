@@ -230,7 +230,8 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen> {
                         separatorBuilder: (context, index) =>
                             const Divider(height: 1),
                         itemBuilder: (context, i) {
-                          final data = docs[i].data() as Map<String, dynamic>;
+                          final raw = docs[i].data();
+                          final data = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
                           final title = data['title'] ?? 'Slot';
                           final name = data['name'] ?? 'Vacant';
                           final scholarNo = data['scholar_no'] ?? '';
@@ -581,7 +582,8 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen> {
             separatorBuilder: (context, index) => const SizedBox(height: 16),
             itemBuilder: (context, index) {
               final doc = docs[index];
-              final data = doc.data() as Map<String, dynamic>;
+              final raw = doc.data();
+              final data = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
               final claimId = doc.id;
               final studentName = data['student_name'] ?? 'Unknown Student';
               final scholarNo = data['scholar_no'] ?? '---';

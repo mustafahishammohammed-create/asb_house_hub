@@ -33,6 +33,7 @@ class HouseAiChatScreen extends StatefulWidget {
 
 class _HouseAiChatScreenState extends State<HouseAiChatScreen> {
   final TextEditingController _textController = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
   final List<ChatMessage> _messages = [];
   bool _isGenerating = false;
@@ -82,6 +83,7 @@ class _HouseAiChatScreenState extends State<HouseAiChatScreen> {
 
   @override
   void dispose() {
+    _focusNode.dispose();
     _textController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -105,6 +107,12 @@ class _HouseAiChatScreenState extends State<HouseAiChatScreen> {
 
     if (customPrompt == null) {
       _textController.clear();
+      _focusNode.requestFocus();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _focusNode.requestFocus();
+        }
+      });
     }
 
     HapticFeedback.lightImpact();
@@ -563,6 +571,7 @@ class _HouseAiChatScreenState extends State<HouseAiChatScreen> {
                       ),
                       child: TextField(
                         controller: _textController,
+                        focusNode: _focusNode,
                         maxLines: null,
                         keyboardType: TextInputType.multiline,
                         textInputAction: TextInputAction.send,

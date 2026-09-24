@@ -656,9 +656,10 @@ class _StudentBehaviorEvaluationScreenState
                   itemCount: docs.length > 3 ? 3 : docs.length,
                   separatorBuilder: (context, index) => const SizedBox(height: 8),
                   itemBuilder: (context, i) {
-                    final data = docs[i].data() as Map<String, dynamic>;
+                    final raw = docs[i].data();
+                    final data = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
                     final isMerit = data['type'] == 'merit';
-                    final points = data['points'] ?? 0;
+                    final points = (data['points'] as num?)?.toInt() ?? 0;
                     final reason = data['reason'] ?? 'Conduct Record';
                     final teacher = data['teacher_name'] ?? 'Faculty';
 

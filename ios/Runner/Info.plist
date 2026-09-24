@@ -66,5 +66,13 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>ASB House Hub requires camera access to scan student ID cards, record conduct merits, and capture competition certificates.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>ASB House Hub requires photo library access to upload competition achievement certificates and badges.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>ASB House Hub requires access to save downloaded event receipts and badges to your photo library.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>ASB House Hub requires microphone access if recording live video moments.</string>
 </dict>
 </plist>

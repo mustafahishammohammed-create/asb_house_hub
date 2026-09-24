@@ -257,7 +257,7 @@ class AuthService {
       final claimDoc =
           await _firestore.collection('house_claims').doc(claimId).get();
       if (claimDoc.exists) {
-        final data = claimDoc.data() as Map<String, dynamic>;
+        final data = claimDoc.data() ?? <String, dynamic>{};
         if (sNo.isEmpty) sNo = (data['scholar_no'] ?? '').toString().trim();
         if (sName.isEmpty) sName = (data['student_name'] ?? '').toString().trim();
         if (aTitle.isEmpty) {
@@ -359,7 +359,7 @@ class AuthService {
       final claimDoc =
           await _firestore.collection('house_claims').doc(claimId).get();
       if (claimDoc.exists) {
-        final data = claimDoc.data() as Map<String, dynamic>;
+        final data = claimDoc.data() ?? <String, dynamic>{};
         sNo = (data['scholar_no'] ?? '').toString().trim();
         aTitle = (data['activity_title'] ?? 'Competition Entry').toString();
       }
@@ -547,10 +547,10 @@ class AuthService {
         .map((snapshot) {
           final docs = snapshot.docs.toList();
           docs.sort((a, b) {
-            final dataA = a.data() as Map<String, dynamic>?;
-            final dataB = b.data() as Map<String, dynamic>?;
-            final tA = dataA?['timestamp'] as Timestamp?;
-            final tB = dataB?['timestamp'] as Timestamp?;
+            final dataA = a.data();
+            final dataB = b.data();
+            final tA = dataA['timestamp'] as Timestamp?;
+            final tB = dataB['timestamp'] as Timestamp?;
             if (tA == null && tB == null) return 0;
             if (tA == null) return 1;
             if (tB == null) return -1;

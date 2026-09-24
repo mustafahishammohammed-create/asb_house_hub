@@ -386,7 +386,8 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
               if (snapshot.hasData &&
                   snapshot.data != null &&
                   snapshot.data!.exists) {
-                final data = snapshot.data!.data() as Map<String, dynamic>?;
+                final raw = snapshot.data!.data();
+                final data = raw is Map ? Map<String, dynamic>.from(raw) : null;
                 if (data != null) {
                   totalPoints =
                       (data['total_contributed'] as num?)?.toInt() ?? 0;
