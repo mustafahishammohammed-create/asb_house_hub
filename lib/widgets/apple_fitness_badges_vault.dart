@@ -335,11 +335,11 @@ class _AppleFitnessBadgesVaultState extends State<AppleFitnessBadgesVault>
               return GridView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 16,
-                  mainAxisSpacing: 24,
-                  childAspectRatio: 0.82,
+                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 210,
+                  crossAxisSpacing: 18,
+                  mainAxisSpacing: 22,
+                  childAspectRatio: 0.86,
                 ),
                 itemCount: filteredBadges.length,
                 itemBuilder: (context, index) {
