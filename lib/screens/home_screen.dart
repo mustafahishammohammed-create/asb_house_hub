@@ -3355,6 +3355,26 @@ class _HomeScreenState extends State<HomeScreen>
                     },
                   ),
                   _buildDrawerTile(
+                    Icons.military_tech_rounded,
+                    '🏅 Apple Activity Badges & Vault',
+                    Colors.amber,
+                    () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => HouseArenaScreen(
+                            userHouse: house,
+                            scholarNo: scholarNo,
+                            userName: name,
+                            isAdmin: isAdmin,
+                            initialNav: 3,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildDrawerTile(
                     Icons.receipt_long_rounded,
                     'Fee Receipts & Dues',
                     color,

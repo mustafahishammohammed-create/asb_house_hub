@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:asb_house_hub/theme/app_theme.dart';
 import 'package:asb_house_hub/services/gemini_ai_service.dart';
 import 'package:asb_house_hub/screens/house_ai_chat_screen.dart';
+import 'package:asb_house_hub/widgets/apple_fitness_badges_vault.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -86,6 +87,29 @@ void main() {
 
     expect(find.textContaining('EMERALD House AI Advisor'), findsOneWidget);
     expect(find.textContaining('How can I earn 50 points'), findsOneWidget);
+  });
+
+  testWidgets('AppleFitnessBadgesVault mounts with summary header and filters', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: AppleFitnessBadgesVault(
+            userHouse: 'ruby',
+            userName: 'Mustafa Hisham',
+            scholarNo: 'admin',
+            isAdmin: true,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Apple Activity Awards'), findsOneWidget);
+    expect(find.text('TITAN VAULT'), findsOneWidget);
+    expect(find.text('All Badges'), findsOneWidget);
+    expect(find.text('House Centurion'), findsOneWidget);
   });
 }
 

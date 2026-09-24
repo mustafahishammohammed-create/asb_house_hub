@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_theme.dart';
 import '../widgets/confetti_overlay.dart';
+import '../widgets/apple_fitness_badges_vault.dart';
 
 /// Interactive Mascot Data
 class HouseMascot {
@@ -123,6 +124,7 @@ class HouseArenaScreen extends StatefulWidget {
   final String scholarNo;
   final String userName;
   final bool isAdmin;
+  final int initialNav;
 
   const HouseArenaScreen({
     super.key,
@@ -130,6 +132,7 @@ class HouseArenaScreen extends StatefulWidget {
     required this.scholarNo,
     required this.userName,
     this.isAdmin = false,
+    this.initialNav = 0,
   });
 
   @override
@@ -178,9 +181,6 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
   double _academicSim = 120;
   double _spiritSim = 80;
 
-  // Holographic Badges
-  int _flippedBadgeIndex = -1;
-
   final List<Map<String, dynamic>> _quizBank = [
     {
       'question': 'What core virtue is symbolized by the Ruby House motto?',
@@ -227,6 +227,7 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
   @override
   void initState() {
     super.initState();
+    _activeNav = widget.initialNav;
 
     _pulseController = AnimationController(
       vsync: this,
@@ -504,7 +505,7 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
       {'icon': Icons.bolt_rounded, 'label': 'Reactor'},
       {'icon': Icons.psychology_rounded, 'label': 'Brain Blitz'},
       {'icon': Icons.auto_graph_rounded, 'label': 'Cup Oracle'},
-      {'icon': Icons.military_tech_rounded, 'label': 'Badges'},
+      {'icon': Icons.military_tech_rounded, 'label': 'Awards & Badges'},
       {'icon': Icons.shield_rounded, 'label': 'Mascot Lore'},
     ];
 
@@ -1304,172 +1305,14 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
     );
   }
 
-  // ===========================================================================
-  // TAB 4: HOLOGRAPHIC BADGES (Vault of Valor)
-  // ===========================================================================
   Widget _buildHolographicBadgesTab(Color houseColor) {
-    final badges = [
-      {
-        'title': 'House Centurion',
-        'icon': '🛡️',
-        'desc': 'Contributed 100+ points to your House roster.',
-        'tier': 'DIAMOND',
-        'unlocked': true,
-      },
-      {
-        'title': 'Overdrive Champion',
-        'icon': '⚡',
-        'desc': 'Hit a 10x multiplier in the Spirit Reactor Core.',
-        'tier': 'GOLD',
-        'unlocked': _localTapCount >= 10,
-      },
-      {
-        'title': 'Scholastic Titan',
-        'icon': '🧠',
-        'desc': 'Complete the Daily Brain Blitz with 80+ score.',
-        'tier': 'GOLD',
-        'unlocked': _blitzScore >= 80,
-      },
-      {
-        'title': 'Pristine Shield',
-        'icon': '🕊️',
-        'desc': 'Zero conduct demerits recorded on campus pass.',
-        'tier': 'PLATINUM',
-        'unlocked': true,
-      },
-      {
-        'title': 'Digital Identity Pass',
-        'icon': '📱',
-        'desc': 'Verified student card active in Digital Wallet.',
-        'tier': 'SILVER',
-        'unlocked': true,
-      },
-      {
-        'title': 'Inter-House Claim',
-        'icon': '📜',
-        'desc': 'Awarded points through council claim verification.',
-        'tier': 'GOLD',
-        'unlocked': false,
-      },
-    ];
-
-    return GridView.builder(
-      padding: const EdgeInsets.all(20),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 14,
-        mainAxisSpacing: 14,
-        childAspectRatio: 0.82,
-      ),
-      itemCount: badges.length,
-      itemBuilder: (context, index) {
-        final b = badges[index];
-        final isFlipped = _flippedBadgeIndex == index;
-        final unlocked = b['unlocked'] as bool;
-
-        return GestureDetector(
-          onTap: () {
-            HapticFeedback.lightImpact();
-            setState(() {
-              _flippedBadgeIndex = isFlipped ? -1 : index;
-            });
-          },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 250),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFF131A29),
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(
-                color: unlocked ? houseColor.withValues(alpha: 0.6) : Colors.white12,
-                width: unlocked ? 1.5 : 1,
-              ),
-              boxShadow: unlocked
-                  ? [
-                      BoxShadow(
-                        color: houseColor.withValues(alpha: 0.25),
-                        blurRadius: 16,
-                        offset: const Offset(0, 4),
-                      ),
-                    ]
-                  : null,
-            ),
-            child: isFlipped
-                ? Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        b['title'] as String,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 13,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        b['desc'] as String,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.7),
-                          fontSize: 11,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'TIER: ${b['tier']}',
-                        style: TextStyle(
-                          color: houseColor,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 10,
-                        ),
-                      ),
-                    ],
-                  )
-                : Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        b['icon'] as String,
-                        style: TextStyle(
-                          fontSize: 44,
-                          color: unlocked ? null : Colors.grey,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        b['title'] as String,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: unlocked ? Colors.white : Colors.white54,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 13,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: unlocked
-                              ? houseColor.withValues(alpha: 0.2)
-                              : Colors.white.withValues(alpha: 0.05),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          unlocked ? 'UNLOCKED 🌟' : 'LOCKED 🔒',
-                          style: TextStyle(
-                            color: unlocked ? houseColor : Colors.white38,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 9,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-          ),
-        );
-      },
+    return AppleFitnessBadgesVault(
+      userHouse: widget.userHouse,
+      userName: widget.userName,
+      scholarNo: widget.scholarNo,
+      isAdmin: widget.isAdmin,
+      localTapCount: _localTapCount,
+      blitzScore: _blitzScore,
     );
   }
 
