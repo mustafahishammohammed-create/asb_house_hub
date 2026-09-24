@@ -185,7 +185,7 @@ class _IdScannerScreenState extends State<IdScannerScreen>
           final Map<String, dynamic> data = jsonDecode(query);
           final scholar = (data['scholar_no'] ?? data['scholarNo'] ?? '').toString().trim();
           final name = (data['name'] ?? data['studentName'] ?? 'Student').toString().trim();
-          final house = (data['house'] ?? data['houseName'] ?? 'Ruby').toString().trim();
+          final house = (data['house_name'] ?? data['house'] ?? data['houseName'] ?? 'Ruby').toString().trim();
           final cls = (data['class'] ?? data['classLevel'] ?? 'Grade 11').toString().trim();
           if (scholar.isNotEmpty) {
             _navigateToEvaluation(

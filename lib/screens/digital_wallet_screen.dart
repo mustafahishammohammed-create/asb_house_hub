@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../theme/app_theme.dart';
+import '../services/hierarchy_service.dart';
 import 'merch_store_tab.dart';
 import 'id_scanner_screen.dart';
 
@@ -38,14 +39,11 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
 
   bool get _canScanQr {
     if (widget.canScanQr || widget.isAdmin) return true;
-    final r = widget.userRole.trim().toLowerCase();
-    return r.contains('teacher') ||
-        r.contains('council') ||
-        r.contains('faculty') ||
-        r.contains('staff') ||
-        r.contains('captain') ||
-        r.contains('prefect') ||
-        r.contains('admin');
+    return HierarchyService.isCouncilOrTeacher(
+      scholarNo: widget.scholarNo,
+      role: widget.userRole,
+      fullName: widget.userName,
+    );
   }
 
   @override

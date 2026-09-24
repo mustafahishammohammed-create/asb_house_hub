@@ -516,7 +516,7 @@ class _ChatListScreenState extends State<ChatListScreen>
                               final data = _safeData(doc);
                               final name = data['full_name'] ?? 'Student';
                               final role = data['role'] ?? 'student';
-                              final house = data['house'] ?? 'Ruby';
+                              final house = data['house_name'] ?? data['house'] ?? 'Ruby';
                               final scholarNo = data['scholar_no'] ?? '';
 
                               return InkWell(

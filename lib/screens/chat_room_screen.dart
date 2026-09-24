@@ -59,6 +59,13 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     AppHaptics.light();
     _msgController.clear();
     await _chatService.sendMessage(widget.roomId, text);
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0.0,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOutQuad,
+      );
+    }
   }
 
   @override
