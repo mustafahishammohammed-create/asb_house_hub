@@ -161,19 +161,30 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('Callouts: ACTIVE'), findsOneWidget);
 
-    // Verify Blender 5.2 Studio Suite & Switcher
-    expect(find.text('3D CAD Workstation'), findsOneWidget);
-    expect(find.text('Blender 5.2 Studio'), findsOneWidget);
-    expect(find.text('Blender 5.2 3D Suite'), findsOneWidget);
-    expect(find.text('Open in Blender 5.2'), findsOneWidget);
+    // Verify Material Finishes
+    expect(find.text('Chroma'), findsOneWidget);
+    expect(find.text('24K Gold'), findsOneWidget);
+    expect(find.text('Obsidian'), findsOneWidget);
+    expect(find.text('Astral'), findsOneWidget);
 
-    // Switch to Blender Studio raytraced view
-    await tester.tap(find.text('Blender 5.2 Studio'));
+    // Switch material finish to 24K Gold
+    await tester.tap(find.text('24K Gold'));
+    await tester.pump(const Duration(milliseconds: 200));
+
+    // Verify Camera Presets
+    expect(find.text('Front'), findsOneWidget);
+    expect(find.text('3/4 Hero'), findsOneWidget);
+    expect(find.text('Profile'), findsOneWidget);
+    expect(find.text('Back Spine'), findsOneWidget);
+    expect(find.text('Top Down'), findsOneWidget);
+
+    // Switch camera angle to Profile
+    await tester.tap(find.text('Profile'));
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text('BLENDER 5.2 LTS • STUDIO RAYTRACE'), findsOneWidget);
+    expect(find.textContaining('CAD • YAW:'), findsOneWidget);
 
-    // Switch back to 3D CAD Workstation
-    await tester.tap(find.text('3D CAD Workstation'));
+    // Switch camera angle to Back Spine
+    await tester.tap(find.text('Back Spine'));
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.textContaining('CAD • YAW:'), findsOneWidget);
 

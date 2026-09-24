@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -244,10 +243,11 @@ class Mascot3DMeshes {
   }
 
   // ---------------------------------------------------------------------------
-  // 1. IGNIS THE CRIMSON DRAGON (RUBY) - Full Volumetric 3D Dragon Figurine
+  // 1. IGNIS THE CRIMSON DRAGON (RUBY) - Complete Volumetric 3D Dragon Figurine
   // ---------------------------------------------------------------------------
   static Mesh3D buildDragonMesh() {
     const crimsonCore = Color(0xFF7A0512);
+    const crimsonDark = Color(0xFF4A0008);
     const crimsonMid = Color(0xFFD31027);
     const crimsonBright = Color(0xFFFF3B56);
     const dragonGold = Color(0xFFFFD54F);
@@ -259,171 +259,204 @@ class Mascot3DMeshes {
     const plinthBevel = Color(0xFF283142);
 
     final vertices = <V3>[
-      // 0: Snout tip
-      const V3(0, 8, 88),
-      // 1, 2: Snout top bridge L/R
-      const V3(-16, 0, 76),
-      const V3(16, 0, 76),
-      // 3, 4: Snout bottom jaw L/R
-      const V3(-14, 22, 66),
-      const V3(14, 22, 66),
-      // 5: Mid muzzle center ridge
-      const V3(0, -12, 56),
-      // 6, 7: Mid muzzle sides L/R
-      const V3(-24, -8, 52),
-      const V3(24, -8, 52),
-      // 8: Forehead center apex
-      const V3(0, -26, 38),
-      // 9, 10: Eye positions L/R
-      const V3(-26, -18, 44),
-      const V3(26, -18, 44),
-      // 11, 12: Brow hornlets L/R
-      const V3(-32, -30, 28),
-      const V3(32, -30, 28),
-      // 13: Crown crest dorsal spine
-      const V3(0, -44, 18),
-      // 14, 15: Horn roots L/R
-      const V3(-26, -40, 10),
-      const V3(26, -40, 10),
-      // 16, 17: Horn mid curve L/R
-      const V3(-48, -62, -22),
-      const V3(48, -62, -22),
-      // 18, 19: Horn sharp tips L/R
-      const V3(-72, -92, -54),
-      const V3(72, -92, -54),
-      // 20: Chin underside
-      const V3(0, 32, 58),
-      // 21, 22: Jaw corners L/R
-      const V3(-32, 22, 18),
-      const V3(32, 22, 18),
-      // 23: Throat front
-      const V3(0, 48, 24),
-      // 24: Neck dorsal spine
-      const V3(0, -18, -32),
-      // 25, 26: Neck flanks L/R
-      const V3(-38, 18, -14),
-      const V3(38, 18, -14),
-      // 27: Muscular Chest breastplate
-      const V3(0, 74, 14),
-      // 28, 29: Shoulders L/R
-      const V3(-60, 64, -20),
-      const V3(60, 64, -20),
-      // 30: Spine lower base
-      const V3(0, 52, -48),
+      // Head & Jaws (0-25)
+      const V3(0, 8, 88),         // 0: Snout apex
+      const V3(-16, 0, 76),       // 1: Snout top bridge L
+      const V3(16, 0, 76),        // 2: Snout top bridge R
+      const V3(-14, 22, 66),      // 3: Snout bottom jaw L
+      const V3(14, 22, 66),       // 4: Snout bottom jaw R
+      const V3(0, -12, 56),       // 5: Mid snout ridge
+      const V3(-24, -8, 52),      // 6: Muzzle cheek L
+      const V3(24, -8, 52),       // 7: Muzzle cheek R
+      const V3(0, -26, 38),       // 8: Forehead center apex
+      const V3(-24, -16, 44),     // 9: Glowing Ruby Eye L
+      const V3(24, -16, 44),      // 10: Glowing Ruby Eye R
+      const V3(-30, -28, 28),     // 11: Brow hornlet L
+      const V3(30, -28, 28),      // 12: Brow hornlet R
+      const V3(0, -42, 20),       // 13: Crown dorsal crest
+      const V3(-26, -38, 12),     // 14: Horn root L
+      const V3(26, -38, 12),      // 15: Horn root R
+      const V3(-48, -65, -20),    // 16: Horn mid flare L
+      const V3(48, -65, -20),     // 17: Horn mid flare R
+      const V3(-72, -95, -52),    // 18: Horn sharp tip L
+      const V3(72, -95, -52),     // 19: Horn sharp tip R
+      const V3(0, 32, 58),        // 20: Chin underside
+      const V3(-30, 22, 20),      // 21: Jaw corner L
+      const V3(30, 22, 20),       // 22: Jaw corner R
+      const V3(-10, 16, 70),      // 23: Razor Fang L
+      const V3(10, 16, 70),       // 24: Razor Fang R
+      const V3(0, -26, -2),       // 25: Back of skull / Nape
 
-      // 31-33: Left wing bone strut & membrane
-      const V3(-92, -25, -45),
-      const V3(-138, -66, -72),
-      const V3(-85, 45, -36),
+      // Neck & Throat (26-29)
+      const V3(0, 46, 26),        // 26: Throat front
+      const V3(-32, 18, -8),      // 27: Neck flank L
+      const V3(32, 18, -8),       // 28: Neck flank R
+      const V3(0, -14, -26),      // 29: Neck dorsal spine
 
-      // 34-36: Right wing bone strut & membrane
-      const V3(92, -25, -45),
-      const V3(138, -66, -72),
-      const V3(85, 45, -36),
+      // Solid 3D Torso, Ribcage & Belly (30-39)
+      const V3(0, 70, 16),        // 30: Muscular Pectoral Breastplate
+      const V3(-56, 58, -16),     // 31: Shoulder L
+      const V3(56, 58, -16),      // 32: Shoulder R
+      const V3(0, 74, -12),       // 33: Mid Sternum / Underbelly
+      const V3(-46, 52, -22),     // 34: Lateral Rib Flank L
+      const V3(46, 52, -22),      // 35: Lateral Rib Flank R
+      const V3(0, 22, -36),       // 36: Mid Dorsal Spine Ridge
+      const V3(0, 76, -38),       // 37: Pelvis Belly Underside
+      const V3(-44, 56, -44),     // 38: Rear Hip / Haunch L
+      const V3(44, 56, -44),      // 39: Rear Hip / Haunch R
+      const V3(0, 42, -54),       // 40: Rear Spine / Sacrum
 
-      // 37-39: Left Talons gripping plinth (front left)
-      const V3(-44, 76, 32),
-      const V3(-48, 82, 50),
-      const V3(-34, 82, 48),
+      // Forelegs & Front Claws (41-46)
+      const V3(-40, 76, 32),      // 41: Left Front Talon Base
+      const V3(-46, 82, 50),      // 42: Left Front Outer Talon
+      const V3(-32, 82, 48),      // 43: Left Front Inner Talon
+      const V3(40, 76, 32),       // 44: Right Front Talon Base
+      const V3(46, 82, 50),       // 45: Right Front Outer Talon
+      const V3(32, 82, 48),       // 46: Right Front Inner Talon
 
-      // 40-42: Right Talons gripping plinth (front right)
-      const V3(44, 76, 32),
-      const V3(48, 82, 50),
-      const V3(34, 82, 48),
+      // Hind Legs & Rear Claws Seated on Pedestal (47-50)
+      const V3(-38, 80, -36),     // 47: Rear Leg Foot L (Planted on disc)
+      const V3(-46, 72, -30),     // 48: Rear Leg Knee / Hock L
+      const V3(38, 80, -36),      // 49: Rear Leg Foot R (Planted on disc)
+      const V3(46, 72, -30),      // 50: Rear Leg Knee / Hock R
 
-      // 43-46: Curled dragon tail sweeping around right plinth
-      const V3(15, 68, -45),
-      const V3(48, 76, -26),
-      const V3(58, 80, 10),
-      const V3(64, 78, 36), // Spade tip
+      // Expansive 3D Wings (51-60)
+      const V3(-96, -24, -42),    // 51: Wing Elbow Joint L
+      const V3(96, -24, -42),     // 52: Wing Elbow Joint R
+      const V3(-142, -66, -68),   // 53: Wing Apex Tip L
+      const V3(142, -66, -68),    // 54: Wing Apex Tip R
+      const V3(-125, -14, -54),   // 55: Mid Wing Strut L
+      const V3(125, -14, -54),    // 56: Mid Wing Strut R
+      const V3(-84, 44, -36),     // 57: Lower Wing Membrane L
+      const V3(84, 44, -36),      // 58: Lower Wing Membrane R
+      const V3(-104, -32, -46),   // 59: Wing Talon Spur L
+      const V3(104, -32, -46),    // 60: Wing Talon Spur R
 
-      // 47, 48: Razor Dragon Fangs L/R
-      const V3(-10, 16, 70),
-      const V3(10, 16, 70),
-
-      // 49, 50: Wing Elbow Talon Spurs L/R
-      const V3(-102, -32, -48),
-      const V3(102, -32, -48),
+      // Volumetric 3D Curled Dragon Tail (61-66)
+      const V3(18, 64, -50),      // 61: Tail Curve 1
+      const V3(46, 72, -28),      // 62: Tail Curve 2
+      const V3(58, 78, 6),        // 63: Tail Curve 3 (Front right)
+      const V3(65, 78, 38),       // 64: Tail Spade Spearhead Tip
+      const V3(52, 78, 26),       // 65: Tail Spade Barb L
+      const V3(74, 78, 26),       // 66: Tail Spade Barb R
     ];
 
     final faces = <Face3D>[
-      // Snout front facets
+      // Head & Snout
       const Face3D([0, 1, 5], crimsonBright),
       const Face3D([0, 5, 2], crimsonBright),
       const Face3D([0, 3, 1], crimsonMid),
       const Face3D([0, 2, 4], crimsonMid),
       const Face3D([0, 4, 20, 3], crimsonCore),
 
-      // Dragon Razor Fangs
-      const Face3D([1, 47, 3], Color(0xFFFFF8E7), isEmissive: true),
-      const Face3D([2, 4, 48], Color(0xFFFFF8E7), isEmissive: true),
+      // Dragon Fangs
+      const Face3D([1, 23, 3], Color(0xFFFFF8E7), isEmissive: true),
+      const Face3D([2, 4, 24], Color(0xFFFFF8E7), isEmissive: true),
 
-      // Muzzle & Bridge
+      // Muzzle Bridge & Cheeks
       const Face3D([1, 6, 5], crimsonMid),
       const Face3D([5, 7, 2], crimsonMid),
       const Face3D([1, 3, 21, 6], crimsonCore),
       const Face3D([2, 7, 22, 4], crimsonCore),
 
-      // Eyes (Luminescent Gemstones)
+      // Luminescent Gemstone Eyes
       const Face3D([6, 9, 8, 5], eyeAmber, isEye: true),
       const Face3D([5, 8, 10, 7], eyeAmber, isEye: true),
 
-      // Forehead & Brow Ridges
+      // Forehead & Brow Crest
       const Face3D([8, 11, 13], crimsonBright),
       const Face3D([8, 13, 12], crimsonBright),
       const Face3D([9, 11, 8], crimsonMid),
       const Face3D([7, 10, 12], crimsonMid),
 
-      // Swept Dragon Horns Left (Volumetric)
+      // 3D Horns Left & Right
       const Face3D([11, 14, 16], hornDark),
       const Face3D([14, 16, 18], hornTip, isEmissive: true),
       const Face3D([14, 13, 16], dragonGold),
-
-      // Swept Dragon Horns Right (Volumetric)
       const Face3D([12, 17, 15], hornDark),
       const Face3D([15, 17, 19], hornTip, isEmissive: true),
       const Face3D([13, 15, 17], dragonGold),
 
-      // Jaw & Throat
-      const Face3D([20, 4, 22, 23], crimsonCore),
-      const Face3D([20, 23, 21, 3], crimsonCore),
-      const Face3D([23, 22, 26, 27], crimsonMid),
-      const Face3D([23, 27, 25, 21], crimsonMid),
+      // Back of Skull & Jaw Closure
+      const Face3D([13, 14, 25], crimsonCore),
+      const Face3D([13, 25, 15], crimsonCore),
+      const Face3D([20, 4, 22], crimsonCore),
+      const Face3D([20, 21, 3], crimsonCore),
+      const Face3D([21, 26, 20], crimsonMid),
+      const Face3D([22, 20, 26], crimsonMid),
 
-      // Chest Breastplate (Golden Dragon Plates)
-      const Face3D([27, 26, 29], dragonGold),
-      const Face3D([27, 28, 25], dragonGold),
+      // 3D Tubular Neck (Enclosed all 4 sides)
+      const Face3D([26, 27, 21], crimsonMid),
+      const Face3D([26, 22, 28], crimsonMid),
+      const Face3D([25, 27, 29], crimsonCore),
+      const Face3D([25, 29, 28], crimsonCore),
+      const Face3D([21, 27, 25], crimsonDark),
+      const Face3D([22, 25, 28], crimsonDark),
 
-      // Neck & Spine
-      const Face3D([13, 24, 14], crimsonCore),
-      const Face3D([13, 15, 24], crimsonCore),
-      const Face3D([24, 25, 30], crimsonCore),
-      const Face3D([24, 30, 26], crimsonCore),
+      // Muscular Pectoral Chest Breastplate (Golden Dragon Plates)
+      const Face3D([26, 30, 27], dragonGold),
+      const Face3D([26, 28, 30], dragonGold),
+      const Face3D([30, 31, 33], dragonGold),
+      const Face3D([30, 33, 32], dragonGold),
 
-      // Left Wing Structure (3D Depth)
-      const Face3D([25, 28, 33, 31], crimsonMid),
-      const Face3D([31, 33, 32], crimsonBright),
-      const Face3D([14, 24, 31], hornDark),
-      const Face3D([31, 49, 32], dragonGold),
+      // Ribcage Flanks & Underbelly (Solid 3D Enclosure)
+      const Face3D([27, 31, 34], crimsonMid),
+      const Face3D([28, 35, 32], crimsonMid),
+      const Face3D([31, 33, 34], crimsonCore),
+      const Face3D([32, 35, 33], crimsonCore),
+      const Face3D([33, 37, 34], crimsonMid),
+      const Face3D([33, 35, 37], crimsonMid),
 
-      // Right Wing Structure (3D Depth)
-      const Face3D([26, 34, 36, 29], crimsonMid),
-      const Face3D([34, 35, 36], crimsonBright),
-      const Face3D([15, 34, 24], hornDark),
-      const Face3D([34, 35, 50], dragonGold),
+      // Dorsal Spine Ridge (Neck to Tail)
+      const Face3D([29, 36, 27], crimsonCore),
+      const Face3D([29, 28, 36], crimsonCore),
+      const Face3D([36, 34, 31], crimsonCore),
+      const Face3D([36, 32, 35], crimsonCore),
+      const Face3D([36, 40, 34], crimsonCore),
+      const Face3D([36, 35, 40], crimsonCore),
 
-      // Left Claw Grip
-      const Face3D([25, 37, 28], crimsonMid),
-      const Face3D([37, 38, 39], dragonGold),
+      // Pelvis & Rear Haunches
+      const Face3D([40, 38, 34], crimsonCore),
+      const Face3D([40, 35, 39], crimsonCore),
+      const Face3D([37, 38, 40], crimsonMid),
+      const Face3D([37, 40, 39], crimsonMid),
 
-      // Right Claw Grip
-      const Face3D([26, 29, 40], crimsonMid),
-      const Face3D([40, 41, 42], dragonGold),
+      // Forelegs & Front Claws
+      const Face3D([31, 41, 30], crimsonMid),
+      const Face3D([32, 30, 44], crimsonMid),
+      const Face3D([41, 42, 43], dragonGold),
+      const Face3D([44, 45, 46], dragonGold),
 
-      // Curled Dragon Tail
-      const Face3D([30, 43, 44], crimsonCore),
-      const Face3D([43, 44, 45], crimsonMid),
-      const Face3D([44, 45, 46], dragonGold, isEmissive: true),
+      // Hind Legs Planted on Pedestal Platform
+      const Face3D([38, 48, 47], crimsonMid),
+      const Face3D([38, 47, 34], crimsonCore),
+      const Face3D([39, 49, 50], crimsonMid),
+      const Face3D([39, 35, 49], crimsonCore),
+
+      // Volumetric Arched Wings (Double-sided depth)
+      const Face3D([31, 51, 57], crimsonDark),
+      const Face3D([51, 53, 55], crimsonBright),
+      const Face3D([51, 55, 57], crimsonMid),
+      const Face3D([51, 59, 53], dragonGold),
+      const Face3D([32, 58, 52], crimsonDark),
+      const Face3D([52, 56, 54], crimsonBright),
+      const Face3D([52, 58, 56], crimsonMid),
+      const Face3D([52, 54, 60], dragonGold),
+      const Face3D([14, 27, 25], crimsonCore),
+      const Face3D([15, 25, 28], crimsonCore),
+      const Face3D([31, 57, 34], crimsonCore),
+      const Face3D([32, 35, 58], crimsonCore),
+      const Face3D([36, 57, 34], crimsonCore),
+      const Face3D([36, 35, 58], crimsonCore),
+
+      // Volumetric 3D Dragon Tail with Spearhead Spade
+      const Face3D([40, 61, 38], crimsonCore),
+      const Face3D([40, 39, 61], crimsonCore),
+      const Face3D([61, 62, 48], crimsonMid),
+      const Face3D([61, 50, 62], crimsonMid),
+      const Face3D([62, 63, 49], crimsonMid),
+      const Face3D([63, 64, 65], dragonGold, isEmissive: true),
+      const Face3D([63, 66, 64], dragonGold, isEmissive: true),
     ];
 
     // Attach sculpted Grand Runic Pedestal Disc directly under dragon
@@ -441,7 +474,7 @@ class Mascot3DMeshes {
   }
 
   // ---------------------------------------------------------------------------
-  // 2. ZEPHYR THE TEMPEST GRYPHON (SAPPHIRE) - Full Volumetric 3D Gryphon Figurine
+  // 2. ZEPHYR THE TEMPEST GRYPHON (SAPPHIRE) - Complete Volumetric 3D Gryphon
   // ---------------------------------------------------------------------------
   static Mesh3D buildGryphonMesh() {
     const sapphireDark = Color(0xFF081C54);
@@ -455,135 +488,168 @@ class Mascot3DMeshes {
     const plinthBevel = Color(0xFF202A3D);
 
     final vertices = <V3>[
-      // 0: Curved raptor beak tip (protrudes downward and forward)
-      const V3(0, 24, 90),
-      // 1: Beak top bridge
-      const V3(0, -6, 78),
-      // 2, 3: Beak nostril cere L/R
-      const V3(-16, 6, 66),
-      const V3(16, 6, 66),
-      // 4: Beak lower cutting edge
-      const V3(0, 14, 70),
-      // 5: Avian forehead ridge
-      const V3(0, -28, 48),
-      // 6, 7: Eyebrow crowns L/R
-      const V3(-26, -24, 42),
-      const V3(26, -24, 42),
-      // 8, 9: Piercing Gryphon Eyes L/R
-      const V3(-24, -12, 46),
-      const V3(24, -12, 46),
-      // 10: Crown feather apex
-      const V3(0, -62, 18),
-      // 11, 12: Feathered ear tufts L/R
-      const V3(-52, -78, -26),
-      const V3(52, -78, -26),
-      // 13, 14: Ear tuft mid L/R
-      const V3(-32, -45, 6),
-      const V3(32, -45, 6),
-      // 15: Lower throat / Chin
-      const V3(0, 36, 48),
-      // 16, 17: Ruff feather flanks L/R
-      const V3(-42, 22, 10),
-      const V3(42, 22, 10),
-      // 18: Raptor breastplate
-      const V3(0, 72, 16),
-      // 19, 20: Wings elbows L/R
-      const V3(-95, -22, -42),
-      const V3(95, -22, -42),
-      // 21, 22: Wing razor tips L/R
-      const V3(-138, -58, -65),
-      const V3(138, -58, -65),
-      // 23, 24: Lower wing feathers L/R
-      const V3(-112, 36, -35),
-      const V3(112, 36, -35),
-      // 25: Dorsal spine back
-      const V3(0, -15, -34),
-      // 26, 27: Shoulders L/R
-      const V3(-58, 62, -22),
-      const V3(58, 62, -22),
+      // Avian Raptor Head & Beak (0-16)
+      const V3(0, 24, 90),        // 0: Curved raptor beak tip
+      const V3(0, -6, 78),        // 1: Beak top bridge
+      const V3(-16, 6, 66),       // 2: Beak cere L
+      const V3(16, 6, 66),        // 3: Beak cere R
+      const V3(0, 14, 70),        // 4: Beak lower cutting edge
+      const V3(0, 26, 80),        // 5: Beak razor underhook
+      const V3(0, -28, 48),       // 6: Forehead ridge
+      const V3(-26, -24, 42),     // 7: Eyebrow crown L
+      const V3(26, -24, 42),      // 8: Eyebrow crown R
+      const V3(-24, -12, 46),     // 9: Glowing Eye L
+      const V3(24, -12, 46),      // 10: Glowing Eye R
+      const V3(0, -62, 20),       // 11: Crown feather apex
+      const V3(-50, -78, -24),    // 12: Ear tuft L
+      const V3(50, -78, -24),     // 13: Ear tuft R
+      const V3(-32, -45, 6),      // 14: Ear mid L
+      const V3(32, -45, 6),       // 15: Ear mid R
+      const V3(0, -30, 0),        // 16: Back of avian skull
 
-      // 28-30: Left Gryphon Talons clutching plinth
-      const V3(-42, 74, 30),
-      const V3(-46, 82, 48),
-      const V3(-32, 82, 46),
+      // Neck & Mantle (17-21)
+      const V3(0, 36, 46),        // 17: Lower throat
+      const V3(-36, 20, 10),      // 18: Feather ruff L
+      const V3(36, 20, 10),       // 19: Feather ruff R
+      const V3(0, -14, -24),      // 20: Dorsal feather mantle
 
-      // 31-33: Right Gryphon Talons clutching plinth
-      const V3(42, 74, 30),
-      const V3(46, 82, 48),
-      const V3(32, 82, 46),
+      // Hybrid Eagle-Lion Torso (21-30)
+      const V3(0, 70, 16),        // 21: Raptor Breastplate
+      const V3(-56, 60, -18),     // 22: Shoulder L
+      const V3(56, 60, -18),      // 23: Shoulder R
+      const V3(0, 74, -12),       // 24: Lion Underbelly
+      const V3(-46, 52, -22),     // 25: Rib Flank L
+      const V3(46, 52, -22),      // 26: Rib Flank R
+      const V3(0, 22, -36),       // 27: Feline Dorsal Spine
+      const V3(0, 76, -38),       // 28: Pelvis Belly
+      const V3(-44, 56, -44),     // 29: Lion Hip / Haunch L
+      const V3(44, 56, -44),      // 30: Lion Hip / Haunch R
+      const V3(0, 42, -54),       // 31: Rear Spine / Sacrum
 
-      // 34-36: Feathered Gryphon Tail curling around plinth
-      const V3(10, 68, -42),
-      const V3(45, 76, -24),
-      const V3(55, 80, 18),
+      // Forelegs & Raptor Claws (32-37)
+      const V3(-40, 76, 32),      // 32: Front Talon Base L
+      const V3(-46, 82, 50),      // 33: Outer Talon L
+      const V3(-32, 82, 48),      // 34: Inner Talon L
+      const V3(40, 76, 32),       // 35: Front Talon Base R
+      const V3(46, 82, 50),       // 36: Outer Talon R
+      const V3(32, 82, 48),       // 37: Inner Talon R
 
-      // 37: Raptor beak under-hook apex
-      const V3(0, 26, 80),
+      // Rear Lion Legs Seated on Disc (38-41)
+      const V3(-38, 80, -36),     // 38: Rear Lion Paw L (Planted on disc)
+      const V3(-46, 72, -30),     // 39: Rear Lion Knee L
+      const V3(38, 80, -36),      // 40: Rear Lion Paw R (Planted on disc)
+      const V3(46, 72, -30),      // 41: Rear Lion Knee R
 
-      // 38, 39: Secondary wing feather tips L/R
-      const V3(-125, -15, -55),
-      const V3(125, -15, -55),
+      // Broad Eagle Wings (42-49)
+      const V3(-95, -22, -42),    // 42: Wing Elbow L
+      const V3(95, -22, -42),     // 43: Wing Elbow R
+      const V3(-142, -58, -66),   // 44: Primary Feather Apex L
+      const V3(142, -58, -66),    // 45: Primary Feather Apex R
+      const V3(-125, -14, -54),   // 46: Secondary Feathers L
+      const V3(125, -14, -54),    // 47: Secondary Feathers R
+      const V3(-84, 40, -34),     // 48: Lower Wing Plumes L
+      const V3(84, 40, -34),      // 49: Lower Wing Plumes R
+
+      // Feline Feathered Tail (50-54)
+      const V3(18, 64, -50),      // 50: Tail Root
+      const V3(44, 72, -28),      // 51: Tail Mid
+      const V3(56, 78, 6),        // 52: Tail Front Sweep
+      const V3(60, 78, 28),       // 53: Feathered Fan Tuft Tip
+      const V3(48, 78, 20),       // 54: Feathered Fan Flare
     ];
 
     final faces = <Face3D>[
-      // Curved Golden Beak
+      // Curved Raptor Beak
       const Face3D([0, 1, 2], beakGold),
       const Face3D([0, 3, 1], beakGold),
       const Face3D([0, 2, 4], beakGold),
       const Face3D([0, 4, 3], beakGold),
-      const Face3D([0, 4, 37], Color(0xFFE65100)), // Beak razor underhook
+      const Face3D([0, 4, 5], Color(0xFFE65100)),
 
       // Eyebrows & Forehead
-      const Face3D([1, 5, 2], stormSilver),
-      const Face3D([1, 3, 5], stormSilver),
-      const Face3D([5, 6, 2], sapphireMid),
-      const Face3D([5, 3, 7], sapphireMid),
+      const Face3D([1, 6, 2], stormSilver),
+      const Face3D([1, 3, 6], stormSilver),
+      const Face3D([6, 7, 2], sapphireMid),
+      const Face3D([6, 3, 8], sapphireMid),
 
       // Glowing Cyan Laser Eyes
-      const Face3D([2, 6, 8], eyeCyan, isEye: true),
-      const Face3D([3, 9, 7], eyeCyan, isEye: true),
+      const Face3D([2, 7, 9], eyeCyan, isEye: true),
+      const Face3D([3, 10, 8], eyeCyan, isEye: true),
 
-      // Feathered Ear Tufts / Crest
-      const Face3D([5, 10, 6], stormSilver),
-      const Face3D([5, 7, 10], stormSilver),
-      const Face3D([6, 13, 11], sapphireBright),
-      const Face3D([7, 12, 14], sapphireBright),
-      const Face3D([10, 13, 11], sapphireDark),
-      const Face3D([10, 12, 14], sapphireDark),
+      // Feathered Ear Tufts & Crest
+      const Face3D([6, 11, 7], stormSilver),
+      const Face3D([6, 8, 11], stormSilver),
+      const Face3D([7, 14, 12], sapphireBright),
+      const Face3D([8, 13, 15], sapphireBright),
+      const Face3D([11, 14, 12], sapphireDark),
+      const Face3D([11, 13, 15], sapphireDark),
 
-      // Throat & Chin
-      const Face3D([4, 15, 2], sapphireDark),
-      const Face3D([4, 3, 15], sapphireDark),
-      const Face3D([15, 16, 18], stormSilver),
-      const Face3D([15, 18, 17], stormSilver),
+      // Back of Head & Throat
+      const Face3D([4, 17, 2], sapphireDark),
+      const Face3D([4, 3, 17], sapphireDark),
+      const Face3D([11, 12, 16], sapphireDark),
+      const Face3D([11, 16, 13], sapphireDark),
+      const Face3D([17, 18, 21], stormSilver),
+      const Face3D([17, 21, 19], stormSilver),
 
-      // Breastplate
-      const Face3D([18, 16, 26], sapphireMid),
-      const Face3D([18, 27, 17], sapphireMid),
+      // Enclosed Neck Cylinder
+      const Face3D([16, 18, 20], sapphireDark),
+      const Face3D([16, 20, 19], sapphireDark),
+      const Face3D([18, 22, 20], sapphireDark),
+      const Face3D([19, 20, 23], sapphireDark),
 
-      // Eagle Wings & Secondary Plumage
-      const Face3D([16, 19, 23, 26], sapphireDark),
-      const Face3D([19, 21, 23], sapphireBright),
-      const Face3D([19, 38, 21], stormSilver),
-      const Face3D([17, 27, 24, 20], sapphireDark),
-      const Face3D([20, 24, 22], sapphireBright),
-      const Face3D([20, 22, 39], stormSilver),
+      // Avian Breastplate & Lion Torso
+      const Face3D([21, 18, 22], sapphireMid),
+      const Face3D([21, 23, 19], sapphireMid),
+      const Face3D([21, 22, 24], sapphireMid),
+      const Face3D([21, 24, 23], sapphireMid),
+      const Face3D([22, 25, 24], sapphireDark),
+      const Face3D([23, 24, 26], sapphireDark),
+      const Face3D([24, 28, 25], sapphireMid),
+      const Face3D([24, 26, 28], sapphireMid),
 
-      // Dorsal spine
-      const Face3D([10, 25, 13], sapphireDark),
-      const Face3D([10, 14, 25], sapphireDark),
+      // Dorsal Spine & Pelvis
+      const Face3D([20, 27, 25], sapphireDark),
+      const Face3D([20, 26, 27], sapphireDark),
+      const Face3D([27, 31, 25], sapphireDark),
+      const Face3D([27, 26, 31], sapphireDark),
+      const Face3D([31, 29, 25], sapphireMid),
+      const Face3D([31, 26, 30], sapphireMid),
+      const Face3D([28, 29, 31], sapphireDark),
+      const Face3D([28, 31, 30], sapphireDark),
 
-      // Left Talons
-      const Face3D([16, 28, 26], sapphireMid),
-      const Face3D([28, 29, 30], beakGold),
+      // Front Eagle Talons
+      const Face3D([22, 32, 21], sapphireMid),
+      const Face3D([23, 21, 35], sapphireMid),
+      const Face3D([32, 33, 34], beakGold),
+      const Face3D([35, 36, 37], beakGold),
 
-      // Right Talons
-      const Face3D([17, 27, 31], sapphireMid),
-      const Face3D([31, 32, 33], beakGold),
+      // Rear Lion Legs Planted on Pedestal
+      const Face3D([29, 39, 38], sapphireMid),
+      const Face3D([29, 38, 25], sapphireDark),
+      const Face3D([30, 40, 41], sapphireMid),
+      const Face3D([30, 26, 40], sapphireDark),
 
-      // Curled Feathered Tail
-      const Face3D([26, 34, 35], sapphireDark),
-      const Face3D([34, 35, 36], stormSilver, isEmissive: true),
+      // Broad Eagle Wings
+      const Face3D([22, 42, 48], sapphireDark),
+      const Face3D([42, 44, 46], sapphireBright),
+      const Face3D([42, 46, 48], stormSilver),
+      const Face3D([23, 49, 43], sapphireDark),
+      const Face3D([43, 47, 45], sapphireBright),
+      const Face3D([43, 49, 47], stormSilver),
+      const Face3D([12, 18, 16], sapphireDark),
+      const Face3D([13, 16, 19], sapphireDark),
+      const Face3D([22, 48, 25], sapphireDark),
+      const Face3D([23, 26, 49], sapphireDark),
+      const Face3D([27, 48, 25], sapphireDark),
+      const Face3D([27, 26, 49], sapphireDark),
+
+      // Feline Feathered Tail
+      const Face3D([31, 50, 29], sapphireDark),
+      const Face3D([31, 30, 50], sapphireDark),
+      const Face3D([50, 51, 39], sapphireDark),
+      const Face3D([51, 52, 40], sapphireMid),
+      const Face3D([52, 53, 54], stormSilver, isEmissive: true),
     ];
 
     // Attach sculpted Grand Runic Pedestal Disc directly under gryphon
@@ -601,7 +667,7 @@ class Mascot3DMeshes {
   }
 
   // ---------------------------------------------------------------------------
-  // 3. SYLVA THE TITAN WOLF (EMERALD) - Full Volumetric 3D Direwolf Figurine
+  // 3. SYLVA THE TITAN WOLF (EMERALD) - Complete Volumetric 3D Direwolf Figurine
   // ---------------------------------------------------------------------------
   static Mesh3D buildWolfMesh() {
     const emeraldDark = Color(0xFF092E10);
@@ -615,86 +681,84 @@ class Mascot3DMeshes {
     const plinthBevel = Color(0xFF1B2E20);
 
     final vertices = <V3>[
-      // 0: Nose tip
-      const V3(0, 14, 92),
-      // 1: Snout bridge top
-      const V3(0, -2, 76),
-      // 2, 3: Snout sides L/R
-      const V3(-18, 12, 68),
-      const V3(18, 12, 68),
-      // 4: Lower jaw / chin
-      const V3(0, 28, 64),
-      // 5: Forehead center
-      const V3(0, -22, 44),
-      // 6, 7: Wolf brow ridges L/R
-      const V3(-26, -18, 38),
-      const V3(26, -18, 38),
-      // 8, 9: Glowing Jade Eyes L/R
-      const V3(-22, -10, 44),
-      const V3(22, -10, 44),
-      // 10: Skull Crown
-      const V3(0, -40, 20),
-      // 11, 12: Upright wolf ear tips L/R
-      const V3(-48, -88, -15),
-      const V3(48, -88, -15),
-      // 13, 14: Ear outer bases L/R
-      const V3(-36, -42, 6),
-      const V3(36, -42, 6),
-      // 15, 16: Ear inner bases L/R
-      const V3(-16, -42, 14),
-      const V3(16, -42, 14),
-      // 17, 18: Flared wolf ruff fur tips L/R
-      const V3(-78, 14, -8),
-      const V3(78, 14, -8),
-      // 19, 20: Lower ruff fur tips L/R
-      const V3(-96, 46, -24),
-      const V3(96, 46, -24),
-      // 21: Throat & chin front
-      const V3(0, 44, 28),
-      // 22: Muscular titan chest
-      const V3(0, 78, 18),
-      // 23, 24: Titan shoulders L/R
-      const V3(-56, 66, -28),
-      const V3(56, 66, -28),
-      // 25: Dorsal spine back
-      const V3(0, 20, -42),
+      // Lupine Head & Muzzle (0-17)
+      const V3(0, 14, 92),        // 0: Nose tip
+      const V3(0, -2, 76),        // 1: Snout bridge
+      const V3(-18, 12, 68),      // 2: Snout side L
+      const V3(18, 12, 68),       // 3: Snout side R
+      const V3(0, 28, 64),        // 4: Lower jaw / chin
+      const V3(0, -22, 44),       // 5: Forehead center
+      const V3(-26, -18, 38),     // 6: Wolf brow L
+      const V3(26, -18, 38),      // 7: Wolf brow R
+      const V3(-22, -10, 44),     // 8: Glowing Jade Eye L
+      const V3(22, -10, 44),      // 9: Glowing Jade Eye R
+      const V3(0, -40, 20),       // 10: Skull crown
+      const V3(-46, -88, -15),    // 11: Ear tip L
+      const V3(46, -88, -15),     // 12: Ear tip R
+      const V3(-36, -42, 6),      // 13: Ear base outer L
+      const V3(36, -42, 6),       // 14: Ear base outer R
+      const V3(-16, -42, 14),     // 15: Ear base inner L
+      const V3(16, -42, 14),      // 16: Ear base inner R
+      const V3(0, -28, 0),        // 17: Back of wolf skull
 
-      // 26-28: Left Wolf Paw planted on plinth
-      const V3(-40, 74, 30),
-      const V3(-44, 82, 48),
-      const V3(-30, 82, 46),
+      // Snarling Fangs (18-19)
+      const V3(-8, 20, 68),       // 18: White Fang L
+      const V3(8, 20, 68),        // 19: White Fang R
 
-      // 29-31: Right Wolf Paw planted on plinth
-      const V3(40, 74, 30),
-      const V3(44, 82, 48),
-      const V3(30, 82, 46),
+      // Volumetric Fur Ruff / Collar (20-25)
+      const V3(0, 44, 28),        // 20: Throat front
+      const V3(-74, 16, -6),      // 21: Fur ruff tip L
+      const V3(74, 16, -6),       // 22: Fur ruff tip R
+      const V3(-92, 48, -20),     // 23: Lower ruff flare L
+      const V3(92, 48, -20),      // 24: Lower ruff flare R
+      const V3(0, -10, -26),      // 25: Dorsal ruff spine
 
-      // 32-34: Bushy Wolf Tail curled along plinth side
-      const V3(12, 68, -42),
-      const V3(48, 76, -24),
-      const V3(56, 80, 16),
+      // Athletic Direwolf Torso (26-35)
+      const V3(0, 76, 18),        // 26: Deep Muscular Chest
+      const V3(-56, 62, -18),     // 27: Shoulder L
+      const V3(56, 62, -18),      // 28: Shoulder R
+      const V3(0, 72, -14),       // 29: Underbelly
+      const V3(-48, 52, -22),     // 30: Rib Flank L
+      const V3(48, 52, -22),      // 31: Rib Flank R
+      const V3(0, 20, -38),       // 32: Arched Spine Ridge
+      const V3(0, 74, -40),       // 33: Pelvis Belly
+      const V3(-44, 56, -44),     // 34: Muscular Haunch L
+      const V3(44, 56, -44),      // 35: Muscular Haunch R
+      const V3(0, 40, -54),       // 36: Rear Spine / Sacrum
 
-      // 35, 36: Upper white wolf fangs L/R
-      const V3(-8, 20, 68),
-      const V3(8, 20, 68),
+      // Forelegs & Front Wolf Paws (37-42)
+      const V3(-40, 76, 30),      // 37: Front Paw Base L
+      const V3(-44, 82, 48),      // 38: Paw Outer Claw L
+      const V3(-30, 82, 46),      // 39: Paw Inner Claw L
+      const V3(40, 76, 30),       // 40: Front Paw Base R
+      const V3(46, 82, 48),       // 41: Paw Outer Claw R
+      const V3(32, 82, 46),       // 42: Paw Inner Claw R
 
-      // 37, 38: Flank dorsal ruff L/R
-      const V3(-65, -10, -22),
-      const V3(65, -10, -22),
+      // Hind Legs Planted on Pedestal (43-46)
+      const V3(-36, 80, -36),     // 43: Rear Wolf Paw L (Planted on disc)
+      const V3(-46, 72, -30),     // 44: Rear Wolf Hock L
+      const V3(36, 80, -36),      // 45: Rear Wolf Paw R (Planted on disc)
+      const V3(46, 72, -30),      // 46: Rear Wolf Hock R
+
+      // Bushy Wolf Plume Tail (47-50)
+      const V3(14, 62, -48),      // 47: Tail Arch 1
+      const V3(38, 74, -28),      // 48: Tail Mid
+      const V3(54, 78, 6),        // 49: Tail Front Plume
+      const V3(58, 80, 24),       // 50: Plume Tip
     ];
 
     final faces = <Face3D>[
-      // Wolf Snout & Nose
+      // Snout & Nose
       const Face3D([0, 1, 2], noseBlack),
       const Face3D([0, 3, 1], noseBlack),
       const Face3D([0, 2, 4], emeraldDark),
       const Face3D([0, 4, 3], emeraldDark),
 
-      // Direwolf White Fangs in Snarl
-      const Face3D([2, 35, 4], Color(0xFFFFFFFF), isEmissive: true),
-      const Face3D([3, 4, 36], Color(0xFFFFFFFF), isEmissive: true),
+      // Snarling White Fangs
+      const Face3D([2, 18, 4], Color(0xFFFFFFFF), isEmissive: true),
+      const Face3D([3, 4, 19], Color(0xFFFFFFFF), isEmissive: true),
 
-      // Muzzle Bridge to Forehead
+      // Muzzle Bridge & Forehead
       const Face3D([1, 5, 2], emeraldMid),
       const Face3D([1, 3, 5], emeraldMid),
       const Face3D([2, 5, 6], emeraldMid),
@@ -704,41 +768,74 @@ class Mascot3DMeshes {
       const Face3D([2, 6, 8], eyeJade, isEye: true),
       const Face3D([3, 9, 7], eyeJade, isEye: true),
 
-      // Upright Titan Ears Left
+      // Upright Alert Ears
       const Face3D([10, 15, 11], mossSilver),
       const Face3D([15, 13, 11], emeraldBright),
       const Face3D([10, 11, 13], emeraldDark),
-
-      // Upright Titan Ears Right
-      const Face3D([10, 11, 16], mossSilver),
+      const Face3D([10, 12, 16], mossSilver),
       const Face3D([16, 12, 14], emeraldBright),
       const Face3D([10, 14, 12], emeraldDark),
 
-      // Flared Alpha Wolf Ruff Mane & Flank Ruff
-      const Face3D([6, 13, 17], emeraldBright),
-      const Face3D([7, 18, 14], emeraldBright),
-      const Face3D([17, 19, 21], mossSilver),
-      const Face3D([18, 21, 20], mossSilver),
-      const Face3D([10, 37, 13], emeraldMid),
-      const Face3D([10, 14, 38], emeraldMid),
+      // Back of Skull & Ruff Collar
+      const Face3D([10, 13, 17], emeraldDark),
+      const Face3D([10, 17, 14], emeraldDark),
+      const Face3D([4, 20, 2], emeraldDark),
+      const Face3D([4, 3, 20], emeraldDark),
+      const Face3D([6, 13, 21], emeraldBright),
+      const Face3D([7, 22, 14], emeraldBright),
+      const Face3D([21, 23, 20], mossSilver),
+      const Face3D([22, 20, 24], mossSilver),
 
-      // Throat & Muscular Chest
-      const Face3D([4, 21, 2], emeraldDark),
-      const Face3D([4, 3, 21], emeraldDark),
-      const Face3D([21, 19, 23, 22], emeraldMid),
-      const Face3D([21, 22, 24, 20], emeraldMid),
+      // Neck Closure
+      const Face3D([17, 21, 25], emeraldDark),
+      const Face3D([17, 25, 22], emeraldDark),
+      const Face3D([21, 27, 25], emeraldDark),
+      const Face3D([22, 25, 28], emeraldDark),
+      const Face3D([23, 27, 20], emeraldDark),
+      const Face3D([24, 20, 28], emeraldDark),
+      const Face3D([23, 30, 27], emeraldDark),
+      const Face3D([24, 28, 31], emeraldDark),
 
-      // Left Paw
-      const Face3D([23, 26, 22], emeraldMid),
-      const Face3D([26, 27, 28], mossSilver),
+      // Chest & Torso (Solid 3D Ribcage)
+      const Face3D([20, 26, 27], emeraldMid),
+      const Face3D([20, 28, 26], emeraldMid),
+      const Face3D([26, 27, 29], emeraldBright),
+      const Face3D([26, 29, 28], emeraldBright),
+      const Face3D([27, 30, 29], emeraldDark),
+      const Face3D([28, 29, 31], emeraldDark),
+      const Face3D([29, 33, 30], emeraldMid),
+      const Face3D([29, 31, 33], emeraldMid),
 
-      // Right Paw
-      const Face3D([24, 22, 29], emeraldMid),
-      const Face3D([29, 30, 31], mossSilver),
+      // Dorsal Fur Ridge Spine
+      const Face3D([25, 32, 30], emeraldDark),
+      const Face3D([25, 31, 32], emeraldDark),
+      const Face3D([32, 36, 30], emeraldDark),
+      const Face3D([32, 31, 36], emeraldDark),
 
-      // Tail
-      const Face3D([25, 32, 33], emeraldDark),
-      const Face3D([32, 33, 34], emeraldBright),
+      // Pelvis & Rear Haunches
+      const Face3D([36, 34, 30], emeraldMid),
+      const Face3D([36, 31, 35], emeraldMid),
+      const Face3D([33, 34, 36], emeraldDark),
+      const Face3D([33, 36, 35], emeraldDark),
+
+      // Front Paws
+      const Face3D([27, 37, 26], emeraldMid),
+      const Face3D([28, 26, 40], emeraldMid),
+      const Face3D([37, 38, 39], mossSilver),
+      const Face3D([40, 41, 42], mossSilver),
+
+      // Rear Paws Planted on Pedestal
+      const Face3D([34, 44, 43], emeraldMid),
+      const Face3D([34, 43, 30], emeraldDark),
+      const Face3D([35, 45, 46], emeraldMid),
+      const Face3D([35, 31, 45], emeraldDark),
+
+      // Bushy Wolf Tail
+      const Face3D([36, 47, 34], emeraldDark),
+      const Face3D([36, 35, 47], emeraldDark),
+      const Face3D([47, 48, 44], emeraldMid),
+      const Face3D([48, 49, 45], emeraldBright),
+      const Face3D([49, 50, 48], mossSilver, isEmissive: true),
     ];
 
     // Attach sculpted Grand Runic Pedestal Disc directly under wolf
@@ -756,7 +853,7 @@ class Mascot3DMeshes {
   }
 
   // ---------------------------------------------------------------------------
-  // 4. SOLIS THE GOLDEN CHIMERA (TOPAZ) - Full Volumetric 3D Chimera Figurine
+  // 4. SOLIS THE GOLDEN CHIMERA (TOPAZ) - Complete Volumetric 3D Chimera
   // ---------------------------------------------------------------------------
   static Mesh3D buildChimeraMesh() {
     const sunGoldDark = Color(0xFF5E3B00);
@@ -769,73 +866,74 @@ class Mascot3DMeshes {
     const plinthBevel = Color(0xFF332714);
 
     final vertices = <V3>[
-      // 0: Lion nose tip
-      const V3(0, 12, 84),
-      // 1: Muzzle bridge
-      const V3(0, -4, 72),
-      // 2, 3: Whiskers muzzle pads L/R
-      const V3(-20, 12, 68),
-      const V3(20, 12, 68),
-      // 4: Chin / Lower jaw
-      const V3(0, 30, 60),
-      // 5: Forehead brow center
-      const V3(0, -22, 42),
-      // 6, 7: Lion brows L/R
-      const V3(-26, -16, 38),
-      const V3(26, -16, 38),
-      // 8, 9: Sovereign Solar Eyes L/R
-      const V3(-22, -8, 45),
-      const V3(22, -8, 45),
-      // 10: Crown apex
-      const V3(0, -38, 25),
-      // 11, 12: Dual Chimera Horn tips L/R
-      const V3(-55, -86, -18),
-      const V3(55, -86, -18),
-      // 13, 14: Horn roots L/R
-      const V3(-24, -40, 12),
-      const V3(24, -40, 12),
-      // 15, 16: Top Solar Mane starburst rays
-      const V3(0, -92, -5),
-      const V3(-38, -82, -12),
-      const V3(38, -82, -12),
-      // 17, 18: Upper flank solar rays L/R
-      const V3(-78, -54, -18),
-      const V3(78, -54, -18),
-      // 19, 20: Middle flank solar rays L/R
-      const V3(-98, -8, -22),
-      const V3(98, -8, -22),
-      // 21, 22: Lower mane rays L/R
-      const V3(-86, 38, -26),
-      const V3(86, 38, -26),
-      // 23: Lion beard ray front
-      const V3(0, 58, 26),
-      // 24: Sovereign gold breastplate
-      const V3(0, 78, 16),
-      // 25, 26: Imperial shoulders L/R
-      const V3(-52, 70, -20),
-      const V3(52, 70, -20),
+      // Lion Head & Muzzle (0-10)
+      const V3(0, 12, 84),        // 0: Nose tip
+      const V3(0, -4, 72),        // 1: Muzzle bridge
+      const V3(-20, 12, 68),      // 2: Muzzle whisker pad L
+      const V3(20, 12, 68),       // 3: Muzzle whisker pad R
+      const V3(0, 30, 60),        // 4: Lower jaw / chin
+      const V3(0, -22, 42),       // 5: Forehead brow
+      const V3(-26, -16, 38),     // 6: Brow ridge L
+      const V3(26, -16, 38),      // 7: Brow ridge R
+      const V3(-22, -8, 45),      // 8: Blazing Solar Eye L
+      const V3(22, -8, 45),       // 9: Blazing Solar Eye R
+      const V3(0, -38, 24),       // 10: Crown apex
+      const V3(0, -26, 0),        // 11: Back of lion skull
+      const V3(-8, 22, 66),       // 12: Upper Fang L
+      const V3(8, 22, 66),        // 13: Upper Fang R
 
-      // 27-29: Left Lion Paw planted on plinth
-      const V3(-38, 74, 30),
-      const V3(-42, 82, 48),
-      const V3(-28, 82, 46),
+      // 16-Ray 3D Volumetric Radiant Solar Mane (14-29)
+      const V3(0, -96, -6),       // 14: Ray 0 (Zenith)
+      const V3(-36, -88, -12),    // 15: Ray 1
+      const V3(-68, -72, -16),    // 16: Ray 2
+      const V3(-88, -44, -18),    // 17: Ray 3
+      const V3(-98, -10, -20),    // 18: Ray 4 (Flank mid L)
+      const V3(-92, 26, -22),     // 19: Ray 5
+      const V3(-74, 56, -22),     // 20: Ray 6
+      const V3(-42, 74, -18),     // 21: Ray 7 (Lower L)
+      const V3(0, 80, 8),         // 22: Ray 8 (Chin beard apex)
+      const V3(42, 74, -18),      // 23: Ray 9 (Lower R)
+      const V3(74, 56, -22),      // 24: Ray 10
+      const V3(92, 26, -22),      // 25: Ray 11
+      const V3(98, -10, -20),     // 26: Ray 12 (Flank mid R)
+      const V3(88, -44, -18),     // 27: Ray 13
+      const V3(68, -72, -16),     // 28: Ray 14
+      const V3(36, -88, -12),     // 29: Ray 15
 
-      // 30-32: Right Lion Paw planted on plinth
-      const V3(38, 74, 30),
-      const V3(42, 82, 48),
-      const V3(28, 82, 46),
+      // Muscular Imperial Torso (30-39)
+      const V3(0, 72, 16),        // 30: Imperial Gold Pectoral Breastplate
+      const V3(-54, 62, -18),     // 31: Shoulder L
+      const V3(54, 62, -18),      // 32: Shoulder R
+      const V3(0, 72, -14),       // 33: Underbelly
+      const V3(-48, 52, -22),     // 34: Rib Flank L
+      const V3(48, 52, -22),      // 35: Rib Flank R
+      const V3(0, 22, -36),       // 36: Golden Spine Ridge
+      const V3(0, 74, -40),       // 37: Pelvis Belly
+      const V3(-44, 56, -44),     // 38: Lion Haunch L
+      const V3(44, 56, -44),      // 39: Lion Haunch R
+      const V3(0, 42, -54),       // 40: Rear Spine / Sacrum
 
-      // 33-35: Arching Chimera Tail
-      const V3(12, 68, -42),
-      const V3(46, 76, -24),
-      const V3(56, 80, 16),
+      // Forelegs & Golden Front Paws (41-46)
+      const V3(-38, 76, 32),      // 41: Front Paw Base L
+      const V3(-42, 82, 48),      // 42: Golden Claw Outer L
+      const V3(-28, 82, 46),      // 43: Golden Claw Inner L
+      const V3(38, 76, 32),       // 44: Front Paw Base R
+      const V3(42, 82, 48),       // 45: Golden Claw Outer R
+      const V3(28, 82, 46),       // 46: Golden Claw Inner R
 
-      // 36, 37: Upper lion fangs L/R
-      const V3(-8, 22, 66),
-      const V3(8, 22, 66),
+      // Rear Lion Legs Planted on Pedestal (47-50)
+      const V3(-36, 80, -36),     // 47: Rear Paw L (Planted on disc)
+      const V3(-46, 72, -30),     // 48: Rear Knee L
+      const V3(36, 80, -36),      // 49: Rear Paw R (Planted on disc)
+      const V3(46, 72, -30),      // 50: Rear Knee R
 
-      // 38: Zenith solar mane flare
-      const V3(0, -102, -10),
+      // Coiled Serpent Chimera Tail (51-56)
+      const V3(18, 64, -50),      // 51: Serpent Tail Base
+      const V3(44, 72, -28),      // 52: Serpent Tail Arch
+      const V3(56, 78, 6),        // 53: Serpent Coil Forward
+      const V3(62, 76, 28),       // 54: Snake Hood Flare
+      const V3(64, 74, 46),       // 55: Viper Head / Stinger Apex
+      const V3(54, 76, 36),       // 56: Stinger Barb
     ];
 
     final faces = <Face3D>[
@@ -846,10 +944,10 @@ class Mascot3DMeshes {
       const Face3D([0, 4, 3], sunGoldMid),
 
       // Lion White Fangs
-      const Face3D([2, 36, 4], Color(0xFFFFFFFF), isEmissive: true),
-      const Face3D([3, 4, 37], Color(0xFFFFFFFF), isEmissive: true),
+      const Face3D([2, 12, 4], Color(0xFFFFFFFF), isEmissive: true),
+      const Face3D([3, 4, 13], Color(0xFFFFFFFF), isEmissive: true),
 
-      // Forehead & Brow
+      // Forehead & Brows
       const Face3D([1, 5, 2], sunGoldMid),
       const Face3D([1, 3, 5], sunGoldMid),
       const Face3D([2, 5, 6], sunGoldDark),
@@ -859,39 +957,71 @@ class Mascot3DMeshes {
       const Face3D([2, 6, 8], solarEye, isEye: true),
       const Face3D([3, 9, 7], solarEye, isEye: true),
 
-      // Chimera Horns
-      const Face3D([10, 13, 11], imperialAmber),
-      const Face3D([10, 12, 14], imperialAmber),
+      // Back of Head Closure
+      const Face3D([10, 6, 11], sunGoldMid),
+      const Face3D([10, 11, 7], sunGoldMid),
+      const Face3D([4, 22, 2], imperialAmber),
+      const Face3D([4, 3, 22], imperialAmber),
 
-      // Explosive 3D Solar Ray Mane (Facets angled in 3D around the head)
-      const Face3D([10, 15, 13], sunGoldBright),
-      const Face3D([10, 14, 15], sunGoldBright),
-      const Face3D([13, 15, 17], sunGoldMid),
-      const Face3D([14, 18, 15], sunGoldMid),
-      const Face3D([6, 13, 17], sunGoldBright),
-      const Face3D([7, 18, 14], sunGoldBright),
-      const Face3D([17, 19, 21], sunGoldMid),
-      const Face3D([18, 22, 20], sunGoldMid),
-      const Face3D([10, 38, 15], sunGoldBright, isEmissive: true),
-      const Face3D([10, 16, 38], sunGoldBright, isEmissive: true),
+      // 16-Ray Solar Sunburst Mane (Volumetric 3D Corona)
+      const Face3D([10, 15, 14], sunGoldBright, isEmissive: true),
+      const Face3D([10, 14, 29], sunGoldBright, isEmissive: true),
+      const Face3D([6, 16, 15], sunGoldMid),
+      const Face3D([7, 29, 28], sunGoldMid),
+      const Face3D([6, 17, 16], sunGoldBright),
+      const Face3D([7, 28, 27], sunGoldBright),
+      const Face3D([6, 18, 17], sunGoldMid),
+      const Face3D([7, 27, 26], sunGoldMid),
+      const Face3D([11, 19, 18], sunGoldDark),
+      const Face3D([11, 26, 25], sunGoldDark),
+      const Face3D([11, 20, 19], sunGoldMid),
+      const Face3D([11, 25, 24], sunGoldMid),
+      const Face3D([22, 21, 20], sunGoldBright),
+      const Face3D([22, 24, 23], sunGoldBright),
 
-      // Beard & Breastplate
-      const Face3D([4, 23, 2], imperialAmber),
-      const Face3D([4, 3, 23], imperialAmber),
-      const Face3D([23, 21, 25, 24], sunGoldBright),
-      const Face3D([23, 24, 26, 22], sunGoldBright),
+      // Imperial Pectoral Breastplate & Ribcage
+      const Face3D([22, 30, 31], sunGoldBright),
+      const Face3D([22, 32, 30], sunGoldBright),
+      const Face3D([30, 31, 33], sunGoldMid),
+      const Face3D([30, 33, 32], sunGoldMid),
+      const Face3D([31, 34, 33], sunGoldDark),
+      const Face3D([32, 33, 35], sunGoldDark),
+      const Face3D([33, 37, 34], sunGoldMid),
+      const Face3D([33, 35, 37], sunGoldMid),
 
-      // Left Lion Paw
-      const Face3D([25, 27, 24], sunGoldMid),
-      const Face3D([27, 28, 29], sunGoldBright),
+      // Golden Spine Ridge (Enclosing back from all angles)
+      const Face3D([11, 36, 31], sunGoldDark),
+      const Face3D([11, 32, 36], sunGoldDark),
+      const Face3D([36, 34, 31], sunGoldDark),
+      const Face3D([36, 32, 35], sunGoldDark),
+      const Face3D([36, 40, 34], sunGoldDark),
+      const Face3D([36, 35, 40], sunGoldDark),
 
-      // Right Lion Paw
-      const Face3D([26, 24, 30], sunGoldMid),
-      const Face3D([30, 31, 32], sunGoldBright),
+      // Pelvis & Rear Lion Haunches
+      const Face3D([40, 38, 34], sunGoldMid),
+      const Face3D([40, 35, 39], sunGoldMid),
+      const Face3D([37, 38, 40], sunGoldDark),
+      const Face3D([37, 40, 39], sunGoldDark),
 
-      // Chimera Tail
-      const Face3D([25, 33, 34], sunGoldDark),
-      const Face3D([33, 34, 35], imperialAmber, isEmissive: true),
+      // Front Paws
+      const Face3D([31, 41, 30], sunGoldMid),
+      const Face3D([32, 30, 44], sunGoldMid),
+      const Face3D([41, 42, 43], sunGoldBright),
+      const Face3D([44, 45, 46], sunGoldBright),
+
+      // Rear Paws Planted on Pedestal Platform
+      const Face3D([38, 48, 47], sunGoldMid),
+      const Face3D([38, 47, 34], sunGoldDark),
+      const Face3D([39, 49, 50], sunGoldMid),
+      const Face3D([39, 35, 49], sunGoldDark),
+
+      // Coiled Serpent Chimera Tail with Viper Stinger
+      const Face3D([40, 51, 38], imperialAmber),
+      const Face3D([40, 39, 51], imperialAmber),
+      const Face3D([51, 52, 48], sunGoldDark),
+      const Face3D([52, 53, 49], sunGoldMid),
+      const Face3D([53, 54, 56], imperialAmber),
+      const Face3D([54, 55, 56], sunGoldBright, isEmissive: true),
     ];
 
     // Attach sculpted Grand Runic Pedestal Disc directly under chimera
@@ -935,9 +1065,6 @@ class MascotLoreData {
   final String sacredRite;
   final Mesh3D mesh;
   final List<MascotHotspot> hotspots;
-  final String blenderRenderPath;
-  final String objAssetPath;
-  final String glbAssetPath;
 
   const MascotLoreData({
     required this.houseId,
@@ -961,9 +1088,6 @@ class MascotLoreData {
     required this.sacredRite,
     required this.mesh,
     required this.hotspots,
-    required this.blenderRenderPath,
-    required this.objAssetPath,
-    required this.glbAssetPath,
   });
 
   static List<MascotLoreData> get allMascots => [
@@ -1002,9 +1126,6 @@ class MascotLoreData {
           sacredRite:
               'The Rite of the First Ember: Conferred upon scholars who show unmatched bravery by championing their team when the odds seem insurmountable.',
           mesh: Mascot3DMeshes.buildDragonMesh(),
-          blenderRenderPath: 'assets/images/mascots/ignis_dragon_blender_render.png',
-          objAssetPath: 'assets/3d/ignis_dragon.obj',
-          glbAssetPath: 'assets/3d/ignis_dragon.glb',
           hotspots: const [
             MascotHotspot(
               label: 'Cranial Crest Horns',
@@ -1073,9 +1194,6 @@ class MascotLoreData {
           sacredRite:
               'The Rite of the Zenith Flight: Conferred upon scholars who discover breakthrough solutions, excel in debate, and elevate house intellectual prestige.',
           mesh: Mascot3DMeshes.buildGryphonMesh(),
-          blenderRenderPath: 'assets/images/mascots/zephyr_gryphon_blender_render.png',
-          objAssetPath: 'assets/3d/zephyr_gryphon.obj',
-          glbAssetPath: 'assets/3d/zephyr_gryphon.glb',
           hotspots: const [
             MascotHotspot(
               label: 'Raptor Hook Beak',
@@ -1144,9 +1262,6 @@ class MascotLoreData {
           sacredRite:
               'The Rite of the Pack Vigil: Conferred upon scholars who sacrifice individual limelight to bolster their fellow classmates and keep house spirit unbreakable.',
           mesh: Mascot3DMeshes.buildWolfMesh(),
-          blenderRenderPath: 'assets/images/mascots/sylva_wolf_blender_render.png',
-          objAssetPath: 'assets/3d/sylva_wolf.obj',
-          glbAssetPath: 'assets/3d/sylva_wolf.glb',
           hotspots: const [
             MascotHotspot(
               label: 'Snarl White Fangs',
@@ -1215,9 +1330,6 @@ class MascotLoreData {
           sacredRite:
               'The Rite of the Golden Dawn: Conferred upon scholars who uplift others, display exceptional sportsmanship on the pitch, and lead with warmth and joy.',
           mesh: Mascot3DMeshes.buildChimeraMesh(),
-          blenderRenderPath: 'assets/images/mascots/solis_chimera_blender_render.png',
-          objAssetPath: 'assets/3d/solis_chimera.obj',
-          glbAssetPath: 'assets/3d/solis_chimera.glb',
           hotspots: const [
             MascotHotspot(
               label: 'Solar Fangs & Muzzle',
@@ -1322,7 +1434,6 @@ class _Mascot3DStageState extends State<Mascot3DStage>
   MascotMaterialFinish _currentFinish = MascotMaterialFinish.houseChroma;
   MascotDiagramMode _diagramMode = MascotDiagramMode.solidRender;
   bool _showDiagramCallouts = true;
-  bool _showBlenderStudioRender = false;
 
   // Animation Controllers
   late final AnimationController _idleFloatController;
@@ -1531,31 +1642,21 @@ class _Mascot3DStageState extends State<Mascot3DStage>
           _buildHouseSelectorBar(),
           const SizedBox(height: 14),
 
-          // STAGE ENGINE SWITCHER: 3D CAD vs BLENDER STUDIO
-          _buildStageEngineSwitcher(mascot),
-          const SizedBox(height: 12),
-
-          // 2. TRUE 3D VOLUMETRIC MASCOT STAGE / BLENDER STUDIO STAGE
-          _showBlenderStudioRender ? _buildBlenderStudioStage(mascot) : _buildTrue3DStage(mascot),
-          const SizedBox(height: 12),
+          // 2. TRUE 3D VOLUMETRIC MASCOT STAGE
+          _buildTrue3DStage(mascot),
+          const SizedBox(height: 14),
 
           // 3. MATERIAL FINISH SELECTOR (House Chroma, Imperial Gold, Dark Obsidian, Astral Crystal)
-          if (!_showBlenderStudioRender) ...[
-            _buildMaterialFinishSelector(mascot),
-            const SizedBox(height: 14),
+          _buildMaterialFinishSelector(mascot),
+          const SizedBox(height: 14),
 
-            // 4. 3D CAMERA ANGLE PRESETS (Front, 3/4 Hero, Profile, Back, Top)
-            _buildCameraAnglePresets(),
-            const SizedBox(height: 14),
+          // 4. 3D CAMERA ANGLE PRESETS (Front, 3/4 Hero, Profile, Back, Top)
+          _buildCameraAnglePresets(),
+          const SizedBox(height: 14),
 
-            // 5. 3D CONTROL HUD (Turntable, Zoom, Reset, Roar)
-            _build3DControlHud(mascot),
-            const SizedBox(height: 18),
-          ],
-
-          // BLENDER 5.2 3D PRODUCTION SUITE CARD
-          _buildBlender3DSuiteCard(mascot),
-          const SizedBox(height: 20),
+          // 5. 3D CONTROL HUD (Turntable, Zoom, Reset, Roar)
+          _build3DControlHud(mascot),
+          const SizedBox(height: 18),
 
           // 6. MASCOT IDENTITY & BEAST NOBILITY
           _buildMascotHeaderCard(mascot),
@@ -2083,312 +2184,6 @@ class _Mascot3DStageState extends State<Mascot3DStage>
   }
 
   // ===========================================================================
-  // STAGE ENGINE SWITCHER (3D CAD DIAGRAM vs BLENDER 5.2 STUDIO)
-  // ===========================================================================
-  Widget _buildStageEngineSwitcher(MascotLoreData mascot) {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0A0F1A),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white12),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () {
-                HapticFeedback.selectionClick();
-                setState(() => _showBlenderStudioRender = false);
-              },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(vertical: 9),
-                decoration: BoxDecoration(
-                  color: !_showBlenderStudioRender ? mascot.primaryColor : Colors.transparent,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: !_showBlenderStudioRender
-                      ? [
-                          BoxShadow(
-                            color: mascot.glowColor.withValues(alpha: 0.4),
-                            blurRadius: 10,
-                          ),
-                        ]
-                      : null,
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.threed_rotation_rounded,
-                      size: 15,
-                      color: !_showBlenderStudioRender ? Colors.white : Colors.white60,
-                    ),
-                    const SizedBox(width: 7),
-                    Text(
-                      '3D CAD Workstation',
-                      style: TextStyle(
-                        color: !_showBlenderStudioRender ? Colors.white : Colors.white60,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 4),
-          Expanded(
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () {
-                HapticFeedback.selectionClick();
-                setState(() => _showBlenderStudioRender = true);
-              },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(vertical: 9),
-                decoration: BoxDecoration(
-                  color: _showBlenderStudioRender ? const Color(0xFFF5792A) : Colors.transparent,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: _showBlenderStudioRender
-                      ? [
-                          BoxShadow(
-                            color: const Color(0xFFF5792A).withValues(alpha: 0.45),
-                            blurRadius: 10,
-                          ),
-                        ]
-                      : null,
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.auto_awesome_rounded,
-                      size: 15,
-                      color: _showBlenderStudioRender ? Colors.white : Colors.white60,
-                    ),
-                    const SizedBox(width: 7),
-                    Text(
-                      'Blender 5.2 Studio',
-                      style: TextStyle(
-                        color: _showBlenderStudioRender ? Colors.white : Colors.white60,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ===========================================================================
-  // BLENDER 5.2 STUDIO RAYTRACED STAGE
-  // ===========================================================================
-  Widget _buildBlenderStudioStage(MascotLoreData mascot) {
-    return Container(
-      width: double.infinity,
-      height: 440,
-      decoration: BoxDecoration(
-        color: const Color(0xFF03050A),
-        borderRadius: BorderRadius.circular(32),
-        border: Border.all(
-          color: const Color(0xFFF5792A).withValues(alpha: 0.45),
-          width: 1.5,
-        ),
-        gradient: RadialGradient(
-          center: const Alignment(0, -0.15),
-          radius: 1.3,
-          colors: [
-            const Color(0xFFF5792A).withValues(alpha: 0.22),
-            const Color(0xFF0B111E),
-            const Color(0xFF020408),
-          ],
-          stops: const [0.0, 0.6, 1.0],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.9),
-            blurRadius: 30,
-            offset: const Offset(0, 14),
-          ),
-          BoxShadow(
-            color: const Color(0xFFF5792A).withValues(alpha: 0.25),
-            blurRadius: 40,
-            spreadRadius: 2,
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(32),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            // 1. Raytraced Hero Render from Blender 5.2
-            InteractiveViewer(
-              minScale: 0.8,
-              maxScale: 2.5,
-              child: Center(
-                child: Image.asset(
-                  mascot.blenderRenderPath,
-                  width: 380,
-                  height: 380,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) {
-                    return Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.broken_image_rounded, size: 48, color: Colors.white30),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Blender render loading: ${mascot.blenderRenderPath}',
-                          style: const TextStyle(color: Colors.white54, fontSize: 11),
-                        ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ),
-
-            // 2. Top-Left Badge
-            Positioned(
-              top: 12,
-              left: 12,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.78),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFF5792A).withValues(alpha: 0.6)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 7,
-                      height: 7,
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Color(0xFFF5792A),
-                        boxShadow: [
-                          BoxShadow(color: Color(0xFFF5792A), blurRadius: 6),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    const Text(
-                      'BLENDER 5.2 LTS • STUDIO RAYTRACE',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 0.3,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            // 3. Top-Right: Launch in Blender button
-            Positioned(
-              top: 12,
-              right: 12,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: _openMasterSceneInBlender,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF5792A).withValues(alpha: 0.28),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFF5792A), width: 1.2),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.launch_rounded, size: 12, color: Colors.white),
-                      SizedBox(width: 5),
-                      Text(
-                        'Open .blend',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-
-            // 4. Bottom-Left telemetry chip
-            Positioned(
-              bottom: 12,
-              left: 12,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.75),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white12),
-                ),
-                child: const Text(
-                  'EEVEE Engine • 768px • 3-Point Studio Rig',
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w700,
-                    fontFamily: 'monospace',
-                  ),
-                ),
-              ),
-            ),
-
-            // 5. Bottom-Right interactive guidance
-            Positioned(
-              bottom: 12,
-              right: 12,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.75),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white12),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.pinch_rounded, size: 12, color: Color(0xFFF5792A)),
-                    SizedBox(width: 5),
-                    Text(
-                      'Pinch / Drag to Inspect',
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ===========================================================================
   // 3. MATERIAL FINISH SELECTOR
   // ===========================================================================
   Widget _buildMaterialFinishSelector(MascotLoreData mascot) {
@@ -2622,278 +2417,6 @@ class _Mascot3DStageState extends State<Mascot3DStage>
               elevation: 4,
             ),
             onPressed: _triggerRoar,
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ===========================================================================
-  // BLENDER 5.2 3D PRODUCTION SUITE CARD & ASSET LAUNCHER
-  // ===========================================================================
-  void _openMasterSceneInBlender() {
-    HapticFeedback.heavyImpact();
-    const blenderExe = r'C:\Program Files\Blender Foundation\Blender 5.2\blender.exe';
-    const blendFile = r'C:\Users\User\OneDrive\Desktop\asb_house_hub_flutter\assets\3d\asb_mascots.blend';
-
-    try {
-      if (File(blenderExe).existsSync() && File(blendFile).existsSync()) {
-        Process.run(blenderExe, [blendFile]);
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            backgroundColor: Color(0xFFF5792A),
-            duration: Duration(seconds: 4),
-            content: Row(
-              children: [
-                Icon(Icons.launch_rounded, color: Colors.white),
-                SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Launching Blender 5.2 LTS with asb_mascots.blend...',
-                    style: TextStyle(fontWeight: FontWeight.w900, color: Colors.white),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Master Blender scene located at: assets/3d/asb_mascots.blend'),
-          ),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Blender status: $e')),
-      );
-    }
-  }
-
-  Widget _buildBlender3DSuiteCard(MascotLoreData mascot) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0F1523),
-        borderRadius: BorderRadius.circular(26),
-        border: Border.all(
-          color: const Color(0xFFF5792A).withValues(alpha: 0.35),
-          width: 1.2,
-        ),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            const Color(0xFFF5792A).withValues(alpha: 0.12),
-            const Color(0xFF101726),
-            const Color(0xFF090D17),
-          ],
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF5792A).withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0xFFF5792A).withValues(alpha: 0.5)),
-                ),
-                child: const Icon(
-                  Icons.view_in_ar_rounded,
-                  color: Color(0xFFF5792A),
-                  size: 22,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Text(
-                          'Blender 5.2 3D Suite',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF00E676).withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: const Color(0xFF00E676).withValues(alpha: 0.6)),
-                          ),
-                          child: const Text(
-                            'Active',
-                            style: TextStyle(
-                              color: Color(0xFF00E676),
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 2),
-                    const Text(
-                      'Master 3D Scene • Studio Raytrace • OBJ & GLB Assets',
-                      style: TextStyle(
-                        color: Colors.white60,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          // 3D Assets specs
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.45),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white12),
-            ),
-            child: Column(
-              children: [
-                _buildAssetRow(
-                  icon: Icons.movie_creation_rounded,
-                  name: 'Master Blender Scene',
-                  detail: 'assets/3d/asb_mascots.blend (157 KB)',
-                  badge: 'Full Coliseum',
-                  color: const Color(0xFFF5792A),
-                ),
-                const Divider(color: Colors.white10, height: 16),
-                _buildAssetRow(
-                  icon: Icons.grain_rounded,
-                  name: 'Wavefront OBJ Mesh',
-                  detail: mascot.objAssetPath,
-                  badge: '3D Geometry',
-                  color: const Color(0xFF00E5FF),
-                ),
-                const Divider(color: Colors.white10, height: 16),
-                _buildAssetRow(
-                  icon: Icons.data_object_rounded,
-                  name: 'glTF 2.0 Binary Model',
-                  detail: mascot.glbAssetPath,
-                  badge: 'Universal',
-                  color: const Color(0xFFFFD666),
-                ),
-                const Divider(color: Colors.white10, height: 16),
-                _buildAssetRow(
-                  icon: Icons.camera_rounded,
-                  name: 'Studio Raytraced Render',
-                  detail: mascot.blenderRenderPath,
-                  badge: '768px RGBA',
-                  color: const Color(0xFFFF4081),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  icon: const Icon(Icons.launch_rounded, size: 16, color: Colors.white),
-                  label: const Text(
-                    'Open in Blender 5.2',
-                    style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w900),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFF5792A),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  ),
-                  onPressed: _openMasterSceneInBlender,
-                ),
-              ),
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                icon: const Icon(Icons.image_search_rounded, size: 16, color: Colors.white70),
-                label: const Text(
-                  'View Render',
-                  style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w700),
-                ),
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Colors.white12),
-                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                ),
-                onPressed: () {
-                  HapticFeedback.selectionClick();
-                  setState(() => _showBlenderStudioRender = true);
-                },
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAssetRow({
-    required IconData icon,
-    required String name,
-    required String detail,
-    required String badge,
-    required Color color,
-  }) {
-    return Row(
-      children: [
-        Icon(icon, size: 16, color: color),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                name,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              Text(
-                detail,
-                style: const TextStyle(
-                  color: Colors.white54,
-                  fontSize: 10,
-                  fontFamily: 'monospace',
-                ),
-              ),
-            ],
-          ),
-        ),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: color.withValues(alpha: 0.4)),
-          ),
-          child: Text(
-            badge,
-            style: TextStyle(
-              color: color,
-              fontSize: 9,
-              fontWeight: FontWeight.w800,
-            ),
           ),
         ),
       ],
