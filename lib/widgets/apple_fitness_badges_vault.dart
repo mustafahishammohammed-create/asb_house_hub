@@ -787,16 +787,20 @@ class _AppleFitnessBadgeModalState extends State<_AppleFitnessBadgeModal>
                     child: AnimatedBuilder(
                       animation: _flipAnimation,
                       builder: (context, _) {
-                        final totalRotY = _dragY + _flipAnimation.value;
-                        final showingBack = (totalRotY.abs() % (math.pi * 2)) > (math.pi / 2) &&
-                            (totalRotY.abs() % (math.pi * 2)) < (math.pi * 1.5);
+                        final animVal = _flipAnimation.value;
+                        // Back face is visible during second half of 180-deg flip
+                        final showingBack = animVal >= (math.pi / 2);
+                        // Counter-rotate back face by pi so engraved words are right-reading (un-mirrored)
+                        final renderAngleY = showingBack
+                            ? (animVal - math.pi) + _dragY
+                            : animVal + _dragY;
 
                         return Transform(
                           alignment: Alignment.center,
                           transform: Matrix4.identity()
                             ..setEntry(3, 2, 0.0015) // 3D Perspective!
                             ..rotateX(_dragX)
-                            ..rotateY(totalRotY),
+                            ..rotateY(renderAngleY),
                           child: AppleFitnessBadge(
                             badge: b,
                             size: 210,

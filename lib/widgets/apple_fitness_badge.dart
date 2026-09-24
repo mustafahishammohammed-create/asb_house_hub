@@ -581,6 +581,23 @@ class _AppleBadgePainter extends CustomPainter {
   }
 
   void _paintEngravedBack(Canvas canvas, Size size, Offset center, double innerRadius) {
+    // Watermark Mascot Insignia on the back plate
+    final watermarkSize = innerRadius * 0.85;
+    final watermarkPainter = TextPainter(
+      text: TextSpan(
+        text: badge.mascotEmoji,
+        style: TextStyle(
+          fontSize: watermarkSize,
+          color: Colors.white.withValues(alpha: 0.08),
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    watermarkPainter.paint(
+      canvas,
+      Offset(center.dx - watermarkPainter.width / 2, center.dy - watermarkPainter.height / 2),
+    );
+
     // Engraved Typography on the back plate
     final titlePainter = TextPainter(
       text: TextSpan(
@@ -588,10 +605,14 @@ class _AppleBadgePainter extends CustomPainter {
         style: TextStyle(
           color: Colors.amber.shade200,
           fontWeight: FontWeight.w900,
-          fontSize: size.width * 0.055,
-          letterSpacing: 0.5,
-          shadows: const [
-            Shadow(color: Colors.black, blurRadius: 2, offset: Offset(0, 1)),
+          fontSize: (size.width * 0.052).clamp(10.0, 15.0),
+          letterSpacing: 0.8,
+          shadows: [
+            Shadow(
+              color: Colors.black.withValues(alpha: 0.9),
+              blurRadius: 2,
+              offset: const Offset(0, 1),
+            ),
           ],
         ),
       ),
@@ -606,11 +627,11 @@ class _AppleBadgePainter extends CustomPainter {
 
     // Thin etched divider
     final dividerPaint = Paint()
-      ..color = Colors.white24
+      ..color = Colors.white.withValues(alpha: 0.22)
       ..strokeWidth = 1.0;
     canvas.drawLine(
-      Offset(center.dx - innerRadius * 0.5, center.dy - innerRadius * 0.35),
-      Offset(center.dx + innerRadius * 0.5, center.dy - innerRadius * 0.35),
+      Offset(center.dx - innerRadius * 0.45, center.dy - innerRadius * 0.35),
+      Offset(center.dx + innerRadius * 0.45, center.dy - innerRadius * 0.35),
       dividerPaint,
     );
 
@@ -618,24 +639,65 @@ class _AppleBadgePainter extends CustomPainter {
     final bodySpan = TextSpan(
       style: TextStyle(
         color: Colors.white70,
-        fontSize: size.width * 0.038,
         height: 1.35,
         fontWeight: FontWeight.w600,
       ),
       children: [
-        const TextSpan(text: 'CONFERRED UPON\n', style: TextStyle(color: Colors.grey, fontSize: 8)),
+        TextSpan(
+          text: 'CONFERRED UPON\n',
+          style: TextStyle(
+            color: Colors.grey.shade400,
+            fontSize: (size.width * 0.038).clamp(8.0, 11.0),
+            letterSpacing: 0.6,
+          ),
+        ),
         TextSpan(
           text: '$recipientName\n',
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: (size.width * 0.052).clamp(11.0, 15.0),
+            letterSpacing: 0.3,
+            shadows: [
+              Shadow(
+                color: Colors.black.withValues(alpha: 0.8),
+                blurRadius: 2,
+                offset: const Offset(0, 1),
+              ),
+            ],
+          ),
         ),
         TextSpan(
           text: '${houseName.toUpperCase()} HOUSE • #$scholarNo\n',
-          style: TextStyle(color: Colors.amber.shade300, fontSize: 9, fontWeight: FontWeight.w800),
+          style: TextStyle(
+            color: Colors.amber.shade300,
+            fontSize: (size.width * 0.040).clamp(8.5, 12.0),
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.5,
+          ),
         ),
-        TextSpan(text: '${badge.earnedDate}\n', style: const TextStyle(color: Colors.grey, fontSize: 8)),
+        TextSpan(
+          text: '${badge.earnedDate}\n',
+          style: TextStyle(
+            color: Colors.grey.shade400,
+            fontSize: (size.width * 0.036).clamp(8.0, 11.0),
+          ),
+        ),
         TextSpan(
           text: '+${badge.meritPoints} MERITS',
-          style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.w900, fontSize: 10),
+          style: TextStyle(
+            color: Colors.greenAccent,
+            fontWeight: FontWeight.w900,
+            fontSize: (size.width * 0.048).clamp(10.0, 14.0),
+            letterSpacing: 0.8,
+            shadows: [
+              Shadow(
+                color: Colors.green.withValues(alpha: 0.5),
+                blurRadius: 4,
+                offset: const Offset(0, 0),
+              ),
+            ],
+          ),
         ),
       ],
     );
