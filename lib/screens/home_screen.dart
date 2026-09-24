@@ -3355,8 +3355,8 @@ class _HomeScreenState extends State<HomeScreen>
                     },
                   ),
                   _buildDrawerTile(
-                    Icons.military_tech_rounded,
-                    '🏅 Apple Activity Badges & Vault',
+                    Icons.shield_rounded,
+                    '🛡️ House Grand Honours & Shields',
                     Colors.amber,
                     () {
                       Navigator.pop(context);

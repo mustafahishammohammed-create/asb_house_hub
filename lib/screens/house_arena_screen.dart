@@ -505,7 +505,7 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
       {'icon': Icons.bolt_rounded, 'label': 'Reactor'},
       {'icon': Icons.psychology_rounded, 'label': 'Brain Blitz'},
       {'icon': Icons.auto_graph_rounded, 'label': 'Cup Oracle'},
-      {'icon': Icons.military_tech_rounded, 'label': 'Awards & Badges'},
+      {'icon': Icons.shield_rounded, 'label': 'Honours & Shields'},
       {'icon': Icons.shield_rounded, 'label': 'Mascot Lore'},
     ];
 

@@ -106,7 +106,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Apple Activity Awards'), findsOneWidget);
+    expect(find.text('House Championship Honours'), findsOneWidget);
     expect(find.text('TITAN VAULT'), findsOneWidget);
     expect(find.text('All Badges'), findsOneWidget);
     expect(find.text('House Centurion'), findsOneWidget);

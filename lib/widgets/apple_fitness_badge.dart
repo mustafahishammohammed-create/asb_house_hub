@@ -86,6 +86,28 @@ class AppleFitnessBadge extends StatelessWidget {
     this.houseName = 'RUBY',
   });
 
+  static Color getGlowColor(MetalType metal) {
+    switch (metal) {
+      case MetalType.rubyGold:
+        return const Color(0xFFFF2A4B);
+      case MetalType.sapphireAstral:
+        return const Color(0xFF2979FF);
+      case MetalType.emeraldJade:
+        return const Color(0xFF00E676);
+      case MetalType.topazSun:
+      case MetalType.gold:
+        return const Color(0xFFFFC107);
+      case MetalType.platinum:
+        return const Color(0xFFB0BEC5);
+      case MetalType.holographic:
+        return const Color(0xFFD500F9);
+      case MetalType.roseGold:
+      case MetalType.silver:
+      case MetalType.bronze:
+        return const Color(0xFFBDBDBD);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return SizedBox(
@@ -140,9 +162,17 @@ class _AppleBadgePainter extends CustomPainter {
     final shadowPaint = Paint()
       ..color = isLocked
           ? Colors.black.withValues(alpha: 0.35)
-          : _getGlowColor(badge.metal).withValues(alpha: 0.4)
+          : AppleFitnessBadge.getGlowColor(badge.metal).withValues(alpha: 0.4)
       ..maskFilter = MaskFilter.blur(BlurStyle.normal, size.width * 0.08);
-    canvas.drawCircle(center.translate(0, size.height * 0.04), radius * 0.95, shadowPaint);
+
+    if (badge.shape == BadgeShape.shield) {
+      canvas.drawPath(
+        _createShapePath(BadgeShape.shield, center.translate(0, size.height * 0.04), radius * 0.95),
+        shadowPaint,
+      );
+    } else {
+      canvas.drawCircle(center.translate(0, size.height * 0.04), radius * 0.95, shadowPaint);
+    }
 
     // 2. Build the badge path based on shape
     final path = _createShapePath(badge.shape, center, radius);
@@ -167,7 +197,7 @@ class _AppleBadgePainter extends CustomPainter {
       ..strokeWidth = math.max(1.5, size.width * 0.02);
     canvas.drawPath(path, strokePaint);
 
-    // 4. Inner Recessed Plate (Coin Inset)
+    // 4. Inner Recessed Plate (Coin / Shield Inset)
     final innerRadius = radius * 0.78;
     final innerBounds = Rect.fromCircle(center: center, radius: innerRadius);
     final innerPath = _createShapePath(badge.shape, center, innerRadius);
@@ -186,23 +216,51 @@ class _AppleBadgePainter extends CustomPainter {
       ..style = PaintingStyle.fill;
     canvas.drawPath(innerPath, facePaint);
 
-    // Inner grooved concentric circle track (Classic Apple Activity Coin lathe ring)
+    // Inner grooved concentric rim / lathe track
     final groovePaint = Paint()
       ..color = isLocked ? Colors.white10 : Colors.white.withValues(alpha: 0.18)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0;
-    canvas.drawCircle(center, innerRadius * 0.85, groovePaint);
-    canvas.drawCircle(center, innerRadius * 0.68, groovePaint);
+
+    if (badge.shape == BadgeShape.shield) {
+      canvas.drawPath(_createShapePath(BadgeShape.shield, center, innerRadius * 0.88), groovePaint);
+
+      // Regal Center Spine Ridge for Forged Shield
+      final spinePaint = Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.white.withValues(alpha: isLocked ? 0.15 : 0.55),
+            Colors.white.withValues(alpha: isLocked ? 0.05 : 0.2),
+            Colors.black.withValues(alpha: 0.35),
+          ],
+        ).createShader(bounds)
+        ..strokeWidth = math.max(1.2, size.width * 0.012)
+        ..style = PaintingStyle.stroke;
+      canvas.drawLine(
+        Offset(center.dx, center.dy - innerRadius * 0.88),
+        Offset(center.dx, center.dy + innerRadius * 1.05),
+        spinePaint,
+      );
+    } else {
+      canvas.drawCircle(center, innerRadius * 0.85, groovePaint);
+      canvas.drawCircle(center, innerRadius * 0.68, groovePaint);
+    }
+
+    final opticalCenter = badge.shape == BadgeShape.shield
+        ? Offset(center.dx, center.dy - size.height * 0.035)
+        : center;
 
     if (isBack) {
-      // BACK OF THE BADGE: Apple Fitness Engraving
-      _paintEngravedBack(canvas, size, center, innerRadius);
+      // BACK OF THE BADGE: House Grand Engraving
+      _paintEngravedBack(canvas, size, opticalCenter, innerRadius);
     } else {
       // FRONT OF THE BADGE: 3D Emblem / Iconography
       if (isLocked) {
-        _paintLockedEmblem(canvas, center, size);
+        _paintLockedEmblem(canvas, opticalCenter, size);
       } else {
-        _paintUnlockedEmblem(canvas, center, size);
+        _paintUnlockedEmblem(canvas, opticalCenter, size);
       }
 
       // Specular Gleam Sweep (Dynamic animated light glint across the medal)
@@ -256,10 +314,14 @@ class _AppleBadgePainter extends CustomPainter {
         break;
 
       case BadgeShape.shield:
-        path.moveTo(c.dx - r * 0.85, c.dy - r * 0.85);
-        path.lineTo(c.dx + r * 0.85, c.dy - r * 0.85);
-        path.quadraticBezierTo(c.dx + r * 0.95, c.dy + r * 0.1, c.dx, c.dy + r * 1.05);
-        path.quadraticBezierTo(c.dx - r * 0.95, c.dy + r * 0.1, c.dx - r * 0.85, c.dy - r * 0.85);
+        // Majestic heraldic tournament shield with crown shoulders and tapered gothic tip
+        path.moveTo(c.dx, c.dy - r * 0.96);
+        path.cubicTo(c.dx + r * 0.32, c.dy - r * 0.98, c.dx + r * 0.68, c.dy - r * 0.92, c.dx + r * 0.88, c.dy - r * 0.76);
+        path.cubicTo(c.dx + r * 0.96, c.dy - r * 0.35, c.dx + r * 0.90, c.dy + r * 0.18, c.dx + r * 0.60, c.dy + r * 0.68);
+        path.cubicTo(c.dx + r * 0.35, c.dy + r * 0.96, c.dx + r * 0.12, c.dy + r * 1.08, c.dx, c.dy + r * 1.15);
+        path.cubicTo(c.dx - r * 0.12, c.dy + r * 1.08, c.dx - r * 0.35, c.dy + r * 0.96, c.dx - r * 0.60, c.dy + r * 0.68);
+        path.cubicTo(c.dx - r * 0.90, c.dy + r * 0.18, c.dx - r * 0.96, c.dy - r * 0.35, c.dx - r * 0.88, c.dy - r * 0.76);
+        path.cubicTo(c.dx - r * 0.68, c.dy - r * 0.92, c.dx - r * 0.32, c.dy - r * 0.98, c.dx, c.dy - r * 0.96);
         path.close();
         break;
     }
@@ -738,27 +800,7 @@ class _AppleBadgePainter extends CustomPainter {
     canvas.restore();
   }
 
-  Color _getGlowColor(MetalType metal) {
-    switch (metal) {
-      case MetalType.rubyGold:
-        return const Color(0xFFFF2A4B);
-      case MetalType.sapphireAstral:
-        return const Color(0xFF2979FF);
-      case MetalType.emeraldJade:
-        return const Color(0xFF00E676);
-      case MetalType.topazSun:
-      case MetalType.gold:
-        return const Color(0xFFFFC107);
-      case MetalType.platinum:
-        return const Color(0xFFB0BEC5);
-      case MetalType.holographic:
-        return const Color(0xFFD500F9);
-      case MetalType.roseGold:
-      case MetalType.silver:
-      case MetalType.bronze:
-        return const Color(0xFFBDBDBD);
-    }
-  }
+
 
   @override
   bool shouldRepaint(covariant _AppleBadgePainter oldDelegate) {
