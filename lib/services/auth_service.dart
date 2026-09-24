@@ -124,10 +124,35 @@ class AuthService {
     return credential;
   }
 
-  /// Fetch user profile from Firestore by UID.
+  /// Fetch user profile from Firestore by UID with dynamic roster role resolution.
   Future<Map<String, dynamic>?> getUserProfile(String uid) async {
     final doc = await _firestore.collection('users').doc(uid).get();
-    return doc.data();
+    if (!doc.exists) return null;
+    final data = Map<String, dynamic>.from(doc.data()!);
+    final scholarNo = (data['scholar_no'] ?? '').toString().trim();
+    final currentRole = (data['role'] ?? '').toString().trim().toLowerCase();
+
+    // If user doesn't have an elevated role, check if they are assigned in admin_roster
+    if (scholarNo.isNotEmpty &&
+        (currentRole.isEmpty || currentRole == 'student')) {
+      try {
+        final rosterSnap = await _firestore
+            .collection('admin_roster')
+            .where('scholar_no', isEqualTo: scholarNo)
+            .limit(1)
+            .get();
+        if (rosterSnap.docs.isNotEmpty) {
+          final slotData = rosterSnap.docs.first.data();
+          final rosterRole = (slotData['role'] ?? '').toString();
+          if (rosterRole.isNotEmpty) {
+            data['role'] = rosterRole;
+            // Backfill to Firestore users collection for fast lookup
+            doc.reference.update({'role': rosterRole}).catchError((_) {});
+          }
+        }
+      } catch (_) {}
+    }
+    return data;
   }
 
   /// Send password reset email.
@@ -212,12 +237,37 @@ class AuthService {
         .snapshots();
   }
 
-  /// Approve claim and add points to house standings.
+  /// Approve claim and add points to house standings, student contributor totals, and user profile.
   Future<void> approveClaim({
     required String claimId,
     required String houseName,
     required int points,
+    String? scholarNo,
+    String? studentName,
+    String? activityTitle,
   }) async {
+    final hName = houseName.toLowerCase().trim();
+
+    // 0. Fetch claim doc if any critical student detail is missing
+    String sNo = (scholarNo ?? '').trim();
+    String sName = (studentName ?? '').trim();
+    String aTitle = (activityTitle ?? '').trim();
+
+    try {
+      final claimDoc =
+          await _firestore.collection('house_claims').doc(claimId).get();
+      if (claimDoc.exists) {
+        final data = claimDoc.data() as Map<String, dynamic>;
+        if (sNo.isEmpty) sNo = (data['scholar_no'] ?? '').toString().trim();
+        if (sName.isEmpty) sName = (data['student_name'] ?? '').toString().trim();
+        if (aTitle.isEmpty) {
+          aTitle = (data['activity_title'] ?? 'House Achievement').toString();
+        }
+      }
+    } catch (_) {}
+
+    if (aTitle.isEmpty) aTitle = 'House Achievement';
+
     // 1. Mark claim as approved
     await _firestore.collection('house_claims').doc(claimId).update({
       'status': 'approved',
@@ -225,14 +275,12 @@ class AuthService {
     });
 
     // 2. Increment house points
-    final houseRef = _firestore
-        .collection('house_points')
-        .doc(houseName.toLowerCase());
+    final houseRef = _firestore.collection('house_points').doc(hName);
     await _firestore.runTransaction((transaction) async {
       final snapshot = await transaction.get(houseRef);
       if (!snapshot.exists) {
         transaction.set(houseRef, {
-          'house_name': houseName.toLowerCase(),
+          'house_name': hName,
           'total_points': points,
         });
       } else {
@@ -241,14 +289,145 @@ class AuthService {
         transaction.update(houseRef, {'total_points': currentPoints + points});
       }
     });
+
+    // 3. Atomically update student contributor record in house_contributors
+    if (sNo.isNotEmpty && sNo != '---') {
+      final contributorRef =
+          _firestore.collection('house_contributors').doc(sNo);
+      await _firestore.runTransaction((tx) async {
+        final snap = await tx.get(contributorRef);
+        if (!snap.exists) {
+          tx.set(contributorRef, {
+            'scholar_no': sNo,
+            'student_name': sName.isNotEmpty ? sName : 'Scholar $sNo',
+            'house_name': hName,
+            'class_level': 'Senior Tier',
+            'total_contributed': points,
+            'merits_count': 1,
+            'demerits_count': 0,
+            'last_updated': FieldValue.serverTimestamp(),
+          });
+        } else {
+          final currentContributed =
+              (snap.data()?['total_contributed'] as num?)?.toInt() ?? 0;
+          final merits = (snap.data()?['merits_count'] as num?)?.toInt() ?? 0;
+          tx.update(contributorRef, {
+            if (sName.isNotEmpty) 'student_name': sName,
+            'house_name': hName,
+            'total_contributed': currentContributed + points,
+            'merits_count': merits + 1,
+            'last_updated': FieldValue.serverTimestamp(),
+          });
+        }
+      });
+
+      // 4. Update user document and trigger push notification queue
+      try {
+        final userQuery = await _firestore
+            .collection('users')
+            .where('scholar_no', isEqualTo: sNo)
+            .limit(1)
+            .get();
+        if (userQuery.docs.isNotEmpty) {
+          final userDoc = userQuery.docs.first;
+          await userDoc.reference.update({
+            'points_contributed': FieldValue.increment(points),
+          });
+          await userDoc.reference.collection('notifications').add({
+            'title': '🏆 Claim Approved: +$points Pts!',
+            'body':
+                'Your verified claim for "$aTitle" was approved! +$points points contributed to ${hName.toUpperCase()} House.',
+            'timestamp': FieldValue.serverTimestamp(),
+            'is_read': false,
+            'type': 'claim_approved',
+          });
+        }
+      } catch (_) {}
+    }
   }
 
-  /// Reject claim.
-  Future<void> rejectClaim(String claimId) async {
+  /// Reject claim and notify student.
+  Future<void> rejectClaim(
+    String claimId, {
+    String? reason,
+    String? studentName,
+  }) async {
+    String sNo = '';
+    String aTitle = 'Competition Entry';
+
+    try {
+      final claimDoc =
+          await _firestore.collection('house_claims').doc(claimId).get();
+      if (claimDoc.exists) {
+        final data = claimDoc.data() as Map<String, dynamic>;
+        sNo = (data['scholar_no'] ?? '').toString().trim();
+        aTitle = (data['activity_title'] ?? 'Competition Entry').toString();
+      }
+    } catch (_) {}
+
     await _firestore.collection('house_claims').doc(claimId).update({
       'status': 'rejected',
+      'rejection_reason': reason ?? 'Verification criteria not met.',
       'verified_at': FieldValue.serverTimestamp(),
     });
+
+    if (sNo.isNotEmpty && sNo != '---') {
+      try {
+        final userQuery = await _firestore
+            .collection('users')
+            .where('scholar_no', isEqualTo: sNo)
+            .limit(1)
+            .get();
+        if (userQuery.docs.isNotEmpty) {
+          final userDoc = userQuery.docs.first;
+          await userDoc.reference.collection('notifications').add({
+            'title': '❌ House Claim Not Approved',
+            'body':
+                'Your claim for "$aTitle" was not approved.${reason != null ? " Reason: $reason" : ""}',
+            'timestamp': FieldValue.serverTimestamp(),
+            'is_read': false,
+            'type': 'claim_rejected',
+          });
+        }
+      } catch (_) {}
+    }
+  }
+
+  /// Synchronize a council roster slot assignment directly into the matching user's account.
+  Future<bool> syncRosterRoleToUser({
+    required String scholarNo,
+    required String role,
+    String? name,
+    String? slotTitle,
+  }) async {
+    final sNo = scholarNo.trim();
+    if (sNo.isEmpty || sNo == '---') return false;
+
+    try {
+      final query = await _firestore
+          .collection('users')
+          .where('scholar_no', isEqualTo: sNo)
+          .limit(1)
+          .get();
+      if (query.docs.isNotEmpty) {
+        final userDoc = query.docs.first;
+        await userDoc.reference.update({
+          'role': role,
+          if (name != null && name.trim().isNotEmpty) 'full_name': name.trim(),
+        });
+
+        await userDoc.reference.collection('notifications').add({
+          'title': '🎖️ Council Role Assigned',
+          'body':
+              'You have been officially appointed as ${slotTitle ?? role} for ASB House Hub!',
+          'timestamp': FieldValue.serverTimestamp(),
+          'is_read': false,
+          'type': 'role_assigned',
+        });
+        return true;
+      }
+    } catch (_) {}
+    return false;
   }
 
   /// Record a student conduct action (Merit or Demerit).

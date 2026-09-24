@@ -169,12 +169,16 @@ class MerchStoreTab extends StatefulWidget {
   final String userHouse; // e.g. 'ruby'
   final Color houseColor;
   final Color houseDark;
+  final String? scholarNo;
+  final String? studentName;
 
   const MerchStoreTab({
     super.key,
     required this.userHouse,
     required this.houseColor,
     required this.houseDark,
+    this.scholarNo,
+    this.studentName,
   });
 
   @override
@@ -310,6 +314,9 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     ),
   ];
 
+  int _userPoints = 120;
+  bool _pointsLoaded = false;
+
   @override
   void initState() {
     super.initState();
@@ -318,6 +325,180 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     });
     _selectedCategory =
         'For You (${widget.userHouse[0].toUpperCase()}${widget.userHouse.substring(1)})';
+    _loadUserPoints();
+  }
+
+  Future<void> _loadUserPoints() async {
+    try {
+      final sNo = widget.scholarNo?.trim();
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+
+      if (sNo != null && sNo.isNotEmpty && sNo != '---') {
+        final doc = await FirebaseFirestore.instance
+            .collection('house_contributors')
+            .doc(sNo)
+            .get();
+        if (doc.exists && doc.data() != null) {
+          final pts = (doc.data()?['total_contributed'] as num?)?.toInt() ?? 0;
+          if (mounted) {
+            setState(() {
+              _userPoints = pts < 0 ? 0 : pts;
+              _pointsLoaded = true;
+            });
+            return;
+          }
+        }
+      }
+
+      if (uid != null) {
+        final uDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .get();
+        if (uDoc.exists && uDoc.data() != null) {
+          final pts =
+              (uDoc.data()?['points_contributed'] as num?)?.toInt() ?? 0;
+          if (mounted) {
+            setState(() {
+              _userPoints = pts < 0 ? 0 : pts;
+              _pointsLoaded = true;
+            });
+            return;
+          }
+        }
+      }
+    } catch (_) {}
+    if (mounted) {
+      setState(() => _pointsLoaded = true);
+    }
+  }
+
+  void _showInsufficientPointsDialog(int requiredPts) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: Row(
+          children: [
+            Icon(Icons.lock_clock_rounded, color: Colors.amber[800], size: 28),
+            const SizedBox(width: 10),
+            const Text(
+              'Points Required',
+              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'This purchase requires $requiredPts House Points.\nYour current balance is $_userPoints Pts (${requiredPts - _userPoints} points short).',
+              style: const TextStyle(fontSize: 14, height: 1.4),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: widget.houseColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: widget.houseColor.withValues(alpha: 0.3),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.workspace_premium_rounded,
+                    color: widget.houseColor,
+                    size: 22,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Earn points by submitting competition certificates, answering arena quizzes, or getting faculty merits!',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: widget.houseColor,
+                        fontWeight: FontWeight.w600,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text(
+              'Back to Store',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<bool> _verifyAndDeductPoints(
+    int totalPts,
+    String receiptId,
+    String description,
+  ) async {
+    if (_userPoints < totalPts) {
+      AppHaptics.error();
+      _showInsufficientPointsDialog(totalPts);
+      return false;
+    }
+
+    final sNo = widget.scholarNo?.trim();
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+
+    setState(() {
+      _userPoints -= totalPts;
+    });
+
+    try {
+      // 1. Deduct from house_contributors
+      if (sNo != null && sNo.isNotEmpty && sNo != '---') {
+        final contribRef = FirebaseFirestore.instance
+            .collection('house_contributors')
+            .doc(sNo);
+        await FirebaseFirestore.instance.runTransaction((tx) async {
+          final snap = await tx.get(contribRef);
+          if (snap.exists) {
+            final cur =
+                (snap.data()?['total_contributed'] as num?)?.toInt() ?? 0;
+            tx.update(contribRef, {
+              'total_contributed': (cur - totalPts) < 0 ? 0 : (cur - totalPts),
+              'last_updated': FieldValue.serverTimestamp(),
+            });
+          }
+        });
+      }
+
+      // 2. Deduct from users profile doc
+      if (uid != null) {
+        final uRef =
+            FirebaseFirestore.instance.collection('users').doc(uid);
+        await uRef.update({
+          'points_contributed': FieldValue.increment(-totalPts),
+        });
+        await uRef.collection('notifications').add({
+          'title': '🛍️ Merch Pass Redeemed (-$totalPts Pts)',
+          'body':
+              'Successfully ordered $description! Digital pass #$receiptId generated and saved to your Digital Wallet.',
+          'timestamp': FieldValue.serverTimestamp(),
+          'is_read': false,
+          'type': 'store_purchase',
+        });
+      }
+    } catch (_) {}
+
+    return true;
   }
 
   @override
@@ -374,13 +555,21 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     MerchProduct product, {
     String size = 'M',
     int qty = 1,
-  }) {
-    AppHaptics.success();
+  }) async {
     final parsedPrice =
         int.tryParse(product.price.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
     final totalPts = parsedPrice * qty;
     final receiptId =
         'ASB-${DateTime.now().millisecondsSinceEpoch.toString().substring(6)}';
+
+    final allowed = await _verifyAndDeductPoints(
+      totalPts,
+      receiptId,
+      '${qty}x ${product.name} ($size)',
+    );
+    if (!allowed) return;
+
+    AppHaptics.success();
     final itemsList = [CartItem(product: product, size: size, qty: qty)];
     final qrData = jsonEncode({
       'bill_no': receiptId,
@@ -410,6 +599,9 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
         .set({
           'receipt_id': receiptId,
           'user_id': FirebaseAuth.instance.currentUser?.uid ?? 'anonymous',
+          'scholar_no': widget.scholarNo ?? '',
+          'student_name': widget.studentName ?? '',
+          'house': widget.userHouse.toLowerCase(),
           'total_pts': totalPts,
           'items': itemsList
               .map(
@@ -426,6 +618,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
         })
         .catchError((_) {});
 
+    if (!mounted) return;
     _showDigitalWalletPass(newOrder);
   }
 
@@ -1681,15 +1874,58 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 10),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Available Balance: $_userPoints Pts',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: _userPoints >= totalPts
+                                    ? Colors.green[700]
+                                    : Colors.redAccent,
+                              ),
+                            ),
+                            if (_userPoints < totalPts)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  '-${totalPts - _userPoints} Pts Needed',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.redAccent,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
                         SizedBox(
                           width: double.infinity,
                           height: 56,
                           child: ElevatedButton(
-                            onPressed: () {
+                            onPressed: () async {
                               final receiptId =
                                   'ASB-${DateTime.now().millisecondsSinceEpoch.toString().substring(6)}';
                               final itemsList = List<CartItem>.from(cart);
+
+                              final allowed = await _verifyAndDeductPoints(
+                                totalPts,
+                                receiptId,
+                                '${itemsList.length} Merch Bag Items',
+                              );
+                              if (!allowed) return;
+
                               final qrData = jsonEncode({
                                 'bill_no': receiptId,
                                 'pts': totalPts,
@@ -1725,6 +1961,9 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                                             .currentUser
                                             ?.uid ??
                                         'anonymous',
+                                    'scholar_no': widget.scholarNo ?? '',
+                                    'student_name': widget.studentName ?? '',
+                                    'house': widget.userHouse.toLowerCase(),
                                     'total_pts': totalPts,
                                     'items': itemsList
                                         .map(
@@ -1741,6 +1980,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                                   })
                                   .catchError((_) {});
 
+                              if (!context.mounted) return;
                               Navigator.pop(context);
                               Future.delayed(
                                 const Duration(milliseconds: 200),
@@ -1947,7 +2187,92 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                 ],
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
+
+            // Live Student Points Wallet Badge
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: widget.houseColor.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: widget.houseColor.withValues(alpha: 0.25),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: widget.houseColor.withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.stars_rounded,
+                      color: widget.houseColor,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'YOUR HOUSE POINTS WALLET',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            color: widget.houseColor,
+                            letterSpacing: 1.0,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _pointsLoaded
+                              ? '$_userPoints Pts Available to Redeem'
+                              : 'Syncing Points Balance...',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: widget.houseColor,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.verified_rounded,
+                          color: Colors.white,
+                          size: 14,
+                        ),
+                        SizedBox(width: 4),
+                        Text(
+                          'Verified',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
 
             // Live Store Search Bar
             TextField(

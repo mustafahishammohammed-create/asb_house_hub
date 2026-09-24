@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/auth_service.dart';
+import '../services/hierarchy_service.dart';
 import '../theme/app_theme.dart';
 import 'signup_screen.dart';
 import 'home_screen.dart';
@@ -51,27 +52,16 @@ class _LoginScreenState extends State<LoginScreen> {
 
         if (_isAdminLogin) {
           final profile = await _authService.getUserProfile(cred.user!.uid);
-          final roleStr = (profile?['role'] ?? '').toString().toLowerCase();
-          final nameStr = (profile?['full_name'] ?? '')
-              .toString()
-              .toLowerCase();
-          final isAuthorizedName =
-              nameStr.contains('mustafa') ||
-              nameStr.contains('noaman') ||
-              nameStr.contains('nayla') ||
-              nameStr.contains('saakshat') ||
-              nameStr.contains('galwin') ||
-              nameStr.contains('sarah') ||
-              nameStr.contains('tanish') ||
-              nameStr.contains('ann binu');
-          final isAuthorized =
-              roleStr == 'super_admin' ||
-              roleStr == 'admin' ||
-              roleStr == 'captain' ||
-              roleStr == 'head_of_activities' ||
-              roleStr == 'council' ||
-              roleStr == 'prefect' ||
-              isAuthorizedName;
+          final roleStr = profile?['role']?.toString();
+          final nameStr = profile?['full_name']?.toString();
+          final scholarNo = profile?['scholar_no']?.toString() ??
+              _scholarController.text.trim();
+
+          final isAuthorized = HierarchyService.isAdmin(
+            scholarNo: scholarNo,
+            role: roleStr,
+            fullName: nameStr,
+          );
 
           if (!isAuthorized) {
             await _authService.signOut();

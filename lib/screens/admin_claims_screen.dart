@@ -22,12 +22,17 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen> {
     String houseName,
     int points,
     String studentName,
+    String scholarNo,
+    String activityTitle,
   ) async {
     try {
       await _authService.approveClaim(
         claimId: claimId,
         houseName: houseName,
         points: points,
+        scholarNo: scholarNo,
+        studentName: studentName,
+        activityTitle: activityTitle,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -51,7 +56,7 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen> {
 
   void _handleReject(String claimId, String studentName) async {
     try {
-      await _authService.rejectClaim(claimId);
+      await _authService.rejectClaim(claimId, studentName: studentName);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -367,13 +372,29 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(minimumSize: const Size(80, 40)),
             onPressed: () async {
+              final newName = nameCtrl.text.trim();
+              final newScholar = scholarCtrl.text.trim();
               await FirebaseFirestore.instance
                   .collection('admin_roster')
                   .doc(docId)
                   .update({
-                    'name': nameCtrl.text.trim(),
-                    'scholar_no': scholarCtrl.text.trim(),
+                    'name': newName,
+                    'scholar_no': newScholar,
                   });
+
+              // Synchronize role directly into the user's profile and notify them
+              if (newScholar.isNotEmpty) {
+                final slotRole = (data['role'] ?? 'council').toString();
+                final slotTitle =
+                    (data['title'] ?? 'Council Officer').toString();
+                await _authService.syncRosterRoleToUser(
+                  scholarNo: newScholar,
+                  role: slotRole,
+                  name: newName,
+                  slotTitle: slotTitle,
+                );
+              }
+
               if (!ctx.mounted) return;
               Navigator.pop(ctx);
             },
@@ -764,6 +785,8 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen> {
                               houseName,
                               points,
                               studentName,
+                              scholarNo,
+                              activityTitle,
                             ),
                           ),
                         ),

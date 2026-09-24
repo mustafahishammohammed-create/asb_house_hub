@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:asb_house_hub/theme/app_theme.dart';
 import 'package:asb_house_hub/services/gemini_ai_service.dart';
+import 'package:asb_house_hub/services/hierarchy_service.dart';
 import 'package:asb_house_hub/screens/house_ai_chat_screen.dart';
 import 'package:asb_house_hub/widgets/apple_fitness_badges_vault.dart';
 import 'package:asb_house_hub/widgets/mascot_3d_stage.dart';
@@ -194,6 +195,97 @@ void main() {
 
     expect(find.text('Zephyr the Tempest Gryphon'), findsOneWidget);
     expect(find.text('The Aegis of Tempest Skies'), findsOneWidget);
+  });
+
+  test('HierarchyService validates roles and blocks unauthorized escalation', () {
+    // 1. Super Admin Validation
+    expect(
+      HierarchyService.isSuperAdmin(
+        scholarNo: '2310910',
+        role: 'super_admin',
+        fullName: 'Mustafa Hisham',
+      ),
+      isTrue,
+    );
+    expect(
+      HierarchyService.isSuperAdmin(
+        scholarNo: 'admin',
+        role: 'admin',
+        fullName: 'Mustafa Hisham',
+      ),
+      isTrue,
+    );
+    // Unrelated student named 'Mustafa' must NOT be Super Admin
+    expect(
+      HierarchyService.isSuperAdmin(
+        scholarNo: '50012',
+        role: 'student',
+        fullName: 'Mustafa Ali',
+      ),
+      isFalse,
+    );
+
+    // 2. Executive Roster Checks
+    expect(
+      HierarchyService.isCaptain(scholarNo: '10001', role: 'captain'),
+      isTrue,
+    );
+    expect(
+      HierarchyService.isTeacherOrFaculty(scholarNo: '30003', role: 'teacher'),
+      isTrue,
+    );
+    expect(
+      HierarchyService.isCouncil(scholarNo: '12001', role: 'council'),
+      isTrue,
+    );
+    expect(
+      HierarchyService.isPrefect(scholarNo: '11004', fullName: 'Sarah Paul'),
+      isTrue,
+    );
+
+    // 3. Security Check: Unrelated student named Sarah must NOT receive elevated privileges
+    expect(
+      HierarchyService.isAdmin(
+        scholarNo: '60123',
+        role: 'student',
+        fullName: 'Sarah Ahmed',
+      ),
+      isFalse,
+    );
+    expect(
+      HierarchyService.isCouncilOrTeacher(
+        scholarNo: '60123',
+        role: 'student',
+        fullName: 'Sarah Ahmed',
+      ),
+      isFalse,
+    );
+
+    // 4. Role Display Titles
+    expect(
+      HierarchyService.getRoleDisplayTitle(scholarNo: '2310910'),
+      'Super Admin',
+    );
+    expect(
+      HierarchyService.getRoleDisplayTitle(scholarNo: '30003'),
+      'Faculty Lead',
+    );
+    expect(
+      HierarchyService.getRoleDisplayTitle(scholarNo: '10001'),
+      'House Captain',
+    );
+    expect(
+      HierarchyService.getRoleDisplayTitle(scholarNo: '12001'),
+      'Student Council',
+    );
+    expect(
+      HierarchyService.getRoleDisplayTitle(scholarNo: '11004'),
+      'Grade Prefect',
+    );
+    expect(
+      HierarchyService.getRoleDisplayTitle(scholarNo: '60123', role: 'student'),
+      'Student Member',
+    );
   });
 }
 

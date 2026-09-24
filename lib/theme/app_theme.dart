@@ -183,6 +183,10 @@ class AppHaptics {
     HapticFeedback.mediumImpact();
     Future.delayed(const Duration(milliseconds: 100), () => HapticFeedback.lightImpact());
   }
+  static void error() {
+    HapticFeedback.heavyImpact();
+    Future.delayed(const Duration(milliseconds: 100), () => HapticFeedback.heavyImpact());
+  }
 }
 
 class AppTheme {

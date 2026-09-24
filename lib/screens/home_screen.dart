@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:ui';
 import '../services/auth_service.dart';
+import '../services/hierarchy_service.dart';
 import '../theme/app_theme.dart';
 import 'login_screen.dart';
 import 'admin_claims_screen.dart';
@@ -627,39 +628,23 @@ class _HomeScreenState extends State<HomeScreen>
     final classLevel = _profile?['class_level'] ?? '--';
     final division = _profile?['division'] ?? '';
 
-    // Check database role or exact roster name for captain / council / head of activities privileges
-    final roleStr = (_profile?['role'] ?? '').toString().toLowerCase();
-    final lowerName = fullName.toLowerCase();
-    final isAuthorizedName =
-        lowerName.contains('mustafa') ||
-        lowerName.contains('noaman') ||
-        lowerName.contains('nayla') ||
-        lowerName.contains('saakshat') ||
-        lowerName.contains('galwin') ||
-        lowerName.contains('sarah') ||
-        lowerName.contains('tanish') ||
-        lowerName.contains('ann binu');
-    final isSuperAdmin =
-        lowerName.contains('mustafa') ||
-        scholarNo == 'admin' ||
-        roleStr == 'super_admin' ||
-        roleStr == 'admin';
-    final isAdmin =
-        isSuperAdmin ||
-        roleStr == 'captain' ||
-        roleStr == 'head_of_activities' ||
-        roleStr == 'council' ||
-        roleStr == 'prefect' ||
-        isAuthorizedName;
-    final isCouncilOrTeacher = isAdmin ||
-        isSuperAdmin ||
-        roleStr.contains('council') ||
-        roleStr.contains('teacher') ||
-        roleStr.contains('faculty') ||
-        roleStr.contains('staff') ||
-        roleStr.contains('captain') ||
-        roleStr.contains('prefect') ||
-        roleStr.contains('admin');
+    // Strict role validation via centralized HierarchyService
+    final roleStr = (_profile?['role'] ?? '').toString();
+    final isSuperAdmin = HierarchyService.isSuperAdmin(
+      scholarNo: scholarNo,
+      role: roleStr,
+      fullName: fullName,
+    );
+    final isAdmin = HierarchyService.isAdmin(
+      scholarNo: scholarNo,
+      role: roleStr,
+      fullName: fullName,
+    );
+    final isCouncilOrTeacher = HierarchyService.isCouncilOrTeacher(
+      scholarNo: scholarNo,
+      role: roleStr,
+      fullName: fullName,
+    );
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     if (_loading) {
@@ -726,6 +711,8 @@ class _HomeScreenState extends State<HomeScreen>
         userHouse: houseName,
         houseColor: houseColor,
         houseDark: houseDark,
+        scholarNo: scholarNo,
+        studentName: fullName,
       );
     } else if (_selectedIndex == 2) {
       currentTabBody = RefreshIndicator(
@@ -3943,11 +3930,13 @@ class _HomeScreenState extends State<HomeScreen>
                             _profile = {
                               'full_name': acc['name'],
                               'scholar_no': acc['id'],
-                              'role': acc['role'] == 'Council Leader'
-                                  ? 'council'
-                                  : (acc['role'] == 'Teacher Lead'
-                                        ? 'teacher'
-                                        : 'student'),
+                              'role': acc['role'] == 'Super Admin'
+                                  ? 'super_admin'
+                                  : (acc['role'] == 'Council Leader'
+                                      ? 'council'
+                                      : (acc['role'] == 'Teacher Lead'
+                                          ? 'teacher'
+                                          : 'student')),
                               'house_name': (acc['house'] ?? 'ruby')
                                   .toString()
                                   .toLowerCase(),
