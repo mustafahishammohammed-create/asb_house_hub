@@ -45,7 +45,7 @@ class _AppleFitnessBadgesVaultState extends State<AppleFitnessBadgesVault>
     super.initState();
     _gleamController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 4),
+      duration: const Duration(milliseconds: 7000),
     )..repeat();
   }
 
@@ -344,7 +344,20 @@ class _AppleFitnessBadgesVaultState extends State<AppleFitnessBadgesVault>
                 itemCount: filteredBadges.length,
                 itemBuilder: (context, index) {
                   final badge = filteredBadges[index];
-                  final gleam = (_gleamController.value + (index * 0.12)) % 1.0;
+
+                  // Staggered periodic wave:
+                  // 1. Each shield has a phase offset so they ripple sequentially across the vault
+                  final stagger = (index * 0.14) % 1.0;
+                  final rawPhase = (_gleamController.value + stagger) % 1.0;
+
+                  // 2. Active sweep is first 36% (~2.5s) with silky smooth cubic easing.
+                  // Remaining 64% (~4.5s) is peaceful rest where the metal gleams in ambient light.
+                  final double gleam;
+                  if (rawPhase < 0.36) {
+                    gleam = Curves.easeInOutCubic.transform(rawPhase / 0.36);
+                  } else {
+                    gleam = -1.0; // Idle rest state: offscreen
+                  }
 
                   return _FreestandingShieldItem(
                     badge: badge,
@@ -825,9 +838,13 @@ class _AppleFitnessBadgeModal extends StatefulWidget {
 }
 
 class _AppleFitnessBadgeModalState extends State<_AppleFitnessBadgeModal>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final AnimationController _flipController;
   late final Animation<double> _flipAnimation;
+  late final AnimationController _modalGleamController;
+  late final AnimationController _springBackController;
+  late Animation<double> _springAnimX;
+  late Animation<double> _springAnimY;
 
   // Interactive 3D Rotational Drag angles
   double _dragX = 0.0;
@@ -844,10 +861,31 @@ class _AppleFitnessBadgeModalState extends State<_AppleFitnessBadgeModal>
     _flipAnimation = Tween<double>(begin: 0.0, end: math.pi).animate(
       CurvedAnimation(parent: _flipController, curve: Curves.easeInOutCubic),
     );
+
+    // Modal specular gleam controller (6.5 second majestic cycle)
+    _modalGleamController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 6500),
+    )..repeat();
+
+    // Smooth spring-back physics when releasing 3D rotational drag
+    _springBackController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 380),
+    )..addListener(() {
+        setState(() {
+          _dragX = _springAnimX.value;
+          _dragY = _springAnimY.value;
+        });
+      });
+    _springAnimX = const AlwaysStoppedAnimation(0.0);
+    _springAnimY = const AlwaysStoppedAnimation(0.0);
   }
 
   @override
   void dispose() {
+    _modalGleamController.dispose();
+    _springBackController.dispose();
     _flipController.dispose();
     super.dispose();
   }
@@ -940,6 +978,7 @@ class _AppleFitnessBadgeModalState extends State<_AppleFitnessBadgeModal>
                   // INTERACTIVE 3D FREESTANDING SHIELD IN SPOTLIGHT
                   GestureDetector(
                     onPanUpdate: (details) {
+                      _springBackController.stop();
                       setState(() {
                         _dragY += details.delta.dx * 0.015;
                         _dragX -= details.delta.dy * 0.015;
@@ -948,10 +987,13 @@ class _AppleFitnessBadgeModalState extends State<_AppleFitnessBadgeModal>
                       });
                     },
                     onPanEnd: (_) {
-                      setState(() {
-                        _dragX = 0.0;
-                        _dragY = 0.0;
-                      });
+                      _springAnimX = Tween<double>(begin: _dragX, end: 0.0).animate(
+                        CurvedAnimation(parent: _springBackController, curve: Curves.easeOutBack),
+                      );
+                      _springAnimY = Tween<double>(begin: _dragY, end: 0.0).animate(
+                        CurvedAnimation(parent: _springBackController, curve: Curves.easeOutBack),
+                      );
+                      _springBackController.forward(from: 0.0);
                     },
                     onTap: _toggleFlip,
                     child: SizedBox(
@@ -986,13 +1028,20 @@ class _AppleFitnessBadgeModalState extends State<_AppleFitnessBadgeModal>
 
                           // 2. Giant Freestanding 3D Shield
                           AnimatedBuilder(
-                            animation: _flipAnimation,
+                            animation: Listenable.merge([_flipAnimation, _modalGleamController]),
                             builder: (context, _) {
                               final animVal = _flipAnimation.value;
                               final showingBack = animVal >= (math.pi / 2);
                               final renderAngleY = showingBack
                                   ? (animVal - math.pi) + _dragY
                                   : animVal + _dragY;
+
+                              // Smooth modal gleam: sweeps for first 38% (~2.4s) with easeInOutCubic,
+                              // followed by 4.1s dignified rest. When inspecting engraved back, gleam is inactive.
+                              final rawGleam = _modalGleamController.value;
+                              final modalGleam = (!showingBack && rawGleam < 0.38)
+                                  ? Curves.easeInOutCubic.transform(rawGleam / 0.38)
+                                  : -1.0;
 
                               return Transform(
                                 alignment: Alignment.center,
@@ -1003,7 +1052,7 @@ class _AppleFitnessBadgeModalState extends State<_AppleFitnessBadgeModal>
                                 child: AppleFitnessBadge(
                                   badge: b,
                                   size: 240,
-                                  gleamOffset: 0.45,
+                                  gleamOffset: modalGleam,
                                   tiltX: _dragX,
                                   tiltY: _dragY,
                                   isBack: showingBack,

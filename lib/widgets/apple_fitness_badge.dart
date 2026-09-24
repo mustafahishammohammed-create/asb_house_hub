@@ -210,7 +210,7 @@ class _AppleBadgePainter extends CustomPainter {
     canvas.drawPath(innerPath, chamferPaint);
 
     // Inner face fill
-    final faceShader = _createFaceGradient(badge.metal, innerBounds, isLocked, isBack);
+    final faceShader = _createFaceGradient(badge.metal, innerBounds, isLocked, isBack, tiltX, tiltY);
     final facePaint = Paint()
       ..shader = faceShader
       ..style = PaintingStyle.fill;
@@ -264,7 +264,7 @@ class _AppleBadgePainter extends CustomPainter {
       }
 
       // Specular Gleam Sweep (Dynamic animated light glint across the medal)
-      if (!isLocked && gleamOffset > 0.0 && gleamOffset < 1.0) {
+      if (!isLocked && gleamOffset >= 0.0 && gleamOffset <= 1.0) {
         _paintSpecularGlint(canvas, center, radius, path, bounds, gleamOffset);
       }
     }
@@ -441,11 +441,19 @@ class _AppleBadgePainter extends CustomPainter {
     MetalType metal,
     Rect bounds,
     bool isLocked,
-    bool isBack,
-  ) {
+    bool isBack, [
+    double tx = 0.0,
+    double ty = 0.0,
+  ]) {
+    final lightCenter = Alignment(
+      (-0.25 + ty * 0.55).clamp(-0.85, 0.85),
+      (-0.25 - tx * 0.55).clamp(-0.85, 0.85),
+    );
+
     if (isLocked) {
-      return const RadialGradient(
-        colors: [
+      return RadialGradient(
+        center: lightCenter,
+        colors: const [
           Color(0xFF1E2533),
           Color(0xFF10141D),
         ],
@@ -454,10 +462,13 @@ class _AppleBadgePainter extends CustomPainter {
 
     if (isBack) {
       // Brushed steel or warm gold engraved back
-      return const RadialGradient(
-        center: Alignment(-0.2, -0.2),
+      return RadialGradient(
+        center: Alignment(
+          (-0.20 + ty * 0.45).clamp(-0.8, 0.8),
+          (-0.20 - tx * 0.45).clamp(-0.8, 0.8),
+        ),
         radius: 1.3,
-        colors: [
+        colors: const [
           Color(0xFF2A364F),
           Color(0xFF141C2A),
           Color(0xFF0C111A),
@@ -467,10 +478,10 @@ class _AppleBadgePainter extends CustomPainter {
 
     switch (metal) {
       case MetalType.rubyGold:
-        return const RadialGradient(
-          center: Alignment(-0.25, -0.25),
+        return RadialGradient(
+          center: lightCenter,
           radius: 1.3,
-          colors: [
+          colors: const [
             Color(0xFFFF3B56),
             Color(0xFFD31027),
             Color(0xFF66000E),
@@ -478,10 +489,10 @@ class _AppleBadgePainter extends CustomPainter {
         ).createShader(bounds);
 
       case MetalType.sapphireAstral:
-        return const RadialGradient(
-          center: Alignment(-0.25, -0.25),
+        return RadialGradient(
+          center: lightCenter,
           radius: 1.3,
-          colors: [
+          colors: const [
             Color(0xFF42A5F5),
             Color(0xFF0D47A1),
             Color(0xFF061842),
@@ -489,10 +500,10 @@ class _AppleBadgePainter extends CustomPainter {
         ).createShader(bounds);
 
       case MetalType.emeraldJade:
-        return const RadialGradient(
-          center: Alignment(-0.25, -0.25),
+        return RadialGradient(
+          center: lightCenter,
           radius: 1.3,
-          colors: [
+          colors: const [
             Color(0xFF4CAF50),
             Color(0xFF1B5E20),
             Color(0xFF08260B),
@@ -500,10 +511,10 @@ class _AppleBadgePainter extends CustomPainter {
         ).createShader(bounds);
 
       case MetalType.topazSun:
-        return const RadialGradient(
-          center: Alignment(-0.25, -0.25),
+        return RadialGradient(
+          center: lightCenter,
           radius: 1.3,
-          colors: [
+          colors: const [
             Color(0xFFFFD54F),
             Color(0xFFFF8F00),
             Color(0xFF5E2B00),
@@ -511,10 +522,13 @@ class _AppleBadgePainter extends CustomPainter {
         ).createShader(bounds);
 
       case MetalType.gold:
-        return const RadialGradient(
-          center: Alignment(-0.3, -0.3),
+        return RadialGradient(
+          center: Alignment(
+            (-0.30 + ty * 0.55).clamp(-0.85, 0.85),
+            (-0.30 - tx * 0.55).clamp(-0.85, 0.85),
+          ),
           radius: 1.4,
-          colors: [
+          colors: const [
             Color(0xFFFFEDB3),
             Color(0xFFD49B28),
             Color(0xFF6B4700),
@@ -522,10 +536,10 @@ class _AppleBadgePainter extends CustomPainter {
         ).createShader(bounds);
 
       case MetalType.platinum:
-        return const RadialGradient(
-          center: Alignment(-0.25, -0.25),
+        return RadialGradient(
+          center: lightCenter,
           radius: 1.3,
-          colors: [
+          colors: const [
             Color(0xFFFFFFFF),
             Color(0xFFB0BEC5),
             Color(0xFF37474F),
@@ -533,10 +547,10 @@ class _AppleBadgePainter extends CustomPainter {
         ).createShader(bounds);
 
       case MetalType.roseGold:
-        return const RadialGradient(
-          center: Alignment(-0.25, -0.25),
+        return RadialGradient(
+          center: lightCenter,
           radius: 1.3,
-          colors: [
+          colors: const [
             Color(0xFFFFE0E6),
             Color(0xFFD88A75),
             Color(0xFF5A2A1E),
@@ -544,9 +558,10 @@ class _AppleBadgePainter extends CustomPainter {
         ).createShader(bounds);
 
       case MetalType.holographic:
-        return const RadialGradient(
+        return RadialGradient(
+          center: lightCenter,
           radius: 1.0,
-          colors: [
+          colors: const [
             Color(0xFF7000FF),
             Color(0xFF00D2FF),
             Color(0xFF0A0E27),
@@ -555,9 +570,10 @@ class _AppleBadgePainter extends CustomPainter {
 
       case MetalType.silver:
       case MetalType.bronze:
-        return const RadialGradient(
+        return RadialGradient(
+          center: lightCenter,
           radius: 1.0,
-          colors: [
+          colors: const [
             Color(0xFFEEEEEE),
             Color(0xFF9E9E9E),
             Color(0xFF212121),
@@ -777,27 +793,101 @@ class _AppleBadgePainter extends CustomPainter {
   }
 
   void _paintSpecularGlint(Canvas canvas, Offset center, double radius, Path clipPath, Rect bounds, double progress) {
+    if (progress < 0.0 || progress > 1.0) return;
+
     canvas.save();
     canvas.clipPath(clipPath);
 
-    final sweepX = -1.0 + (progress * 2.0);
+    // Full off-screen to off-screen sweep range:
+    // At 0.0, the rightmost gradient stop is safely off to the left.
+    // At 1.0, the leftmost gradient stop is safely off to the right.
+    final sweepX = -2.6 + (progress * 5.2);
     final glintPaint = Paint()
       ..shader = LinearGradient(
-        begin: Alignment(sweepX - 0.4, -1.0),
-        end: Alignment(sweepX + 0.4, 1.0),
+        begin: Alignment(sweepX - 0.75, -1.5),
+        end: Alignment(sweepX + 0.75, 1.5),
         colors: [
           Colors.transparent,
-          Colors.white.withValues(alpha: 0.35),
-          Colors.white.withValues(alpha: 0.7),
-          Colors.white.withValues(alpha: 0.35),
+          Colors.white.withValues(alpha: 0.12), // Leading whisper glint
+          Colors.transparent,
+          Colors.white.withValues(alpha: 0.08), // Primary beam outer glow
+          Colors.white.withValues(alpha: 0.38), // Primary beam shoulder
+          Colors.white.withValues(alpha: 0.82), // Intense specular white core
+          Colors.white.withValues(alpha: 0.38), // Primary beam shoulder
+          Colors.white.withValues(alpha: 0.08), // Primary beam outer glow
           Colors.transparent,
         ],
-        stops: const [0.0, 0.35, 0.5, 0.65, 1.0],
+        stops: const [
+          0.0,
+          0.12,
+          0.22,
+          0.34,
+          0.47,
+          0.50,
+          0.53,
+          0.66,
+          1.0,
+        ],
       ).createShader(bounds)
       ..blendMode = BlendMode.screen;
 
-    canvas.drawRect(bounds, glintPaint);
+    canvas.drawRect(bounds.inflate(radius * 0.3), glintPaint);
+
+    // Specular micro-sparkle (lens flare) at the high-relief apex during sweep midpoint
+    if (progress >= 0.42 && progress <= 0.58) {
+      final intensity = 1.0 - ((progress - 0.50).abs() / 0.08);
+      final curvedIntensity = Curves.easeOutCubic.transform(intensity.clamp(0.0, 1.0));
+      final apexPoint = Offset(center.dx, center.dy - radius * 0.45);
+      _paintApexSparkle(canvas, apexPoint, radius, curvedIntensity);
+    }
+
     canvas.restore();
+  }
+
+  void _paintApexSparkle(Canvas canvas, Offset flarePoint, double radius, double intensity) {
+    if (intensity <= 0.01) return;
+
+    // 1. Soft radial bloom behind sparkle
+    final bloomPaint = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          Colors.white.withValues(alpha: 0.55 * intensity),
+          Colors.white.withValues(alpha: 0.18 * intensity),
+          Colors.transparent,
+        ],
+        stops: const [0.0, 0.45, 1.0],
+      ).createShader(Rect.fromCircle(center: flarePoint, radius: radius * 0.35))
+      ..blendMode = BlendMode.screen;
+    canvas.drawCircle(flarePoint, radius * 0.35, bloomPaint);
+
+    // 2. Crisp 4-pointed micro-star (horizontal and vertical diamond rays)
+    final starPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.85 * intensity)
+      ..style = PaintingStyle.fill
+      ..blendMode = BlendMode.screen;
+
+    final hLen = radius * 0.32 * intensity;
+    final vLen = radius * 0.42 * intensity;
+    final thickness = math.max(1.0, radius * 0.035 * intensity);
+
+    final starPath = Path()
+      ..moveTo(flarePoint.dx, flarePoint.dy - vLen)
+      ..lineTo(flarePoint.dx + thickness, flarePoint.dy - thickness)
+      ..lineTo(flarePoint.dx + hLen, flarePoint.dy)
+      ..lineTo(flarePoint.dx + thickness, flarePoint.dy + thickness)
+      ..lineTo(flarePoint.dx, flarePoint.dy + vLen)
+      ..lineTo(flarePoint.dx - thickness, flarePoint.dy + thickness)
+      ..lineTo(flarePoint.dx - hLen, flarePoint.dy)
+      ..lineTo(flarePoint.dx - thickness, flarePoint.dy - thickness)
+      ..close();
+
+    canvas.drawPath(starPath, starPaint);
+
+    // 3. Hot diamond center pin
+    final centerPin = Paint()
+      ..color = Colors.white.withValues(alpha: 0.95 * intensity)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(flarePoint, math.max(1.2, radius * 0.03 * intensity), centerPin);
   }
 
 
