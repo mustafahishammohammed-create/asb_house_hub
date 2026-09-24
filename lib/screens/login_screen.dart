@@ -78,6 +78,7 @@ class _LoginScreenState extends State<LoginScreen> {
         context,
       ).pushReplacement(MaterialPageRoute(builder: (_) => const HomeScreen()));
     } on Exception catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessage = _parseFirebaseError(e.toString());
       });

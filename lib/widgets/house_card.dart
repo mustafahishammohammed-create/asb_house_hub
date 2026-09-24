@@ -22,7 +22,10 @@ class HouseCard extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return GestureDetector(
-      onTap: onTap,
+      onTap: () {
+        AppHaptics.selectionClick();
+        onTap();
+      },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeOutBack,
@@ -67,82 +70,101 @@ class HouseCard extends StatelessWidget {
                   ),
                 ],
         ),
-        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+        child: Stack(
+          alignment: Alignment.center,
           children: [
-            // Checkmark
-            AnimatedOpacity(
-              opacity: isSelected ? 1.0 : 0.0,
-              duration: const Duration(milliseconds: 250),
-              child: AnimatedScale(
-                scale: isSelected ? 1.0 : 0.0,
-                duration: const Duration(milliseconds: 350),
-                curve: Curves.easeOutBack,
-                child: Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.25),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.check_rounded,
-                    size: 18,
-                    color: Colors.white,
+            // Checkmark in top-right
+            Positioned(
+              top: 0,
+              right: 0,
+              child: AnimatedOpacity(
+                opacity: isSelected ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 250),
+                child: AnimatedScale(
+                  scale: isSelected ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 350),
+                  curve: Curves.easeOutBack,
+                  child: Container(
+                    width: 24,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.3),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.check_rounded,
+                      size: 16,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
               ),
             ),
-            const SizedBox(height: 8),
 
-            // Shield icon
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(14),
-                color: isSelected
-                    ? Colors.white.withValues(alpha: 0.2)
-                    : (isDark
-                          ? const Color(0xFF2A3A52)
-                          : const Color(0xFFE2E8F0)),
-              ),
-              child: Icon(
-                Icons.shield_rounded,
-                size: 28,
-                color: isSelected ? Colors.white : color,
-              ),
-            ),
-            const SizedBox(height: 12),
+            // Centered Mascot Crest, Name & Motto
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Crest / Mascot icon
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    color: isSelected
+                        ? Colors.white.withValues(alpha: 0.22)
+                        : (isDark
+                              ? const Color(0xFF2A3A52)
+                              : const Color(0xFFE2E8F0)),
+                    border: Border.all(
+                      color: isSelected
+                          ? Colors.white.withValues(alpha: 0.35)
+                          : color.withValues(alpha: 0.25),
+                      width: 1.2,
+                    ),
+                  ),
+                  child: Center(
+                    child: Text(
+                      HouseColors.getHouseEmoji(houseName),
+                      style: const TextStyle(fontSize: 24),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
 
-            // Name
-            Text(
-              houseName,
-              style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w800,
-                color: isSelected
-                    ? Colors.white
-                    : Theme.of(context).colorScheme.onSurface,
-              ),
-            ),
-            const SizedBox(height: 2),
+                // Name
+                Text(
+                  houseName,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: isSelected
+                        ? Colors.white
+                        : Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 2),
 
-            // Motto
-            Text(
-              motto,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-                color: isSelected
-                    ? Colors.white.withValues(alpha: 0.8)
-                    : Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withValues(alpha: 0.5),
-              ),
-              textAlign: TextAlign.center,
+                // Motto
+                Text(
+                  motto,
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w500,
+                    color: isSelected
+                        ? Colors.white.withValues(alpha: 0.85)
+                        : Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.55),
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
           ],
         ),

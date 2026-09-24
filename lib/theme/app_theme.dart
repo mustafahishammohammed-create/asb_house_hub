@@ -133,6 +133,36 @@ class HouseColors {
     }
   }
 
+  static String getHouseMotto(String house) {
+    switch (house.toLowerCase()) {
+      case 'ruby':
+        return 'Courage & Passion';
+      case 'sapphire':
+        return 'Wisdom & Truth';
+      case 'emerald':
+        return 'Honor & Growth';
+      case 'topaz':
+        return 'Light & Excellence';
+      default:
+        return 'Courage & Passion';
+    }
+  }
+
+  static String getHouseVirtue(String house) {
+    switch (house.toLowerCase()) {
+      case 'ruby':
+        return 'Flame of Valor';
+      case 'sapphire':
+        return 'Clarity of Mind';
+      case 'emerald':
+        return 'Resilience of Nature';
+      case 'topaz':
+        return 'Radiance of Victory';
+      default:
+        return 'House Spirit';
+    }
+  }
+
   static LinearGradient getHouseGradient(String house) {
     return LinearGradient(
       begin: Alignment.topLeft,
@@ -176,6 +206,7 @@ class AppGlass {
 /// Haptic Feedback Standard Tokens for Tactile App Interactions
 class AppHaptics {
   static void tap() => HapticFeedback.selectionClick();
+  static void selectionClick() => HapticFeedback.selectionClick();
   static void light() => HapticFeedback.lightImpact();
   static void medium() => HapticFeedback.mediumImpact();
   static void heavy() => HapticFeedback.heavyImpact();

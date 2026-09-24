@@ -9,8 +9,8 @@ import 'dart:convert';
 const String kSchoolDomain = 'asianschool.bh';
 
 class AuthService {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  FirebaseAuth get _auth => FirebaseAuth.instance;
+  FirebaseFirestore get _firestore => FirebaseFirestore.instance;
 
   /// Current authenticated user (nullable).
   User? get currentUser => _auth.currentUser;

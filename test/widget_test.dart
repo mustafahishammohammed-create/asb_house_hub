@@ -4,6 +4,7 @@ import 'package:asb_house_hub/theme/app_theme.dart';
 import 'package:asb_house_hub/services/gemini_ai_service.dart';
 import 'package:asb_house_hub/services/hierarchy_service.dart';
 import 'package:asb_house_hub/screens/house_ai_chat_screen.dart';
+import 'package:asb_house_hub/screens/signup_screen.dart';
 import 'package:asb_house_hub/widgets/apple_fitness_badges_vault.dart';
 import 'package:asb_house_hub/widgets/mascot_3d_stage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -317,6 +318,229 @@ void main() {
 
     // Verify focus is securely retained so user never has to re-tap
     expect(tester.widget<TextField>(textFieldFinder).focusNode?.hasFocus, isTrue);
+  });
+
+  testWidgets('SignupScreen dynamically transforms theme upon house selection in Step 2 through Step 3', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: SignupScreen(),
+      ),
+    );
+    await tester.pump();
+
+    // Verify initial Step 0 (Identity)
+    expect(find.text('Student Identity'), findsOneWidget);
+    expect(find.text('Step 1 of 4'), findsOneWidget);
+
+    // Initial progress indicator uses ruby as default
+    final progressFinder = find.byType(LinearProgressIndicator);
+    expect(progressFinder, findsOneWidget);
+    final initialProgress = tester.widget<LinearProgressIndicator>(progressFinder);
+    expect(
+      (initialProgress.valueColor as AlwaysStoppedAnimation<Color>).value,
+      HouseColors.ruby,
+    );
+
+    // Fill Step 0
+    final textFields = find.byType(TextFormField);
+    await tester.enterText(textFields.at(0), 'Aarav Sharma');
+    await tester.enterText(textFields.at(1), '54321');
+    await tester.pump();
+
+    // Advance to Step 1 (Academic Details)
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+    expect(find.text('Academic Details'), findsOneWidget);
+
+    // Select Grade 10 and Section B
+    await tester.ensureVisible(find.text('10'));
+    await tester.tap(find.text('10'));
+    await tester.pump();
+    await tester.ensureVisible(find.text('B'));
+    await tester.tap(find.text('B'));
+    await tester.pump();
+
+    // Advance to Step 2 (House Selection)
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+    expect(find.text('House Selection'), findsOneWidget);
+
+    // All 4 houses must be visible
+    expect(find.text('Ruby'), findsOneWidget);
+    expect(find.text('Sapphire'), findsOneWidget);
+    expect(find.text('Emerald'), findsOneWidget);
+    expect(find.text('Topaz'), findsOneWidget);
+
+    // No celebration card yet
+    expect(find.text('THEME ACTIVATED ✨'), findsNothing);
+
+    // 1. Select Sapphire House
+    await tester.ensureVisible(find.text('Sapphire'));
+    await tester.tap(find.text('Sapphire'));
+    await tester.pumpAndSettle();
+
+    // Verify dynamic celebration details appear immediately
+    expect(find.text('THEME ACTIVATED ✨'), findsOneWidget);
+    expect(find.text('Sapphire House'), findsWidgets);
+    expect(find.text('Zephyr the Tempest Gryphon'), findsOneWidget);
+    expect(find.textContaining('Motto: "Wisdom & Truth"'), findsOneWidget);
+
+    // Verify progress indicator immediately adapts to Sapphire Blue
+    final sapphireProgress = tester.widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator));
+    expect(
+      (sapphireProgress.valueColor as AlwaysStoppedAnimation<Color>).value,
+      HouseColors.sapphire,
+    );
+
+    // 2. Select Emerald House
+    await tester.ensureVisible(find.text('Emerald'));
+    await tester.tap(find.text('Emerald'));
+    await tester.pumpAndSettle();
+
+    // Verify celebration details morph immediately to Emerald
+    expect(find.text('Emerald House'), findsWidgets);
+    expect(find.text('Sylva the Titan Wolf'), findsOneWidget);
+    expect(find.textContaining('Motto: "Honor & Growth"'), findsOneWidget);
+
+    // Verify progress indicator morphs to Emerald Green
+    final emeraldProgress = tester.widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator));
+    expect(
+      (emeraldProgress.valueColor as AlwaysStoppedAnimation<Color>).value,
+      HouseColors.emerald,
+    );
+
+    // Advance to Step 3 (Security / Password creation)
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+    expect(find.text('Create a strong password to protect your account.'), findsOneWidget);
+    expect(find.text('Security'), findsWidgets);
+
+    // Verify Enrollment Summary Banner celebrates chosen Emerald House
+    expect(find.text('EMERALD HOUSE'), findsOneWidget);
+    expect(find.text('Aarav Sharma'), findsOneWidget);
+    expect(find.textContaining('Scholar #54321'), findsOneWidget);
+    expect(find.textContaining('Sylva the Titan Wolf'), findsOneWidget);
+
+    // Verify button says 'Complete Registration'
+    expect(find.text('Complete Registration'), findsOneWidget);
+
+    // Enter a strong password and verify StrengthMeter adapts
+    final passwordFields = find.byType(TextFormField);
+    await tester.ensureVisible(passwordFields.at(0));
+    await tester.enterText(passwordFields.at(0), 'AsbSecure2026!');
+    await tester.ensureVisible(passwordFields.at(1));
+    await tester.enterText(passwordFields.at(1), 'AsbSecure2026!');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Strong'), findsOneWidget);
+  });
+
+  testWidgets('SignupScreen transforms for Topaz and Ruby, and supports bi-directional step indicator navigation', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: SignupScreen(),
+      ),
+    );
+    await tester.pump();
+
+    // Fill Step 0
+    final textFields = find.byType(TextFormField);
+    await tester.enterText(textFields.at(0), 'Fatima Al-Sayed');
+    await tester.enterText(textFields.at(1), '12345');
+    await tester.pump();
+
+    // Advance to Step 1
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+
+    // Select Grade 11 and Section A
+    await tester.ensureVisible(find.text('11'));
+    await tester.tap(find.text('11'));
+    await tester.pump();
+    await tester.ensureVisible(find.text('A'));
+    await tester.tap(find.text('A'));
+    await tester.pump();
+
+    // Advance to Step 2
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+
+    // 1. Select Topaz House
+    await tester.ensureVisible(find.text('Topaz'));
+    await tester.tap(find.text('Topaz'));
+    await tester.pumpAndSettle();
+
+    // Verify Topaz celebration banner and progress color
+    expect(find.text('Topaz House'), findsWidgets);
+    expect(find.text('Solis the Golden Chimera'), findsOneWidget);
+    expect(find.textContaining('Motto: "Light & Excellence"'), findsOneWidget);
+    expect(find.text('Radiance of Victory'), findsOneWidget);
+
+    final topazProgress = tester.widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator));
+    expect(
+      (topazProgress.valueColor as AlwaysStoppedAnimation<Color>).value,
+      HouseColors.topaz,
+    );
+
+    // 2. Select Ruby House
+    await tester.ensureVisible(find.text('Ruby'));
+    await tester.tap(find.text('Ruby'));
+    await tester.pumpAndSettle();
+
+    // Verify Ruby celebration banner and progress color
+    expect(find.text('Ruby House'), findsWidgets);
+    expect(find.text('Ignis the Crimson Dragon'), findsOneWidget);
+    expect(find.textContaining('Motto: "Courage & Passion"'), findsOneWidget);
+    expect(find.text('Flame of Valor'), findsOneWidget);
+
+    final rubyProgress = tester.widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator));
+    expect(
+      (rubyProgress.valueColor as AlwaysStoppedAnimation<Color>).value,
+      HouseColors.ruby,
+    );
+
+    // Advance to Step 3
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+    expect(find.text('RUBY HOUSE'), findsOneWidget);
+    expect(find.textContaining('Ignis the Crimson Dragon'), findsOneWidget);
+
+    // Verify step indicator dynamically displays 'Ruby'
+    expect(find.text('Ruby'), findsWidgets);
+
+    // Test bi-directional navigation: Tap Step 2 indicator to jump back to house selection
+    await tester.tap(find.widgetWithText(InkWell, 'Ruby'));
+    await tester.pumpAndSettle();
+    expect(find.text('House Selection'), findsOneWidget);
+
+    // Switch house back to Topaz
+    await tester.ensureVisible(find.text('Topaz'));
+    await tester.tap(find.text('Topaz'));
+    await tester.pumpAndSettle();
+
+    // Tap Step 3 indicator to jump back forward to Security!
+    await tester.tap(find.widgetWithText(InkWell, 'Security'));
+    await tester.pumpAndSettle();
+    expect(find.text('TOPAZ HOUSE'), findsOneWidget);
+    expect(find.textContaining('Solis the Golden Chimera'), findsOneWidget);
   });
 }
 
