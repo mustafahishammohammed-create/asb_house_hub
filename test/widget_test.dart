@@ -161,6 +161,22 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('Callouts: ACTIVE'), findsOneWidget);
 
+    // Verify Blender 5.2 Studio Suite & Switcher
+    expect(find.text('3D CAD Workstation'), findsOneWidget);
+    expect(find.text('Blender 5.2 Studio'), findsOneWidget);
+    expect(find.text('Blender 5.2 3D Suite'), findsOneWidget);
+    expect(find.text('Open in Blender 5.2'), findsOneWidget);
+
+    // Switch to Blender Studio raytraced view
+    await tester.tap(find.text('Blender 5.2 Studio'));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('BLENDER 5.2 LTS • STUDIO RAYTRACE'), findsOneWidget);
+
+    // Switch back to 3D CAD Workstation
+    await tester.tap(find.text('3D CAD Workstation'));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.textContaining('CAD • YAW:'), findsOneWidget);
+
     // Switch to Sapphire
     await tester.tap(find.text('Sapphire'));
     await tester.pump(const Duration(milliseconds: 300));

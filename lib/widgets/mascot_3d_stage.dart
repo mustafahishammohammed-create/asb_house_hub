@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -934,6 +935,9 @@ class MascotLoreData {
   final String sacredRite;
   final Mesh3D mesh;
   final List<MascotHotspot> hotspots;
+  final String blenderRenderPath;
+  final String objAssetPath;
+  final String glbAssetPath;
 
   const MascotLoreData({
     required this.houseId,
@@ -957,6 +961,9 @@ class MascotLoreData {
     required this.sacredRite,
     required this.mesh,
     required this.hotspots,
+    required this.blenderRenderPath,
+    required this.objAssetPath,
+    required this.glbAssetPath,
   });
 
   static List<MascotLoreData> get allMascots => [
@@ -995,6 +1002,9 @@ class MascotLoreData {
           sacredRite:
               'The Rite of the First Ember: Conferred upon scholars who show unmatched bravery by championing their team when the odds seem insurmountable.',
           mesh: Mascot3DMeshes.buildDragonMesh(),
+          blenderRenderPath: 'assets/images/mascots/ignis_dragon_blender_render.png',
+          objAssetPath: 'assets/3d/ignis_dragon.obj',
+          glbAssetPath: 'assets/3d/ignis_dragon.glb',
           hotspots: const [
             MascotHotspot(
               label: 'Cranial Crest Horns',
@@ -1063,6 +1073,9 @@ class MascotLoreData {
           sacredRite:
               'The Rite of the Zenith Flight: Conferred upon scholars who discover breakthrough solutions, excel in debate, and elevate house intellectual prestige.',
           mesh: Mascot3DMeshes.buildGryphonMesh(),
+          blenderRenderPath: 'assets/images/mascots/zephyr_gryphon_blender_render.png',
+          objAssetPath: 'assets/3d/zephyr_gryphon.obj',
+          glbAssetPath: 'assets/3d/zephyr_gryphon.glb',
           hotspots: const [
             MascotHotspot(
               label: 'Raptor Hook Beak',
@@ -1131,6 +1144,9 @@ class MascotLoreData {
           sacredRite:
               'The Rite of the Pack Vigil: Conferred upon scholars who sacrifice individual limelight to bolster their fellow classmates and keep house spirit unbreakable.',
           mesh: Mascot3DMeshes.buildWolfMesh(),
+          blenderRenderPath: 'assets/images/mascots/sylva_wolf_blender_render.png',
+          objAssetPath: 'assets/3d/sylva_wolf.obj',
+          glbAssetPath: 'assets/3d/sylva_wolf.glb',
           hotspots: const [
             MascotHotspot(
               label: 'Snarl White Fangs',
@@ -1199,6 +1215,9 @@ class MascotLoreData {
           sacredRite:
               'The Rite of the Golden Dawn: Conferred upon scholars who uplift others, display exceptional sportsmanship on the pitch, and lead with warmth and joy.',
           mesh: Mascot3DMeshes.buildChimeraMesh(),
+          blenderRenderPath: 'assets/images/mascots/solis_chimera_blender_render.png',
+          objAssetPath: 'assets/3d/solis_chimera.obj',
+          glbAssetPath: 'assets/3d/solis_chimera.glb',
           hotspots: const [
             MascotHotspot(
               label: 'Solar Fangs & Muzzle',
@@ -1303,6 +1322,7 @@ class _Mascot3DStageState extends State<Mascot3DStage>
   MascotMaterialFinish _currentFinish = MascotMaterialFinish.houseChroma;
   MascotDiagramMode _diagramMode = MascotDiagramMode.solidRender;
   bool _showDiagramCallouts = true;
+  bool _showBlenderStudioRender = false;
 
   // Animation Controllers
   late final AnimationController _idleFloatController;
@@ -1509,22 +1529,32 @@ class _Mascot3DStageState extends State<Mascot3DStage>
         children: [
           // 1. FOUR GREAT HOUSES SELECTOR
           _buildHouseSelectorBar(),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
 
-          // 2. TRUE 3D VOLUMETRIC MASCOT STAGE (WITH SCULPTED PLINTH & 360 DEPTH)
-          _buildTrue3DStage(mascot),
+          // STAGE ENGINE SWITCHER: 3D CAD vs BLENDER STUDIO
+          _buildStageEngineSwitcher(mascot),
+          const SizedBox(height: 12),
+
+          // 2. TRUE 3D VOLUMETRIC MASCOT STAGE / BLENDER STUDIO STAGE
+          _showBlenderStudioRender ? _buildBlenderStudioStage(mascot) : _buildTrue3DStage(mascot),
           const SizedBox(height: 12),
 
           // 3. MATERIAL FINISH SELECTOR (House Chroma, Imperial Gold, Dark Obsidian, Astral Crystal)
-          _buildMaterialFinishSelector(mascot),
-          const SizedBox(height: 14),
+          if (!_showBlenderStudioRender) ...[
+            _buildMaterialFinishSelector(mascot),
+            const SizedBox(height: 14),
 
-          // 4. 3D CAMERA ANGLE PRESETS (Front, 3/4 Hero, Profile, Back, Top)
-          _buildCameraAnglePresets(),
-          const SizedBox(height: 14),
+            // 4. 3D CAMERA ANGLE PRESETS (Front, 3/4 Hero, Profile, Back, Top)
+            _buildCameraAnglePresets(),
+            const SizedBox(height: 14),
 
-          // 5. 3D CONTROL HUD (Turntable, Zoom, Reset, Roar)
-          _build3DControlHud(mascot),
+            // 5. 3D CONTROL HUD (Turntable, Zoom, Reset, Roar)
+            _build3DControlHud(mascot),
+            const SizedBox(height: 18),
+          ],
+
+          // BLENDER 5.2 3D PRODUCTION SUITE CARD
+          _buildBlender3DSuiteCard(mascot),
           const SizedBox(height: 20),
 
           // 6. MASCOT IDENTITY & BEAST NOBILITY
@@ -2053,6 +2083,312 @@ class _Mascot3DStageState extends State<Mascot3DStage>
   }
 
   // ===========================================================================
+  // STAGE ENGINE SWITCHER (3D CAD DIAGRAM vs BLENDER 5.2 STUDIO)
+  // ===========================================================================
+  Widget _buildStageEngineSwitcher(MascotLoreData mascot) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0A0F1A),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white12),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () {
+                HapticFeedback.selectionClick();
+                setState(() => _showBlenderStudioRender = false);
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(vertical: 9),
+                decoration: BoxDecoration(
+                  color: !_showBlenderStudioRender ? mascot.primaryColor : Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: !_showBlenderStudioRender
+                      ? [
+                          BoxShadow(
+                            color: mascot.glowColor.withValues(alpha: 0.4),
+                            blurRadius: 10,
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.threed_rotation_rounded,
+                      size: 15,
+                      color: !_showBlenderStudioRender ? Colors.white : Colors.white60,
+                    ),
+                    const SizedBox(width: 7),
+                    Text(
+                      '3D CAD Workstation',
+                      style: TextStyle(
+                        color: !_showBlenderStudioRender ? Colors.white : Colors.white60,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () {
+                HapticFeedback.selectionClick();
+                setState(() => _showBlenderStudioRender = true);
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(vertical: 9),
+                decoration: BoxDecoration(
+                  color: _showBlenderStudioRender ? const Color(0xFFF5792A) : Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: _showBlenderStudioRender
+                      ? [
+                          BoxShadow(
+                            color: const Color(0xFFF5792A).withValues(alpha: 0.45),
+                            blurRadius: 10,
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.auto_awesome_rounded,
+                      size: 15,
+                      color: _showBlenderStudioRender ? Colors.white : Colors.white60,
+                    ),
+                    const SizedBox(width: 7),
+                    Text(
+                      'Blender 5.2 Studio',
+                      style: TextStyle(
+                        color: _showBlenderStudioRender ? Colors.white : Colors.white60,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // BLENDER 5.2 STUDIO RAYTRACED STAGE
+  // ===========================================================================
+  Widget _buildBlenderStudioStage(MascotLoreData mascot) {
+    return Container(
+      width: double.infinity,
+      height: 440,
+      decoration: BoxDecoration(
+        color: const Color(0xFF03050A),
+        borderRadius: BorderRadius.circular(32),
+        border: Border.all(
+          color: const Color(0xFFF5792A).withValues(alpha: 0.45),
+          width: 1.5,
+        ),
+        gradient: RadialGradient(
+          center: const Alignment(0, -0.15),
+          radius: 1.3,
+          colors: [
+            const Color(0xFFF5792A).withValues(alpha: 0.22),
+            const Color(0xFF0B111E),
+            const Color(0xFF020408),
+          ],
+          stops: const [0.0, 0.6, 1.0],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.9),
+            blurRadius: 30,
+            offset: const Offset(0, 14),
+          ),
+          BoxShadow(
+            color: const Color(0xFFF5792A).withValues(alpha: 0.25),
+            blurRadius: 40,
+            spreadRadius: 2,
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(32),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            // 1. Raytraced Hero Render from Blender 5.2
+            InteractiveViewer(
+              minScale: 0.8,
+              maxScale: 2.5,
+              child: Center(
+                child: Image.asset(
+                  mascot.blenderRenderPath,
+                  width: 380,
+                  height: 380,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.broken_image_rounded, size: 48, color: Colors.white30),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Blender render loading: ${mascot.blenderRenderPath}',
+                          style: const TextStyle(color: Colors.white54, fontSize: 11),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+
+            // 2. Top-Left Badge
+            Positioned(
+              top: 12,
+              left: 12,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.78),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFF5792A).withValues(alpha: 0.6)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 7,
+                      height: 7,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Color(0xFFF5792A),
+                        boxShadow: [
+                          BoxShadow(color: Color(0xFFF5792A), blurRadius: 6),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    const Text(
+                      'BLENDER 5.2 LTS • STUDIO RAYTRACE',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // 3. Top-Right: Launch in Blender button
+            Positioned(
+              top: 12,
+              right: 12,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: _openMasterSceneInBlender,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF5792A).withValues(alpha: 0.28),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFF5792A), width: 1.2),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.launch_rounded, size: 12, color: Colors.white),
+                      SizedBox(width: 5),
+                      Text(
+                        'Open .blend',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+            // 4. Bottom-Left telemetry chip
+            Positioned(
+              bottom: 12,
+              left: 12,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.75),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: const Text(
+                  'EEVEE Engine • 768px • 3-Point Studio Rig',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w700,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ),
+            ),
+
+            // 5. Bottom-Right interactive guidance
+            Positioned(
+              bottom: 12,
+              right: 12,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.75),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.pinch_rounded, size: 12, color: Color(0xFFF5792A)),
+                    SizedBox(width: 5),
+                    Text(
+                      'Pinch / Drag to Inspect',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ===========================================================================
   // 3. MATERIAL FINISH SELECTOR
   // ===========================================================================
   Widget _buildMaterialFinishSelector(MascotLoreData mascot) {
@@ -2286,6 +2622,278 @@ class _Mascot3DStageState extends State<Mascot3DStage>
               elevation: 4,
             ),
             onPressed: _triggerRoar,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ===========================================================================
+  // BLENDER 5.2 3D PRODUCTION SUITE CARD & ASSET LAUNCHER
+  // ===========================================================================
+  void _openMasterSceneInBlender() {
+    HapticFeedback.heavyImpact();
+    const blenderExe = r'C:\Program Files\Blender Foundation\Blender 5.2\blender.exe';
+    const blendFile = r'C:\Users\User\OneDrive\Desktop\asb_house_hub_flutter\assets\3d\asb_mascots.blend';
+
+    try {
+      if (File(blenderExe).existsSync() && File(blendFile).existsSync()) {
+        Process.run(blenderExe, [blendFile]);
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: Color(0xFFF5792A),
+            duration: Duration(seconds: 4),
+            content: Row(
+              children: [
+                Icon(Icons.launch_rounded, color: Colors.white),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Launching Blender 5.2 LTS with asb_mascots.blend...',
+                    style: TextStyle(fontWeight: FontWeight.w900, color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Master Blender scene located at: assets/3d/asb_mascots.blend'),
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Blender status: $e')),
+      );
+    }
+  }
+
+  Widget _buildBlender3DSuiteCard(MascotLoreData mascot) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F1523),
+        borderRadius: BorderRadius.circular(26),
+        border: Border.all(
+          color: const Color(0xFFF5792A).withValues(alpha: 0.35),
+          width: 1.2,
+        ),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            const Color(0xFFF5792A).withValues(alpha: 0.12),
+            const Color(0xFF101726),
+            const Color(0xFF090D17),
+          ],
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF5792A).withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFF5792A).withValues(alpha: 0.5)),
+                ),
+                child: const Icon(
+                  Icons.view_in_ar_rounded,
+                  color: Color(0xFFF5792A),
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Text(
+                          'Blender 5.2 3D Suite',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF00E676).withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFF00E676).withValues(alpha: 0.6)),
+                          ),
+                          child: const Text(
+                            'Active',
+                            style: TextStyle(
+                              color: Color(0xFF00E676),
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    const Text(
+                      'Master 3D Scene • Studio Raytrace • OBJ & GLB Assets',
+                      style: TextStyle(
+                        color: Colors.white60,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          // 3D Assets specs
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.45),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white12),
+            ),
+            child: Column(
+              children: [
+                _buildAssetRow(
+                  icon: Icons.movie_creation_rounded,
+                  name: 'Master Blender Scene',
+                  detail: 'assets/3d/asb_mascots.blend (157 KB)',
+                  badge: 'Full Coliseum',
+                  color: const Color(0xFFF5792A),
+                ),
+                const Divider(color: Colors.white10, height: 16),
+                _buildAssetRow(
+                  icon: Icons.grain_rounded,
+                  name: 'Wavefront OBJ Mesh',
+                  detail: mascot.objAssetPath,
+                  badge: '3D Geometry',
+                  color: const Color(0xFF00E5FF),
+                ),
+                const Divider(color: Colors.white10, height: 16),
+                _buildAssetRow(
+                  icon: Icons.data_object_rounded,
+                  name: 'glTF 2.0 Binary Model',
+                  detail: mascot.glbAssetPath,
+                  badge: 'Universal',
+                  color: const Color(0xFFFFD666),
+                ),
+                const Divider(color: Colors.white10, height: 16),
+                _buildAssetRow(
+                  icon: Icons.camera_rounded,
+                  name: 'Studio Raytraced Render',
+                  detail: mascot.blenderRenderPath,
+                  badge: '768px RGBA',
+                  color: const Color(0xFFFF4081),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.launch_rounded, size: 16, color: Colors.white),
+                  label: const Text(
+                    'Open in Blender 5.2',
+                    style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w900),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFF5792A),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  onPressed: _openMasterSceneInBlender,
+                ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.image_search_rounded, size: 16, color: Colors.white70),
+                label: const Text(
+                  'View Render',
+                  style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w700),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.white12),
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                onPressed: () {
+                  HapticFeedback.selectionClick();
+                  setState(() => _showBlenderStudioRender = true);
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAssetRow({
+    required IconData icon,
+    required String name,
+    required String detail,
+    required String badge,
+    required Color color,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: color),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                name,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              Text(
+                detail,
+                style: const TextStyle(
+                  color: Colors.white54,
+                  fontSize: 10,
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ],
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: color.withValues(alpha: 0.4)),
+          ),
+          child: Text(
+            badge,
+            style: TextStyle(
+              color: color,
+              fontSize: 9,
+              fontWeight: FontWeight.w800,
+            ),
           ),
         ),
       ],
