@@ -71,81 +71,139 @@ enum MascotMaterialFinish {
 // =============================================================================
 
 class Mascot3DMeshes {
-  /// Adds a sculpted 8-sided trophy plinth base directly to any 3D mascot mesh
-  static void _attachOctagonalPlinth(
+  /// Adds a sculpted 16-sided Grand Runic Pedestal Disc directly to any 3D mascot mesh
+  static void _attachGrandRunicPedestalDisc(
     List<V3> vertices,
     List<Face3D> faces,
     Color plinthTop,
     Color plinthBevel,
     Color plinthSide,
-    Color sealColor,
-  ) {
+    Color sealColor, [
+    Color? runeColor,
+  ]) {
     final baseOffset = vertices.length;
+    final rColor = runeColor ?? sealColor;
 
-    // Plinth heights & radii
-    const topY = 82.0;
-    const topR = 64.0;
-    const bevelY = 94.0;
-    const bevelR = 76.0;
-    const bottomY = 110.0;
-    const bottomR = 86.0;
+    // Plinth heights & radii:
+    // Tier 1: Upper collar step where paws/claws grip
+    const stepTopY = 76.0;
+    const stepTopR = 56.0;
+    const stepBevelY = 84.0;
+    const stepBevelR = 72.0;
 
-    // Generate 8 vertices per tier
-    for (int i = 0; i < 8; i++) {
-      final angle = (i * 45) * math.pi / 180;
+    // Tier 2: Grand Runic Disc wide platform
+    const discTopY = 84.0;
+    const discTopR = 114.0;
+
+    // Tier 3: Beveled outer rim
+    const discBevelY = 96.0;
+    const discBevelR = 124.0;
+
+    // Tier 4: Vertical cylindrical base wall
+    const discBaseY = 108.0;
+    const discBaseR = 126.0;
+
+    // Generate 16 vertices per tier (5 rings = 80 vertices)
+    for (int i = 0; i < 16; i++) {
+      final angle = (i * 22.5) * math.pi / 180;
       final cosA = math.cos(angle);
       final sinA = math.sin(angle);
 
-      // Top ring (0 to 7)
-      vertices.add(V3(cosA * topR, topY, sinA * topR));
-      // Bevel ring (8 to 15)
-      vertices.add(V3(cosA * bevelR, bevelY, sinA * bevelR));
-      // Bottom ring (16 to 23)
-      vertices.add(V3(cosA * bottomR, bottomY, sinA * bottomR));
+      // Ring 0: Collar top (i * 5 + 0)
+      vertices.add(V3(cosA * stepTopR, stepTopY, sinA * stepTopR));
+      // Ring 1: Collar bevel / Disc inner (i * 5 + 1)
+      vertices.add(V3(cosA * stepBevelR, stepBevelY, sinA * stepBevelR));
+      // Ring 2: Disc top outer rim (i * 5 + 2)
+      vertices.add(V3(cosA * discTopR, discTopY, sinA * discTopR));
+      // Ring 3: Disc bevel rim (i * 5 + 3)
+      vertices.add(V3(cosA * discBevelR, discBevelY, sinA * discBevelR));
+      // Ring 4: Disc base ring (i * 5 + 4)
+      vertices.add(V3(cosA * discBaseR, discBaseY, sinA * discBaseR));
     }
 
-    // Plinth top center & bottom center
-    final topCenterIdx = vertices.length;
-    vertices.add(const V3(0, topY, 0));
-    final bottomCenterIdx = vertices.length;
-    vertices.add(const V3(0, bottomY, 0));
+    // Collar top center & Disc bottom center
+    final collarCenterIdx = vertices.length;
+    vertices.add(const V3(0, stepTopY, 0));
+    final discBottomCenterIdx = vertices.length;
+    vertices.add(const V3(0, discBaseY, 0));
 
-    // Plinth front seal medallion vertices
+    // Front house seal medallion vertices (embossed on front face of disc bevel)
     final sealIdx = vertices.length;
-    vertices.add(const V3(-18, 97, 83));
-    vertices.add(const V3(0, 89, 85));
-    vertices.add(const V3(18, 97, 83));
-    vertices.add(const V3(0, 105, 85));
+    vertices.add(const V3(-18, 93, 118));
+    vertices.add(const V3(0, 87, 122));
+    vertices.add(const V3(18, 93, 118));
+    vertices.add(const V3(0, 101, 122));
 
-    // 1. Top triangular fan faces
-    for (int i = 0; i < 8; i++) {
-      final next = (i + 1) % 8;
-      final i0 = baseOffset + (i * 3);
-      final i1 = baseOffset + (next * 3);
-      faces.add(Face3D([topCenterIdx, i0, i1], plinthTop, isPlinth: true));
+    // 1. Collar Top Triangular Fan Faces (16 triangles)
+    for (int i = 0; i < 16; i++) {
+      final next = (i + 1) % 16;
+      final i0 = baseOffset + (i * 5);
+      final i1 = baseOffset + (next * 5);
+      faces.add(Face3D([collarCenterIdx, i0, i1], plinthTop, isPlinth: true));
     }
 
-    // 2. Upper bevel quads
-    for (int i = 0; i < 8; i++) {
-      final next = (i + 1) % 8;
-      final t0 = baseOffset + (i * 3);
-      final t1 = baseOffset + (next * 3);
-      final b0 = baseOffset + (i * 3) + 1;
-      final b1 = baseOffset + (next * 3) + 1;
+    // 2. Collar Step Bevel Quads (16 quads)
+    for (int i = 0; i < 16; i++) {
+      final next = (i + 1) % 16;
+      final t0 = baseOffset + (i * 5);
+      final t1 = baseOffset + (next * 5);
+      final b0 = baseOffset + (i * 5) + 1;
+      final b1 = baseOffset + (next * 5) + 1;
       faces.add(Face3D([t0, t1, b1, b0], plinthBevel, isPlinth: true));
     }
 
-    // 3. Lower vertical side quads
-    for (int i = 0; i < 8; i++) {
-      final next = (i + 1) % 8;
-      final t0 = baseOffset + (i * 3) + 1;
-      final t1 = baseOffset + (next * 3) + 1;
-      final b0 = baseOffset + (i * 3) + 2;
-      final b1 = baseOffset + (next * 3) + 2;
+    // 3. Grand Runic Disc Top Platform (16 radial quads)
+    for (int i = 0; i < 16; i++) {
+      final next = (i + 1) % 16;
+      final in0 = baseOffset + (i * 5) + 1;
+      final in1 = baseOffset + (next * 5) + 1;
+      final out0 = baseOffset + (i * 5) + 2;
+      final out1 = baseOffset + (next * 5) + 2;
+
+      final isCardinal = (i % 4 == 0);
+      final isRunic = (i % 2 == 1);
+      final Color segColor;
+      final bool emissive;
+      if (isCardinal) {
+        segColor = sealColor;
+        emissive = true;
+      } else if (isRunic) {
+        segColor = rColor;
+        emissive = true;
+      } else {
+        segColor = plinthTop;
+        emissive = false;
+      }
+
+      faces.add(Face3D(
+        [in0, in1, out1, out0],
+        segColor,
+        isEmissive: emissive,
+        isPlinth: true,
+      ));
+    }
+
+    // 4. Outer Beveled Rim (16 quads)
+    for (int i = 0; i < 16; i++) {
+      final next = (i + 1) % 16;
+      final t0 = baseOffset + (i * 5) + 2;
+      final t1 = baseOffset + (next * 5) + 2;
+      final b0 = baseOffset + (i * 5) + 3;
+      final b1 = baseOffset + (next * 5) + 3;
+      faces.add(Face3D([t0, t1, b1, b0], plinthBevel, isPlinth: true));
+    }
+
+    // 5. Vertical Cylindrical Base Wall (16 quads)
+    for (int i = 0; i < 16; i++) {
+      final next = (i + 1) % 16;
+      final t0 = baseOffset + (i * 5) + 3;
+      final t1 = baseOffset + (next * 5) + 3;
+      final b0 = baseOffset + (i * 5) + 4;
+      final b1 = baseOffset + (next * 5) + 4;
       faces.add(Face3D([t0, t1, b1, b0], plinthSide, isPlinth: true));
     }
 
-    // 4. Front house seal medallion
+    // 6. Front House Seal Medallion (Diamond crest with emissive glow)
     faces.add(Face3D(
       [sealIdx, sealIdx + 1, sealIdx + 2, sealIdx + 3],
       sealColor,
@@ -153,12 +211,12 @@ class Mascot3DMeshes {
       isPlinth: true,
     ));
 
-    // 5. Bottom ground cap
-    for (int i = 0; i < 8; i++) {
-      final next = (i + 1) % 8;
-      final i0 = baseOffset + (i * 3) + 2;
-      final i1 = baseOffset + (next * 3) + 2;
-      faces.add(Face3D([bottomCenterIdx, i1, i0], plinthSide, isPlinth: true));
+    // 7. Bottom Ground Cap (16 triangle fan)
+    for (int i = 0; i < 16; i++) {
+      final next = (i + 1) % 16;
+      final i0 = baseOffset + (i * 5) + 4;
+      final i1 = baseOffset + (next * 5) + 4;
+      faces.add(Face3D([discBottomCenterIdx, i1, i0], plinthSide, isPlinth: true));
     }
   }
 
@@ -255,6 +313,14 @@ class Mascot3DMeshes {
       const V3(48, 76, -26),
       const V3(58, 80, 10),
       const V3(64, 78, 36), // Spade tip
+
+      // 47, 48: Razor Dragon Fangs L/R
+      const V3(-10, 16, 70),
+      const V3(10, 16, 70),
+
+      // 49, 50: Wing Elbow Talon Spurs L/R
+      const V3(-102, -32, -48),
+      const V3(102, -32, -48),
     ];
 
     final faces = <Face3D>[
@@ -264,6 +330,10 @@ class Mascot3DMeshes {
       const Face3D([0, 3, 1], crimsonMid),
       const Face3D([0, 2, 4], crimsonMid),
       const Face3D([0, 4, 20, 3], crimsonCore),
+
+      // Dragon Razor Fangs
+      const Face3D([1, 47, 3], Color(0xFFFFF8E7), isEmissive: true),
+      const Face3D([2, 4, 48], Color(0xFFFFF8E7), isEmissive: true),
 
       // Muzzle & Bridge
       const Face3D([1, 6, 5], crimsonMid),
@@ -311,11 +381,13 @@ class Mascot3DMeshes {
       const Face3D([25, 28, 33, 31], crimsonMid),
       const Face3D([31, 33, 32], crimsonBright),
       const Face3D([14, 24, 31], hornDark),
+      const Face3D([31, 49, 32], dragonGold),
 
       // Right Wing Structure (3D Depth)
       const Face3D([26, 34, 36, 29], crimsonMid),
       const Face3D([34, 35, 36], crimsonBright),
       const Face3D([15, 34, 24], hornDark),
+      const Face3D([34, 35, 50], dragonGold),
 
       // Left Claw Grip
       const Face3D([25, 37, 28], crimsonMid),
@@ -331,8 +403,16 @@ class Mascot3DMeshes {
       const Face3D([44, 45, 46], dragonGold, isEmissive: true),
     ];
 
-    // Attach sculpted physical plinth base
-    _attachOctagonalPlinth(vertices, faces, plinthTop, plinthBevel, plinthDark, crimsonBright);
+    // Attach sculpted Grand Runic Pedestal Disc directly under dragon
+    _attachGrandRunicPedestalDisc(
+      vertices,
+      faces,
+      plinthTop,
+      plinthBevel,
+      plinthDark,
+      crimsonBright,
+      const Color(0xFFFF5252),
+    );
 
     return Mesh3D(vertices: vertices, faces: faces);
   }
@@ -413,6 +493,13 @@ class Mascot3DMeshes {
       const V3(10, 68, -42),
       const V3(45, 76, -24),
       const V3(55, 80, 18),
+
+      // 37: Raptor beak under-hook apex
+      const V3(0, 26, 80),
+
+      // 38, 39: Secondary wing feather tips L/R
+      const V3(-125, -15, -55),
+      const V3(125, -15, -55),
     ];
 
     final faces = <Face3D>[
@@ -421,6 +508,7 @@ class Mascot3DMeshes {
       const Face3D([0, 3, 1], beakGold),
       const Face3D([0, 2, 4], beakGold),
       const Face3D([0, 4, 3], beakGold),
+      const Face3D([0, 4, 37], Color(0xFFE65100)), // Beak razor underhook
 
       // Eyebrows & Forehead
       const Face3D([1, 5, 2], stormSilver),
@@ -450,11 +538,13 @@ class Mascot3DMeshes {
       const Face3D([18, 16, 26], sapphireMid),
       const Face3D([18, 27, 17], sapphireMid),
 
-      // Eagle Wings
+      // Eagle Wings & Secondary Plumage
       const Face3D([16, 19, 23, 26], sapphireDark),
       const Face3D([19, 21, 23], sapphireBright),
+      const Face3D([19, 38, 21], stormSilver),
       const Face3D([17, 27, 24, 20], sapphireDark),
       const Face3D([20, 24, 22], sapphireBright),
+      const Face3D([20, 22, 39], stormSilver),
 
       // Dorsal spine
       const Face3D([10, 25, 13], sapphireDark),
@@ -473,7 +563,16 @@ class Mascot3DMeshes {
       const Face3D([34, 35, 36], stormSilver, isEmissive: true),
     ];
 
-    _attachOctagonalPlinth(vertices, faces, plinthTop, plinthBevel, plinthDark, sapphireBright);
+    // Attach sculpted Grand Runic Pedestal Disc directly under gryphon
+    _attachGrandRunicPedestalDisc(
+      vertices,
+      faces,
+      plinthTop,
+      plinthBevel,
+      plinthDark,
+      sapphireBright,
+      const Color(0xFF00E5FF),
+    );
 
     return Mesh3D(vertices: vertices, faces: faces);
   }
@@ -551,6 +650,14 @@ class Mascot3DMeshes {
       const V3(12, 68, -42),
       const V3(48, 76, -24),
       const V3(56, 80, 16),
+
+      // 35, 36: Upper white wolf fangs L/R
+      const V3(-8, 20, 68),
+      const V3(8, 20, 68),
+
+      // 37, 38: Flank dorsal ruff L/R
+      const V3(-65, -10, -22),
+      const V3(65, -10, -22),
     ];
 
     final faces = <Face3D>[
@@ -559,6 +666,10 @@ class Mascot3DMeshes {
       const Face3D([0, 3, 1], noseBlack),
       const Face3D([0, 2, 4], emeraldDark),
       const Face3D([0, 4, 3], emeraldDark),
+
+      // Direwolf White Fangs in Snarl
+      const Face3D([2, 35, 4], Color(0xFFFFFFFF), isEmissive: true),
+      const Face3D([3, 4, 36], Color(0xFFFFFFFF), isEmissive: true),
 
       // Muzzle Bridge to Forehead
       const Face3D([1, 5, 2], emeraldMid),
@@ -580,11 +691,13 @@ class Mascot3DMeshes {
       const Face3D([16, 12, 14], emeraldBright),
       const Face3D([10, 14, 12], emeraldDark),
 
-      // Flared Alpha Wolf Ruff Mane
+      // Flared Alpha Wolf Ruff Mane & Flank Ruff
       const Face3D([6, 13, 17], emeraldBright),
       const Face3D([7, 18, 14], emeraldBright),
       const Face3D([17, 19, 21], mossSilver),
       const Face3D([18, 21, 20], mossSilver),
+      const Face3D([10, 37, 13], emeraldMid),
+      const Face3D([10, 14, 38], emeraldMid),
 
       // Throat & Muscular Chest
       const Face3D([4, 21, 2], emeraldDark),
@@ -605,7 +718,16 @@ class Mascot3DMeshes {
       const Face3D([32, 33, 34], emeraldBright),
     ];
 
-    _attachOctagonalPlinth(vertices, faces, plinthTop, plinthBevel, plinthDark, emeraldBright);
+    // Attach sculpted Grand Runic Pedestal Disc directly under wolf
+    _attachGrandRunicPedestalDisc(
+      vertices,
+      faces,
+      plinthTop,
+      plinthBevel,
+      plinthDark,
+      emeraldBright,
+      const Color(0xFF69F0AE),
+    );
 
     return Mesh3D(vertices: vertices, faces: faces);
   }
@@ -684,6 +806,13 @@ class Mascot3DMeshes {
       const V3(12, 68, -42),
       const V3(46, 76, -24),
       const V3(56, 80, 16),
+
+      // 36, 37: Upper lion fangs L/R
+      const V3(-8, 22, 66),
+      const V3(8, 22, 66),
+
+      // 38: Zenith solar mane flare
+      const V3(0, -102, -10),
     ];
 
     final faces = <Face3D>[
@@ -692,6 +821,10 @@ class Mascot3DMeshes {
       const Face3D([0, 3, 1], imperialAmber),
       const Face3D([0, 2, 4], sunGoldMid),
       const Face3D([0, 4, 3], sunGoldMid),
+
+      // Lion White Fangs
+      const Face3D([2, 36, 4], Color(0xFFFFFFFF), isEmissive: true),
+      const Face3D([3, 4, 37], Color(0xFFFFFFFF), isEmissive: true),
 
       // Forehead & Brow
       const Face3D([1, 5, 2], sunGoldMid),
@@ -716,6 +849,8 @@ class Mascot3DMeshes {
       const Face3D([7, 18, 14], sunGoldBright),
       const Face3D([17, 19, 21], sunGoldMid),
       const Face3D([18, 22, 20], sunGoldMid),
+      const Face3D([10, 38, 15], sunGoldBright, isEmissive: true),
+      const Face3D([10, 16, 38], sunGoldBright, isEmissive: true),
 
       // Beard & Breastplate
       const Face3D([4, 23, 2], imperialAmber),
@@ -736,7 +871,16 @@ class Mascot3DMeshes {
       const Face3D([33, 34, 35], imperialAmber, isEmissive: true),
     ];
 
-    _attachOctagonalPlinth(vertices, faces, plinthTop, plinthBevel, plinthDark, sunGoldBright);
+    // Attach sculpted Grand Runic Pedestal Disc directly under chimera
+    _attachGrandRunicPedestalDisc(
+      vertices,
+      faces,
+      plinthTop,
+      plinthBevel,
+      plinthDark,
+      sunGoldBright,
+      const Color(0xFFFFD700),
+    );
 
     return Mesh3D(vertices: vertices, faces: faces);
   }
@@ -1397,9 +1541,9 @@ class _Mascot3DStageState extends State<Mascot3DStage>
                 ),
               ),
 
-              // 2. 3D Obsidian Altar Dais on Floor
+              // 2. Sanctuary Floor Light & Ground Dais Aura
               Positioned(
-                bottom: 18,
+                bottom: 22,
                 child: AnimatedBuilder(
                   animation: _altarSpinController,
                   builder: (context, _) {
@@ -1407,33 +1551,31 @@ class _Mascot3DStageState extends State<Mascot3DStage>
                       alignment: Alignment.center,
                       transform: Matrix4.identity()
                         ..setEntry(3, 2, 0.002)
-                        ..rotateX(1.15)
+                        ..rotateX(1.22)
                         ..rotateZ(_altarSpinController.value * math.pi * 2),
                       child: Container(
-                        width: 260,
-                        height: 260,
+                        width: 290,
+                        height: 290,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          border: Border.all(
-                            color: mascot.glowColor.withValues(alpha: 0.65),
-                            width: 2.0,
-                          ),
                           gradient: RadialGradient(
                             colors: [
-                              mascot.glowColor.withValues(alpha: 0.30),
-                              Colors.black.withValues(alpha: 0.85),
+                              mascot.glowColor.withValues(alpha: 0.38),
+                              mascot.glowColor.withValues(alpha: 0.12),
+                              Colors.transparent,
                             ],
+                            stops: const [0.0, 0.65, 1.0],
                           ),
                           boxShadow: [
                             BoxShadow(
-                              color: mascot.glowColor.withValues(alpha: 0.45),
-                              blurRadius: 22,
-                              spreadRadius: 2,
+                              color: mascot.glowColor.withValues(alpha: 0.35),
+                              blurRadius: 28,
+                              spreadRadius: 4,
                             ),
                           ],
                         ),
                         child: CustomPaint(
-                          painter: _AltarRunicPainter(color: mascot.glowColor),
+                          painter: _AltarRunicPainter(color: mascot.glowColor.withValues(alpha: 0.5)),
                         ),
                       ),
                     );
@@ -1441,27 +1583,27 @@ class _Mascot3DStageState extends State<Mascot3DStage>
                 ),
               ),
 
-              // 3. Dynamic 3D Ground Shadow tracking mascot's 3D rotation and plinth
+              // 3. Dynamic 3D Ground Contact Shadow tracking mascot's disc
               Positioned(
-                bottom: 24,
+                bottom: 26,
                 child: Transform(
                   alignment: Alignment.center,
                   transform: Matrix4.translationValues(
-                    math.sin(_rotY) * 38,
-                    -_rotX * 22,
+                    math.sin(_rotY) * 24,
+                    -_rotX * 16,
                     0.0,
                   ),
                   child: Container(
-                    width: 155,
-                    height: 32,
+                    width: 210,
+                    height: 44,
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.85),
-                      borderRadius: const BorderRadius.all(Radius.elliptical(155, 32)),
+                      color: Colors.black.withValues(alpha: 0.88),
+                      borderRadius: const BorderRadius.all(Radius.elliptical(210, 44)),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.95),
-                          blurRadius: 20,
-                          spreadRadius: 4,
+                          color: Colors.black.withValues(alpha: 0.98),
+                          blurRadius: 26,
+                          spreadRadius: 6,
                         ),
                       ],
                     ),
@@ -1469,7 +1611,7 @@ class _Mascot3DStageState extends State<Mascot3DStage>
                 ),
               ),
 
-              // 4. REAL 3D POLYGONAL MESH STATUE & SCULPTED PLINTH
+              // 4. REAL 3D POLYGONAL MESH STATUE & GRAND RUNIC DISC
               AnimatedBuilder(
                 animation: Listenable.merge([
                   _idleFloatController,
@@ -1477,7 +1619,8 @@ class _Mascot3DStageState extends State<Mascot3DStage>
                 ]),
                 builder: (context, _) {
                   final floatVal = _idleFloatController.value;
-                  final floatY = math.sin(floatVal * math.pi * 2) * 7.5;
+                  // Subtle living breath pulse
+                  final breatheScale = 1.0 + (math.sin(floatVal * math.pi * 2) * 0.012);
 
                   // Roar scale & vibration pulse
                   final roarVal = _roarController.value;
@@ -1487,12 +1630,12 @@ class _Mascot3DStageState extends State<Mascot3DStage>
                       : 0.0;
 
                   return Transform.translate(
-                    offset: Offset(shakeX, floatY - 10),
+                    offset: Offset(shakeX, 2),
                     child: Transform.scale(
-                      scale: roarScale * _zoomScale,
+                      scale: roarScale * _zoomScale * breatheScale,
                       child: SizedBox(
-                        width: 340,
-                        height: 340,
+                        width: 360,
+                        height: 360,
                         child: CustomPaint(
                           painter: _Mascot3DRendererPainter(
                             mesh: mascot.mesh,
