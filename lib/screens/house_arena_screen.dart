@@ -500,11 +500,11 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
 
   Widget _buildArenaNavPills(Color houseColor) {
     final tabs = [
-      {'icon': Icons.bolt_rounded, 'label': 'Reactor'},
+      {'icon': Icons.bolt_rounded, 'label': 'Spirit Reactor'},
       {'icon': Icons.psychology_rounded, 'label': 'Brain Blitz'},
       {'icon': Icons.auto_graph_rounded, 'label': 'Cup Oracle'},
-      {'icon': Icons.shield_rounded, 'label': 'Honours & Shields'},
-      {'icon': Icons.shield_rounded, 'label': 'Mascot Lore'},
+      {'icon': Icons.workspace_premium_rounded, 'label': 'Titan Vault'},
+      {'icon': Icons.view_in_ar_rounded, 'label': '3D Mascot'},
     ];
 
     return Container(

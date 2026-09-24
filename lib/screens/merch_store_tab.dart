@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import '../theme/app_theme.dart';
 
 class MerchProduct {
   final String id;
@@ -326,6 +327,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
   }
 
   void _toggleFavorite(String productId) {
+    AppHaptics.tap();
     setState(() {
       if (GlobalWalletStore.favoriteIds.contains(productId)) {
         GlobalWalletStore.favoriteIds.remove(productId);
@@ -336,6 +338,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
   }
 
   void _addToCart(MerchProduct product, {String size = 'M', int qty = 1}) {
+    AppHaptics.light();
     setState(() {
       final existingIndex = GlobalWalletStore.cart.indexWhere(
         (item) => item.product.id == product.id && item.size == size,
@@ -372,6 +375,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     String size = 'M',
     int qty = 1,
   }) {
+    AppHaptics.success();
     final parsedPrice =
         int.tryParse(product.price.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
     final totalPts = parsedPrice * qty;

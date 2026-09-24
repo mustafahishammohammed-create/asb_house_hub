@@ -211,8 +211,10 @@ class _HomeScreenState extends State<HomeScreen>
                           ),
                           selected: isSel,
                           selectedColor: color,
-                          onSelected: (_) =>
-                              setModalState(() => selectedPoints = pts),
+                          onSelected: (_) {
+                            AppHaptics.tap();
+                            setModalState(() => selectedPoints = pts);
+                          },
                         ),
                       ),
                     );
@@ -254,10 +256,13 @@ class _HomeScreenState extends State<HomeScreen>
                         ),
                         const SizedBox(height: 8),
                         TextButton.icon(
-                          onPressed: () => setModalState(() {
-                            selectedImageBytes = null;
-                            selectedFileName = null;
-                          }),
+                          onPressed: () {
+                            AppHaptics.light();
+                            setModalState(() {
+                              selectedImageBytes = null;
+                              selectedFileName = null;
+                            });
+                          },
                           icon: const Icon(
                             Icons.delete_outline_rounded,
                             color: Colors.redAccent,
@@ -465,6 +470,7 @@ class _HomeScreenState extends State<HomeScreen>
                                 });
                               } catch (_) {}
 
+                              AppHaptics.success();
                               navigator.pop();
                               messenger.showSnackBar(
                                 SnackBar(
@@ -2014,6 +2020,7 @@ class _HomeScreenState extends State<HomeScreen>
         final color = item['color'] as Color;
         return InkWell(
           onTap: () {
+            AppHaptics.light();
             if (item['title'] == 'Submit House Claim') {
               _showSubmitClaimModal(
                 houseName,
@@ -2038,21 +2045,10 @@ class _HomeScreenState extends State<HomeScreen>
           borderRadius: BorderRadius.circular(24),
           child: Container(
             padding: const EdgeInsets.all(22),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: Theme.of(
-                  context,
-                ).colorScheme.outline.withValues(alpha: 0.5),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.03),
-                  blurRadius: 18,
-                  offset: const Offset(0, 6),
-                ),
-              ],
+            decoration: AppGlass.cardDecoration(
+              context: context,
+              accentColor: color,
+              radius: 24,
             ),
             child: Row(
               children: [

@@ -93,6 +93,7 @@ class _StudentBehaviorEvaluationScreenState
 
       if (!mounted) return;
 
+      AppHaptics.success();
       final houseColor = HouseColors.getHouseColor(widget.houseName);
       final deltaText = _isWellBehaved ? '+$_selectedPoints' : '-$_selectedPoints';
 
