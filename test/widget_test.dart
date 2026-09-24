@@ -137,9 +137,33 @@ void main() {
     expect(find.text('The Cinder Core Sceptre'), findsOneWidget);
     expect(find.text('Founding Era Chronicles'), findsOneWidget);
 
+    // Verify 3D Technical Diagram features: CAD Telemetry, Modes, and Callout Pins
+    expect(find.textContaining('CAD • YAW:'), findsOneWidget);
+    expect(find.text('Solid'), findsOneWidget);
+    expect(find.text('Blueprint'), findsOneWidget);
+    expect(find.text('X-Ray'), findsOneWidget);
+    expect(find.text('Callouts: ACTIVE'), findsOneWidget);
+
+    // Toggle blueprint mode
+    await tester.tap(find.text('Blueprint'));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Toggle X-ray mode
+    await tester.tap(find.text('X-Ray'));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Toggle callouts off and on
+    await tester.tap(find.text('Callouts: ACTIVE'));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Callouts: HIDDEN'), findsOneWidget);
+
+    await tester.tap(find.text('Callouts: HIDDEN'));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Callouts: ACTIVE'), findsOneWidget);
+
     // Switch to Sapphire
     await tester.tap(find.text('Sapphire'));
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.text('Zephyr the Tempest Gryphon'), findsOneWidget);
     expect(find.text('The Aegis of Tempest Skies'), findsOneWidget);

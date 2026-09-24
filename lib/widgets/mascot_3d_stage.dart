@@ -66,6 +66,28 @@ enum MascotMaterialFinish {
   astralCrystal,
 }
 
+/// Professional 3D diagram display modes
+enum MascotDiagramMode {
+  solidRender,
+  holoBlueprint,
+  tacticalXRay,
+}
+
+/// 3D anatomical hotspot definition for interactive technical callout diagrams
+class MascotHotspot {
+  final String label;
+  final String subtitle;
+  final V3 position3D;
+  final IconData icon;
+
+  const MascotHotspot({
+    required this.label,
+    required this.subtitle,
+    required this.position3D,
+    required this.icon,
+  });
+}
+
 // =============================================================================
 // 2. PROCEDURAL 3D MESH BUILDERS FOR THE 4 HOUSE MASCOTS
 // =============================================================================
@@ -911,6 +933,7 @@ class MascotLoreData {
   final List<String> virtues;
   final String sacredRite;
   final Mesh3D mesh;
+  final List<MascotHotspot> hotspots;
 
   const MascotLoreData({
     required this.houseId,
@@ -933,6 +956,7 @@ class MascotLoreData {
     required this.virtues,
     required this.sacredRite,
     required this.mesh,
+    required this.hotspots,
   });
 
   static List<MascotLoreData> get allMascots => [
@@ -971,6 +995,38 @@ class MascotLoreData {
           sacredRite:
               'The Rite of the First Ember: Conferred upon scholars who show unmatched bravery by championing their team when the odds seem insurmountable.',
           mesh: Mascot3DMeshes.buildDragonMesh(),
+          hotspots: const [
+            MascotHotspot(
+              label: 'Cranial Crest Horns',
+              subtitle: 'Flame Arc Channeling',
+              position3D: V3(0, -62, 10),
+              icon: Icons.whatshot_rounded,
+            ),
+            MascotHotspot(
+              label: 'Thermal Wings',
+              subtitle: 'Mach-2 Gliding Struts',
+              position3D: V3(-110, -35, -45),
+              icon: Icons.air_rounded,
+            ),
+            MascotHotspot(
+              label: 'Dragon Razor Fangs',
+              subtitle: '3,500 PSI Bite Force',
+              position3D: V3(0, 16, 75),
+              icon: Icons.flash_on_rounded,
+            ),
+            MascotHotspot(
+              label: 'Adamantine Talons',
+              subtitle: 'Grand Disc Grip',
+              position3D: V3(-44, 76, 40),
+              icon: Icons.sports_kabaddi_rounded,
+            ),
+            MascotHotspot(
+              label: 'Spade Tail Whip',
+              subtitle: 'Defensive Sweep Array',
+              position3D: V3(55, 78, 20),
+              icon: Icons.offline_bolt_rounded,
+            ),
+          ],
         ),
         MascotLoreData(
           houseId: 'sapphire',
@@ -1007,6 +1063,38 @@ class MascotLoreData {
           sacredRite:
               'The Rite of the Zenith Flight: Conferred upon scholars who discover breakthrough solutions, excel in debate, and elevate house intellectual prestige.',
           mesh: Mascot3DMeshes.buildGryphonMesh(),
+          hotspots: const [
+            MascotHotspot(
+              label: 'Raptor Hook Beak',
+              subtitle: 'Aerodynamic Cutting Edge',
+              position3D: V3(0, 14, 80),
+              icon: Icons.flash_on_rounded,
+            ),
+            MascotHotspot(
+              label: 'Storm Feather Crest',
+              subtitle: 'Barometric Senses',
+              position3D: V3(0, -65, 0),
+              icon: Icons.air_rounded,
+            ),
+            MascotHotspot(
+              label: 'Tempest Razor Wings',
+              subtitle: 'Sonic Gale Induction',
+              position3D: V3(-115, -30, -45),
+              icon: Icons.cyclone_rounded,
+            ),
+            MascotHotspot(
+              label: 'Gryphon Talons',
+              subtitle: 'Precision Disc Clutch',
+              position3D: V3(-40, 76, 40),
+              icon: Icons.sports_kabaddi_rounded,
+            ),
+            MascotHotspot(
+              label: 'Aero Feather Tail',
+              subtitle: 'Rudder Gyro-Stabilizer',
+              position3D: V3(48, 76, -10),
+              icon: Icons.change_history_rounded,
+            ),
+          ],
         ),
         MascotLoreData(
           houseId: 'emerald',
@@ -1043,6 +1131,38 @@ class MascotLoreData {
           sacredRite:
               'The Rite of the Pack Vigil: Conferred upon scholars who sacrifice individual limelight to bolster their fellow classmates and keep house spirit unbreakable.',
           mesh: Mascot3DMeshes.buildWolfMesh(),
+          hotspots: const [
+            MascotHotspot(
+              label: 'Snarl White Fangs',
+              subtitle: 'Alpha Pack Strike',
+              position3D: V3(0, 20, 70),
+              icon: Icons.flash_on_rounded,
+            ),
+            MascotHotspot(
+              label: 'Titan Ear Radar',
+              subtitle: 'Infrasound Frequency Scan',
+              position3D: V3(36, -65, -5),
+              icon: Icons.hearing_rounded,
+            ),
+            MascotHotspot(
+              label: 'Alpha Ruff Mane',
+              subtitle: 'Reinforced Armor Strata',
+              position3D: V3(-70, 30, -15),
+              icon: Icons.shield_rounded,
+            ),
+            MascotHotspot(
+              label: 'Direwolf Paws',
+              subtitle: 'High-Traction Disc Plant',
+              position3D: V3(-38, 76, 40),
+              icon: Icons.pets_rounded,
+            ),
+            MascotHotspot(
+              label: 'Forest Tail Plume',
+              subtitle: 'Momentum Vector Rudder',
+              position3D: V3(48, 76, -10),
+              icon: Icons.nature_rounded,
+            ),
+          ],
         ),
         MascotLoreData(
           houseId: 'topaz',
@@ -1079,6 +1199,38 @@ class MascotLoreData {
           sacredRite:
               'The Rite of the Golden Dawn: Conferred upon scholars who uplift others, display exceptional sportsmanship on the pitch, and lead with warmth and joy.',
           mesh: Mascot3DMeshes.buildChimeraMesh(),
+          hotspots: const [
+            MascotHotspot(
+              label: 'Solar Fangs & Muzzle',
+              subtitle: 'Dawn Roar Acoustic Array',
+              position3D: V3(0, 22, 70),
+              icon: Icons.record_voice_over_rounded,
+            ),
+            MascotHotspot(
+              label: '16-Ray Solar Mane',
+              subtitle: 'Corona Thermal Flare',
+              position3D: V3(0, -85, -10),
+              icon: Icons.wb_sunny_rounded,
+            ),
+            MascotHotspot(
+              label: 'Sovereign Horns',
+              subtitle: 'Solar Energy Conduction',
+              position3D: V3(-40, -65, -10),
+              icon: Icons.auto_awesome_rounded,
+            ),
+            MascotHotspot(
+              label: 'Imperial Paws',
+              subtitle: 'Sovereign Altar Anchor',
+              position3D: V3(-36, 76, 40),
+              icon: Icons.gavel_rounded,
+            ),
+            MascotHotspot(
+              label: 'Serpent Chimera Tail',
+              subtitle: 'Electro-Static Defense',
+              position3D: V3(48, 76, -10),
+              icon: Icons.bolt_rounded,
+            ),
+          ],
         ),
       ];
 
@@ -1149,6 +1301,8 @@ class _Mascot3DStageState extends State<Mascot3DStage>
   double _baseZoom = 1.0;
   bool _isAutoRotating = false;
   MascotMaterialFinish _currentFinish = MascotMaterialFinish.houseChroma;
+  MascotDiagramMode _diagramMode = MascotDiagramMode.solidRender;
+  bool _showDiagramCallouts = true;
 
   // Animation Controllers
   late final AnimationController _idleFloatController;
@@ -1644,6 +1798,9 @@ class _Mascot3DStageState extends State<Mascot3DStage>
                             glowColor: mascot.glowColor,
                             primaryColor: mascot.primaryColor,
                             finish: _currentFinish,
+                            diagramMode: _diagramMode,
+                            showCallouts: _showDiagramCallouts,
+                            hotspots: mascot.hotspots,
                           ),
                         ),
                       ),
@@ -1682,28 +1839,43 @@ class _Mascot3DStageState extends State<Mascot3DStage>
                 },
               ),
 
-              // 6. Interactive Hint Pill
+              // 6. Top-Left: Live 3D CAD Telemetry HUD
               Positioned(
-                top: 14,
+                top: 12,
+                left: 12,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.65),
-                    borderRadius: BorderRadius.circular(16),
+                    color: Colors.black.withValues(alpha: 0.72),
+                    borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: Colors.white12),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.threed_rotation_rounded, size: 14, color: mascot.accentColor),
+                      Container(
+                        width: 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: const Color(0xFF00E676),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF00E676).withValues(alpha: 0.6),
+                              blurRadius: 4,
+                            ),
+                          ],
+                        ),
+                      ),
                       const SizedBox(width: 6),
-                      const Text(
-                        'Full 3D Volumetric Model • Pinch to Zoom • Drag 360°',
-                        style: TextStyle(
+                      Text(
+                        'CAD • YAW: ${((_rotY * 180 / math.pi) % 360).toInt()}°  PITCH: ${(_rotX * 180 / math.pi).toInt()}°  ZOOM: ${(_zoomScale * 100).toInt()}%',
+                        style: const TextStyle(
                           color: Colors.white70,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.2,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w800,
+                          fontFamily: 'monospace',
+                          letterSpacing: 0.3,
                         ),
                       ),
                     ],
@@ -1711,29 +1883,170 @@ class _Mascot3DStageState extends State<Mascot3DStage>
                 ),
               ),
 
-              // 7. Zoom Level Indicator Floating Chip
+              // 7. Top-Right: Technical Diagram Display Modes
               Positioned(
-                bottom: 14,
-                right: 14,
+                top: 12,
+                right: 12,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.all(3),
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.6),
-                    borderRadius: BorderRadius.circular(10),
+                    color: Colors.black.withValues(alpha: 0.75),
+                    borderRadius: BorderRadius.circular(13),
                     border: Border.all(color: Colors.white12),
                   ),
-                  child: Text(
-                    '${(_zoomScale * 100).toInt()}%',
-                    style: const TextStyle(
-                      color: Colors.white60,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildDiagramModeBtn(
+                        label: 'Solid',
+                        icon: Icons.view_in_ar_rounded,
+                        mode: MascotDiagramMode.solidRender,
+                        activeColor: mascot.accentColor,
+                      ),
+                      const SizedBox(width: 3),
+                      _buildDiagramModeBtn(
+                        label: 'Blueprint',
+                        icon: Icons.grid_4x4_rounded,
+                        mode: MascotDiagramMode.holoBlueprint,
+                        activeColor: const Color(0xFF00E5FF),
+                      ),
+                      const SizedBox(width: 3),
+                      _buildDiagramModeBtn(
+                        label: 'X-Ray',
+                        icon: Icons.biotech_rounded,
+                        mode: MascotDiagramMode.tacticalXRay,
+                        activeColor: const Color(0xFFFF4081),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // 8. Bottom-Left: Interactive Anatomical Callout Pins Toggle
+              Positioned(
+                bottom: 12,
+                left: 12,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    setState(() {
+                      _showDiagramCallouts = !_showDiagramCallouts;
+                    });
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: _showDiagramCallouts
+                          ? mascot.glowColor.withValues(alpha: 0.28)
+                          : Colors.black.withValues(alpha: 0.72),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: _showDiagramCallouts ? mascot.accentColor : Colors.white12,
+                        width: 1.2,
+                      ),
                     ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _showDiagramCallouts ? Icons.push_pin_rounded : Icons.push_pin_outlined,
+                          size: 12,
+                          color: _showDiagramCallouts ? Colors.white : Colors.white60,
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          _showDiagramCallouts ? 'Callouts: ACTIVE' : 'Callouts: HIDDEN',
+                          style: TextStyle(
+                            color: _showDiagramCallouts ? Colors.white : Colors.white60,
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.2,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+              // 9. Bottom-Right: Interactive Manipulation Tip Pill
+              Positioned(
+                bottom: 12,
+                right: 12,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.72),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.threed_rotation_rounded, size: 12, color: mascot.accentColor),
+                      const SizedBox(width: 5),
+                      const Text(
+                        '360° Drag • Pinch Zoom',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDiagramModeBtn({
+    required String label,
+    required IconData icon,
+    required MascotDiagramMode mode,
+    required Color activeColor,
+  }) {
+    final isSelected = _diagramMode == mode;
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: () {
+        HapticFeedback.selectionClick();
+        setState(() {
+          _diagramMode = mode;
+        });
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+        decoration: BoxDecoration(
+          color: isSelected ? activeColor.withValues(alpha: 0.32) : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isSelected ? activeColor : Colors.transparent,
+            width: 1.0,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 11, color: isSelected ? Colors.white : Colors.white60),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? Colors.white : Colors.white60,
+                fontSize: 10,
+                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                letterSpacing: 0.2,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -2393,6 +2706,9 @@ class _Mascot3DRendererPainter extends CustomPainter {
   final Color glowColor;
   final Color primaryColor;
   final MascotMaterialFinish finish;
+  final MascotDiagramMode diagramMode;
+  final bool showCallouts;
+  final List<MascotHotspot> hotspots;
 
   static final V3 _lightDir = const V3(-0.4, -0.65, 0.7).normalized();
 
@@ -2403,6 +2719,9 @@ class _Mascot3DRendererPainter extends CustomPainter {
     required this.glowColor,
     required this.primaryColor,
     required this.finish,
+    required this.diagramMode,
+    required this.showCallouts,
+    required this.hotspots,
   });
 
   @override
@@ -2439,7 +2758,7 @@ class _Mascot3DRendererPainter extends CustomPainter {
       projPts[i] = Offset(center.dx + x1 * scale, center.dy + y2 * scale);
     }
 
-    // 3. Process and depth-sort visible faces (Painter's Algorithm)
+    // 3. Process and depth-sort visible faces (Painter's Algorithm with Two-Sided Shading)
     final drawableFaces = <_DrawableFace>[];
 
     for (final face in mesh.faces) {
@@ -2449,10 +2768,6 @@ class _Mascot3DRendererPainter extends CustomPainter {
       final p1 = projPts[face.indices[1]];
       final p2 = projPts[face.indices[2]];
 
-      // 2D Cross product for winding order (backface culling)
-      final winding = (p1.dx - p0.dx) * (p2.dy - p0.dy) - (p1.dy - p0.dy) * (p2.dx - p0.dx);
-      if (winding >= 0.0) continue; // Face pointing away from camera
-
       // 3D Normal vector calculation in camera space
       final v0 = rotVertices[face.indices[0]];
       final v1 = rotVertices[face.indices[1]];
@@ -2460,7 +2775,13 @@ class _Mascot3DRendererPainter extends CustomPainter {
 
       final edge1 = v1 - v0;
       final edge2 = v2 - v0;
-      final normal = edge1.cross(edge2).normalized();
+      V3 normal = edge1.cross(edge2).normalized();
+
+      // Two-sided illumination: if polygon winding is clockwise on screen, flip normal towards viewer
+      final winding = (p1.dx - p0.dx) * (p2.dy - p0.dy) - (p1.dy - p0.dy) * (p2.dx - p0.dx);
+      if (winding > 0.0) {
+        normal = normal * -1.0;
+      }
 
       // Average depth (Z-buffer proxy)
       double avgZ = 0.0;
@@ -2502,18 +2823,30 @@ class _Mascot3DRendererPainter extends CustomPainter {
         }
       }
 
-      // Final illuminated color
+      // Shaded color per diagram display mode
       final Color shadedColor;
-      if (face.isEye) {
-        shadedColor = face.baseColor; // Self-illuminated gemstone eyes
+      if (diagramMode == MascotDiagramMode.holoBlueprint) {
+        shadedColor = face.isEye
+            ? Colors.white
+            : (face.isPlinth
+                ? const Color(0x14020C1C)
+                : glowColor.withValues(alpha: 0.12));
+      } else if (diagramMode == MascotDiagramMode.tacticalXRay) {
+        shadedColor = face.isEye
+            ? Colors.white
+            : glowColor.withValues(alpha: face.isPlinth ? 0.16 : 0.28);
       } else {
-        final totalLight = (ambient + (diffuse * 0.72)).clamp(0.0, 1.0);
-        shadedColor = Color.from(
-          alpha: baseColor.a,
-          red: (baseColor.r * totalLight + spec).clamp(0.0, 1.0),
-          green: (baseColor.g * totalLight + spec).clamp(0.0, 1.0),
-          blue: (baseColor.b * totalLight + spec).clamp(0.0, 1.0),
-        );
+        if (face.isEye) {
+          shadedColor = face.baseColor; // Self-illuminated gemstone eyes
+        } else {
+          final totalLight = (ambient + (diffuse * 0.72)).clamp(0.0, 1.0);
+          shadedColor = Color.from(
+            alpha: baseColor.a,
+            red: (baseColor.r * totalLight + spec).clamp(0.0, 1.0),
+            green: (baseColor.g * totalLight + spec).clamp(0.0, 1.0),
+            blue: (baseColor.b * totalLight + spec).clamp(0.0, 1.0),
+          );
+        }
       }
 
       drawableFaces.add(
@@ -2554,17 +2887,133 @@ class _Mascot3DRendererPainter extends CustomPainter {
       fillPaint.color = face.color;
       canvas.drawPath(path, fillPaint);
 
-      // Draw sharp metallic facet crease edge
+      // Draw sharp metallic facet crease edge per diagram mode
       if (face.isEye) {
-        // Eye radial glow
         final centerPt = projPts[face.indices[0]];
         final eyeGlow = Paint()
-          ..color = face.color.withValues(alpha: 0.6)
+          ..color = face.color.withValues(alpha: 0.7)
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
         canvas.drawCircle(centerPt, 5.0, eyeGlow);
       } else {
-        edgePaint.color = Colors.white.withValues(alpha: 0.18 + (face.specular * 0.4).clamp(0.0, 0.4));
+        if (diagramMode == MascotDiagramMode.holoBlueprint) {
+          edgePaint.color = glowColor.withValues(alpha: 0.88);
+          edgePaint.strokeWidth = 1.1;
+        } else if (diagramMode == MascotDiagramMode.tacticalXRay) {
+          edgePaint.color = Colors.white.withValues(alpha: 0.78);
+          edgePaint.strokeWidth = 1.0;
+        } else {
+          edgePaint.color = Colors.white.withValues(alpha: 0.18 + (face.specular * 0.4).clamp(0.0, 0.4));
+          edgePaint.strokeWidth = 0.8;
+        }
         canvas.drawPath(path, edgePaint);
+      }
+    }
+
+    // 5. Holographic blueprint vertex coordinate dots
+    if (diagramMode == MascotDiagramMode.holoBlueprint) {
+      final dotPaint = Paint()
+        ..color = glowColor.withValues(alpha: 0.95)
+        ..style = PaintingStyle.fill;
+      for (final pt in projPts) {
+        canvas.drawCircle(pt, 1.6, dotPaint);
+      }
+    }
+
+    // 6. Tactical X-Ray internal elemental energy reactor core
+    if (diagramMode == MascotDiagramMode.tacticalXRay) {
+      final corePaint = Paint()
+        ..color = glowColor.withValues(alpha: 0.85)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 24);
+      canvas.drawCircle(Offset(center.dx, center.dy + 8), 24.0, corePaint);
+    }
+
+    // 7. Interactive 3D Technical Diagram Callout Pins & Leader Lines
+    if (showCallouts && hotspots.isNotEmpty) {
+      final pinOuterPaint = Paint()..style = PaintingStyle.fill;
+      final pinInnerPaint = Paint()..style = PaintingStyle.fill;
+      final linePaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.3
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..color = glowColor.withValues(alpha: 0.90);
+
+      for (int hIdx = 0; hIdx < hotspots.length; hIdx++) {
+        final spot = hotspots[hIdx];
+        final v = spot.position3D;
+
+        // Project hotspot in 3D camera space
+        final x1 = v.x * cosY + v.z * sinY;
+        final z1 = -v.x * sinY + v.z * cosY;
+        final y2 = v.y * cosX - z1 * sinX;
+        final z2 = v.y * sinX + z1 * cosX;
+
+        // Only render callout if in visible front hemisphere
+        if (z2 < -60.0) continue;
+
+        final zCam = z2 + cameraDistance;
+        final scale = fov / math.max(10.0, zCam);
+        final anchor = Offset(center.dx + x1 * scale, center.dy + y2 * scale);
+
+        // Leader line geometry
+        final isLeft = x1 < 0;
+        final knee = Offset(anchor.dx + (isLeft ? -24 : 24), anchor.dy - 16);
+        final tagX = knee.dx + (isLeft ? -45 : 45);
+        final tagY = knee.dy;
+
+        // Draw glowing anchor pin
+        pinOuterPaint.color = glowColor.withValues(alpha: 0.35);
+        canvas.drawCircle(anchor, 7.0, pinOuterPaint);
+        pinInnerPaint.color = glowColor;
+        canvas.drawCircle(anchor, 3.5, pinInnerPaint);
+        canvas.drawCircle(anchor, 1.8, Paint()..color = Colors.white);
+
+        // Draw leader dogleg line
+        final linePath = Path()
+          ..moveTo(anchor.dx, anchor.dy)
+          ..lineTo(knee.dx, knee.dy)
+          ..lineTo(tagX, tagY);
+        canvas.drawPath(linePath, linePaint);
+
+        // Draw technical diagram label text
+        final textSpan = TextSpan(
+          children: [
+            TextSpan(
+              text: '${spot.label}\n',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 9.5,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.3,
+                shadows: [
+                  Shadow(color: Colors.black.withValues(alpha: 0.95), blurRadius: 4),
+                ],
+              ),
+            ),
+            TextSpan(
+              text: spot.subtitle,
+              style: TextStyle(
+                color: glowColor.withValues(alpha: 0.95),
+                fontSize: 8.0,
+                fontWeight: FontWeight.w600,
+                shadows: [
+                  Shadow(color: Colors.black.withValues(alpha: 0.95), blurRadius: 4),
+                ],
+              ),
+            ),
+          ],
+        );
+        final textPainter = TextPainter(
+          text: textSpan,
+          textAlign: isLeft ? TextAlign.right : TextAlign.left,
+          textDirection: TextDirection.ltr,
+        )..layout(maxWidth: 130);
+
+        final textOffset = Offset(
+          isLeft ? (tagX - textPainter.width - 4) : (tagX + 4),
+          tagY - (textPainter.height / 2),
+        );
+        textPainter.paint(canvas, textOffset);
       }
     }
   }
@@ -2575,6 +3024,8 @@ class _Mascot3DRendererPainter extends CustomPainter {
         oldDelegate.rotY != rotY ||
         oldDelegate.mesh != mesh ||
         oldDelegate.finish != finish ||
+        oldDelegate.diagramMode != diagramMode ||
+        oldDelegate.showCallouts != showCallouts ||
         oldDelegate.glowColor != glowColor;
   }
 }
@@ -2663,22 +3114,51 @@ class _AltarRunicPainter extends CustomPainter {
     final radius = size.width / 2;
 
     final ringPaint = Paint()
-      ..color = color.withValues(alpha: 0.45)
+      ..color = color.withValues(alpha: 0.38)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.2;
 
-    canvas.drawCircle(center, radius * 0.78, ringPaint);
-    canvas.drawCircle(center, radius * 0.52, ringPaint);
+    // Technical concentric coordinate rings
+    canvas.drawCircle(center, radius * 0.94, ringPaint);
+    canvas.drawCircle(center, radius * 0.76, ringPaint);
+    canvas.drawCircle(center, radius * 0.54, ringPaint..strokeWidth = 0.9);
+    canvas.drawCircle(center, radius * 0.32, ringPaint..strokeWidth = 0.7);
 
-    final spikePaint = Paint()
-      ..color = color.withValues(alpha: 0.65)
-      ..strokeWidth = 1.5;
+    // 16 Azimuth radial coordinate spokes
+    final spokePaint = Paint()
+      ..color = color.withValues(alpha: 0.55)
+      ..strokeWidth = 1.2;
 
-    for (int i = 0; i < 12; i++) {
-      final angle = (i * 30) * math.pi / 180;
-      final p1 = Offset(center.dx + math.cos(angle) * (radius * 0.52), center.dy + math.sin(angle) * (radius * 0.52));
-      final p2 = Offset(center.dx + math.cos(angle) * (radius * 0.95), center.dy + math.sin(angle) * (radius * 0.95));
-      canvas.drawLine(p1, p2, spikePaint);
+    for (int i = 0; i < 16; i++) {
+      final angle = (i * 22.5) * math.pi / 180;
+      final isMajor = (i % 4 == 0);
+      spokePaint.strokeWidth = isMajor ? 1.6 : 0.8;
+      spokePaint.color = isMajor ? color.withValues(alpha: 0.85) : color.withValues(alpha: 0.35);
+
+      final p1 = Offset(center.dx + math.cos(angle) * (radius * 0.32), center.dy + math.sin(angle) * (radius * 0.32));
+      final p2 = Offset(center.dx + math.cos(angle) * (radius * 0.94), center.dy + math.sin(angle) * (radius * 0.94));
+      canvas.drawLine(p1, p2, spokePaint);
+    }
+
+    // Cardinal coordinate labels: E, S, W, N
+    const cardinalLabels = ['E', 'S', 'W', 'N'];
+    final textStyle = TextStyle(
+      color: color.withValues(alpha: 0.9),
+      fontSize: 10,
+      fontWeight: FontWeight.w900,
+      fontFamily: 'monospace',
+    );
+
+    for (int i = 0; i < 4; i++) {
+      final angle = (i * 90) * math.pi / 180;
+      final lx = center.dx + math.cos(angle) * (radius * 0.85);
+      final ly = center.dy + math.sin(angle) * (radius * 0.85);
+
+      final tp = TextPainter(
+        text: TextSpan(text: cardinalLabels[i], style: textStyle),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, Offset(lx - tp.width / 2, ly - tp.height / 2));
     }
   }
 
