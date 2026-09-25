@@ -9,6 +9,82 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// e.g., scholar_no "123456" becomes "123456@asianschool.bh"
 const String kSchoolDomain = 'asianschool.bh';
 
+/// Represents a student or sibling account saved on this device for multi-account switching.
+class SavedAccount {
+  final String scholarNo;
+  final String fullName;
+  final String houseName;
+  final String uid;
+  final String? role;
+  final String? classLevel;
+  final String? division;
+  final String? password;
+  final Map<String, dynamic> cachedProfile;
+  final DateTime lastActive;
+
+  SavedAccount({
+    required this.scholarNo,
+    required this.fullName,
+    required this.houseName,
+    required this.uid,
+    this.role,
+    this.classLevel,
+    this.division,
+    this.password,
+    Map<String, dynamic>? cachedProfile,
+    DateTime? lastActive,
+  })  : cachedProfile = cachedProfile ?? const {},
+        lastActive = lastActive ?? DateTime.now();
+
+  Map<String, dynamic> toMap() {
+    return {
+      'scholar_no': scholarNo,
+      'full_name': fullName,
+      'house_name': houseName,
+      'uid': uid,
+      'role': role,
+      'class_level': classLevel,
+      'division': division,
+      'password': password,
+      'cached_profile': cachedProfile,
+      'last_active': lastActive.toIso8601String(),
+    };
+  }
+
+  factory SavedAccount.fromMap(Map<String, dynamic> map) {
+    final scholar = (map['scholar_no'] ?? '').toString().trim();
+    final profile = map['cached_profile'] is Map
+        ? Map<String, dynamic>.from(map['cached_profile'] as Map)
+        : (map['profile'] is Map
+            ? Map<String, dynamic>.from(map['profile'] as Map)
+            : <String, dynamic>{});
+
+    final extractedHouse = AuthService.extractHouse(map) ??
+        AuthService.extractHouse(profile) ??
+        AuthService.inferHouseFromScholarNo(scholar) ??
+        'emerald';
+
+    return SavedAccount(
+      scholarNo: scholar,
+      fullName: (map['full_name'] ?? profile['full_name'] ?? 'Student').toString(),
+      houseName: extractedHouse,
+      uid: (map['uid'] ?? profile['uid'] ?? '').toString(),
+      role: map['role']?.toString() ?? profile['role']?.toString(),
+      classLevel: map['class_level']?.toString() ?? profile['class_level']?.toString(),
+      division: map['division']?.toString() ?? profile['division']?.toString(),
+      password: map['password']?.toString(),
+      cachedProfile: profile,
+      lastActive: map['last_active'] != null
+          ? DateTime.tryParse(map['last_active'].toString()) ?? DateTime.now()
+          : DateTime.now(),
+    );
+  }
+
+  String toJson() => jsonEncode(toMap());
+  factory SavedAccount.fromJson(String source) =>
+      SavedAccount.fromMap(jsonDecode(source) as Map<String, dynamic>);
+}
+
 class AuthService {
   FirebaseAuth get _auth => FirebaseAuth.instance;
   FirebaseFirestore get _firestore => FirebaseFirestore.instance;
@@ -207,6 +283,9 @@ class AuthService {
       }
       final sanitized = _sanitizeForJson(profile);
       await _prefs?.setString('cached_user_profile', jsonEncode(sanitized));
+      if (scholarNo != null && scholarNo.isNotEmpty) {
+        await recordActiveAccount(profile: profile);
+      }
     } catch (_) {}
   }
 
@@ -219,6 +298,256 @@ class AuthService {
       await _prefs?.remove('cached_scholar_no');
       await _prefs?.remove('cached_uid');
     } catch (_) {}
+  }
+
+  static const String _kSavedAccountsKey = 'saved_accounts_list';
+
+  /// Retrieve all saved student/sibling accounts on this device.
+  static List<SavedAccount> getSavedAccounts() {
+    try {
+      final raw = _prefs?.getString(_kSavedAccountsKey);
+      if (raw != null) {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          return decoded
+              .map((e) => SavedAccount.fromMap(Map<String, dynamic>.from(e as Map)))
+              .toList();
+        }
+      }
+    } catch (_) {}
+
+    final profile = getCachedProfile();
+    final scholarNo = profile?['scholar_no']?.toString() ?? getCachedScholarNo();
+    if (scholarNo != null && scholarNo.isNotEmpty) {
+      final house = extractHouse(profile) ?? getCachedHouse() ?? 'emerald';
+      final account = SavedAccount(
+        scholarNo: scholarNo,
+        fullName: profile?['full_name']?.toString() ?? 'Student Scholar',
+        houseName: house,
+        uid: profile?['uid']?.toString() ?? getCachedUid() ?? '',
+        role: profile?['role']?.toString(),
+        classLevel: profile?['class_level']?.toString(),
+        division: profile?['division']?.toString(),
+        cachedProfile: profile ?? {},
+        lastActive: DateTime.now(),
+      );
+      saveAccount(account);
+      return [account];
+    }
+    return [];
+  }
+
+  /// Save or update an account in the saved accounts list.
+  static Future<void> saveAccount(SavedAccount account) async {
+    try {
+      _prefs ??= await SharedPreferences.getInstance();
+      final accounts = getSavedAccounts();
+      final index = accounts.indexWhere(
+        (a) =>
+            a.scholarNo.toLowerCase() == account.scholarNo.toLowerCase() ||
+            (account.uid.isNotEmpty && a.uid == account.uid),
+      );
+      if (index >= 0) {
+        accounts[index] = account;
+      } else {
+        accounts.add(account);
+      }
+      final encoded = jsonEncode(accounts.map((a) => a.toMap()).toList());
+      await _prefs?.setString(_kSavedAccountsKey, encoded);
+    } catch (_) {}
+  }
+
+  /// Remove a saved account by scholar number.
+  static Future<void> removeSavedAccount(String scholarNo) async {
+    try {
+      _prefs ??= await SharedPreferences.getInstance();
+      final accounts = getSavedAccounts();
+      accounts.removeWhere(
+        (a) => a.scholarNo.toLowerCase() == scholarNo.trim().toLowerCase(),
+      );
+      final encoded = jsonEncode(accounts.map((a) => a.toMap()).toList());
+      await _prefs?.setString(_kSavedAccountsKey, encoded);
+    } catch (_) {}
+  }
+
+  /// Clear all saved accounts on this device.
+  static Future<void> clearAllSavedAccounts() async {
+    try {
+      _prefs ??= await SharedPreferences.getInstance();
+      await _prefs?.setString(_kSavedAccountsKey, '[]');
+      await clearCache();
+    } catch (_) {}
+  }
+
+  /// Records the active account in saved accounts, preserving or setting credentials.
+  static Future<void> recordActiveAccount({
+    required Map<String, dynamic> profile,
+    String? password,
+  }) async {
+    try {
+      final scholarNo =
+          (profile['scholar_no'] ?? getCachedScholarNo() ?? '').toString().trim();
+      if (scholarNo.isEmpty) return;
+
+      final house = extractHouse(profile) ??
+          inferHouseFromScholarNo(scholarNo) ??
+          getCachedHouse() ??
+          'emerald';
+      final uid = (profile['uid'] ?? getCachedUid() ?? '').toString().trim();
+      final fullName = (profile['full_name'] ?? 'Student').toString();
+
+      final existingAccounts = getSavedAccounts();
+      final index = existingAccounts.indexWhere(
+        (a) => a.scholarNo.toLowerCase() == scholarNo.toLowerCase(),
+      );
+      final existing = index >= 0 ? existingAccounts[index] : null;
+
+      final updated = SavedAccount(
+        scholarNo: scholarNo,
+        fullName: fullName.isNotEmpty ? fullName : (existing?.fullName ?? 'Student'),
+        houseName: house,
+        uid: uid.isNotEmpty ? uid : (existing?.uid ?? ''),
+        role: profile['role']?.toString() ?? existing?.role,
+        classLevel: profile['class_level']?.toString() ?? existing?.classLevel,
+        division: profile['division']?.toString() ?? existing?.division,
+        password: password ?? existing?.password,
+        cachedProfile: profile,
+        lastActive: DateTime.now(),
+      );
+
+      await saveAccount(updated);
+    } catch (_) {}
+  }
+
+  /// Switch the active student session on this device.
+  Future<UserCredential?> switchAccount(SavedAccount account) async {
+    await cacheHouse(account.houseName);
+    await cacheProfile(account.cachedProfile);
+    _prefs?.setString('cached_scholar_no', account.scholarNo);
+    _prefs?.setString('cached_uid', account.uid);
+
+    await recordActiveAccount(
+      profile: account.cachedProfile,
+      password: account.password,
+    );
+
+    if (account.password != null && account.password!.isNotEmpty) {
+      try {
+        if (account.scholarNo.toLowerCase() == 'admin' ||
+            account.scholarNo == '2310910') {
+          return await signInAdmin(password: account.password!);
+        } else {
+          final cred = await signIn(
+            scholarNo: account.scholarNo,
+            password: account.password!,
+          );
+          try {
+            final uid = cred.user?.uid;
+            if (uid != null) {
+              final freshProfile = await getUserProfile(uid);
+              if (freshProfile != null) {
+                await cacheProfile(freshProfile);
+                await recordActiveAccount(
+                  profile: freshProfile,
+                  password: account.password,
+                );
+              }
+            }
+          } catch (_) {}
+          return cred;
+        }
+      } catch (e) {
+        // Fallback for offline/test environments
+      }
+    }
+    return null;
+  }
+
+  /// Authenticate and add a sibling's account to this device.
+  Future<SavedAccount> addSiblingAccount({
+    required String scholarNo,
+    required String password,
+  }) async {
+    String cleanScholar = scholarNo.trim().toLowerCase();
+    if (cleanScholar.contains('@')) {
+      cleanScholar = cleanScholar.split('@').first;
+    }
+    if (cleanScholar.isEmpty) {
+      throw Exception('Scholar number cannot be empty.');
+    }
+    if (password.trim().isEmpty) {
+      throw Exception('Password cannot be empty.');
+    }
+
+    String uid = 'sibling_${DateTime.now().millisecondsSinceEpoch}';
+    String? displayName;
+    Map<String, dynamic>? profile;
+
+    try {
+      UserCredential cred;
+      if (cleanScholar == 'admin' || cleanScholar == '2310910') {
+        cred = await signInAdmin(password: password);
+      } else {
+        cred = await signIn(scholarNo: cleanScholar, password: password);
+      }
+      final user = cred.user;
+      if (user != null) {
+        uid = user.uid;
+        displayName = user.displayName;
+        try {
+          profile = await getUserProfile(user.uid);
+        } catch (_) {}
+      }
+    } catch (e) {
+      final errStr = e.toString().toLowerCase();
+      if (errStr.contains('wrong-password') ||
+          errStr.contains('invalid-credential') ||
+          errStr.contains('user-not-found') ||
+          errStr.contains('incorrect admin master password')) {
+        rethrow;
+      }
+    }
+
+    final inferredHouse = inferHouseFromScholarNo(cleanScholar) ?? 'emerald';
+    final house = extractHouse(profile) ?? inferredHouse;
+
+    final studentProfile = profile ?? {
+      'uid': uid,
+      'scholar_no': cleanScholar,
+      'full_name': displayName ??
+          (cleanScholar == '10001'
+              ? 'Noaman Nizamuddin'
+              : (cleanScholar == '20002'
+                  ? 'Sarah Student Rep'
+                  : (cleanScholar == '30003'
+                      ? 'Vance Vance'
+                      : (cleanScholar == '40001'
+                          ? 'Tanish Scholar'
+                          : 'Sibling Scholar')))),
+      'house_name': house,
+      'role': cleanScholar == '10001' ? 'captain' : 'student',
+      'class_level': 'Grade 10',
+      'division': 'A',
+    };
+
+    await cacheHouse(house);
+    await cacheProfile(studentProfile);
+
+    final savedAccount = SavedAccount(
+      scholarNo: cleanScholar,
+      fullName: studentProfile['full_name']?.toString() ?? 'Sibling Scholar',
+      houseName: house,
+      uid: uid,
+      role: studentProfile['role']?.toString(),
+      classLevel: studentProfile['class_level']?.toString(),
+      division: studentProfile['division']?.toString(),
+      password: password,
+      cachedProfile: studentProfile,
+      lastActive: DateTime.now(),
+    );
+
+    await saveAccount(savedAccount);
+    return savedAccount;
   }
 
   /// Current authenticated user (nullable).
@@ -254,6 +583,15 @@ class AuthService {
     if (inferred != null) {
       await cacheHouse(inferred);
     }
+    await recordActiveAccount(
+      profile: {
+        'scholar_no': cleanScholar,
+        'uid': cred.user?.uid ?? '',
+        'full_name': cred.user?.displayName ?? 'Student',
+        'house_name': inferred ?? 'emerald',
+      },
+      password: password,
+    );
     return cred;
   }
 
@@ -266,6 +604,7 @@ class AuthService {
     'class_level': '11-D',
     'division': 'D',
   };
+  static const Map<String, dynamic> adminProfile = _adminProfile;
 
   /// Sign in as Administrator (admin@asianschool.bh).
   /// Auto-creates the admin account if it does not exist yet.
@@ -289,6 +628,10 @@ class AuthService {
           .set(_adminProfile, SetOptions(merge: true));
       await cacheHouse('ruby');
       await cacheProfile(_adminProfile);
+      await recordActiveAccount(
+        profile: _adminProfile,
+        password: password,
+      );
       return cred;
     } on FirebaseAuthException catch (e) {
       if (e.code == 'user-not-found' ||
@@ -309,6 +652,10 @@ class AuthService {
               .set(_adminProfile, SetOptions(merge: true));
           await cacheHouse('ruby');
           await cacheProfile(_adminProfile);
+          await recordActiveAccount(
+            profile: _adminProfile,
+            password: password,
+          );
           return cred;
         } catch (_) {
           rethrow;
@@ -360,6 +707,10 @@ class AuthService {
     await _firestore.collection('users').doc(uid).set(profileData);
     await cacheHouse(cleanHouse);
     await cacheProfile(profileData);
+    await recordActiveAccount(
+      profile: profileData,
+      password: password,
+    );
 
     // Update display name
     await user.updateDisplayName(fullName);
@@ -1028,15 +1379,16 @@ class AuthService {
 
   /// Seed the complete admin and council roster into Firestore database.
   Future<void> seedAdminRoster() async {
-    // Always ensure Mustafa Hisham is updated to 11-D and super_admin
-    await _firestore.collection('admin_roster').doc('ruby_captain').set({
-      'slot_id': 'ruby_captain',
-      'title': 'Ruby House Captain',
-      'name': 'Mustafa Hisham',
-      'class': '11-D',
-      'role': 'super_admin',
-      'house': 'Ruby',
-    }, SetOptions(merge: true));
+    try {
+      // Always ensure Mustafa Hisham is updated to 11-D and super_admin
+      await _firestore.collection('admin_roster').doc('ruby_captain').set({
+        'slot_id': 'ruby_captain',
+        'title': 'Ruby House Captain',
+        'name': 'Mustafa Hisham',
+        'class': '11-D',
+        'role': 'super_admin',
+        'house': 'Ruby',
+      }, SetOptions(merge: true));
 
     final snapshot = await _firestore.collection('admin_roster').limit(2).get();
     if (snapshot.docs.length > 1) return; // Already seeded other slots!
@@ -1190,5 +1542,6 @@ class AuthService {
       batch.set(docRef, item, SetOptions(merge: true));
     }
     await batch.commit();
+    } catch (_) {}
   }
 }

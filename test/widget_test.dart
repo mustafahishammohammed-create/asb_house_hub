@@ -15,11 +15,15 @@ import 'package:asb_house_hub/screens/merch_store_tab.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:asb_house_hub/screens/id_scanner_screen.dart';
+import 'package:asb_house_hub/screens/chat_room_screen.dart';
+import 'package:asb_house_hub/widgets/account_switcher_modal.dart';
 import 'package:asb_house_hub/main.dart';
 
 void main() {
-  setUp(() {
+  setUp(() async {
     SharedPreferences.setMockInitialValues({});
+    await AuthService.initPreferences();
+    await AuthService.clearCache();
   });
 
   testWidgets('Theme check smoke test', (WidgetTester tester) async {
@@ -1026,6 +1030,343 @@ void main() {
     expect(find.text('X-Ray'), findsOneWidget);
     expect(find.textContaining('Callouts:'), findsOneWidget);
     expect(find.text('360° Drag • Pinch'), findsOneWidget);
+  });
+
+  testWidgets('DualHouseWallpaper blends both participants house colors into atmospheric wallpaper', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: DualHouseWallpaper(
+            senderHouse: 'ruby',
+            recipientHouse: 'emerald',
+            isDark: true,
+            pulseValue: 1.0,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(DualHouseWallpaper), findsOneWidget);
+    expect(find.byType(AnimatedContainer), findsWidgets);
+  });
+
+  testWidgets('ChatRoomScreen dynamically reflects other participants house and dual wallpaper', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ChatRoomScreen(
+          roomId: 'test_ruby_emerald',
+          otherUserName: 'Noaman Nizamuddin',
+          otherUserRole: 'House Captain',
+          otherUserHouse: 'emerald',
+          myUserHouse: 'ruby',
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Contact name
+    expect(find.text('Noaman Nizamuddin'), findsOneWidget);
+    // House and role badge (Emerald, not Council or locked to yellow!)
+    expect(find.text('EMERALD • HOUSE CAPTAIN'), findsOneWidget);
+    // Dual house alliance chip
+    expect(find.text('RUBY'), findsOneWidget);
+    expect(find.text('EMERALD'), findsOneWidget);
+    // DualHouseWallpaper
+    expect(find.byType(DualHouseWallpaper), findsOneWidget);
+    // Avatar initial
+    expect(find.text('N'), findsOneWidget);
+  });
+
+  testWidgets('ChatRoomScreen with Sapphire council member displays sapphire badge and alliance header', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ChatRoomScreen(
+          roomId: 'test_ruby_sapphire',
+          otherUserName: 'Tanish Mukherjee',
+          otherUserRole: 'Student Council',
+          otherUserHouse: 'sapphire',
+          myUserHouse: 'ruby',
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Tanish Mukherjee'), findsOneWidget);
+    expect(find.text('SAPPHIRE • STUDENT COUNCIL'), findsOneWidget);
+    expect(find.text('RUBY'), findsOneWidget);
+    expect(find.text('SAPPHIRE'), findsOneWidget);
+    expect(find.text('T'), findsOneWidget);
+  });
+
+  testWidgets('ChatRoomScreen with Topaz member displays topaz badge and alliance header', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ChatRoomScreen(
+          roomId: 'test_ruby_topaz',
+          otherUserName: 'Galwin Britto',
+          otherUserRole: 'Grade Prefect',
+          otherUserHouse: 'topaz',
+          myUserHouse: 'ruby',
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Galwin Britto'), findsOneWidget);
+    expect(find.text('TOPAZ • GRADE PREFECT'), findsOneWidget);
+    expect(find.text('RUBY'), findsOneWidget);
+    expect(find.text('TOPAZ'), findsOneWidget);
+    expect(find.text('G'), findsOneWidget);
+  });
+
+  testWidgets('ChatRoomScreen same-house (Ruby to Ruby) displays alliance and wallpaper', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ChatRoomScreen(
+          roomId: 'test_ruby_ruby',
+          otherUserName: 'Sarah Paul',
+          otherUserRole: 'Grade Prefect',
+          otherUserHouse: 'ruby',
+          myUserHouse: 'ruby',
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Sarah Paul'), findsOneWidget);
+    expect(find.text('RUBY • GRADE PREFECT'), findsOneWidget);
+    expect(find.text('RUBY'), findsNWidgets(2)); // sender and receiver in alliance chip
+    expect(find.text('S'), findsOneWidget);
+  });
+
+  testWidgets('DualHouseWallpaper renders in light mode without issues', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: DualHouseWallpaper(
+            senderHouse: 'ruby',
+            recipientHouse: 'emerald',
+            isDark: false,
+            pulseValue: 0.95,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(DualHouseWallpaper), findsOneWidget);
+  });
+
+  test('AuthService SavedAccount and Sibling Multi-Account management', () async {
+    SharedPreferences.setMockInitialValues({});
+    await AuthService.initPreferences();
+
+    // 1. Initial state: no saved accounts
+    expect(AuthService.getSavedAccounts(), isEmpty);
+
+    // 2. Add an account for Aarav Sharma (Emerald)
+    final aaravAccount = SavedAccount(
+      scholarNo: '10001',
+      fullName: 'Aarav Sharma',
+      houseName: 'emerald',
+      uid: 'uid_aarav',
+      role: 'student',
+      classLevel: 'Grade 10',
+      division: 'A',
+      password: 'AaravPassword123',
+      cachedProfile: {
+        'scholar_no': '10001',
+        'full_name': 'Aarav Sharma',
+        'house_name': 'emerald',
+        'role': 'student',
+        'class_level': 'Grade 10',
+        'division': 'A',
+      },
+    );
+    await AuthService.saveAccount(aaravAccount);
+
+    var accounts = AuthService.getSavedAccounts();
+    expect(accounts.length, 1);
+    expect(accounts.first.scholarNo, '10001');
+    expect(accounts.first.fullName, 'Aarav Sharma');
+    expect(accounts.first.houseName, 'emerald');
+    expect(accounts.first.password, 'AaravPassword123');
+
+    // 3. Add Sibling Priya Sharma (Ruby House)
+    final priyaAccount = SavedAccount(
+      scholarNo: '2310910',
+      fullName: 'Priya Sharma',
+      houseName: 'ruby',
+      uid: 'uid_priya',
+      role: 'student',
+      classLevel: 'Grade 8',
+      division: 'B',
+      password: 'PriyaPassword456',
+      cachedProfile: {
+        'scholar_no': '2310910',
+        'full_name': 'Priya Sharma',
+        'house_name': 'ruby',
+        'role': 'student',
+        'class_level': 'Grade 8',
+        'division': 'B',
+      },
+    );
+    await AuthService.saveAccount(priyaAccount);
+
+    accounts = AuthService.getSavedAccounts();
+    expect(accounts.length, 2);
+    expect(accounts.any((a) => a.scholarNo == '10001' && a.houseName == 'emerald'), isTrue);
+    expect(accounts.any((a) => a.scholarNo == '2310910' && a.houseName == 'ruby'), isTrue);
+
+    // 4. Test switchAccount: Switch active session to Priya (Ruby)
+    final authService = AuthService();
+    await authService.switchAccount(priyaAccount);
+
+    expect(AuthService.getCachedHouse(), 'ruby');
+    expect(AuthService.getCachedScholarNo(), '2310910');
+    final activeProfile = AuthService.getCachedProfile();
+    expect(activeProfile?['full_name'], 'Priya Sharma');
+    expect(activeProfile?['house_name'], 'ruby');
+
+    // 5. Test switchAccount: Switch back to Aarav (Emerald)
+    await authService.switchAccount(aaravAccount);
+    expect(AuthService.getCachedHouse(), 'emerald');
+    expect(AuthService.getCachedScholarNo(), '10001');
+    final aaravProfile = AuthService.getCachedProfile();
+    expect(aaravProfile?['full_name'], 'Aarav Sharma');
+    expect(aaravProfile?['house_name'], 'emerald');
+
+    // 6. Test addSiblingAccount method with inferred house (Sapphire #30003)
+    final vanceSibling = await authService.addSiblingAccount(
+      scholarNo: '30003',
+      password: 'VancePassword789',
+    );
+    expect(vanceSibling.scholarNo, '30003');
+    expect(vanceSibling.houseName, 'sapphire');
+
+    accounts = AuthService.getSavedAccounts();
+    expect(accounts.length, 3);
+    expect(accounts.any((a) => a.scholarNo == '30003' && a.houseName == 'sapphire'), isTrue);
+
+    // 7. Test removeSavedAccount
+    await AuthService.removeSavedAccount('30003');
+    accounts = AuthService.getSavedAccounts();
+    expect(accounts.length, 2);
+    expect(accounts.any((a) => a.scholarNo == '30003'), isFalse);
+
+    // 8. Test clearAllSavedAccounts
+    await AuthService.clearAllSavedAccounts();
+    expect(AuthService.getSavedAccounts(), isEmpty);
+  });
+
+  testWidgets('AccountSwitcherModal and AddSiblingModal mount and interact cleanly', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    await AuthService.initPreferences();
+
+    // Cache initial Emerald student
+    await AuthService.cacheHouse('emerald');
+    await AuthService.cacheProfile({
+      'scholar_no': '10001',
+      'full_name': 'Aarav Emerald Lead',
+      'house_name': 'emerald',
+      'role': 'student',
+      'class_level': '10-A',
+      'division': 'A',
+    });
+
+    await AuthService.saveAccount(
+      SavedAccount(
+        scholarNo: '10001',
+        fullName: 'Aarav Emerald Lead',
+        houseName: 'emerald',
+        uid: 'uid_aarav',
+        role: 'student',
+        classLevel: '10-A',
+        division: 'A',
+        cachedProfile: {
+          'scholar_no': '10001',
+          'full_name': 'Aarav Emerald Lead',
+          'house_name': 'emerald',
+          'role': 'student',
+          'class_level': '10-A',
+          'division': 'A',
+        },
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (ctx) => ElevatedButton(
+              onPressed: () {
+                AccountSwitcherModal.show(
+                  ctx,
+                  houseColor: HouseColors.emerald,
+                  currentHouse: 'emerald',
+                  onSwitchAccount: (_) async {},
+                  onSignOutCurrent: () async {},
+                  onSignOutAll: () async {},
+                );
+              },
+              child: const Text('Open Switcher'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // 1. Tap Open Switcher button
+    await tester.tap(find.text('Open Switcher'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // 2. Verify modal displays Switch Account header
+    expect(find.text('Switch Account'), findsOneWidget);
+    expect(find.text('Shared device profiles for siblings & family'), findsOneWidget);
+
+    // 3. Verify Active Account is displayed with ACTIVE badge and Emerald house chip
+    expect(find.text('Aarav Emerald Lead'), findsOneWidget);
+    expect(find.text('ACTIVE'), findsOneWidget);
+    expect(find.text('EMERALD'), findsOneWidget);
+
+    // 4. Verify Add Sibling button is present
+    final addSiblingBtn = find.text('Add Sibling / Another Account');
+    expect(addSiblingBtn, findsOneWidget);
+
+    // 5. Tap Add Sibling button to open Add Sibling modal
+    await tester.tap(addSiblingBtn);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Add Sibling Account'), findsOneWidget);
+    expect(find.text('Link another student profile on this device'), findsOneWidget);
+    expect(find.text('Sibling Scholar Number'), findsOneWidget);
+    expect(find.text('Sibling Password'), findsOneWidget);
+
+    // 6. Test dynamic house detection: enter ruby scholar
+    final textFields = find.byType(TextFormField);
+    await tester.enterText(textFields.at(0), '2310910');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.textContaining('RUBY House Detected'), findsOneWidget);
   });
 }
 

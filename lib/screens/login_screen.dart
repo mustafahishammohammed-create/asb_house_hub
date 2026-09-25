@@ -44,6 +44,10 @@ class _LoginScreenState extends State<LoginScreen> {
       if (_isAdminLogin &&
           (idText == 'admin' || idText == '2310910' || idText.isEmpty)) {
         await _authService.signInAdmin(password: _passwordController.text);
+        await AuthService.recordActiveAccount(
+          profile: AuthService.adminProfile,
+          password: _passwordController.text,
+        );
       } else {
         final scholarInput = _scholarController.text.trim();
         final inferredHouse = AuthService.inferHouseFromScholarNo(scholarInput);
@@ -64,22 +68,23 @@ class _LoginScreenState extends State<LoginScreen> {
         final profile = await _authService.getUserProfile(user.uid);
         final house = AuthService.extractHouse(profile) ?? inferredHouse ?? 'emerald';
         await AuthService.cacheHouse(house);
-        if (profile != null) {
-          await AuthService.cacheProfile(profile);
-        } else {
-          await AuthService.cacheProfile({
-            'uid': user.uid,
-            'scholar_no': scholarInput,
-            'full_name': user.displayName ??
-                (scholarInput == '10001'
-                    ? 'Noaman Nizamuddin'
-                    : (scholarInput == '20002'
-                        ? 'Sarah Student Rep'
-                        : 'Student')),
-            'house_name': house,
-            'role': scholarInput == '10001' ? 'captain' : 'student',
-          });
-        }
+        final activeProfile = profile ?? {
+          'uid': user.uid,
+          'scholar_no': scholarInput,
+          'full_name': user.displayName ??
+              (scholarInput == '10001'
+                  ? 'Noaman Nizamuddin'
+                  : (scholarInput == '20002'
+                      ? 'Sarah Student Rep'
+                      : 'Student')),
+          'house_name': house,
+          'role': scholarInput == '10001' ? 'captain' : 'student',
+        };
+        await AuthService.cacheProfile(activeProfile);
+        await AuthService.recordActiveAccount(
+          profile: activeProfile,
+          password: _passwordController.text,
+        );
 
         if (_isAdminLogin) {
           final roleStr = profile?['role']?.toString();

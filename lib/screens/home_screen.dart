@@ -17,6 +17,7 @@ import 'id_scanner_screen.dart';
 import 'house_arena_screen.dart';
 import 'house_ai_chat_screen.dart';
 import '../widgets/confetti_overlay.dart';
+import '../widgets/account_switcher_modal.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -58,6 +59,7 @@ class _HomeScreenState extends State<HomeScreen>
         if (pKey != null && pKey.isNotEmpty) {
           _cachedHouse = pKey;
         }
+        _loading = false;
       }
     }
     if (_cachedHouse == null && currentUser != null) {
@@ -164,6 +166,97 @@ class _HomeScreenState extends State<HomeScreen>
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const LoginScreen()),
       (_) => false,
+    );
+  }
+
+  Future<void> _switchActiveSession(SavedAccount account) async {
+    setState(() {
+      _loading = true;
+    });
+
+    try {
+      await _authService.switchAccount(account);
+      await AuthService.cacheHouse(account.houseName);
+      await AuthService.cacheProfile(account.cachedProfile);
+
+      if (mounted) {
+        setState(() {
+          _cachedHouse = account.houseName;
+          _profile = Map<String, dynamic>.from(account.cachedProfile);
+          _selectedIndex = 0;
+          _loading = false;
+        });
+      }
+
+      await _loadProfile();
+
+      if (mounted) {
+        final houseColor = HouseColors.getHouseColor(account.houseName);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: houseColor,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            content: Row(
+              children: [
+                Text(
+                  HouseColors.getHouseEmoji(account.houseName),
+                  style: const TextStyle(fontSize: 20),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Switched to ${account.fullName} • ${account.houseName.toUpperCase()} House',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to switch account: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
+  void _showAddSiblingModal(Color houseColor) {
+    AddSiblingModal.show(
+      context,
+      houseColor: houseColor,
+      onAccountAdded: _switchActiveSession,
+    );
+  }
+
+  void _showSwitchAccountModal(Color houseColor, String currentHouse) {
+    AccountSwitcherModal.show(
+      context,
+      houseColor: houseColor,
+      currentHouse: currentHouse,
+      onSwitchAccount: _switchActiveSession,
+      onSignOutCurrent: _handleSignOut,
+      onSignOutAll: () async {
+        await AuthService.clearAllSavedAccounts();
+        await _handleSignOut();
+      },
+      onAddSiblingPressed: () {
+        Navigator.pop(context);
+        _showAddSiblingModal(houseColor);
+      },
     );
   }
 
@@ -1470,7 +1563,66 @@ class _HomeScreenState extends State<HomeScreen>
               );
             },
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 4),
+          Tooltip(
+            message: 'Switch Account / Siblings',
+            child: InkWell(
+              borderRadius: BorderRadius.circular(20),
+              onTap: () => _showSwitchAccountModal(houseColor, houseName),
+              child: Container(
+                margin: const EdgeInsets.only(right: 6, left: 2),
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: houseColor, width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: houseGlow.withValues(alpha: 0.35),
+                      blurRadius: 6,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+                child: Stack(
+                  alignment: Alignment.bottomRight,
+                  children: [
+                    CircleAvatar(
+                      radius: 14,
+                      backgroundColor: houseColor.withValues(alpha: 0.2),
+                      child: Text(
+                        fullName.isNotEmpty ? fullName[0].toUpperCase() : 'S',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                          color: houseColor,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.all(1.5),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surface,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.all(1),
+                        decoration: BoxDecoration(
+                          color: houseColor,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.swap_horiz_rounded,
+                          size: 8,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
         ],
       ),
       extendBody: true,
@@ -2239,6 +2391,13 @@ class _HomeScreenState extends State<HomeScreen>
   ) {
     final cards = [
       {
+        'title': '👥 Switch Account / Siblings',
+        'sub':
+            'Switch instantly between linked sibling accounts or add another student on this device.',
+        'icon': Icons.switch_account_rounded,
+        'color': themeColor,
+      },
+      {
         'title': 'Submit House Claim',
         'sub': 'Upload competition certificates to earn points for your house.',
         'icon': Icons.emoji_events_rounded,
@@ -2276,7 +2435,9 @@ class _HomeScreenState extends State<HomeScreen>
         return InkWell(
           onTap: () {
             AppHaptics.light();
-            if (item['title'] == 'Submit House Claim') {
+            if (item['title'] == '👥 Switch Account / Siblings') {
+              _showSwitchAccountModal(themeColor, houseName);
+            } else if (item['title'] == 'Submit House Claim') {
               _showSubmitClaimModal(
                 houseName,
                 scholarNo,
@@ -3446,6 +3607,46 @@ class _HomeScreenState extends State<HomeScreen>
                     color: Colors.white.withValues(alpha: 0.85),
                   ),
                 ),
+                const SizedBox(height: 12),
+                InkWell(
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showSwitchAccountModal(color, house);
+                  },
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.22),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.35),
+                      ),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.switch_account_rounded,
+                          size: 14,
+                          color: Colors.white,
+                        ),
+                        SizedBox(width: 6),
+                        Text(
+                          'Switch Account / Sibling',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -3498,6 +3699,15 @@ class _HomeScreenState extends State<HomeScreen>
                         );
                       },
                     ),
+                  _buildDrawerTile(
+                    Icons.switch_account_rounded,
+                    '👥 Switch / Add Sibling Account',
+                    color,
+                    () {
+                      Navigator.pop(context);
+                      _showSwitchAccountModal(color, house);
+                    },
+                  ),
                   _buildDrawerTile(
                     Icons.chat_bubble_rounded,
                     '💬 1-on-1 Messages',
@@ -3818,6 +4028,29 @@ class _HomeScreenState extends State<HomeScreen>
               const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: color,
+                    side: BorderSide(color: color, width: 1.5),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  icon: const Icon(Icons.switch_account_rounded, size: 18),
+                  label: const Text(
+                    'Switch Account / Add Sibling',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _showSwitchAccountModal(color, house);
+                  },
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: color,
@@ -4060,6 +4293,29 @@ class _HomeScreenState extends State<HomeScreen>
                   onChanged: (v) => setModalState(() => darkTheme = v),
                 ),
                 const Divider(),
+                ListTile(
+                  leading: Icon(
+                    Icons.people_alt_rounded,
+                    color: color,
+                  ),
+                  title: const Text(
+                    'Family & Sibling Accounts',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  subtitle: Text(
+                    '${AuthService.getSavedAccounts().length} accounts linked on this device',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 16),
+                  onTap: () {
+                    Navigator.pop(context);
+                    final hName = (_cachedHouse ??
+                            AuthService.getCachedHouse() ??
+                            'emerald')
+                        .toLowerCase();
+                    _showSwitchAccountModal(color, hName);
+                  },
+                ),
                 ListTile(
                   leading: const Icon(
                     Icons.cleaning_services_rounded,
