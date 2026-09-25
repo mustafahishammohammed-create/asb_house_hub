@@ -5,5 +5,5 @@ cd /d "%~dp0"
 echo ========================================================
 echo   Launching ASB House Hub on Windows Desktop...
 echo ========================================================
-flutter run -d windows
+call flutter run -d windows
 pause

@@ -12,6 +12,16 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   if (!::AttachConsole(ATTACH_PARENT_PROCESS) && ::IsDebuggerPresent()) {
     CreateAndAttachConsole();
   }
+  // Ensure the working directory is set to the executable's folder so that
+  // the "data" assets folder is resolved correctly regardless of invocation source.
+  wchar_t exe_path[MAX_PATH];
+  if (::GetModuleFileName(nullptr, exe_path, MAX_PATH) > 0) {
+    wchar_t* last_slash = wcsrchr(exe_path, L'\\');
+    if (last_slash) {
+      *last_slash = L'\0';
+      ::SetCurrentDirectory(exe_path);
+    }
+  }
 
   // Initialize COM, so that it is available for use in the library and/or
   // plugins.

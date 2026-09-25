@@ -22,7 +22,22 @@ class ChatRoomScreen extends StatefulWidget {
 class _ChatRoomScreenState extends State<ChatRoomScreen> {
   final _chatService = ChatService();
   final _msgController = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
+
+  Color _getRoleAccent(String role) {
+    final r = role.toLowerCase();
+    if (r.contains('admin') || r.contains('principal') || r.contains('super')) {
+      return Colors.amber;
+    }
+    if (r.contains('teacher') || r.contains('faculty') || r.contains('advisor')) {
+      return Colors.indigoAccent;
+    }
+    if (r.contains('sapphire')) return HouseColors.sapphire;
+    if (r.contains('emerald')) return HouseColors.emerald;
+    if (r.contains('topaz')) return HouseColors.topaz;
+    return HouseColors.ruby;
+  }
 
   @override
   void initState() {
@@ -42,12 +57,28 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   void _send() async {
     final text = _msgController.text.trim();
     if (text.isEmpty) return;
+    AppHaptics.light();
     _msgController.clear();
+    _focusNode.requestFocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _focusNode.requestFocus();
+      }
+    });
     await _chatService.sendMessage(widget.roomId, text);
+    if (!mounted) return;
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0.0,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOutQuad,
+      );
+    }
   }
 
   @override
   void dispose() {
+    _focusNode.dispose();
     _msgController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -57,25 +88,66 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   Widget build(BuildContext context) {
     final myUid = _chatService.currentUserId;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final roleColor = _getRoleAccent(widget.otherUserRole);
 
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
+      backgroundColor: isDark ? const Color(0xFF0B0F19) : const Color(0xFFF8FAFC),
       appBar: AppBar(
-        elevation: 1,
-        backgroundColor: isDark ? const Color(0xFF1A2338) : Colors.white,
+        elevation: 0,
+        backgroundColor: (isDark ? const Color(0xFF111827) : Colors.white).withValues(alpha: 0.95),
         title: Row(
           children: [
-            CircleAvatar(
-              backgroundColor: HouseColors.ruby.withValues(alpha: 0.2),
-              child: Text(
-                widget.otherUserName.isNotEmpty
-                    ? widget.otherUserName[0].toUpperCase()
-                    : '?',
-                style: const TextStyle(
-                  color: HouseColors.ruby,
-                  fontWeight: FontWeight.bold,
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        roleColor,
+                        roleColor.withValues(alpha: 0.7),
+                      ],
+                    ),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: roleColor.withValues(alpha: 0.3),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    widget.otherUserName.isNotEmpty
+                        ? widget.otherUserName[0].toUpperCase()
+                        : '?',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 17,
+                    ),
+                  ),
                 ),
-              ),
+                Positioned(
+                  bottom: -1,
+                  right: -1,
+                  child: Container(
+                    width: 11,
+                    height: 11,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isDark ? const Color(0xFF111827) : Colors.white,
+                        width: 2,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -85,39 +157,62 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                   Text(
                     widget.otherUserName,
                     style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
+                      fontSize: 15.5,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.3,
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
-                  Text(
-                    widget.otherUserRole.toUpperCase(),
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.grey[600],
-                      fontWeight: FontWeight.w600,
-                    ),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          color: roleColor.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          widget.otherUserRole.toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            color: roleColor,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.4,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        '• Encrypted',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          color: isDark ? Colors.white54 : Colors.black45,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
-                color: Colors.green.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(8),
+                color: Colors.green.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.green.withValues(alpha: 0.25)),
               ),
               child: const Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.lock_rounded, size: 12, color: Colors.green),
+                  Icon(Icons.shield_rounded, size: 13, color: Colors.green),
                   SizedBox(width: 4),
                   Text(
-                    'Private 1-on-1',
+                    'Direct',
                     style: TextStyle(
-                      fontSize: 10,
+                      fontSize: 11,
                       color: Colors.green,
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                 ],
@@ -141,18 +236,33 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(
-                          Icons.chat_bubble_outline_rounded,
-                          size: 48,
-                          color: Colors.grey[400],
+                        Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: roleColor.withValues(alpha: 0.1),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.mark_chat_unread_rounded,
+                            size: 44,
+                            color: roleColor,
+                          ),
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'No messages yet',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
                         Text(
-                          'No messages yet.\nStart the private conversation below!',
+                          'Start your confidential direct chat below.',
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            color: Colors.grey[600],
-                            fontSize: 14,
+                            color: isDark ? Colors.white54 : Colors.grey[600],
+                            fontSize: 13,
                           ),
                         ),
                       ],
@@ -161,7 +271,6 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                 }
 
                 final docs = snapshot.data!.docs;
-                // Proactively mark unread incoming messages read
                 Future.microtask(
                   () => _chatService.markRoomAsRead(widget.roomId),
                 );
@@ -169,7 +278,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                 return ListView.builder(
                   reverse: true,
                   controller: _scrollController,
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   itemCount: docs.length,
                   itemBuilder: (context, index) {
                     final data = _safeData(docs[index]);
@@ -178,50 +287,65 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                     final isRead = data['is_read'] == true;
 
                     return Align(
-                      alignment: isMe
-                          ? Alignment.centerRight
-                          : Alignment.centerLeft,
+                      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
                       child: Container(
-                        margin: const EdgeInsets.only(bottom: 12),
+                        margin: const EdgeInsets.only(bottom: 10),
                         padding: const EdgeInsets.symmetric(
                           horizontal: 16,
                           vertical: 12,
                         ),
                         constraints: BoxConstraints(
-                          maxWidth: MediaQuery.of(context).size.width * 0.75,
+                          maxWidth: MediaQuery.of(context).size.width * 0.76,
                         ),
                         decoration: BoxDecoration(
+                          gradient: isMe
+                              ? const LinearGradient(
+                                  colors: [
+                                    HouseColors.ruby,
+                                    HouseColors.rubyDark,
+                                  ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                )
+                              : null,
                           color: isMe
-                              ? HouseColors.ruby
-                              : (isDark
-                                    ? const Color(0xFF2A3A52)
-                                    : const Color(0xFFE2E8F0)),
+                              ? null
+                              : (isDark ? const Color(0xFF1E293B) : Colors.white),
                           borderRadius: BorderRadius.only(
-                            topLeft: const Radius.circular(16),
-                            topRight: const Radius.circular(16),
-                            bottomLeft: Radius.circular(isMe ? 16 : 4),
-                            bottomRight: Radius.circular(isMe ? 4 : 16),
+                            topLeft: const Radius.circular(20),
+                            topRight: const Radius.circular(20),
+                            bottomLeft: Radius.circular(isMe ? 20 : 4),
+                            bottomRight: Radius.circular(isMe ? 4 : 20),
                           ),
+                          border: isMe
+                              ? null
+                              : Border.all(
+                                  color: isDark
+                                      ? Colors.white.withValues(alpha: 0.08)
+                                      : const Color(0xFFE2E8F0),
+                                  width: 1,
+                                ),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.04),
-                              blurRadius: 4,
-                              offset: const Offset(0, 2),
+                              color: isMe
+                                  ? HouseColors.ruby.withValues(alpha: 0.25)
+                                  : Colors.black.withValues(alpha: 0.04),
+                              blurRadius: 10,
+                              offset: const Offset(0, 3),
                             ),
                           ],
                         ),
                         child: Column(
-                          crossAxisAlignment: isMe
-                              ? CrossAxisAlignment.end
-                              : CrossAxisAlignment.start,
+                          crossAxisAlignment:
+                              isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                           children: [
                             if (!isMe) ...[
                               Text(
-                                data['sender_name'] ?? 'Student',
+                                data['sender_name'] ?? 'Participant',
                                 style: TextStyle(
                                   fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                  color: HouseColors.rubyDark,
+                                  fontWeight: FontWeight.w900,
+                                  color: roleColor,
                                 ),
                               ),
                               const SizedBox(height: 4),
@@ -229,22 +353,25 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                             Text(
                               text,
                               style: TextStyle(
-                                fontSize: 15,
+                                fontSize: 14.5,
+                                height: 1.35,
                                 color: isMe
                                     ? Colors.white
-                                    : Theme.of(context).colorScheme.onSurface,
+                                    : (isDark ? Colors.white : const Color(0xFF0F172A)),
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
-                            if (isMe) ...[
-                              const SizedBox(height: 4),
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
+                            const SizedBox(height: 4),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (isMe) ...[
                                   Text(
                                     isRead ? 'Read' : 'Sent',
                                     style: const TextStyle(
                                       fontSize: 10,
                                       color: Colors.white70,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
                                   const SizedBox(width: 4),
@@ -252,14 +379,14 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                                     isRead
                                         ? Icons.done_all_rounded
                                         : Icons.done_rounded,
-                                    size: 14,
+                                    size: 13,
                                     color: isRead
-                                        ? Colors.lightBlueAccent
+                                        ? Colors.cyanAccent
                                         : Colors.white70,
                                   ),
                                 ],
-                              ),
-                            ],
+                              ],
+                            ),
                           ],
                         ),
                       ),
@@ -270,14 +397,22 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
             ),
           ),
 
-          // Message Input Box
+          // Message Input Bar
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF1A2338) : Colors.white,
+              color: isDark ? const Color(0xFF111827) : Colors.white,
+              border: Border(
+                top: BorderSide(
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.08)
+                      : const Color(0xFFE2E8F0),
+                  width: 1,
+                ),
+              ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
+                  color: Colors.black.withValues(alpha: 0.04),
                   blurRadius: 10,
                   offset: const Offset(0, -4),
                 ),
@@ -289,13 +424,18 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                   Expanded(
                     child: TextField(
                       controller: _msgController,
+                      focusNode: _focusNode,
+                      textInputAction: TextInputAction.send,
                       textCapitalization: TextCapitalization.sentences,
                       decoration: InputDecoration(
-                        hintText: 'Type a message...',
-                        hintStyle: TextStyle(color: Colors.grey[500]),
+                        hintText: 'Type an encrypted message...',
+                        hintStyle: TextStyle(
+                          color: isDark ? Colors.white38 : Colors.grey[400],
+                          fontSize: 14,
+                        ),
                         filled: true,
                         fillColor: isDark
-                            ? const Color(0xFF0F172A)
+                            ? const Color(0xFF1E293B)
                             : const Color(0xFFF1F5F9),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(24),
@@ -309,20 +449,36 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                       onSubmitted: (_) => _send(),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  InkWell(
-                    onTap: _send,
-                    borderRadius: BorderRadius.circular(24),
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: const BoxDecoration(
-                        color: HouseColors.ruby,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.send_rounded,
-                        color: Colors.white,
-                        size: 20,
+                  const SizedBox(width: 10),
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: _send,
+                      borderRadius: BorderRadius.circular(24),
+                      child: Ink(
+                        width: 46,
+                        height: 46,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [
+                              HouseColors.ruby,
+                              HouseColors.rubyDark,
+                            ],
+                          ),
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: HouseColors.ruby.withValues(alpha: 0.35),
+                              blurRadius: 8,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.send_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
                       ),
                     ),
                   ),

@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'hierarchy_service.dart';
 
 class ChatService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -7,26 +8,12 @@ class ChatService {
 
   String get currentUserId => _auth.currentUser?.uid ?? '';
 
-  static bool isCouncilOrAdminRole(String? role, String? name) {
-    final roleStr = (role ?? '').toString().toLowerCase();
-    final nameStr = (name ?? '').toString().toLowerCase();
-    final isAuthorizedName =
-        nameStr.contains('mustafa') ||
-        nameStr.contains('noaman') ||
-        nameStr.contains('nayla') ||
-        nameStr.contains('saakshat') ||
-        nameStr.contains('galwin') ||
-        nameStr.contains('sarah') ||
-        nameStr.contains('tanish') ||
-        nameStr.contains('ann binu');
-    return roleStr == 'super_admin' ||
-        roleStr == 'admin' ||
-        roleStr == 'captain' ||
-        roleStr == 'head_of_activities' ||
-        roleStr == 'council' ||
-        roleStr == 'prefect' ||
-        roleStr == 'teacher' ||
-        isAuthorizedName;
+  static bool isCouncilOrAdminRole(String? role, String? name, [String? scholarNo]) {
+    return HierarchyService.isCouncilOrTeacher(
+      scholarNo: scholarNo,
+      role: role,
+      fullName: name,
+    );
   }
 
   /// Stream of all chat rooms where the logged-in user is a participant.

@@ -31,6 +31,21 @@ class _ChatListScreenState extends State<ChatListScreen>
     super.dispose();
   }
 
+  Color _getRoleOrHouseColor(String role, [String house = '']) {
+    final r = role.toLowerCase();
+    final h = house.toLowerCase();
+    if (r.contains('admin') || r.contains('principal') || r.contains('super')) {
+      return Colors.amber;
+    }
+    if (r.contains('teacher') || r.contains('faculty') || r.contains('advisor')) {
+      return Colors.indigoAccent;
+    }
+    if (h.contains('sapphire') || r.contains('sapphire')) return HouseColors.sapphire;
+    if (h.contains('emerald') || r.contains('emerald')) return HouseColors.emerald;
+    if (h.contains('topaz') || r.contains('topaz')) return HouseColors.topaz;
+    return HouseColors.ruby;
+  }
+
   Map<String, dynamic> _safeData(DocumentSnapshot doc) {
     try {
       final d = doc.data();
@@ -45,6 +60,7 @@ class _ChatListScreenState extends State<ChatListScreen>
     required String otherUserName,
     required String otherUserRole,
   }) async {
+    AppHaptics.light();
     try {
       showDialog(
         context: context,
@@ -191,6 +207,7 @@ class _ChatListScreenState extends State<ChatListScreen>
                       data['last_message']?.toString() ?? 'Chat started';
                   final unreadCount =
                       (data['unread_$myUid'] as num?)?.toInt() ?? 0;
+                  final partnerColor = _getRoleOrHouseColor(otherRole);
 
                   return InkWell(
                     onTap: () => _openChatRoom(
@@ -198,25 +215,27 @@ class _ChatListScreenState extends State<ChatListScreen>
                       otherUserName: otherName,
                       otherUserRole: otherRole,
                     ),
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(18),
                     child: Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF1A2338) : Colors.white,
-                        borderRadius: BorderRadius.circular(16),
+                        color: isDark ? const Color(0xFF131B2E) : Colors.white,
+                        borderRadius: BorderRadius.circular(18),
                         border: Border.all(
                           color: unreadCount > 0
-                              ? HouseColors.ruby
-                              : Theme.of(
-                                  context,
-                                ).colorScheme.outline.withValues(alpha: 0.3),
+                              ? partnerColor
+                              : (isDark
+                                  ? Colors.white.withValues(alpha: 0.08)
+                                  : const Color(0xFFE2E8F0)),
                           width: unreadCount > 0 ? 1.5 : 1,
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.03),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
+                            color: unreadCount > 0
+                                ? partnerColor.withValues(alpha: 0.12)
+                                : Colors.black.withValues(alpha: 0.03),
+                            blurRadius: 10,
+                            offset: const Offset(0, 3),
                           ),
                         ],
                       ),
@@ -225,41 +244,60 @@ class _ChatListScreenState extends State<ChatListScreen>
                           Stack(
                             clipBehavior: Clip.none,
                             children: [
-                              CircleAvatar(
-                                radius: 26,
-                                backgroundColor: HouseColors.ruby.withValues(
-                                  alpha: 0.15,
+                              Container(
+                                width: 50,
+                                height: 50,
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      partnerColor,
+                                      partnerColor.withValues(alpha: 0.7),
+                                    ],
+                                  ),
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: partnerColor.withValues(alpha: 0.25),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
                                 ),
+                                alignment: Alignment.center,
                                 child: Text(
                                   otherName.isNotEmpty
                                       ? otherName[0].toUpperCase()
                                       : '?',
                                   style: const TextStyle(
-                                    color: HouseColors.ruby,
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 18,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 19,
                                   ),
                                 ),
                               ),
                               if (unreadCount > 0)
                                 Positioned(
-                                  top: -4,
-                                  right: -4,
+                                  top: -2,
+                                  right: -2,
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 6,
                                       vertical: 2,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: HouseColors.ruby,
+                                      color: partnerColor,
                                       borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: isDark ? const Color(0xFF131B2E) : Colors.white,
+                                        width: 1.5,
+                                      ),
                                     ),
                                     child: Text(
                                       '$unreadCount',
                                       style: const TextStyle(
                                         color: Colors.white,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.bold,
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.w900,
                                       ),
                                     ),
                                   ),
@@ -280,7 +318,8 @@ class _ChatListScreenState extends State<ChatListScreen>
                                           fontWeight: unreadCount > 0
                                               ? FontWeight.w900
                                               : FontWeight.w800,
-                                          fontSize: 16,
+                                          fontSize: 15.5,
+                                          letterSpacing: -0.3,
                                         ),
                                         overflow: TextOverflow.ellipsis,
                                       ),
@@ -289,20 +328,21 @@ class _ChatListScreenState extends State<ChatListScreen>
                                     Container(
                                       padding: const EdgeInsets.symmetric(
                                         horizontal: 8,
-                                        vertical: 2,
+                                        vertical: 2.5,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: Colors.blue.withValues(
-                                          alpha: 0.1,
+                                        color: partnerColor.withValues(
+                                          alpha: 0.15,
                                         ),
-                                        borderRadius: BorderRadius.circular(6),
+                                        borderRadius: BorderRadius.circular(8),
                                       ),
                                       child: Text(
                                         otherRole.toUpperCase(),
-                                        style: const TextStyle(
-                                          fontSize: 10,
-                                          color: Colors.blue,
-                                          fontWeight: FontWeight.bold,
+                                        style: TextStyle(
+                                          fontSize: 9.5,
+                                          color: partnerColor,
+                                          fontWeight: FontWeight.w900,
+                                          letterSpacing: 0.3,
                                         ),
                                       ),
                                     ),
@@ -337,17 +377,17 @@ class _ChatListScreenState extends State<ChatListScreen>
                                           vertical: 3,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: HouseColors.ruby.withValues(
+                                          color: partnerColor.withValues(
                                             alpha: 0.15,
                                           ),
                                           borderRadius: BorderRadius.circular(
                                             8,
                                           ),
                                         ),
-                                        child: const Text(
+                                        child: Text(
                                           'NEW',
                                           style: TextStyle(
-                                            color: HouseColors.ruby,
+                                            color: partnerColor,
                                             fontSize: 9,
                                             fontWeight: FontWeight.w900,
                                             letterSpacing: 0.5,
@@ -363,7 +403,7 @@ class _ChatListScreenState extends State<ChatListScreen>
                           const SizedBox(width: 8),
                           const Icon(
                             Icons.arrow_forward_ios_rounded,
-                            size: 16,
+                            size: 14,
                             color: Colors.grey,
                           ),
                         ],
@@ -438,6 +478,15 @@ class _ChatListScreenState extends State<ChatListScreen>
                           Icons.search_rounded,
                           color: Colors.grey,
                         ),
+                        suffixIcon: _searchQuery.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear_rounded, size: 20),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  setState(() => _searchQuery = '');
+                                },
+                              )
+                            : null,
                         filled: true,
                         fillColor: isDark
                             ? const Color(0xFF1A2338)
@@ -476,7 +525,7 @@ class _ChatListScreenState extends State<ChatListScreen>
                               final data = _safeData(doc);
                               final name = data['full_name'] ?? 'Student';
                               final role = data['role'] ?? 'student';
-                              final house = data['house'] ?? 'Ruby';
+                              final house = data['house_name'] ?? data['house'] ?? 'Ruby';
                               final scholarNo = data['scholar_no'] ?? '';
 
                               return InkWell(
@@ -545,18 +594,22 @@ class _ChatListScreenState extends State<ChatListScreen>
                                         ),
                                       ),
                                       ElevatedButton.icon(
-                                        onPressed: () => _openChatRoom(
-                                          otherUserId: doc.id,
-                                          otherUserName: name,
-                                          otherUserRole: '$role ($house)',
-                                        ),
+                                        onPressed: () {
+                                          AppHaptics.light();
+                                          _openChatRoom(
+                                            otherUserId: doc.id,
+                                            otherUserName: name,
+                                            otherUserRole: '$role ($house)',
+                                          );
+                                        },
                                         style: ElevatedButton.styleFrom(
-                                          minimumSize: const Size(80, 36),
-                                          backgroundColor: HouseColors.ruby,
+                                          minimumSize: const Size(84, 38),
+                                          backgroundColor: _getRoleOrHouseColor(role, house),
                                           foregroundColor: Colors.white,
+                                          elevation: 2,
                                           shape: RoundedRectangleBorder(
                                             borderRadius: BorderRadius.circular(
-                                              10,
+                                              12,
                                             ),
                                           ),
                                         ),
@@ -567,7 +620,7 @@ class _ChatListScreenState extends State<ChatListScreen>
                                         label: const Text(
                                           'Chat',
                                           style: TextStyle(
-                                            fontWeight: FontWeight.w700,
+                                            fontWeight: FontWeight.w800,
                                             fontSize: 13,
                                           ),
                                         ),

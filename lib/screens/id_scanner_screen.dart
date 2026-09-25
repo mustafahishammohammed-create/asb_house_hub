@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
@@ -23,6 +26,7 @@ class _IdScannerScreenState extends State<IdScannerScreen>
   CameraController? _cameraController;
   bool _isCameraInitializing = true;
   String? _cameraErrorMessage;
+  bool _isFlashOn = false;
   late AnimationController _laserController;
   late Animation<double> _laserAnimation;
 
@@ -89,6 +93,24 @@ class _IdScannerScreenState extends State<IdScannerScreen>
   }
 
   Future<void> _initCamera() async {
+    // On Desktop (Windows, macOS, Linux), mobile camera plugin is not available.
+    // Gracefully switch to desktop input mode without calling missing plugin channels.
+    final isDesktop = !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.windows ||
+         defaultTargetPlatform == TargetPlatform.linux ||
+         defaultTargetPlatform == TargetPlatform.macOS);
+
+    if (isDesktop) {
+      if (mounted) {
+        setState(() {
+          _isCameraInitializing = false;
+          _cameraErrorMessage =
+              'Desktop Mode: Hardware camera feed active on mobile devices.\nUse Manual Scholar # search, QR image upload, or preset chips below.';
+        });
+      }
+      return;
+    }
+
     try {
       final cameras = await availableCameras();
       if (cameras.isEmpty) {
@@ -117,7 +139,7 @@ class _IdScannerScreenState extends State<IdScannerScreen>
       if (mounted) {
         setState(() {
           _isCameraInitializing = false;
-          _cameraErrorMessage = 'Camera permission unavailable or denied.';
+          _cameraErrorMessage = 'Camera unavailable or access restricted.';
         });
       }
     }
@@ -129,6 +151,35 @@ class _IdScannerScreenState extends State<IdScannerScreen>
     _cameraController?.dispose();
     _manualSearchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _toggleFlashlight() async {
+    if (_cameraController == null || !_cameraController!.value.isInitialized) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Flashlight is available when hardware camera is active.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+    try {
+      final newMode = _isFlashOn ? FlashMode.off : FlashMode.torch;
+      await _cameraController!.setFlashMode(newMode);
+      if (mounted) {
+        setState(() {
+          _isFlashOn = !_isFlashOn;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Flashlight toggle error: $e')),
+        );
+      }
+    }
   }
 
   void _navigateToEvaluation({
@@ -158,7 +209,49 @@ class _IdScannerScreenState extends State<IdScannerScreen>
 
     setState(() => _isSearching = true);
     try {
-      // 1. Check if input is formatted QR token e.g. "ASB-ID:2310910:RUBY:VERIFIED"
+      // 1. Check if input is structured JSON student QR code
+      if (query.startsWith('{') && query.endsWith('}')) {
+        try {
+          final Map<String, dynamic> data = jsonDecode(query);
+          final scholar = (data['scholar_no'] ?? data['scholarNo'] ?? '').toString().trim();
+          final name = (data['name'] ?? data['studentName'] ?? 'Student').toString().trim();
+          final house = (data['house_name'] ?? data['house'] ?? data['houseName'] ?? 'Ruby').toString().trim();
+          final cls = (data['class'] ?? data['classLevel'] ?? 'Grade 11').toString().trim();
+          if (scholar.isNotEmpty) {
+            _navigateToEvaluation(
+              scholarNo: scholar,
+              studentName: name,
+              houseName: house,
+              classLevel: cls,
+            );
+            return;
+          }
+        } catch (_) {}
+      }
+
+      // 2. Check if input is deep link or URL QR scheme (e.g. asb://student/2310910 or https://.../student/2310910)
+      if (query.contains('student/')) {
+        final scholar = query.split('student/').last.split('?').first.split('/').first.trim();
+        if (scholar.isNotEmpty) {
+          final snap = await FirebaseFirestore.instance
+              .collection('users')
+              .where('scholar_no', isEqualTo: scholar)
+              .limit(1)
+              .get();
+          if (snap.docs.isNotEmpty) {
+            final data = snap.docs.first.data();
+            _navigateToEvaluation(
+              scholarNo: data['scholar_no'] ?? scholar,
+              studentName: data['full_name'] ?? 'Student',
+              houseName: (data['house_name'] ?? 'Ruby').toString(),
+              classLevel: '${data['class_level'] ?? "Grade 11"} ${data['division'] ?? ""}',
+            );
+            return;
+          }
+        }
+      }
+
+      // 3. Check if input is legacy formatted QR token e.g. "ASB-ID:2310910:RUBY:VERIFIED"
       if (query.startsWith('ASB-ID')) {
         final parts = query.split(':');
         if (parts.length >= 3) {
@@ -175,7 +268,7 @@ class _IdScannerScreenState extends State<IdScannerScreen>
         }
       }
 
-      // 2. Query Firestore users collection by scholar_no
+      // 3. Query Firestore users collection by scholar_no
       final snap = await FirebaseFirestore.instance
           .collection('users')
           .where('scholar_no', isEqualTo: query)
@@ -198,7 +291,7 @@ class _IdScannerScreenState extends State<IdScannerScreen>
         return;
       }
 
-      // 3. Fallback check inside preset demo students
+      // 4. Fallback check inside preset demo students
       final match = _demoStudents.firstWhere(
         (s) => s['scholar'] == query || s['name']!.toLowerCase().contains(query.toLowerCase()),
         orElse: () => {},
@@ -273,6 +366,16 @@ class _IdScannerScreenState extends State<IdScannerScreen>
         ),
         elevation: 0,
         backgroundColor: Colors.transparent,
+        actions: [
+          IconButton(
+            icon: Icon(
+              _isFlashOn ? Icons.flash_on_rounded : Icons.flash_off_rounded,
+              color: _isFlashOn ? Colors.amber : null,
+            ),
+            tooltip: _isFlashOn ? 'Turn Flashlight Off' : 'Turn Flashlight On',
+            onPressed: _toggleFlashlight,
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -338,13 +441,16 @@ class _IdScannerScreenState extends State<IdScannerScreen>
                             size: 80,
                             color: Colors.white.withValues(alpha: 0.3),
                           ),
-                          const SizedBox(height: 12),
-                          Text(
-                            _cameraErrorMessage ?? 'Ready to scan student ID QR',
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.7),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            child: Text(
+                              _cameraErrorMessage ?? 'Ready to scan student ID QR',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.8),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
                         ],
@@ -430,6 +536,7 @@ class _IdScannerScreenState extends State<IdScannerScreen>
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.blueAccent,
                             foregroundColor: Colors.white,
+                            minimumSize: const Size(0, 36),
                             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
@@ -489,6 +596,7 @@ class _IdScannerScreenState extends State<IdScannerScreen>
                         style: ElevatedButton.styleFrom(
                           backgroundColor: HouseColors.ruby,
                           foregroundColor: Colors.white,
+                          minimumSize: const Size(0, 48),
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                         ),

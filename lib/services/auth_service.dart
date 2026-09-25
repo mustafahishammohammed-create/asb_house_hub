@@ -3,14 +3,211 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'dart:typed_data';
 import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Domain appended to scholar numbers to create Firebase-compatible emails.
 /// e.g., scholar_no "123456" becomes "123456@asianschool.bh"
 const String kSchoolDomain = 'asianschool.bh';
 
 class AuthService {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  FirebaseAuth get _auth => FirebaseAuth.instance;
+  FirebaseFirestore get _firestore => FirebaseFirestore.instance;
+
+  static SharedPreferences? _prefs;
+
+  /// Initialize SharedPreferences cache on startup.
+  static Future<void> initPreferences() async {
+    try {
+      _prefs = await SharedPreferences.getInstance();
+    } catch (_) {}
+  }
+
+  /// Safely extracts and normalizes house name from any dynamic map or document.
+  static String? extractHouse(Map<String, dynamic>? data) {
+    if (data == null) return null;
+    final dynamic raw = data['house_name'] ??
+        data['house'] ??
+        data['houseName'] ??
+        data['house_id'];
+    if (raw != null) {
+      final s = raw.toString().trim().toLowerCase();
+      if (s.isNotEmpty && s != 'null' && s != 'none') {
+        return s;
+      }
+    }
+    return null;
+  }
+
+  /// Helper to convert non-JSON Firestore types (Timestamp, FieldValue) for safe encoding.
+  static Map<String, dynamic> _sanitizeForJson(Map<String, dynamic> map) {
+    final clean = <String, dynamic>{};
+    for (final entry in map.entries) {
+      clean[entry.key] = _sanitizeValue(entry.value);
+    }
+    return clean;
+  }
+
+  static dynamic _sanitizeValue(dynamic val) {
+    if (val == null || val is num || val is bool || val is String) {
+      return val;
+    }
+    if (val is Timestamp) {
+      return val.toDate().toIso8601String();
+    }
+    if (val is DateTime) {
+      return val.toIso8601String();
+    }
+    if (val is List) {
+      return val.map(_sanitizeValue).toList();
+    }
+    if (val is Map) {
+      return val.map((k, v) => MapEntry(k.toString(), _sanitizeValue(v)));
+    }
+    return val.toString();
+  }
+
+  /// Get the cached house name synchronously.
+  static String? getCachedHouse() {
+    final cached = _prefs?.getString('cached_house_name')?.trim().toLowerCase();
+    if (cached != null && cached.isNotEmpty && cached != 'null') return cached;
+
+    // Secondary fallback: check cached profile JSON
+    final profile = getCachedProfile();
+    final profileHouse = extractHouse(profile);
+    if (profileHouse != null && profileHouse.isNotEmpty) return profileHouse;
+
+    // Tertiary fallback: infer from currentUser email/scholar if available
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        final inferred = inferHouseFromUser(user);
+        if (inferred != null) return inferred;
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
+  /// Infer house from scholar number or identifier string.
+  static String? inferHouseFromScholarNo(String scholarNo) {
+    final s = scholarNo.trim().toLowerCase();
+    // Known emerald scholars
+    if (s == '10001' ||
+        s == '20002' ||
+        s == '11089' ||
+        s.contains('emerald')) {
+      return 'emerald';
+    }
+    // Known sapphire scholars
+    if (s == '30003' || s.contains('sapphire')) {
+      return 'sapphire';
+    }
+    // Known topaz scholars
+    if (s == '12001' ||
+        s == '11012' ||
+        s == '40001' ||
+        s.contains('topaz')) {
+      return 'topaz';
+    }
+    // Known ruby scholars
+    if (s == '2310910' ||
+        s == 'admin' ||
+        s == '11004' ||
+        s == '10105' ||
+        s == '90123' ||
+        s.contains('ruby')) {
+      return 'ruby';
+    }
+    return null;
+  }
+
+  /// Infer house from Firebase User metadata or email (e.g., scholar number).
+  static String? inferHouseFromUser(User user) {
+    final email = (user.email ?? '').toLowerCase();
+    final scholar = email.contains('@') ? email.split('@').first : email;
+    final fromScholar = inferHouseFromScholarNo(scholar);
+    if (fromScholar != null) return fromScholar;
+
+    final displayName = (user.displayName ?? '').toLowerCase();
+    if (displayName.contains('emerald') ||
+        displayName.contains('noaman') ||
+        displayName.contains('sarah student')) {
+      return 'emerald';
+    }
+    if (displayName.contains('sapphire') || displayName.contains('vance')) {
+      return 'sapphire';
+    }
+    if (displayName.contains('topaz') || displayName.contains('tanish')) {
+      return 'topaz';
+    }
+    if (displayName.contains('ruby') || displayName.contains('mustafa')) {
+      return 'ruby';
+    }
+    return null;
+  }
+
+  /// Save house preference to local disk cache.
+  static Future<void> cacheHouse(String house) async {
+    try {
+      final clean = house.trim().toLowerCase();
+      if (clean.isEmpty) return;
+      _prefs ??= await SharedPreferences.getInstance();
+      await _prefs?.setString('cached_house_name', clean);
+    } catch (_) {}
+  }
+
+  /// Get the cached user profile synchronously.
+  static Map<String, dynamic>? getCachedProfile() {
+    try {
+      final raw = _prefs?.getString('cached_user_profile');
+      if (raw != null && raw.isNotEmpty) {
+        return jsonDecode(raw) as Map<String, dynamic>;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Get cached scholar number.
+  static String? getCachedScholarNo() {
+    return _prefs?.getString('cached_scholar_no')?.trim();
+  }
+
+  /// Get cached UID.
+  static String? getCachedUid() {
+    return _prefs?.getString('cached_uid')?.trim();
+  }
+
+  /// Save user profile to local disk cache with robust JSON serialization.
+  static Future<void> cacheProfile(Map<String, dynamic> profile) async {
+    try {
+      _prefs ??= await SharedPreferences.getInstance();
+      final house = extractHouse(profile);
+      if (house != null && house.isNotEmpty) {
+        await _prefs?.setString('cached_house_name', house);
+      }
+      final scholarNo = profile['scholar_no']?.toString().trim();
+      if (scholarNo != null && scholarNo.isNotEmpty) {
+        await _prefs?.setString('cached_scholar_no', scholarNo);
+      }
+      final uid = profile['uid']?.toString().trim();
+      if (uid != null && uid.isNotEmpty) {
+        await _prefs?.setString('cached_uid', uid);
+      }
+      final sanitized = _sanitizeForJson(profile);
+      await _prefs?.setString('cached_user_profile', jsonEncode(sanitized));
+    } catch (_) {}
+  }
+
+  /// Clear all cached profile and house preference.
+  static Future<void> clearCache() async {
+    try {
+      _prefs ??= await SharedPreferences.getInstance();
+      await _prefs?.remove('cached_house_name');
+      await _prefs?.remove('cached_user_profile');
+      await _prefs?.remove('cached_scholar_no');
+      await _prefs?.remove('cached_uid');
+    } catch (_) {}
+  }
 
   /// Current authenticated user (nullable).
   User? get currentUser => _auth.currentUser;
@@ -29,11 +226,23 @@ class AuthService {
     required String scholarNo,
     required String password,
   }) async {
-    final email = _scholarToEmail(scholarNo);
-    return await _auth.signInWithEmailAndPassword(
+    final cleanScholar = scholarNo.trim();
+    final email = _scholarToEmail(cleanScholar);
+    final cred = await _auth.signInWithEmailAndPassword(
       email: email,
       password: password,
     );
+    // Clear any previous stale cache from another account
+    final prevScholar = getCachedScholarNo();
+    if (prevScholar != null && prevScholar != cleanScholar) {
+      await clearCache();
+    }
+    // Infer house from scholar number and pre-cache immediately
+    final inferred = inferHouseFromScholarNo(cleanScholar);
+    if (inferred != null) {
+      await cacheHouse(inferred);
+    }
+    return cred;
   }
 
   /// Admin profile data for the super admin account.
@@ -62,6 +271,8 @@ class AuthService {
           .collection('users')
           .doc(cred.user!.uid)
           .set(_adminProfile, SetOptions(merge: true));
+      await cacheHouse('ruby');
+      await cacheProfile(_adminProfile);
       return cred;
     } on FirebaseAuthException catch (e) {
       if (e.code == 'user-not-found' ||
@@ -76,6 +287,8 @@ class AuthService {
               .collection('users')
               .doc(cred.user!.uid)
               .set(_adminProfile, SetOptions(merge: true));
+          await cacheHouse('ruby');
+          await cacheProfile(_adminProfile);
           return cred;
         } catch (_) {
           rethrow;
@@ -108,15 +321,20 @@ class AuthService {
 
     // Step 2 — Save profile to Firestore `users` collection
     final uid = credential.user!.uid;
-    await _firestore.collection('users').doc(uid).set({
+    final cleanHouse = houseName.trim().toLowerCase();
+    final profileData = {
       'full_name': fullName,
       'scholar_no': scholarNo,
       'age': age,
       'class_level': classLevel,
       'division': division,
-      'house_name': houseName,
+      'house_name': cleanHouse,
       'created_at': FieldValue.serverTimestamp(),
-    });
+      'role': 'student',
+    };
+    await _firestore.collection('users').doc(uid).set(profileData);
+    await cacheHouse(cleanHouse);
+    await cacheProfile(profileData);
 
     // Update display name
     await credential.user!.updateDisplayName(fullName);
@@ -124,10 +342,46 @@ class AuthService {
     return credential;
   }
 
-  /// Fetch user profile from Firestore by UID.
+  /// Fetch user profile from Firestore by UID with dynamic roster role resolution.
   Future<Map<String, dynamic>?> getUserProfile(String uid) async {
     final doc = await _firestore.collection('users').doc(uid).get();
-    return doc.data();
+    if (!doc.exists) return null;
+    final data = Map<String, dynamic>.from(doc.data()!);
+    data['uid'] = uid;
+    final scholarNo = (data['scholar_no'] ?? '').toString().trim();
+    final currentRole = (data['role'] ?? '').toString().trim().toLowerCase();
+
+    // If user doesn't have an elevated role, check if they are assigned in admin_roster
+    if (scholarNo.isNotEmpty &&
+        (currentRole.isEmpty || currentRole == 'student')) {
+      try {
+        final rosterSnap = await _firestore
+            .collection('admin_roster')
+            .where('scholar_no', isEqualTo: scholarNo)
+            .limit(1)
+            .get();
+        if (rosterSnap.docs.isNotEmpty) {
+          final slotData = rosterSnap.docs.first.data();
+          final rosterRole = (slotData['role'] ?? '').toString();
+          if (rosterRole.isNotEmpty) {
+            data['role'] = rosterRole;
+            // Backfill to Firestore users collection for fast lookup
+            doc.reference.update({'role': rosterRole}).catchError((_) {});
+          }
+          final rosterHouse = extractHouse(slotData);
+          if (rosterHouse != null && extractHouse(data) == null) {
+            data['house_name'] = rosterHouse;
+            doc.reference.update({'house_name': rosterHouse}).catchError((_) {});
+          }
+        }
+      } catch (_) {}
+    }
+    final h = extractHouse(data);
+    if (h != null && h.isNotEmpty) {
+      await cacheHouse(h);
+    }
+    await cacheProfile(data);
+    return data;
   }
 
   /// Send password reset email.
@@ -139,6 +393,7 @@ class AuthService {
   /// Sign out.
   Future<void> signOut() async {
     await _auth.signOut();
+    await clearCache();
   }
 
   /// Stream house standings.
@@ -212,12 +467,37 @@ class AuthService {
         .snapshots();
   }
 
-  /// Approve claim and add points to house standings.
+  /// Approve claim and add points to house standings, student contributor totals, and user profile.
   Future<void> approveClaim({
     required String claimId,
     required String houseName,
     required int points,
+    String? scholarNo,
+    String? studentName,
+    String? activityTitle,
   }) async {
+    final hName = houseName.toLowerCase().trim();
+
+    // 0. Fetch claim doc if any critical student detail is missing
+    String sNo = (scholarNo ?? '').trim();
+    String sName = (studentName ?? '').trim();
+    String aTitle = (activityTitle ?? '').trim();
+
+    try {
+      final claimDoc =
+          await _firestore.collection('house_claims').doc(claimId).get();
+      if (claimDoc.exists) {
+        final data = claimDoc.data() ?? <String, dynamic>{};
+        if (sNo.isEmpty) sNo = (data['scholar_no'] ?? '').toString().trim();
+        if (sName.isEmpty) sName = (data['student_name'] ?? '').toString().trim();
+        if (aTitle.isEmpty) {
+          aTitle = (data['activity_title'] ?? 'House Achievement').toString();
+        }
+      }
+    } catch (_) {}
+
+    if (aTitle.isEmpty) aTitle = 'House Achievement';
+
     // 1. Mark claim as approved
     await _firestore.collection('house_claims').doc(claimId).update({
       'status': 'approved',
@@ -225,14 +505,12 @@ class AuthService {
     });
 
     // 2. Increment house points
-    final houseRef = _firestore
-        .collection('house_points')
-        .doc(houseName.toLowerCase());
+    final houseRef = _firestore.collection('house_points').doc(hName);
     await _firestore.runTransaction((transaction) async {
       final snapshot = await transaction.get(houseRef);
       if (!snapshot.exists) {
         transaction.set(houseRef, {
-          'house_name': houseName.toLowerCase(),
+          'house_name': hName,
           'total_points': points,
         });
       } else {
@@ -241,14 +519,145 @@ class AuthService {
         transaction.update(houseRef, {'total_points': currentPoints + points});
       }
     });
+
+    // 3. Atomically update student contributor record in house_contributors
+    if (sNo.isNotEmpty && sNo != '---') {
+      final contributorRef =
+          _firestore.collection('house_contributors').doc(sNo);
+      await _firestore.runTransaction((tx) async {
+        final snap = await tx.get(contributorRef);
+        if (!snap.exists) {
+          tx.set(contributorRef, {
+            'scholar_no': sNo,
+            'student_name': sName.isNotEmpty ? sName : 'Scholar $sNo',
+            'house_name': hName,
+            'class_level': 'Senior Tier',
+            'total_contributed': points,
+            'merits_count': 1,
+            'demerits_count': 0,
+            'last_updated': FieldValue.serverTimestamp(),
+          });
+        } else {
+          final currentContributed =
+              (snap.data()?['total_contributed'] as num?)?.toInt() ?? 0;
+          final merits = (snap.data()?['merits_count'] as num?)?.toInt() ?? 0;
+          tx.update(contributorRef, {
+            if (sName.isNotEmpty) 'student_name': sName,
+            'house_name': hName,
+            'total_contributed': currentContributed + points,
+            'merits_count': merits + 1,
+            'last_updated': FieldValue.serverTimestamp(),
+          });
+        }
+      });
+
+      // 4. Update user document and trigger push notification queue
+      try {
+        final userQuery = await _firestore
+            .collection('users')
+            .where('scholar_no', isEqualTo: sNo)
+            .limit(1)
+            .get();
+        if (userQuery.docs.isNotEmpty) {
+          final userDoc = userQuery.docs.first;
+          await userDoc.reference.update({
+            'points_contributed': FieldValue.increment(points),
+          });
+          await userDoc.reference.collection('notifications').add({
+            'title': '🏆 Claim Approved: +$points Pts!',
+            'body':
+                'Your verified claim for "$aTitle" was approved! +$points points contributed to ${hName.toUpperCase()} House.',
+            'timestamp': FieldValue.serverTimestamp(),
+            'is_read': false,
+            'type': 'claim_approved',
+          });
+        }
+      } catch (_) {}
+    }
   }
 
-  /// Reject claim.
-  Future<void> rejectClaim(String claimId) async {
+  /// Reject claim and notify student.
+  Future<void> rejectClaim(
+    String claimId, {
+    String? reason,
+    String? studentName,
+  }) async {
+    String sNo = '';
+    String aTitle = 'Competition Entry';
+
+    try {
+      final claimDoc =
+          await _firestore.collection('house_claims').doc(claimId).get();
+      if (claimDoc.exists) {
+        final data = claimDoc.data() ?? <String, dynamic>{};
+        sNo = (data['scholar_no'] ?? '').toString().trim();
+        aTitle = (data['activity_title'] ?? 'Competition Entry').toString();
+      }
+    } catch (_) {}
+
     await _firestore.collection('house_claims').doc(claimId).update({
       'status': 'rejected',
+      'rejection_reason': reason ?? 'Verification criteria not met.',
       'verified_at': FieldValue.serverTimestamp(),
     });
+
+    if (sNo.isNotEmpty && sNo != '---') {
+      try {
+        final userQuery = await _firestore
+            .collection('users')
+            .where('scholar_no', isEqualTo: sNo)
+            .limit(1)
+            .get();
+        if (userQuery.docs.isNotEmpty) {
+          final userDoc = userQuery.docs.first;
+          await userDoc.reference.collection('notifications').add({
+            'title': '❌ House Claim Not Approved',
+            'body':
+                'Your claim for "$aTitle" was not approved.${reason != null ? " Reason: $reason" : ""}',
+            'timestamp': FieldValue.serverTimestamp(),
+            'is_read': false,
+            'type': 'claim_rejected',
+          });
+        }
+      } catch (_) {}
+    }
+  }
+
+  /// Synchronize a council roster slot assignment directly into the matching user's account.
+  Future<bool> syncRosterRoleToUser({
+    required String scholarNo,
+    required String role,
+    String? name,
+    String? slotTitle,
+  }) async {
+    final sNo = scholarNo.trim();
+    if (sNo.isEmpty || sNo == '---') return false;
+
+    try {
+      final query = await _firestore
+          .collection('users')
+          .where('scholar_no', isEqualTo: sNo)
+          .limit(1)
+          .get();
+      if (query.docs.isNotEmpty) {
+        final userDoc = query.docs.first;
+        await userDoc.reference.update({
+          'role': role,
+          if (name != null && name.trim().isNotEmpty) 'full_name': name.trim(),
+        });
+
+        await userDoc.reference.collection('notifications').add({
+          'title': '🎖️ Council Role Assigned',
+          'body':
+              'You have been officially appointed as ${slotTitle ?? role} for ASB House Hub!',
+          'timestamp': FieldValue.serverTimestamp(),
+          'is_read': false,
+          'type': 'role_assigned',
+        });
+        return true;
+      }
+    } catch (_) {}
+    return false;
   }
 
   /// Record a student conduct action (Merit or Demerit).
@@ -356,13 +765,29 @@ class AuthService {
     } catch (_) {}
   }
 
-  /// Stream conduct history for a specific student.
-  Stream<QuerySnapshot> getStudentConductStream(String scholarNo) {
+  /// Stream conduct history for a specific student without requiring composite indexes.
+  Stream<List<QueryDocumentSnapshot>> getStudentConductStream(String scholarNo) {
+    if (scholarNo.trim().isEmpty || scholarNo == '---') {
+      return Stream.value(<QueryDocumentSnapshot>[]);
+    }
     return _firestore
         .collection('student_conduct')
         .where('scholar_no', isEqualTo: scholarNo)
-        .orderBy('timestamp', descending: true)
-        .snapshots();
+        .snapshots()
+        .map((snapshot) {
+          final docs = snapshot.docs.toList();
+          docs.sort((a, b) {
+            final dataA = a.data();
+            final dataB = b.data();
+            final tA = dataA['timestamp'] as Timestamp?;
+            final tB = dataB['timestamp'] as Timestamp?;
+            if (tA == null && tB == null) return 0;
+            if (tA == null) return 1;
+            if (tB == null) return -1;
+            return tB.compareTo(tA);
+          });
+          return docs;
+        });
   }
 
   /// Stream contributors for a house leaderboard.

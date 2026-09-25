@@ -333,7 +333,8 @@ class _ApprovedClaimsScreenState extends State<ApprovedClaimsScreen> {
                 }
 
                 final docs = snapshot.data!.docs.where((doc) {
-                  final data = doc.data() as Map<String, dynamic>;
+                  final raw = doc.data();
+                  final data = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
                   final name = (data['student_name'] ?? '')
                       .toString()
                       .toLowerCase();
@@ -385,7 +386,8 @@ class _ApprovedClaimsScreenState extends State<ApprovedClaimsScreen> {
                   separatorBuilder: (context, index) =>
                       const SizedBox(height: 16),
                   itemBuilder: (context, i) {
-                    final data = docs[i].data() as Map<String, dynamic>;
+                    final raw = docs[i].data();
+                    final data = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
                     final scholarNo = data['scholar_no'] ?? 'N/A';
                     final studentName =
                         data['student_name'] ?? 'Unknown Student';

@@ -6,6 +6,8 @@ class PillSelector extends StatelessWidget {
   final List<String> options;
   final String? selectedValue;
   final ValueChanged<String> onSelected;
+  final Color? activeColor;
+  final Color? activeDarkColor;
 
   const PillSelector({
     super.key,
@@ -13,6 +15,8 @@ class PillSelector extends StatelessWidget {
     required this.options,
     required this.selectedValue,
     required this.onSelected,
+    this.activeColor,
+    this.activeDarkColor,
   });
 
   @override
@@ -35,24 +39,27 @@ class PillSelector extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         Wrap(
-          spacing: 10,
-          runSpacing: 10,
+          spacing: 8,
+          runSpacing: 8,
           children: options.map((opt) {
             final isActive = selectedValue == opt;
             return GestureDetector(
-              onTap: () => onSelected(opt),
+              onTap: () {
+                AppHaptics.selectionClick();
+                onSelected(opt);
+              },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 250),
                 curve: Curves.easeOutBack,
                 transform: Matrix4.diagonal3Values(
-                  isActive ? 1.08 : 1.0,
-                  isActive ? 1.08 : 1.0,
+                  isActive ? 1.06 : 1.0,
+                  isActive ? 1.06 : 1.0,
                   1.0,
                 ),
                 transformAlignment: Alignment.center,
-                height: 52,
-                constraints: const BoxConstraints(minWidth: 54),
-                padding: const EdgeInsets.symmetric(horizontal: 22),
+                height: 42,
+                constraints: const BoxConstraints(minWidth: 42),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(9999),
                   border: Border.all(
@@ -64,8 +71,11 @@ class PillSelector extends StatelessWidget {
                     width: isActive ? 0 : 2,
                   ),
                   gradient: isActive
-                      ? const LinearGradient(
-                          colors: [HouseColors.ruby, HouseColors.rubyDark],
+                      ? LinearGradient(
+                          colors: [
+                            activeColor ?? HouseColors.ruby,
+                            activeDarkColor ?? HouseColors.rubyDark,
+                          ],
                         )
                       : null,
                   color: isActive
@@ -76,7 +86,8 @@ class PillSelector extends StatelessWidget {
                   boxShadow: isActive
                       ? [
                           BoxShadow(
-                            color: HouseColors.ruby.withValues(alpha: 0.45),
+                            color: (activeColor ?? HouseColors.ruby)
+                                .withValues(alpha: 0.45),
                             blurRadius: 16,
                             spreadRadius: 1,
                             offset: const Offset(0, 6),

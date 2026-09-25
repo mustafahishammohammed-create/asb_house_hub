@@ -76,6 +76,26 @@ class _StudentBehaviorEvaluationScreenState
       );
       return;
     }
+    if (reason.length < 3) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Reason must be at least 3 characters long.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+    if (reason.length > 250) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Reason cannot exceed 250 characters.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    final safePoints = _selectedPoints.clamp(1, 100);
 
     setState(() => _isSubmitting = true);
 
@@ -85,7 +105,7 @@ class _StudentBehaviorEvaluationScreenState
         studentName: widget.studentName,
         houseName: widget.houseName,
         type: _isWellBehaved ? 'merit' : 'demerit',
-        points: _selectedPoints,
+        points: safePoints,
         reason: reason,
         teacherName: widget.evaluatorName,
         classLevel: widget.classLevel,
@@ -93,8 +113,9 @@ class _StudentBehaviorEvaluationScreenState
 
       if (!mounted) return;
 
+      AppHaptics.success();
       final houseColor = HouseColors.getHouseColor(widget.houseName);
-      final deltaText = _isWellBehaved ? '+$_selectedPoints' : '-$_selectedPoints';
+      final deltaText = _isWellBehaved ? '+$safePoints' : '-$safePoints';
 
       // Show success celebration dialog
       await showDialog(
@@ -118,10 +139,11 @@ class _StudentBehaviorEvaluationScreenState
               ),
             ],
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
@@ -172,11 +194,13 @@ class _StudentBehaviorEvaluationScreenState
               ),
             ],
           ),
+          ),
           actions: [
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: houseColor,
                 foregroundColor: Colors.white,
+                minimumSize: const Size(80, 36),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
                 ),
@@ -619,7 +643,7 @@ class _StudentBehaviorEvaluationScreenState
               style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
             ),
             const SizedBox(height: 8),
-            StreamBuilder<QuerySnapshot>(
+            StreamBuilder<List<QueryDocumentSnapshot>>(
               stream: _authService.getStudentConductStream(widget.scholarNo),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
@@ -630,7 +654,7 @@ class _StudentBehaviorEvaluationScreenState
                     ),
                   );
                 }
-                final docs = snapshot.data?.docs ?? [];
+                final docs = snapshot.data ?? [];
                 if (docs.isEmpty) {
                   return Container(
                     padding: const EdgeInsets.all(16),
@@ -654,9 +678,10 @@ class _StudentBehaviorEvaluationScreenState
                   itemCount: docs.length > 3 ? 3 : docs.length,
                   separatorBuilder: (context, index) => const SizedBox(height: 8),
                   itemBuilder: (context, i) {
-                    final data = docs[i].data() as Map<String, dynamic>;
+                    final raw = docs[i].data();
+                    final data = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
                     final isMerit = data['type'] == 'merit';
-                    final points = data['points'] ?? 0;
+                    final points = (data['points'] as num?)?.toInt() ?? 0;
                     final reason = data['reason'] ?? 'Conduct Record';
                     final teacher = data['teacher_name'] ?? 'Faculty';
 

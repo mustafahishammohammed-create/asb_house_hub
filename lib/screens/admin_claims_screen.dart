@@ -16,18 +16,34 @@ class AdminClaimsScreen extends StatefulWidget {
 
 class _AdminClaimsScreenState extends State<AdminClaimsScreen> {
   final _authService = AuthService();
+  final Set<String> _processingClaimIds = {};
+  final _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   void _handleApprove(
     String claimId,
     String houseName,
     int points,
     String studentName,
+    String scholarNo,
+    String activityTitle,
   ) async {
+    if (_processingClaimIds.contains(claimId)) return;
+    setState(() => _processingClaimIds.add(claimId));
     try {
       await _authService.approveClaim(
         claimId: claimId,
         houseName: houseName,
         points: points,
+        scholarNo: scholarNo,
+        studentName: studentName,
+        activityTitle: activityTitle,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -46,12 +62,18 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen> {
           backgroundColor: Colors.red,
         ),
       );
+    } finally {
+      if (mounted) {
+        setState(() => _processingClaimIds.remove(claimId));
+      }
     }
   }
 
   void _handleReject(String claimId, String studentName) async {
+    if (_processingClaimIds.contains(claimId)) return;
+    setState(() => _processingClaimIds.add(claimId));
     try {
-      await _authService.rejectClaim(claimId);
+      await _authService.rejectClaim(claimId, studentName: studentName);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -67,6 +89,10 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen> {
           backgroundColor: Colors.red,
         ),
       );
+    } finally {
+      if (mounted) {
+        setState(() => _processingClaimIds.remove(claimId));
+      }
     }
   }
 
@@ -79,7 +105,12 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen> {
         final bytes = base64Decode(base64Str);
         imagePreview = ClipRRect(
           borderRadius: BorderRadius.circular(12),
-          child: Image.memory(bytes, fit: BoxFit.contain, height: 350),
+          child: InteractiveViewer(
+            panEnabled: true,
+            minScale: 0.8,
+            maxScale: 4.0,
+            child: Image.memory(bytes, fit: BoxFit.contain, height: 350),
+          ),
         );
       } catch (_) {
         imagePreview = const Icon(
@@ -91,7 +122,12 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen> {
     } else if (certUrl.startsWith('http')) {
       imagePreview = ClipRRect(
         borderRadius: BorderRadius.circular(12),
-        child: Image.network(certUrl, fit: BoxFit.contain, height: 350),
+        child: InteractiveViewer(
+          panEnabled: true,
+          minScale: 0.8,
+          maxScale: 4.0,
+          child: Image.network(certUrl, fit: BoxFit.contain, height: 350),
+        ),
       );
     } else {
       imagePreview = Column(
@@ -225,7 +261,8 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen> {
                         separatorBuilder: (context, index) =>
                             const Divider(height: 1),
                         itemBuilder: (context, i) {
-                          final data = docs[i].data() as Map<String, dynamic>;
+                          final raw = docs[i].data();
+                          final data = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
                           final title = data['title'] ?? 'Slot';
                           final name = data['name'] ?? 'Vacant';
                           final scholarNo = data['scholar_no'] ?? '';
@@ -367,13 +404,29 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(minimumSize: const Size(80, 40)),
             onPressed: () async {
+              final newName = nameCtrl.text.trim();
+              final newScholar = scholarCtrl.text.trim();
               await FirebaseFirestore.instance
                   .collection('admin_roster')
                   .doc(docId)
                   .update({
-                    'name': nameCtrl.text.trim(),
-                    'scholar_no': scholarCtrl.text.trim(),
+                    'name': newName,
+                    'scholar_no': newScholar,
                   });
+
+              // Synchronize role directly into the user's profile and notify them
+              if (newScholar.isNotEmpty) {
+                final slotRole = (data['role'] ?? 'council').toString();
+                final slotTitle =
+                    (data['title'] ?? 'Council Officer').toString();
+                await _authService.syncRosterRoleToUser(
+                  scholarNo: newScholar,
+                  role: slotRole,
+                  name: newName,
+                  slotTitle: slotTitle,
+                );
+              }
+
               if (!ctx.mounted) return;
               Navigator.pop(ctx);
             },
@@ -474,93 +527,164 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen> {
           ],
         ],
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: _authService.getPendingClaimsStream(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(36),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(24),
-                      decoration: BoxDecoration(
-                        color: Colors.green.withValues(alpha: 0.1),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.check_circle_rounded,
-                        size: 64,
-                        color: Colors.green,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    const Text(
-                      'All Caught Up!',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'There are currently no pending house points claims waiting for manual verification.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 15,
-                        color: Colors.grey[600],
-                        height: 1.4,
-                      ),
-                    ),
-                    const SizedBox(height: 28),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 14,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const ApprovedClaimsScreen(),
-                        ),
-                      ),
-                      icon: const Icon(Icons.verified_rounded),
-                      label: const Text(
-                        'View Approved Achievements Gallery',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 15,
-                        ),
-                      ),
-                    ),
-                  ],
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 12, 24, 4),
+            child: TextField(
+              controller: _searchController,
+              onChanged: (val) =>
+                  setState(() => _searchQuery = val.trim().toLowerCase()),
+              decoration: InputDecoration(
+                hintText: 'Search pending claims by student, house, title...',
+                prefixIcon: const Icon(Icons.search_rounded),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear_rounded, size: 18),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _searchQuery = '');
+                        },
+                      )
+                    : null,
+                filled: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 14,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide.none,
                 ),
               ),
-            );
-          }
+            ),
+          ),
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: _authService.getPendingClaimsStream(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
-          final docs = snapshot.data!.docs;
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(36),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(24),
+                            decoration: BoxDecoration(
+                              color: Colors.green.withValues(alpha: 0.1),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.check_circle_rounded,
+                              size: 64,
+                              color: Colors.green,
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          const Text(
+                            'All Caught Up!',
+                            style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'There are currently no pending house points claims waiting for manual verification.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 15,
+                              color: Colors.grey[600],
+                              height: 1.4,
+                            ),
+                          ),
+                          const SizedBox(height: 28),
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                                vertical: 14,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const ApprovedClaimsScreen(),
+                              ),
+                            ),
+                            icon: const Icon(Icons.verified_rounded),
+                            label: const Text(
+                              'View Approved Achievements Gallery',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
 
-          return ListView.separated(
-            padding: const EdgeInsets.all(24),
-            itemCount: docs.length,
-            separatorBuilder: (context, index) => const SizedBox(height: 16),
-            itemBuilder: (context, index) {
+                final allDocs = snapshot.data!.docs;
+                final docs = allDocs.where((doc) {
+                  if (_searchQuery.isEmpty) return true;
+                  final raw = doc.data();
+                  final data = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+                  final sName = (data['student_name'] ?? '').toString().toLowerCase();
+                  final sNo = (data['scholar_no'] ?? '').toString().toLowerCase();
+                  final title = (data['activity_title'] ?? '').toString().toLowerCase();
+                  final house = (data['house_name'] ?? '').toString().toLowerCase();
+                  return sName.contains(_searchQuery) ||
+                      sNo.contains(_searchQuery) ||
+                      title.contains(_searchQuery) ||
+                      house.contains(_searchQuery);
+                }).toList();
+
+                if (docs.isEmpty) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.search_off_rounded, size: 56, color: Colors.grey[400]),
+                          const SizedBox(height: 14),
+                          const Text(
+                            'No Matching Claims',
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'No pending claims matched "$_searchQuery".',
+                            style: TextStyle(color: Colors.grey[600]),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+
+                return ListView.separated(
+                  padding: const EdgeInsets.all(24),
+                  itemCount: docs.length,
+                  separatorBuilder: (context, index) => const SizedBox(height: 16),
+                  itemBuilder: (context, index) {
               final doc = docs[index];
-              final data = doc.data() as Map<String, dynamic>;
+              final raw = doc.data();
+              final data = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
               final claimId = doc.id;
               final studentName = data['student_name'] ?? 'Unknown Student';
               final scholarNo = data['scholar_no'] ?? '---';
@@ -571,6 +695,7 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen> {
                   data['activity_title'] ?? 'Competition Entry';
               final points = (data['points'] as num?)?.toInt() ?? 10;
               final certUrl = data['cert_url'] ?? 'Certificate Uploaded';
+              final isProcessing = _processingClaimIds.contains(claimId);
 
               final houseColor = HouseColors.getHouseColor(houseName);
               final houseDisplay = houseName.isNotEmpty
@@ -727,16 +852,26 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen> {
                                 borderRadius: BorderRadius.circular(16),
                               ),
                             ),
-                            icon: const Icon(Icons.close_rounded, size: 20),
-                            label: const Text(
-                              'Reject',
-                              style: TextStyle(
+                            icon: isProcessing
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.redAccent,
+                                    ),
+                                  )
+                                : const Icon(Icons.close_rounded, size: 20),
+                            label: Text(
+                              isProcessing ? 'Processing...' : 'Reject',
+                              style: const TextStyle(
                                 fontWeight: FontWeight.w800,
                                 fontSize: 15,
                               ),
                             ),
-                            onPressed: () =>
-                                _handleReject(claimId, studentName),
+                            onPressed: isProcessing
+                                ? null
+                                : () => _handleReject(claimId, studentName),
                           ),
                         ),
                         const SizedBox(width: 14),
@@ -751,20 +886,33 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen> {
                                 borderRadius: BorderRadius.circular(16),
                               ),
                             ),
-                            icon: const Icon(Icons.check_rounded, size: 20),
-                            label: const Text(
-                              'Approve',
-                              style: TextStyle(
+                            icon: isProcessing
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.check_rounded, size: 20),
+                            label: Text(
+                              isProcessing ? 'Processing...' : 'Approve',
+                              style: const TextStyle(
                                 fontWeight: FontWeight.w800,
                                 fontSize: 15,
                               ),
                             ),
-                            onPressed: () => _handleApprove(
-                              claimId,
-                              houseName,
-                              points,
-                              studentName,
-                            ),
+                            onPressed: isProcessing
+                                ? null
+                                : () => _handleApprove(
+                                    claimId,
+                                    houseName,
+                                    points,
+                                    studentName,
+                                    scholarNo,
+                                    activityTitle,
+                                  ),
                           ),
                         ),
                       ],
@@ -776,6 +924,9 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen> {
           );
         },
       ),
-    );
-  }
+    ),
+  ],
+),
+);
+}
 }
