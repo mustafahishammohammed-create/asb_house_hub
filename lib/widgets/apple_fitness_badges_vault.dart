@@ -339,7 +339,7 @@ class _AppleFitnessBadgesVaultState extends State<AppleFitnessBadgesVault>
                   maxCrossAxisExtent: 210,
                   crossAxisSpacing: 18,
                   mainAxisSpacing: 22,
-                  childAspectRatio: 0.86,
+                  childAspectRatio: 0.72,
                 ),
                 itemCount: filteredBadges.length,
                 itemBuilder: (context, index) {

@@ -45,10 +45,12 @@ class StrengthMeter extends StatelessWidget {
     }
   }
 
-  Color _segmentColor(int index, PasswordStrength s) {
+  Color _segmentColor(int index, PasswordStrength s, bool isDark) {
     if (s == PasswordStrength.none) return Colors.transparent;
+    final inactiveColor =
+        isDark ? const Color(0xFF2A3A52) : const Color(0xFFE2E8F0);
     final level = s.index; // 1=weak, 2=fair, 3=good, 4=strong
-    if (index >= level) return const Color(0xFFE2E8F0);
+    if (index >= level) return inactiveColor;
     switch (s) {
       case PasswordStrength.weak:
         return HouseColors.ruby;
@@ -59,7 +61,7 @@ class StrengthMeter extends StatelessWidget {
       case PasswordStrength.strong:
         return houseColor ?? HouseColors.emerald;
       default:
-        return const Color(0xFFE2E8F0);
+        return inactiveColor;
     }
   }
 
@@ -96,14 +98,18 @@ class StrengthMeter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = strength;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final inactiveColor =
+        isDark ? const Color(0xFF2A3A52) : const Color(0xFFE2E8F0);
+
     return Row(
       children: [
         Expanded(
           child: Row(
             children: List.generate(4, (i) {
-              final segColor = _segmentColor(i, s);
+              final segColor = _segmentColor(i, s, isDark);
               final isColored =
-                  segColor != const Color(0xFFE2E8F0) &&
+                  segColor != inactiveColor &&
                   segColor != Colors.transparent;
               return Expanded(
                 child: AnimatedContainer(

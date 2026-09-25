@@ -66,6 +66,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
       }
     });
     await _chatService.sendMessage(widget.roomId, text);
+    if (!mounted) return;
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
         0.0,

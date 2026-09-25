@@ -26,6 +26,7 @@ class _IdScannerScreenState extends State<IdScannerScreen>
   CameraController? _cameraController;
   bool _isCameraInitializing = true;
   String? _cameraErrorMessage;
+  bool _isFlashOn = false;
   late AnimationController _laserController;
   late Animation<double> _laserAnimation;
 
@@ -152,6 +153,35 @@ class _IdScannerScreenState extends State<IdScannerScreen>
     super.dispose();
   }
 
+  Future<void> _toggleFlashlight() async {
+    if (_cameraController == null || !_cameraController!.value.isInitialized) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Flashlight is available when hardware camera is active.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+    try {
+      final newMode = _isFlashOn ? FlashMode.off : FlashMode.torch;
+      await _cameraController!.setFlashMode(newMode);
+      if (mounted) {
+        setState(() {
+          _isFlashOn = !_isFlashOn;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Flashlight toggle error: $e')),
+        );
+      }
+    }
+  }
+
   void _navigateToEvaluation({
     required String scholarNo,
     required String studentName,
@@ -199,7 +229,29 @@ class _IdScannerScreenState extends State<IdScannerScreen>
         } catch (_) {}
       }
 
-      // 2. Check if input is legacy formatted QR token e.g. "ASB-ID:2310910:RUBY:VERIFIED"
+      // 2. Check if input is deep link or URL QR scheme (e.g. asb://student/2310910 or https://.../student/2310910)
+      if (query.contains('student/')) {
+        final scholar = query.split('student/').last.split('?').first.split('/').first.trim();
+        if (scholar.isNotEmpty) {
+          final snap = await FirebaseFirestore.instance
+              .collection('users')
+              .where('scholar_no', isEqualTo: scholar)
+              .limit(1)
+              .get();
+          if (snap.docs.isNotEmpty) {
+            final data = snap.docs.first.data();
+            _navigateToEvaluation(
+              scholarNo: data['scholar_no'] ?? scholar,
+              studentName: data['full_name'] ?? 'Student',
+              houseName: (data['house_name'] ?? 'Ruby').toString(),
+              classLevel: '${data['class_level'] ?? "Grade 11"} ${data['division'] ?? ""}',
+            );
+            return;
+          }
+        }
+      }
+
+      // 3. Check if input is legacy formatted QR token e.g. "ASB-ID:2310910:RUBY:VERIFIED"
       if (query.startsWith('ASB-ID')) {
         final parts = query.split(':');
         if (parts.length >= 3) {
@@ -314,6 +366,16 @@ class _IdScannerScreenState extends State<IdScannerScreen>
         ),
         elevation: 0,
         backgroundColor: Colors.transparent,
+        actions: [
+          IconButton(
+            icon: Icon(
+              _isFlashOn ? Icons.flash_on_rounded : Icons.flash_off_rounded,
+              color: _isFlashOn ? Colors.amber : null,
+            ),
+            tooltip: _isFlashOn ? 'Turn Flashlight Off' : 'Turn Flashlight On',
+            onPressed: _toggleFlashlight,
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),

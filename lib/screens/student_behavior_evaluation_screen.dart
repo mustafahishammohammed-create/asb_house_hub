@@ -76,6 +76,26 @@ class _StudentBehaviorEvaluationScreenState
       );
       return;
     }
+    if (reason.length < 3) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Reason must be at least 3 characters long.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+    if (reason.length > 250) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Reason cannot exceed 250 characters.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    final safePoints = _selectedPoints.clamp(1, 100);
 
     setState(() => _isSubmitting = true);
 
@@ -85,7 +105,7 @@ class _StudentBehaviorEvaluationScreenState
         studentName: widget.studentName,
         houseName: widget.houseName,
         type: _isWellBehaved ? 'merit' : 'demerit',
-        points: _selectedPoints,
+        points: safePoints,
         reason: reason,
         teacherName: widget.evaluatorName,
         classLevel: widget.classLevel,
@@ -95,7 +115,7 @@ class _StudentBehaviorEvaluationScreenState
 
       AppHaptics.success();
       final houseColor = HouseColors.getHouseColor(widget.houseName);
-      final deltaText = _isWellBehaved ? '+$_selectedPoints' : '-$_selectedPoints';
+      final deltaText = _isWellBehaved ? '+$safePoints' : '-$safePoints';
 
       // Show success celebration dialog
       await showDialog(
@@ -119,10 +139,11 @@ class _StudentBehaviorEvaluationScreenState
               ),
             ],
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
@@ -172,6 +193,7 @@ class _StudentBehaviorEvaluationScreenState
                 style: TextStyle(color: Colors.grey[600], fontSize: 12),
               ),
             ],
+          ),
           ),
           actions: [
             ElevatedButton(

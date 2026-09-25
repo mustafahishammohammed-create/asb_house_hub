@@ -289,7 +289,7 @@ class _HomeScreenState extends State<HomeScreen>
                               context: context,
                               builder: (context) => const CameraCaptureDialog(),
                             );
-                            if (bytes != null) {
+                            if (context.mounted && bytes != null) {
                               setModalState(() {
                                 selectedImageBytes = bytes;
                                 selectedFileName =
@@ -351,10 +351,12 @@ class _HomeScreenState extends State<HomeScreen>
                             );
                             if (file != null) {
                               final bytes = await file.readAsBytes();
-                              setModalState(() {
-                                selectedImageBytes = bytes;
-                                selectedFileName = file.name;
-                              });
+                              if (context.mounted) {
+                                setModalState(() {
+                                  selectedImageBytes = bytes;
+                                  selectedFileName = file.name;
+                                });
+                              }
                             }
                           },
                           borderRadius: BorderRadius.circular(16),
@@ -483,7 +485,9 @@ class _HomeScreenState extends State<HomeScreen>
                                 ),
                               );
                             } catch (e) {
-                              setModalState(() => isSubmitting = false);
+                              if (context.mounted) {
+                                setModalState(() => isSubmitting = false);
+                              }
                               messenger.showSnackBar(
                                 SnackBar(
                                   content: Text('Error submitting claim: $e'),
@@ -2592,12 +2596,16 @@ class _HomeScreenState extends State<HomeScreen>
                           ),
                         ),
                       ),
-                      Text(
-                        date.toString(),
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.grey[500],
+                      Flexible(
+                        child: Text(
+                          date.toString(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey[500],
+                          ),
                         ),
                       ),
                     ],
@@ -2733,37 +2741,39 @@ class _HomeScreenState extends State<HomeScreen>
               ),
             ],
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Broadcast instant updates across all school student screens.',
-                style: TextStyle(fontSize: 13, color: Colors.grey),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: txtController,
-                maxLines: 2,
-                decoration: InputDecoration(
-                  labelText: 'Announcement Message',
-                  hintText: 'e.g. Ruby House takes the lead in Sports Day!',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Broadcast instant updates across all school student screens.',
+                  style: TextStyle(fontSize: 13, color: Colors.grey),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: txtController,
+                  maxLines: 2,
+                  decoration: InputDecoration(
+                    labelText: 'Announcement Message',
+                    hintText: 'e.g. Ruby House takes the lead in Sports Day!',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              SwitchListTile(
-                title: const Text(
-                  'Broadcast Active',
-                  style: TextStyle(fontWeight: FontWeight.w800),
+                const SizedBox(height: 16),
+                SwitchListTile(
+                  title: const Text(
+                    'Broadcast Active',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  value: activeState,
+                  activeThumbColor: Colors.redAccent,
+                  onChanged: (val) => setModalState(() => activeState = val),
                 ),
-                value: activeState,
-                activeThumbColor: Colors.redAccent,
-                onChanged: (val) => setModalState(() => activeState = val),
-              ),
-            ],
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -3614,96 +3624,104 @@ class _HomeScreenState extends State<HomeScreen>
       ),
       builder: (context) => StatefulBuilder(
         builder: (context, setModalState) => Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.local_library_rounded, color: color, size: 28),
-                  const SizedBox(width: 12),
-                  const Text(
-                    'ASB Library Portal',
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'Your currently borrowed textbooks and literature catalog.',
-                style: TextStyle(color: Colors.grey, fontSize: 13),
-              ),
-              const SizedBox(height: 20),
-              ...books.map(
-                (b) => Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: Colors.grey.withValues(alpha: 0.2),
+          padding: EdgeInsets.only(
+            left: 24,
+            right: 24,
+            top: 24,
+            bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.local_library_rounded, color: color, size: 28),
+                    const SizedBox(width: 12),
+                    const Text(
+                      'ASB Library Portal',
+                      style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
                     ),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              b['title']!,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w800,
-                                fontSize: 15,
-                              ),
-                            ),
-                            Text(
-                              '${b['author']} • ${b['due']}',
-                              style: TextStyle(
-                                color: color,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Your currently borrowed textbooks and literature catalog.',
+                  style: TextStyle(color: Colors.grey, fontSize: 13),
+                ),
+                const SizedBox(height: 20),
+                ...books.map(
+                  (b) => Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: Colors.grey.withValues(alpha: 0.2),
                       ),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: color.withValues(alpha: 0.15),
-                          foregroundColor: color,
-                          minimumSize: const Size(0, 36),
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                b['title']!,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 15,
+                                ),
+                              ),
+                              Text(
+                                '${b['author']} • ${b['due']}',
+                                style: TextStyle(
+                                  color: color,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        onPressed: () {
-                          Navigator.pop(context);
-                          ScaffoldMessenger.of(this.context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'Renewed "${b['title']}" for an additional 14 days!',
-                              ),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: color.withValues(alpha: 0.15),
+                            foregroundColor: color,
+                            minimumSize: const Size(0, 36),
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
                             ),
-                          );
-                        },
-                        child: const Text(
-                          'Renew Loan',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 12,
+                          ),
+                          onPressed: () {
+                            final messenger = ScaffoldMessenger.of(context);
+                            Navigator.pop(context);
+                            messenger.showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Renewed "${b['title']}" for an additional 14 days!',
+                                ),
+                              ),
+                            );
+                          },
+                          child: const Text(
+                            'Renew Loan',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 12,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 12),
-            ],
+                const SizedBox(height: 12),
+              ],
+            ),
           ),
         ),
       ),
@@ -3887,10 +3905,11 @@ class _HomeScreenState extends State<HomeScreen>
           right: 24,
           top: 24,
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
             Row(
               children: [
                 Icon(Icons.switch_account_rounded, color: color, size: 28),
@@ -4095,6 +4114,7 @@ class _HomeScreenState extends State<HomeScreen>
             const SizedBox(height: 24),
           ],
         ),
+      ),
       ),
     );
   }

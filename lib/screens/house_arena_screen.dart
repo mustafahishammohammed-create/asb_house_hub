@@ -171,6 +171,7 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
   int? _blitzSelectedOption;
   bool? _blitzAnswerCorrect;
   Timer? _blitzTimer;
+  Timer? _advanceTimer;
   int _blitzSecondsLeft = 15;
   bool _showConfetti = false;
 
@@ -281,6 +282,7 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
     _particleTicker.dispose();
     _comboResetTimer?.cancel();
     _blitzTimer?.cancel();
+    _advanceTimer?.cancel();
     super.dispose();
   }
 
@@ -363,6 +365,10 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
   void _startBlitzCountdown() {
     _blitzTimer?.cancel();
     _blitzTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
       if (_blitzSecondsLeft > 0) {
         setState(() => _blitzSecondsLeft--);
       } else {
@@ -389,7 +395,8 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
     });
 
     // Advance to next after 1.4s delay
-    Timer(const Duration(milliseconds: 1400), () {
+    _advanceTimer?.cancel();
+    _advanceTimer = Timer(const Duration(milliseconds: 1400), () {
       if (!mounted) return;
       if (_blitzQuestionIndex + 1 < _quizBank.length) {
         setState(() {
@@ -608,20 +615,26 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Row(
-                      children: [
-                        Icon(Icons.public_rounded, color: Colors.cyanAccent, size: 18),
-                        SizedBox(width: 8),
-                        Text(
-                          'Live Inter-House Spirit Grid',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 13,
+                    const Expanded(
+                      child: Row(
+                        children: [
+                          Icon(Icons.public_rounded, color: Colors.cyanAccent, size: 18),
+                          SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              'Live Inter-House Spirit Grid',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 13,
+                              ),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
+                    const SizedBox(width: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(

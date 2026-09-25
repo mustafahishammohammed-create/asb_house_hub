@@ -3,14 +3,14 @@ import '../theme/app_theme.dart';
 
 class HouseCard extends StatelessWidget {
   final String houseName;
-  final String motto;
+  final String? motto;
   final bool isSelected;
   final VoidCallback onTap;
 
   const HouseCard({
     super.key,
     required this.houseName,
-    required this.motto,
+    this.motto,
     required this.isSelected,
     required this.onTap,
   });
@@ -20,12 +20,18 @@ class HouseCard extends StatelessWidget {
     final color = HouseColors.getHouseColor(houseName);
     final darkColor = HouseColors.getHouseDarkColor(houseName);
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final effectiveMotto = motto ?? HouseColors.getHouseMotto(houseName);
 
-    return GestureDetector(
-      onTap: () {
-        AppHaptics.selectionClick();
-        onTap();
-      },
+    return Semantics(
+      button: true,
+      selected: isSelected,
+      label: '$houseName House: $effectiveMotto',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          AppHaptics.selectionClick();
+          onTap();
+        },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeOutBack,
@@ -150,7 +156,7 @@ class HouseCard extends StatelessWidget {
 
                 // Motto
                 Text(
-                  motto,
+                  effectiveMotto,
                   style: TextStyle(
                     fontSize: 10.5,
                     fontWeight: FontWeight.w500,
@@ -168,6 +174,7 @@ class HouseCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
       ),
     );
   }

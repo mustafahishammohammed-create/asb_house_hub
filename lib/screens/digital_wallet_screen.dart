@@ -1227,20 +1227,25 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Row(
-                        children: [
-                          Icon(Icons.school_rounded, color: Color(0xFF1E293B), size: 26),
-                          SizedBox(width: 8),
-                          Text(
-                            'ASB OFFICIAL VOUCHER',
-                            style: TextStyle(
-                              color: Color(0xFF1E293B),
-                              fontWeight: FontWeight.w900,
-                              fontSize: 14,
-                              letterSpacing: 0.5,
+                      const Expanded(
+                        child: Row(
+                          children: [
+                            Icon(Icons.school_rounded, color: Color(0xFF1E293B), size: 26),
+                            SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                'ASB OFFICIAL VOUCHER',
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: Color(0xFF1E293B),
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 14,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                       IconButton(
                         icon: const Icon(Icons.close_rounded, color: Colors.grey),

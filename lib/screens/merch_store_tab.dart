@@ -61,24 +61,25 @@ class CartItem {
   final String size;
   int qty;
 
-  CartItem({required this.product, required this.size, this.qty = 1});
+  CartItem({required this.product, required this.size, int qty = 1})
+      : qty = qty < 1 ? 1 : (qty > 99 ? 99 : qty);
 
   int get pointsPrice {
     final parsed =
         int.tryParse(product.price.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
-    return parsed * qty;
+    return parsed * (qty < 1 ? 1 : qty);
   }
 
   Map<String, dynamic> toJson() => {
     'product': product.toJson(),
     'size': size,
-    'qty': qty,
+    'qty': qty < 1 ? 1 : qty,
   };
 
   factory CartItem.fromJson(Map<String, dynamic> json) => CartItem(
     product: MerchProduct.fromJson(json['product'] as Map<String, dynamic>),
     size: json['size'] as String? ?? 'M',
-    qty: json['qty'] as int? ?? 1,
+    qty: ((json['qty'] as num?)?.toInt() ?? 1).clamp(1, 99),
   );
 }
 
@@ -472,6 +473,9 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
           if (snap.exists) {
             final cur =
                 (snap.data()?['total_contributed'] as num?)?.toInt() ?? 0;
+            if (cur < totalPts) {
+              throw Exception('Insufficient verified points ($cur < $totalPts)');
+            }
             tx.update(contribRef, {
               'total_contributed': (cur - totalPts) < 0 ? 0 : (cur - totalPts),
               'last_updated': FieldValue.serverTimestamp(),
@@ -496,9 +500,21 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
           'type': 'store_purchase',
         });
       }
-    } catch (_) {}
-
-    return true;
+      return true;
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _userPoints += totalPts;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Points redemption transaction failed: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+      return false;
+    }
   }
 
   @override
@@ -519,16 +535,18 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
   }
 
   void _addToCart(MerchProduct product, {String size = 'M', int qty = 1}) {
+    final safeQty = qty.clamp(1, 99);
     AppHaptics.light();
     setState(() {
       final existingIndex = GlobalWalletStore.cart.indexWhere(
         (item) => item.product.id == product.id && item.size == size,
       );
       if (existingIndex != -1) {
-        GlobalWalletStore.cart[existingIndex].qty += qty;
+        GlobalWalletStore.cart[existingIndex].qty =
+            (GlobalWalletStore.cart[existingIndex].qty + safeQty).clamp(1, 99);
       } else {
         GlobalWalletStore.cart.add(
-          CartItem(product: product, size: size, qty: qty),
+          CartItem(product: product, size: size, qty: safeQty),
         );
       }
     });
@@ -539,7 +557,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
             Icon(Icons.shopping_bag_rounded, color: widget.houseColor),
             const SizedBox(width: 12),
             Expanded(
-              child: Text('${qty}x ${product.name} ($size) added to bag!'),
+              child: Text('${safeQty}x ${product.name} ($size) added to bag!'),
             ),
           ],
         ),
@@ -556,21 +574,22 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     String size = 'M',
     int qty = 1,
   }) async {
+    final safeQty = qty.clamp(1, 99);
     final parsedPrice =
         int.tryParse(product.price.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
-    final totalPts = parsedPrice * qty;
+    final totalPts = parsedPrice * safeQty;
     final receiptId =
         'ASB-${DateTime.now().millisecondsSinceEpoch.toString().substring(6)}';
 
     final allowed = await _verifyAndDeductPoints(
       totalPts,
       receiptId,
-      '${qty}x ${product.name} ($size)',
+      '${safeQty}x ${product.name} ($size)',
     );
     if (!allowed) return;
 
     AppHaptics.success();
-    final itemsList = [CartItem(product: product, size: size, qty: qty)];
+    final itemsList = [CartItem(product: product, size: size, qty: safeQty)];
     final qrData = jsonEncode({
       'bill_no': receiptId,
       'pts': totalPts,

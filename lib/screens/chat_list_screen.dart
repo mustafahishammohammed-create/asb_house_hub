@@ -478,6 +478,15 @@ class _ChatListScreenState extends State<ChatListScreen>
                           Icons.search_rounded,
                           color: Colors.grey,
                         ),
+                        suffixIcon: _searchQuery.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear_rounded, size: 20),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  setState(() => _searchQuery = '');
+                                },
+                              )
+                            : null,
                         filled: true,
                         fillColor: isDark
                             ? const Color(0xFF1A2338)

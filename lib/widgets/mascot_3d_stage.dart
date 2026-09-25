@@ -1804,7 +1804,7 @@ class _Mascot3DStageState extends State<Mascot3DStage>
                 _zoomScale = (_baseZoom * details.scale).clamp(0.72, 1.95);
               } else {
                 // Single-touch 360 degree 3D rotation
-                _rotY += details.focalPointDelta.dx * 0.016;
+                _rotY = (_rotY + details.focalPointDelta.dx * 0.016) % (math.pi * 2);
                 _rotX -= details.focalPointDelta.dy * 0.016;
                 _rotX = _rotX.clamp(-0.85, 0.85);
               }
@@ -2000,7 +2000,7 @@ class _Mascot3DStageState extends State<Mascot3DStage>
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        'CAD • YAW: ${((_rotY * 180 / math.pi) % 360).toInt()}°  PITCH: ${(_rotX * 180 / math.pi).toInt()}°  ZOOM: ${(_zoomScale * 100).toInt()}%',
+                        'CAD • YAW: ${(((_rotY * 180 / math.pi) % 360).toInt() + 360) % 360}°  PITCH: ${(_rotX * 180 / math.pi).toInt()}°  ZOOM: ${(_zoomScale * 100).toInt()}%',
                         style: const TextStyle(
                           color: Colors.white70,
                           fontSize: 9.5,
