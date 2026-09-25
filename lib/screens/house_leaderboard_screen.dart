@@ -77,9 +77,10 @@ class _HouseLeaderboardScreenState extends State<HouseLeaderboardScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
+      builder: (ctx) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
@@ -215,6 +216,7 @@ class _HouseLeaderboardScreenState extends State<HouseLeaderboardScreen> {
             ),
             const SizedBox(height: 12),
           ],
+        ),
         ),
       ),
     );

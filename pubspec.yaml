@@ -45,6 +45,7 @@ dependencies:
   qr_flutter: ^4.1.0
   google_generative_ai: ^0.4.7
   http: ^1.6.0
+  crypto: ^3.0.7
 
 dev_dependencies:
   flutter_test:

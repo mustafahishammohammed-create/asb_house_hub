@@ -607,7 +607,9 @@ class _HomeScreenState extends State<HomeScreen>
           ),
         ),
       ),
-    );
+    ).whenComplete(() {
+      titleController.dispose();
+    });
   }
 
   void _showFeatureModal(
@@ -3042,7 +3044,7 @@ class _HomeScreenState extends State<HomeScreen>
           ],
         ),
       ),
-    );
+    ).whenComplete(() => txtController.dispose());
   }
 
   Widget _buildLiveEventWall(Color themeColor, bool isAdmin) {

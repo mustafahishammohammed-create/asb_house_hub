@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../theme/app_theme.dart';
+import '../services/voucher_security_service.dart';
 
 class MerchProduct {
   final String id;
@@ -59,21 +60,24 @@ class MerchProduct {
 class CartItem {
   final MerchProduct product;
   final String size;
-  int qty;
+  int _qty;
 
   CartItem({required this.product, required this.size, int qty = 1})
-      : qty = qty < 1 ? 1 : (qty > 99 ? 99 : qty);
+      : _qty = qty.clamp(1, 99);
+
+  int get qty => _qty;
+  set qty(int value) => _qty = value.clamp(1, 99);
 
   int get pointsPrice {
     final parsed =
         int.tryParse(product.price.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
-    return parsed * (qty < 1 ? 1 : qty);
+    return parsed * _qty;
   }
 
   Map<String, dynamic> toJson() => {
     'product': product.toJson(),
     'size': size,
-    'qty': qty < 1 ? 1 : qty,
+    'qty': _qty,
   };
 
   factory CartItem.fromJson(Map<String, dynamic> json) => CartItem(
@@ -317,6 +321,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
 
   int _userPoints = 120;
   bool _pointsLoaded = false;
+  bool _isProcessingOrder = false;
 
   @override
   void initState() {
@@ -449,6 +454,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     String receiptId,
     String description,
   ) async {
+    if (totalPts <= 0) return false;
     if (_userPoints < totalPts) {
       AppHaptics.error();
       _showInsufficientPointsDialog(totalPts);
@@ -458,54 +464,105 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     final sNo = widget.scholarNo?.trim();
     final uid = FirebaseAuth.instance.currentUser?.uid;
 
-    setState(() {
-      _userPoints -= totalPts;
-    });
-
     try {
-      // 1. Deduct from house_contributors
-      if (sNo != null && sNo.isNotEmpty && sNo != '---') {
-        final contribRef = FirebaseFirestore.instance
-            .collection('house_contributors')
-            .doc(sNo);
-        await FirebaseFirestore.instance.runTransaction((tx) async {
-          final snap = await tx.get(contribRef);
-          if (snap.exists) {
-            final cur =
-                (snap.data()?['total_contributed'] as num?)?.toInt() ?? 0;
-            if (cur < totalPts) {
-              throw Exception('Insufficient verified points ($cur < $totalPts)');
-            }
+      final firestore = FirebaseFirestore.instance;
+      final contribRef = (sNo != null && sNo.isNotEmpty && sNo != '---')
+          ? firestore.collection('house_contributors').doc(sNo)
+          : null;
+      final uRef = (uid != null && uid.isNotEmpty)
+          ? firestore.collection('users').doc(uid)
+          : null;
+
+      await firestore.runTransaction((tx) async {
+        // Step 1: All reads FIRST
+        DocumentSnapshot? contribSnap;
+        DocumentSnapshot? userSnap;
+
+        if (contribRef != null) {
+          contribSnap = await tx.get(contribRef);
+        }
+        if (uRef != null) {
+          userSnap = await tx.get(uRef);
+        }
+
+        // Check contributor balance if record exists
+        int contribPts = 0;
+        if (contribSnap != null && contribSnap.exists) {
+          final data = contribSnap.data() as Map<String, dynamic>?;
+          contribPts = (data?['total_contributed'] as num?)?.toInt() ?? 0;
+          if (contribPts < totalPts) {
+            throw Exception('Insufficient verified points ($contribPts < $totalPts)');
+          }
+        }
+
+        // Check user profile balance if user doc exists
+        int userPts = 0;
+        if (userSnap != null && userSnap.exists) {
+          final uData = userSnap.data() as Map<String, dynamic>?;
+          userPts = (uData?['points_contributed'] as num?)?.toInt() ?? 0;
+          if (userPts < totalPts && contribSnap == null) {
+            throw Exception('Insufficient verified points in user profile ($userPts < $totalPts)');
+          }
+        }
+
+        // Step 2: All writes SECOND (atomic execution)
+        if (contribRef != null) {
+          if (contribSnap != null && contribSnap.exists) {
+            final nextContrib = (contribPts - totalPts).clamp(0, 999999);
             tx.update(contribRef, {
-              'total_contributed': (cur - totalPts) < 0 ? 0 : (cur - totalPts),
+              'total_contributed': nextContrib,
+              'last_updated': FieldValue.serverTimestamp(),
+            });
+          } else {
+            final nextContrib = (_userPoints - totalPts).clamp(0, 999999);
+            tx.set(contribRef, {
+              'scholar_no': sNo,
+              'student_name': widget.studentName ?? 'Scholar $sNo',
+              'house_name': widget.userHouse.toLowerCase(),
+              'class_level': 'Senior Tier',
+              'total_contributed': nextContrib,
+              'merits_count': 0,
+              'demerits_count': 0,
               'last_updated': FieldValue.serverTimestamp(),
             });
           }
+        }
+
+        if (uRef != null && userSnap != null && userSnap.exists) {
+          final nextUserPts = (userPts - totalPts).clamp(0, 999999);
+          tx.update(uRef, {
+            'points_contributed': nextUserPts,
+            'last_updated': FieldValue.serverTimestamp(),
+          });
+        }
+      });
+
+      // Step 3: Deduct local points ONLY after Firestore transaction commits successfully
+      if (mounted) {
+        setState(() {
+          _userPoints = (_userPoints - totalPts).clamp(0, 999999);
         });
+      } else {
+        _userPoints = (_userPoints - totalPts).clamp(0, 999999);
       }
 
-      // 2. Deduct from users profile doc
+      // Step 4: Dispatch in-app notification if user doc exists
       if (uid != null) {
-        final uRef =
-            FirebaseFirestore.instance.collection('users').doc(uid);
-        await uRef.update({
-          'points_contributed': FieldValue.increment(-totalPts),
-        });
-        await uRef.collection('notifications').add({
-          'title': '🛍️ Merch Pass Redeemed (-$totalPts Pts)',
-          'body':
-              'Successfully ordered $description! Digital pass #$receiptId generated and saved to your Digital Wallet.',
-          'timestamp': FieldValue.serverTimestamp(),
-          'is_read': false,
-          'type': 'store_purchase',
-        });
+        try {
+          await firestore.collection('users').doc(uid).collection('notifications').add({
+            'title': '🛍️ Merch Pass Redeemed (-$totalPts Pts)',
+            'body':
+                'Successfully ordered $description! Digital pass #$receiptId generated and saved to your Digital Wallet.',
+            'timestamp': FieldValue.serverTimestamp(),
+            'is_read': false,
+            'type': 'store_purchase',
+          });
+        } catch (_) {}
       }
+
       return true;
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _userPoints += totalPts;
-        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Points redemption transaction failed: $e'),
@@ -574,29 +631,33 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     String size = 'M',
     int qty = 1,
   }) async {
-    final safeQty = qty.clamp(1, 99);
-    final parsedPrice =
-        int.tryParse(product.price.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
-    final totalPts = parsedPrice * safeQty;
-    final receiptId =
-        'ASB-${DateTime.now().millisecondsSinceEpoch.toString().substring(6)}';
+    if (_isProcessingOrder) return;
+    _isProcessingOrder = true;
+    try {
+      final safeQty = qty.clamp(1, 99);
+      final parsedPrice =
+          int.tryParse(product.price.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      final totalPts = parsedPrice * safeQty;
+      final receiptId =
+          'ASB-${DateTime.now().millisecondsSinceEpoch.toString().substring(6)}';
 
-    final allowed = await _verifyAndDeductPoints(
-      totalPts,
-      receiptId,
-      '${safeQty}x ${product.name} ($size)',
-    );
-    if (!allowed) return;
+      final allowed = await _verifyAndDeductPoints(
+        totalPts,
+        receiptId,
+        '${safeQty}x ${product.name} ($size)',
+      );
+      if (!allowed) return;
 
     AppHaptics.success();
     final itemsList = [CartItem(product: product, size: size, qty: safeQty)];
-    final qrData = jsonEncode({
-      'bill_no': receiptId,
-      'pts': totalPts,
-      'items': itemsList
+    final qrData = VoucherSecurityService.generateVoucherPayload(
+      billNo: receiptId,
+      points: totalPts,
+      scholarNo: widget.scholarNo ?? '2310910',
+      items: itemsList
           .map((i) => '${i.qty}x ${i.product.name} (${i.size})')
           .toList(),
-    });
+    );
 
     final newOrder = OrderRecord(
       receiptId: receiptId,
@@ -639,6 +700,15 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
 
     if (!mounted) return;
     _showDigitalWalletPass(newOrder);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isProcessingOrder = false;
+        });
+      } else {
+        _isProcessingOrder = false;
+      }
+    }
   }
 
   void _showDigitalWalletPass(OrderRecord order) {
@@ -1826,7 +1896,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                                       onPressed: () {
                                         setState(() {
                                           if (item.qty > 1) {
-                                            item.qty--;
+                                            item.qty = (item.qty - 1).clamp(1, 99);
                                           } else {
                                             cart.removeAt(index);
                                           }
@@ -1847,7 +1917,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                                         color: widget.houseColor,
                                       ),
                                       onPressed: () {
-                                        setState(() => item.qty++);
+                                        setState(() => item.qty = (item.qty + 1).clamp(1, 99));
                                         setCartState(() {});
                                       },
                                     ),
@@ -1933,10 +2003,14 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                           width: double.infinity,
                           height: 56,
                           child: ElevatedButton(
-                            onPressed: () async {
-                              final receiptId =
-                                  'ASB-${DateTime.now().millisecondsSinceEpoch.toString().substring(6)}';
-                              final itemsList = List<CartItem>.from(cart);
+                            onPressed: _isProcessingOrder ? null : () async {
+                              if (_isProcessingOrder) return;
+                              setState(() => _isProcessingOrder = true);
+                              setCartState(() {});
+                              try {
+                                final receiptId =
+                                    'ASB-${DateTime.now().millisecondsSinceEpoch.toString().substring(6)}';
+                                final itemsList = List<CartItem>.from(cart);
 
                               final allowed = await _verifyAndDeductPoints(
                                 totalPts,
@@ -1945,16 +2019,17 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                               );
                               if (!allowed) return;
 
-                              final qrData = jsonEncode({
-                                'bill_no': receiptId,
-                                'pts': totalPts,
-                                'items': itemsList
+                              final qrData = VoucherSecurityService.generateVoucherPayload(
+                                billNo: receiptId,
+                                points: totalPts,
+                                scholarNo: widget.scholarNo ?? '2310910',
+                                items: itemsList
                                     .map(
                                       (i) =>
                                           '${i.qty}x ${i.product.name} (${i.size})',
                                     )
                                     .toList(),
-                              });
+                              );
                               final newOrder = OrderRecord(
                                 receiptId: receiptId,
                                 items: itemsList,
@@ -2009,6 +2084,14 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                                   }
                                 },
                               );
+                              } finally {
+                                if (mounted) {
+                                  setState(() => _isProcessingOrder = false);
+                                  setCartState(() {});
+                                } else {
+                                  _isProcessingOrder = false;
+                                }
+                              }
                             },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: widget.houseColor,

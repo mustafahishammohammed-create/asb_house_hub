@@ -201,10 +201,11 @@ class _HouseAiChatScreenState extends State<HouseAiChatScreen> {
                   color: isDark ? const Color(0xFF141C2E) : Colors.white,
                   borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
                 ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -382,11 +383,12 @@ class _HouseAiChatScreenState extends State<HouseAiChatScreen> {
                   ],
                 ),
               ),
-            );
+            ),
+          );
           },
         );
       },
-    );
+    ).whenComplete(() => controller.dispose());
   }
 
   @override

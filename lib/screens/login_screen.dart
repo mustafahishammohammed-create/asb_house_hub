@@ -32,7 +32,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _handleLogin() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (_formKey.currentState?.validate() != true) return;
 
     setState(() {
       _isLoading = true;
@@ -56,16 +56,21 @@ class _LoginScreenState extends State<LoginScreen> {
           password: _passwordController.text,
         );
 
-        final profile = await _authService.getUserProfile(cred.user!.uid);
+        final user = cred.user;
+        if (user == null) {
+          throw Exception('Authentication returned an empty user profile.');
+        }
+
+        final profile = await _authService.getUserProfile(user.uid);
         final house = AuthService.extractHouse(profile) ?? inferredHouse ?? 'emerald';
         await AuthService.cacheHouse(house);
         if (profile != null) {
           await AuthService.cacheProfile(profile);
         } else {
           await AuthService.cacheProfile({
-            'uid': cred.user!.uid,
+            'uid': user.uid,
             'scholar_no': scholarInput,
-            'full_name': cred.user!.displayName ??
+            'full_name': user.displayName ??
                 (scholarInput == '10001'
                     ? 'Noaman Nizamuddin'
                     : (scholarInput == '20002'

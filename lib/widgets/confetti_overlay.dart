@@ -25,6 +25,7 @@ class _ConfettiOverlayState extends State<ConfettiOverlay>
       duration: const Duration(seconds: 4),
     );
     _controller.addListener(() {
+      if (!mounted) return;
       setState(() {
         for (var p in _particles) {
           p.update();

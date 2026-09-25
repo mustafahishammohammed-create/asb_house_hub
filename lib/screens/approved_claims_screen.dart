@@ -25,6 +25,12 @@ class _ApprovedClaimsScreenState extends State<ApprovedClaimsScreen> {
     'Sapphire',
   ];
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   void _showCertificateDialog(
     String certUrl,
     String activityTitle,
@@ -40,7 +46,17 @@ class _ApprovedClaimsScreenState extends State<ApprovedClaimsScreen> {
         imagePreview = ClipRRect(
           borderRadius: BorderRadius.circular(16),
           child: InteractiveViewer(
-            child: Image.memory(bytes, fit: BoxFit.contain, height: 400),
+            child: Image.memory(
+              bytes,
+              fit: BoxFit.contain,
+              height: 400,
+              errorBuilder: (context, error, stackTrace) => const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(32),
+                  child: Icon(Icons.broken_image_rounded, size: 64, color: Colors.grey),
+                ),
+              ),
+            ),
           ),
         );
       } catch (_) {
@@ -54,7 +70,24 @@ class _ApprovedClaimsScreenState extends State<ApprovedClaimsScreen> {
       imagePreview = ClipRRect(
         borderRadius: BorderRadius.circular(16),
         child: InteractiveViewer(
-          child: Image.network(certUrl, fit: BoxFit.contain, height: 400),
+          child: Image.network(
+            certUrl,
+            fit: BoxFit.contain,
+            height: 400,
+            loadingBuilder: (context, child, progress) {
+              if (progress == null) return child;
+              return const SizedBox(
+                height: 200,
+                child: Center(child: CircularProgressIndicator()),
+              );
+            },
+            errorBuilder: (context, error, stackTrace) => const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: Icon(Icons.broken_image_rounded, size: 64, color: Colors.grey),
+              ),
+            ),
+          ),
         ),
       );
     } else {

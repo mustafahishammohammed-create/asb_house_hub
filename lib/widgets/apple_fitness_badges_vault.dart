@@ -610,6 +610,7 @@ class _FreestandingShieldItemState extends State<_FreestandingShieldItem>
       vsync: this,
       duration: const Duration(milliseconds: 350),
     )..addListener(() {
+        if (!mounted) return;
         setState(() {
           _tiltX = _springAnimX.value;
           _tiltY = _springAnimY.value;
@@ -873,6 +874,7 @@ class _AppleFitnessBadgeModalState extends State<_AppleFitnessBadgeModal>
       vsync: this,
       duration: const Duration(milliseconds: 380),
     )..addListener(() {
+        if (!mounted) return;
         setState(() {
           _dragX = _springAnimX.value;
           _dragY = _springAnimY.value;

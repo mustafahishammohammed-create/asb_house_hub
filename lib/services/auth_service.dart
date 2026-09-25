@@ -28,11 +28,20 @@ class AuthService {
     final dynamic raw = data['house_name'] ??
         data['house'] ??
         data['houseName'] ??
-        data['house_id'];
+        data['house_id'] ??
+        data['house_code'] ??
+        data['House'] ??
+        data['HouseName'];
     if (raw != null) {
       final s = raw.toString().trim().toLowerCase();
-      if (s.isNotEmpty && s != 'null' && s != 'none') {
-        return s;
+      if (s.isNotEmpty && s != 'null' && s != 'none' && s != 'undefined') {
+        if (s == 'ruby' || s == 'sapphire' || s == 'emerald' || s == 'topaz') {
+          return s;
+        }
+        for (final h in const ['ruby', 'sapphire', 'emerald', 'topaz']) {
+          if (s.contains(h)) return h;
+        }
+        return null;
       }
     }
     return null;
@@ -161,7 +170,10 @@ class AuthService {
     try {
       final raw = _prefs?.getString('cached_user_profile');
       if (raw != null && raw.isNotEmpty) {
-        return jsonDecode(raw) as Map<String, dynamic>;
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          return Map<String, dynamic>.from(decoded);
+        }
       }
     } catch (_) {}
     return null;
@@ -267,9 +279,13 @@ class AuthService {
         email: adminEmail,
         password: password,
       );
+      final user = cred.user;
+      if (user == null) {
+        throw Exception('Admin authentication failed: user is null.');
+      }
       await _firestore
           .collection('users')
-          .doc(cred.user!.uid)
+          .doc(user.uid)
           .set(_adminProfile, SetOptions(merge: true));
       await cacheHouse('ruby');
       await cacheProfile(_adminProfile);
@@ -283,9 +299,13 @@ class AuthService {
             email: adminEmail,
             password: password,
           );
+          final user = cred.user;
+          if (user == null) {
+            throw Exception('Admin creation failed: user is null.');
+          }
           await _firestore
               .collection('users')
-              .doc(cred.user!.uid)
+              .doc(user.uid)
               .set(_adminProfile, SetOptions(merge: true));
           await cacheHouse('ruby');
           await cacheProfile(_adminProfile);
@@ -319,8 +339,13 @@ class AuthService {
       password: password,
     );
 
+    final user = credential.user;
+    if (user == null) {
+      throw Exception('Registration failed: user profile is null.');
+    }
+
     // Step 2 — Save profile to Firestore `users` collection
-    final uid = credential.user!.uid;
+    final uid = user.uid;
     final cleanHouse = houseName.trim().toLowerCase();
     final profileData = {
       'full_name': fullName,
@@ -337,7 +362,7 @@ class AuthService {
     await cacheProfile(profileData);
 
     // Update display name
-    await credential.user!.updateDisplayName(fullName);
+    await user.updateDisplayName(fullName);
 
     return credential;
   }
@@ -498,60 +523,85 @@ class AuthService {
 
     if (aTitle.isEmpty) aTitle = 'House Achievement';
 
-    // 1. Mark claim as approved
-    await _firestore.collection('house_claims').doc(claimId).update({
-      'status': 'approved',
-      'verified_at': FieldValue.serverTimestamp(),
-    });
-
-    // 2. Increment house points
+    // 1. Transactionally check status and update claim, house points, and contributor totals atomically
+    final claimRef = _firestore.collection('house_claims').doc(claimId);
     final houseRef = _firestore.collection('house_points').doc(hName);
-    await _firestore.runTransaction((transaction) async {
-      final snapshot = await transaction.get(houseRef);
-      if (!snapshot.exists) {
-        transaction.set(houseRef, {
-          'house_name': hName,
-          'total_points': points,
-        });
-      } else {
-        final currentPoints =
-            (snapshot.data()?['total_points'] as num?)?.toInt() ?? 0;
-        transaction.update(houseRef, {'total_points': currentPoints + points});
-      }
-    });
+    final contributorRef = (sNo.isNotEmpty && sNo != '---')
+        ? _firestore.collection('house_contributors').doc(sNo)
+        : null;
 
-    // 3. Atomically update student contributor record in house_contributors
-    if (sNo.isNotEmpty && sNo != '---') {
-      final contributorRef =
-          _firestore.collection('house_contributors').doc(sNo);
+    bool shouldProceed = false;
+    try {
       await _firestore.runTransaction((tx) async {
-        final snap = await tx.get(contributorRef);
-        if (!snap.exists) {
-          tx.set(contributorRef, {
-            'scholar_no': sNo,
-            'student_name': sName.isNotEmpty ? sName : 'Scholar $sNo',
+        // Reads must precede writes in Firestore transactions
+        final claimSnap = await tx.get(claimRef);
+        if (claimSnap.exists) {
+          final curStatus =
+              (claimSnap.data()?['status'] ?? '').toString().toLowerCase();
+          if (curStatus == 'approved') {
+            // Already approved by another admin or prior tap - abort duplicate credit
+            return;
+          }
+        }
+
+        final houseSnap = await tx.get(houseRef);
+        final contributorSnap =
+            contributorRef != null ? await tx.get(contributorRef) : null;
+
+        // Writes
+        tx.set(claimRef, {
+          'status': 'approved',
+          'verified_at': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+
+        if (!houseSnap.exists) {
+          tx.set(houseRef, {
             'house_name': hName,
-            'class_level': 'Senior Tier',
-            'total_contributed': points,
-            'merits_count': 1,
-            'demerits_count': 0,
-            'last_updated': FieldValue.serverTimestamp(),
+            'total_points': points,
           });
         } else {
-          final currentContributed =
-              (snap.data()?['total_contributed'] as num?)?.toInt() ?? 0;
-          final merits = (snap.data()?['merits_count'] as num?)?.toInt() ?? 0;
-          tx.update(contributorRef, {
-            if (sName.isNotEmpty) 'student_name': sName,
-            'house_name': hName,
-            'total_contributed': currentContributed + points,
-            'merits_count': merits + 1,
-            'last_updated': FieldValue.serverTimestamp(),
-          });
+          final currentPoints =
+              (houseSnap.data()?['total_points'] as num?)?.toInt() ?? 0;
+          tx.update(houseRef, {'total_points': currentPoints + points});
         }
-      });
 
-      // 4. Update user document and trigger push notification queue
+        if (contributorRef != null && contributorSnap != null) {
+          if (!contributorSnap.exists) {
+            tx.set(contributorRef, {
+              'scholar_no': sNo,
+              'student_name': sName.isNotEmpty ? sName : 'Scholar $sNo',
+              'house_name': hName,
+              'class_level': 'Senior Tier',
+              'total_contributed': points,
+              'merits_count': 1,
+              'demerits_count': 0,
+              'last_updated': FieldValue.serverTimestamp(),
+            });
+          } else {
+            final currentContributed =
+                (contributorSnap.data()?['total_contributed'] as num?)?.toInt() ?? 0;
+            final merits =
+                (contributorSnap.data()?['merits_count'] as num?)?.toInt() ?? 0;
+            tx.update(contributorRef, {
+              if (sName.isNotEmpty) 'student_name': sName,
+              'house_name': hName,
+              'total_contributed': currentContributed + points,
+              'merits_count': merits + 1,
+              'last_updated': FieldValue.serverTimestamp(),
+            });
+          }
+        }
+        shouldProceed = true;
+      });
+    } catch (_) {
+      shouldProceed = false;
+      rethrow;
+    }
+
+    if (!shouldProceed) return;
+
+    // 4. Update user document and trigger push notification queue
+    if (sNo.isNotEmpty && sNo != '---') {
       try {
         final userQuery = await _firestore
             .collection('users')
@@ -595,11 +645,30 @@ class AuthService {
       }
     } catch (_) {}
 
-    await _firestore.collection('house_claims').doc(claimId).update({
-      'status': 'rejected',
-      'rejection_reason': reason ?? 'Verification criteria not met.',
-      'verified_at': FieldValue.serverTimestamp(),
-    });
+    final claimRef = _firestore.collection('house_claims').doc(claimId);
+    bool shouldProceed = false;
+    try {
+      await _firestore.runTransaction((tx) async {
+        final snap = await tx.get(claimRef);
+        if (snap.exists) {
+          final curStatus = (snap.data()?['status'] ?? '').toString().toLowerCase();
+          if (curStatus == 'approved' || curStatus == 'rejected') {
+            return;
+          }
+        }
+        tx.set(claimRef, {
+          'status': 'rejected',
+          'rejection_reason': reason ?? 'Verification criteria not met.',
+          'verified_at': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+        shouldProceed = true;
+      });
+    } catch (_) {
+      shouldProceed = false;
+      rethrow;
+    }
+
+    if (!shouldProceed) return;
 
     if (sNo.isNotEmpty && sNo != '---') {
       try {
@@ -677,65 +746,82 @@ class AuthService {
     String? classLevel,
   }) async {
     final hName = houseName.toLowerCase().trim();
-    final delta = type == 'merit' ? points : -points;
+    final clampedPoints = points.abs().clamp(1, 100);
+    final trimmedReason = reason.trim();
+    final sanitizedReason = trimmedReason.isEmpty
+        ? 'General Conduct Observation'
+        : (trimmedReason.length > 250
+            ? trimmedReason.substring(0, 250)
+            : trimmedReason);
+    final delta = type == 'merit' ? clampedPoints : -clampedPoints;
 
-    // 1. Atomically adjust house points
     final houseRef = _firestore.collection('house_points').doc(hName);
+    final contributorRef = (scholarNo.trim().isNotEmpty && scholarNo != '---')
+        ? _firestore.collection('house_contributors').doc(scholarNo.trim())
+        : null;
+
+    // 1. Atomically adjust house points and student contributor totals in a single transaction
     await _firestore.runTransaction((tx) async {
-      final snap = await tx.get(houseRef);
-      if (!snap.exists) {
+      // Reads first
+      final houseSnap = await tx.get(houseRef);
+      final contributorSnap =
+          contributorRef != null ? await tx.get(contributorRef) : null;
+
+      // Writes second
+      if (!houseSnap.exists) {
         tx.set(houseRef, {
           'house_name': hName,
           'total_points': delta > 0 ? delta : 0,
         });
       } else {
-        final currentPts = (snap.data()?['total_points'] as num?)?.toInt() ?? 0;
+        final currentPts =
+            (houseSnap.data()?['total_points'] as num?)?.toInt() ?? 0;
         final newPts = (currentPts + delta) < 0 ? 0 : (currentPts + delta);
         tx.update(houseRef, {'total_points': newPts});
+      }
+
+      if (contributorRef != null && contributorSnap != null) {
+        if (!contributorSnap.exists) {
+          tx.set(contributorRef, {
+            'scholar_no': scholarNo.trim(),
+            'student_name': studentName,
+            'house_name': hName,
+            'class_level': classLevel ?? 'Senior',
+            'total_contributed': delta,
+            'merits_count': type == 'merit' ? 1 : 0,
+            'demerits_count': type == 'demerit' ? 1 : 0,
+            'last_updated': FieldValue.serverTimestamp(),
+          });
+        } else {
+          final currentContributed =
+              (contributorSnap.data()?['total_contributed'] as num?)?.toInt() ??
+                  0;
+          final merits =
+              (contributorSnap.data()?['merits_count'] as num?)?.toInt() ?? 0;
+          final demerits =
+              (contributorSnap.data()?['demerits_count'] as num?)?.toInt() ?? 0;
+          tx.update(contributorRef, {
+            'student_name': studentName,
+            'house_name': hName,
+            'total_contributed': currentContributed + delta,
+            'merits_count': merits + (type == 'merit' ? 1 : 0),
+            'demerits_count': demerits + (type == 'demerit' ? 1 : 0),
+            'last_updated': FieldValue.serverTimestamp(),
+          });
+        }
       }
     });
 
     // 2. Add to student_conduct log
     await _firestore.collection('student_conduct').add({
-      'scholar_no': scholarNo,
+      'scholar_no': scholarNo.trim(),
       'student_name': studentName,
       'house_name': hName,
       'type': type,
       'points': delta,
-      'reason': reason,
+      'reason': sanitizedReason,
       'teacher_name': teacherName,
       'timestamp': FieldValue.serverTimestamp(),
-    });
-
-    // 3. Atomically update student contributor record
-    final contributorRef = _firestore.collection('house_contributors').doc(scholarNo);
-    await _firestore.runTransaction((tx) async {
-      final snap = await tx.get(contributorRef);
-      if (!snap.exists) {
-        tx.set(contributorRef, {
-          'scholar_no': scholarNo,
-          'student_name': studentName,
-          'house_name': hName,
-          'class_level': classLevel ?? 'Senior',
-          'total_contributed': delta,
-          'merits_count': type == 'merit' ? 1 : 0,
-          'demerits_count': type == 'demerit' ? 1 : 0,
-          'last_updated': FieldValue.serverTimestamp(),
-        });
-      } else {
-        final currentContributed =
-            (snap.data()?['total_contributed'] as num?)?.toInt() ?? 0;
-        final merits = (snap.data()?['merits_count'] as num?)?.toInt() ?? 0;
-        final demerits = (snap.data()?['demerits_count'] as num?)?.toInt() ?? 0;
-        tx.update(contributorRef, {
-          'student_name': studentName,
-          'house_name': hName,
-          'total_contributed': currentContributed + delta,
-          'merits_count': merits + (type == 'merit' ? 1 : 0),
-          'demerits_count': demerits + (type == 'demerit' ? 1 : 0),
-          'last_updated': FieldValue.serverTimestamp(),
-        });
-      }
     });
 
     // 4. Update user document and trigger push notification queue

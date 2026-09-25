@@ -5,7 +5,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class GeminiAiService {
   static const String _prefApiKeyKey = 'asb_gemini_api_key';
-  static const String _fallbackDemoKey = '';
 
   /// High-performance 2026 Gemini model candidates in fallback order
   static const List<String> _candidateModels = [
@@ -108,76 +107,74 @@ Identity & Persona:
     required String studentName,
     List<Map<String, String>> conversationHistory = const [],
   }) async {
-    final userKey = await getSavedApiKey() ?? _fallbackDemoKey;
+    final userKey = await getSavedApiKey();
 
-    if (userKey.isNotEmpty) {
-      String lastError = '';
-
-      for (final modelName in _candidateModels) {
-        try {
-          final restUrl = Uri.parse(
-            'https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$userKey',
-          );
-
-          final contents = [
-            ...conversationHistory.map((m) {
-              final role = m['role'] == 'user' ? 'user' : 'model';
-              return {
-                'role': role,
-                'parts': [{'text': m['text'] ?? ''}]
-              };
-            }),
-            {
-              'role': 'user',
-              'parts': [{'text': prompt}]
-            }
-          ];
-
-          final payload = {
-            'system_instruction': {
-              'parts': [{'text': _buildSystemInstruction(house, studentName)}]
-            },
-            'contents': contents,
-            'generationConfig': {
-              'temperature': 0.75,
-              'topP': 0.95,
-              'maxOutputTokens': 1500,
-            }
-          };
-
-          final res = await http.post(
-            restUrl,
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode(payload),
-          ).timeout(const Duration(seconds: 20));
-
-          if (res.statusCode == 200) {
-            final json = jsonDecode(res.body);
-            final candidateText = json['candidates']?[0]?['content']?['parts']?[0]?['text'];
-            if (candidateText != null && candidateText.toString().trim().isNotEmpty) {
-              return candidateText.toString().trim();
-            }
-          } else if (res.statusCode == 400 || res.statusCode == 403) {
-            final errJson = jsonDecode(res.body);
-            final msg = errJson['error']?['message'] ?? 'Authentication failed.';
-            return '❌ **Gemini API Error**: $msg\n\n*Please tap the 🔑 key icon in the top bar to re-enter or update your Gemini API key.*';
-          } else {
-            final errJson = jsonDecode(res.body);
-            lastError = errJson['error']?['message'] ?? 'HTTP ${res.statusCode}';
-            debugPrint('Gemini model $modelName returned error: $lastError');
-          }
-        } catch (e) {
-          lastError = e.toString();
-          debugPrint('Gemini exception on $modelName: $e');
-        }
-      }
-
-      // If user supplied an API key, explain server status rather than masquerading as hardcoded text
-      return '⚠️ **Gemini Service Notice**: Could not reach Gemini servers ($lastError).\n\nPlease verify your internet connection or check the Gemini API key in settings.';
+    if (userKey == null || userKey.isEmpty) {
+      // Default / offline state: return instant intelligent house advice
+      return _generateBuiltInHouseAdvice(prompt, house, studentName);
     }
 
-    // Only when NO API key has been entered at all, provide immediate offline advice:
-    return _generateBuiltInHouseAdvice(prompt, house, studentName);
+    String lastError = '';
+
+    for (final modelName in _candidateModels) {
+      try {
+        final restUrl = Uri.parse(
+          'https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$userKey',
+        );
+
+        final contents = [
+          ...conversationHistory.map((m) {
+            final role = m['role'] == 'user' ? 'user' : 'model';
+            return {
+              'role': role,
+              'parts': [{'text': m['text'] ?? ''}]
+            };
+          }),
+          {
+            'role': 'user',
+            'parts': [{'text': prompt}]
+          }
+        ];
+
+        final payload = {
+          'system_instruction': {
+            'parts': [{'text': _buildSystemInstruction(house, studentName)}]
+          },
+          'contents': contents,
+          'generationConfig': {
+            'temperature': 0.75,
+            'topP': 0.95,
+            'maxOutputTokens': 1500,
+          }
+        };
+
+        final res = await http.post(
+          restUrl,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(payload),
+        ).timeout(const Duration(seconds: 15));
+
+        if (res.statusCode == 200) {
+          final json = jsonDecode(res.body);
+          final candidateText = json['candidates']?[0]?['content']?['parts']?[0]?['text'];
+          if (candidateText != null && candidateText.toString().trim().isNotEmpty) {
+            return candidateText.toString().trim();
+          }
+        } else {
+          final errJson = jsonDecode(res.body);
+          lastError = errJson['error']?['message'] ?? 'HTTP ${res.statusCode}';
+          debugPrint('Gemini model $modelName returned error: $lastError');
+        }
+      } catch (e) {
+        lastError = e.toString();
+        debugPrint('Gemini exception on $modelName: $e');
+      }
+    }
+
+    // Graceful offline fallback when Gemini API endpoint is unreachable or key limit is exceeded
+    final fallback = _generateBuiltInHouseAdvice(prompt, house, studentName);
+    final errorHint = lastError.isNotEmpty ? lastError : 'Gemini offline';
+    return '$fallback\n\n> 💡 *Note: Operating in offline house mentor mode ($errorHint). Tap 🔑 to check API key.*';
   }
 
   /// Built-in offline intelligent advisor for instant responses when no key is set

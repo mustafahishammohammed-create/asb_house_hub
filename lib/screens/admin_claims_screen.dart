@@ -63,8 +63,9 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen> {
         ),
       );
     } finally {
+      _processingClaimIds.remove(claimId);
       if (mounted) {
-        setState(() => _processingClaimIds.remove(claimId));
+        setState(() {});
       }
     }
   }
@@ -90,8 +91,9 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen> {
         ),
       );
     } finally {
+      _processingClaimIds.remove(claimId);
       if (mounted) {
-        setState(() => _processingClaimIds.remove(claimId));
+        setState(() {});
       }
     }
   }
@@ -109,7 +111,17 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen> {
             panEnabled: true,
             minScale: 0.8,
             maxScale: 4.0,
-            child: Image.memory(bytes, fit: BoxFit.contain, height: 350),
+            child: Image.memory(
+              bytes,
+              fit: BoxFit.contain,
+              height: 350,
+              errorBuilder: (context, error, stackTrace) => const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(32),
+                  child: Icon(Icons.broken_image_rounded, size: 64, color: Colors.grey),
+                ),
+              ),
+            ),
           ),
         );
       } catch (_) {
@@ -126,7 +138,24 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen> {
           panEnabled: true,
           minScale: 0.8,
           maxScale: 4.0,
-          child: Image.network(certUrl, fit: BoxFit.contain, height: 350),
+          child: Image.network(
+            certUrl,
+            fit: BoxFit.contain,
+            height: 350,
+            loadingBuilder: (context, child, progress) {
+              if (progress == null) return child;
+              return const SizedBox(
+                height: 200,
+                child: Center(child: CircularProgressIndicator()),
+              );
+            },
+            errorBuilder: (context, error, stackTrace) => const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: Icon(Icons.broken_image_rounded, size: 64, color: Colors.grey),
+              ),
+            ),
+          ),
         ),
       );
     } else {
@@ -434,7 +463,10 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen> {
           ),
         ],
       ),
-    );
+    ).whenComplete(() {
+      nameCtrl.dispose();
+      scholarCtrl.dispose();
+    });
   }
 
   @override

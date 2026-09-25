@@ -33,13 +33,14 @@ class _CameraCaptureDialogState extends State<CameraCaptureDialog> {
       }
 
       final camera = cameras.first;
-      _controller = CameraController(
+      final controller = CameraController(
         camera,
         ResolutionPreset.medium,
         enableAudio: false,
       );
+      _controller = controller;
 
-      await _controller!.initialize();
+      await controller.initialize();
       if (mounted) {
         setState(() {
           _isInitializing = false;
@@ -63,10 +64,11 @@ class _CameraCaptureDialogState extends State<CameraCaptureDialog> {
   }
 
   Future<void> _takePhoto() async {
-    if (_controller == null || !_controller!.value.isInitialized) return;
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return;
 
     try {
-      final file = await _controller!.takePicture();
+      final file = await controller.takePicture();
       final bytes = await file.readAsBytes();
       if (mounted) {
         Navigator.pop(context, bytes);
@@ -172,7 +174,11 @@ class _CameraCaptureDialogState extends State<CameraCaptureDialog> {
                           ),
                         ),
                       )
-                    : Center(child: CameraPreview(_controller!)),
+                    : (_controller != null && _controller!.value.isInitialized)
+                        ? Center(child: CameraPreview(_controller!))
+                        : const Center(
+                            child: CircularProgressIndicator(color: Colors.white),
+                          ),
               ),
             ),
             const SizedBox(height: 20),

@@ -8,6 +8,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_theme.dart';
 import 'student_behavior_evaluation_screen.dart';
+import '../services/auth_service.dart';
+import '../services/voucher_security_service.dart';
 
 class IdScannerScreen extends StatefulWidget {
   final String evaluatorName;
@@ -154,7 +156,8 @@ class _IdScannerScreenState extends State<IdScannerScreen>
   }
 
   Future<void> _toggleFlashlight() async {
-    if (_cameraController == null || !_cameraController!.value.isInitialized) {
+    final cam = _cameraController;
+    if (cam == null || !cam.value.isInitialized) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -167,7 +170,7 @@ class _IdScannerScreenState extends State<IdScannerScreen>
     }
     try {
       final newMode = _isFlashOn ? FlashMode.off : FlashMode.torch;
-      await _cameraController!.setFlashMode(newMode);
+      await cam.setFlashMode(newMode);
       if (mounted) {
         setState(() {
           _isFlashOn = !_isFlashOn;
@@ -209,22 +212,96 @@ class _IdScannerScreenState extends State<IdScannerScreen>
 
     setState(() => _isSearching = true);
     try {
+      // 0. Check if input is a store voucher or pass
+      if (query.startsWith('{') || query.startsWith('ASB-ORDER-')) {
+        final voucher = VoucherSecurityService.validateVoucherPayload(query);
+        if (voucher.isValid) {
+          if (!mounted) return;
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: const Row(
+                children: [
+                  Icon(Icons.verified_rounded, color: Colors.green, size: 28),
+                  SizedBox(width: 8),
+                  Text('Voucher Verified', style: TextStyle(fontWeight: FontWeight.w900)),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Bill No: ${voucher.billNo ?? "N/A"}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 6),
+                  if (voucher.points != null)
+                    Text('Value: ${voucher.points} House Points'),
+                  if (voucher.scholarNo != null && voucher.scholarNo!.isNotEmpty)
+                    Text('Scholar No: ${voucher.scholarNo}'),
+                  if (voucher.items.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    const Text('Redeemed Items:', style: TextStyle(fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 4),
+                    ...voucher.items.map((i) => Text('• $i', style: const TextStyle(fontSize: 12))),
+                  ],
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Dismiss'),
+                ),
+              ],
+            ),
+          );
+          return;
+        } else if (voucher.isTampered) {
+          if (!mounted) return;
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: const Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 28),
+                  SizedBox(width: 8),
+                  Text('Tampered Voucher', style: TextStyle(fontWeight: FontWeight.w900)),
+                ],
+              ),
+              content: Text(
+                'Security Warning: ${voucher.error ?? "Invalid digital signature. This voucher has been modified or forged."}',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Dismiss'),
+                ),
+              ],
+            ),
+          );
+          return;
+        }
+      }
+
       // 1. Check if input is structured JSON student QR code
       if (query.startsWith('{') && query.endsWith('}')) {
         try {
-          final Map<String, dynamic> data = jsonDecode(query);
-          final scholar = (data['scholar_no'] ?? data['scholarNo'] ?? '').toString().trim();
-          final name = (data['name'] ?? data['studentName'] ?? 'Student').toString().trim();
-          final house = (data['house_name'] ?? data['house'] ?? data['houseName'] ?? 'Ruby').toString().trim();
-          final cls = (data['class'] ?? data['classLevel'] ?? 'Grade 11').toString().trim();
-          if (scholar.isNotEmpty) {
-            _navigateToEvaluation(
-              scholarNo: scholar,
-              studentName: name,
-              houseName: house,
-              classLevel: cls,
-            );
-            return;
+          final decoded = jsonDecode(query);
+          if (decoded is Map) {
+            final data = Map<String, dynamic>.from(decoded);
+            final scholar = (data['scholar_no'] ?? data['scholarNo'] ?? data['scholar_id'] ?? data['scholarId'] ?? '').toString().trim();
+            final name = (data['name'] ?? data['studentName'] ?? data['full_name'] ?? 'Student').toString().trim();
+            final house = AuthService.extractHouse(data) ?? (data['house_name'] ?? data['house'] ?? data['houseName'] ?? 'Ruby').toString().trim();
+            final cls = (data['class'] ?? data['classLevel'] ?? data['class_level'] ?? 'Grade 11').toString().trim();
+            if (scholar.isNotEmpty) {
+              _navigateToEvaluation(
+                scholarNo: scholar,
+                studentName: name,
+                houseName: house,
+                classLevel: cls,
+              );
+              return;
+            }
           }
         } catch (_) {}
       }
@@ -243,24 +320,67 @@ class _IdScannerScreenState extends State<IdScannerScreen>
             _navigateToEvaluation(
               scholarNo: data['scholar_no'] ?? scholar,
               studentName: data['full_name'] ?? 'Student',
-              houseName: (data['house_name'] ?? 'Ruby').toString(),
-              classLevel: '${data['class_level'] ?? "Grade 11"} ${data['division'] ?? ""}',
+              houseName: AuthService.extractHouse(data) ?? (data['house_name'] ?? 'Ruby').toString(),
+              classLevel: '${data['class_level'] ?? "Grade 11"} ${data['division'] ?? ""}'.trim(),
+            );
+            return;
+          } else {
+            final inferred = AuthService.inferHouseFromScholarNo(scholar) ?? 'Ruby';
+            _navigateToEvaluation(
+              scholarNo: scholar,
+              studentName: 'Scholar #$scholar',
+              houseName: inferred,
+              classLevel: 'Senior Tier',
             );
             return;
           }
         }
       }
 
-      // 3. Check if input is legacy formatted QR token e.g. "ASB-ID:2310910:RUBY:VERIFIED"
+      // 3. Check if input is legacy formatted QR token e.g. "ASB-ID:2310910:RUBY:VERIFIED" or "ASB-ID:2310910:VERIFIED"
       if (query.startsWith('ASB-ID')) {
         final parts = query.split(':');
-        if (parts.length >= 3) {
-          final scholar = parts[1];
-          final house = parts[2];
-          final name = parts.length >= 4 && parts[3] != 'VERIFIED' ? parts[3] : 'Student';
+        if (parts.length >= 2) {
+          final scholar = parts[1].trim();
+          String house = 'Ruby';
+          String name = 'Student';
+
+          if (parts.length >= 4) {
+            if (parts[2].toUpperCase() != 'VERIFIED') {
+              house = parts[2].trim();
+            }
+            if (parts[3].toUpperCase() != 'VERIFIED') {
+              name = parts[3].trim();
+            }
+          } else if (parts.length == 3) {
+            if (parts[2].toUpperCase() == 'VERIFIED') {
+              house = AuthService.inferHouseFromScholarNo(scholar) ?? 'Ruby';
+            } else {
+              house = parts[2].trim();
+            }
+          }
+
+          try {
+            final snap = await FirebaseFirestore.instance
+                .collection('users')
+                .where('scholar_no', isEqualTo: scholar)
+                .limit(1)
+                .get();
+            if (snap.docs.isNotEmpty) {
+              final data = snap.docs.first.data();
+              _navigateToEvaluation(
+                scholarNo: data['scholar_no'] ?? scholar,
+                studentName: data['full_name'] ?? name,
+                houseName: AuthService.extractHouse(data) ?? house,
+                classLevel: '${data['class_level'] ?? "Grade 11"} ${data['division'] ?? ""}'.trim(),
+              );
+              return;
+            }
+          } catch (_) {}
+
           _navigateToEvaluation(
             scholarNo: scholar,
-            studentName: name,
+            studentName: name.isNotEmpty && name != 'Student' ? name : 'Scholar #$scholar',
             houseName: house,
             classLevel: 'Senior Tier',
           );
@@ -268,7 +388,7 @@ class _IdScannerScreenState extends State<IdScannerScreen>
         }
       }
 
-      // 3. Query Firestore users collection by scholar_no
+      // 4. Query Firestore users collection by scholar_no
       final snap = await FirebaseFirestore.instance
           .collection('users')
           .where('scholar_no', isEqualTo: query)
@@ -279,7 +399,7 @@ class _IdScannerScreenState extends State<IdScannerScreen>
         final data = snap.docs.first.data();
         final scholar = data['scholar_no'] ?? query;
         final name = data['full_name'] ?? 'Student';
-        final house = (data['house_name'] ?? 'Ruby').toString();
+        final house = AuthService.extractHouse(data) ?? (data['house_name'] ?? 'Ruby').toString();
         final cls = '${data['class_level'] ?? "Grade 11"} ${data['division'] ?? ""}';
 
         _navigateToEvaluation(

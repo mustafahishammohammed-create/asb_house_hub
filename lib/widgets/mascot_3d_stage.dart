@@ -1471,6 +1471,7 @@ class _Mascot3DStageState extends State<Mascot3DStage>
       vsync: this,
       duration: const Duration(seconds: 10),
     )..addListener(() {
+        if (!mounted) return;
         if (_isAutoRotating) {
           setState(() {
             _rotY = _turntableController.value * math.pi * 2;
@@ -1489,6 +1490,7 @@ class _Mascot3DStageState extends State<Mascot3DStage>
       vsync: this,
       duration: const Duration(milliseconds: 450),
     )..addListener(() {
+        if (!mounted) return;
         setState(() {
           _rotX = _springAnimX.value;
           _rotY = _springAnimY.value;

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../theme/app_theme.dart';
 import '../widgets/confetti_overlay.dart';
 import '../widgets/apple_fitness_badges_vault.dart';
@@ -166,6 +167,7 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
   // Daily Brain Blitz Quiz State
   int _blitzQuestionIndex = 0;
   int _blitzScore = 0;
+  int _blitzComboStreak = 0;
   bool _blitzActive = false;
   bool _blitzFinished = false;
   int? _blitzSelectedOption;
@@ -174,6 +176,7 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
   Timer? _advanceTimer;
   int _blitzSecondsLeft = 15;
   bool _showConfetti = false;
+  StreamSubscription? _spiritSubscription;
 
   // Cup Oracle Prediction Sliders
   double _sportsSim = 150;
@@ -247,7 +250,8 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
   }
 
   void _listenToLiveSpirit() {
-    FirebaseFirestore.instance
+    _spiritSubscription?.cancel();
+    _spiritSubscription = FirebaseFirestore.instance
         .collection('system_config')
         .doc('house_spirit_reactor')
         .snapshots()
@@ -278,6 +282,7 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
 
   @override
   void dispose() {
+    _spiritSubscription?.cancel();
     _pulseController.dispose();
     _particleTicker.dispose();
     _comboResetTimer?.cancel();
@@ -350,11 +355,13 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
 
   // --- Daily Brain Blitz Logic ---
   void _startBrainBlitz() {
+    if (_quizBank.isEmpty) return;
     setState(() {
       _blitzActive = true;
       _blitzFinished = false;
       _blitzQuestionIndex = 0;
       _blitzScore = 0;
+      _blitzComboStreak = 0;
       _blitzSelectedOption = null;
       _blitzAnswerCorrect = null;
       _blitzSecondsLeft = 15;
@@ -382,6 +389,9 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
     if (_blitzAnswerCorrect != null) return; // Prevent double taps
     _blitzTimer?.cancel();
 
+    if (_quizBank.isEmpty) return;
+    if (_blitzQuestionIndex >= _quizBank.length) return;
+
     final currentQ = _quizBank[_blitzQuestionIndex];
     final isCorrect = optionIndex == currentQ['correct'];
 
@@ -390,14 +400,24 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
       _blitzSelectedOption = optionIndex;
       _blitzAnswerCorrect = isCorrect;
       if (isCorrect) {
-        _blitzScore += 20;
+        _blitzComboStreak++;
+        final multiplier = (_blitzComboStreak >= 4)
+            ? 2.0
+            : (_blitzComboStreak >= 3
+                ? 1.5
+                : (_blitzComboStreak == 2 ? 1.25 : 1.0));
+        _blitzScore += (20 * multiplier).round();
+      } else {
+        _blitzComboStreak = 0;
       }
     });
 
     // Advance to next after 1.4s delay
     _advanceTimer?.cancel();
-    _advanceTimer = Timer(const Duration(milliseconds: 1400), () {
+    _advanceTimer = Timer(const Duration(milliseconds: 1400), () async {
       if (!mounted) return;
+      if (!_blitzActive || _activeNav != 1) return;
+
       if (_blitzQuestionIndex + 1 < _quizBank.length) {
         setState(() {
           _blitzQuestionIndex++;
@@ -414,19 +434,42 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
           _showConfetti = _blitzScore >= 60;
         });
 
-        if (widget.scholarNo.isNotEmpty && widget.scholarNo != '---') {
-          // Award House Points to Scholar
-          FirebaseFirestore.instance
-              .collection('house_contributors')
-              .doc(widget.scholarNo)
-              .set({
-            'scholar_no': widget.scholarNo,
-            'full_name': widget.userName,
-            'house_name': widget.userHouse,
-            'total_contributed': FieldValue.increment(_blitzScore),
-            'merits_count': FieldValue.increment((_blitzScore / 20).round()),
-            'last_blitz_date': FieldValue.serverTimestamp(),
+        if (_blitzScore > 0) {
+          final batch = FirebaseFirestore.instance.batch();
+          final hName = widget.userHouse.toLowerCase().trim();
+          final houseRef = FirebaseFirestore.instance
+              .collection('house_points')
+              .doc(hName);
+          batch.set(houseRef, {
+            'house_name': hName,
+            'total_points': FieldValue.increment(_blitzScore),
+            'last_updated': FieldValue.serverTimestamp(),
           }, SetOptions(merge: true));
+
+          final uid = FirebaseAuth.instance.currentUser?.uid;
+          if (uid != null) {
+            final userRef =
+                FirebaseFirestore.instance.collection('users').doc(uid);
+            batch.set(userRef, {
+              'points_contributed': FieldValue.increment(_blitzScore),
+            }, SetOptions(merge: true));
+          }
+
+          if (widget.scholarNo.isNotEmpty && widget.scholarNo != '---') {
+            final contribRef = FirebaseFirestore.instance
+                .collection('house_contributors')
+                .doc(widget.scholarNo);
+            batch.set(contribRef, {
+              'scholar_no': widget.scholarNo,
+              'student_name': widget.userName,
+              'house_name': widget.userHouse,
+              'total_contributed': FieldValue.increment(_blitzScore),
+              'merits_count': FieldValue.increment((_blitzScore / 20).round()),
+              'last_blitz_date': FieldValue.serverTimestamp(),
+            }, SetOptions(merge: true));
+          }
+
+          await batch.commit().catchError((_) {});
         }
       }
     });
@@ -528,6 +571,10 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
             borderRadius: BorderRadius.circular(16),
             onTap: () {
               HapticFeedback.selectionClick();
+              if (_activeNav == 1 && index != 1) {
+                _blitzTimer?.cancel();
+                _advanceTimer?.cancel();
+              }
               setState(() => _activeNav = index);
             },
             child: AnimatedContainer(
@@ -978,9 +1025,41 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Question ${_blitzQuestionIndex + 1} of ${_quizBank.length}',
-                style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.w700),
+              Row(
+                children: [
+                  Text(
+                    'Question ${_blitzQuestionIndex + 1} of ${_quizBank.length}',
+                    style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.w700),
+                  ),
+                  if (_blitzComboStreak > 1) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Colors.deepOrange, Colors.amber],
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.deepOrange.withValues(alpha: 0.4),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Text(
+                        '🔥 ${_blitzComboStreak}x STREAK',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 10,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),

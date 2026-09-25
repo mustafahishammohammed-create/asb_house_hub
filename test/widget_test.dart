@@ -10,6 +10,8 @@ import 'package:asb_house_hub/widgets/mascot_3d_stage.dart';
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:asb_house_hub/services/auth_service.dart';
+import 'package:asb_house_hub/services/voucher_security_service.dart';
+import 'package:asb_house_hub/screens/merch_store_tab.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:asb_house_hub/main.dart';
@@ -741,6 +743,236 @@ void main() {
       (indicatorSapphire.valueColor as AlwaysStoppedAnimation<Color>).value,
       HouseColors.sapphireGlow,
     );
+  });
+
+  test('AuthService.extractHouse safely extracts and normalizes house names across diverse formats', () {
+    // Standard keys
+    expect(AuthService.extractHouse({'house_name': 'ruby'}), 'ruby');
+    expect(AuthService.extractHouse({'house': 'Sapphire'}), 'sapphire');
+    expect(AuthService.extractHouse({'houseName': 'EMERALD'}), 'emerald');
+    expect(AuthService.extractHouse({'house_id': 'topaz'}), 'topaz');
+    expect(AuthService.extractHouse({'house_code': 'ruby'}), 'ruby');
+    expect(AuthService.extractHouse({'House': 'sapphire'}), 'sapphire');
+    expect(AuthService.extractHouse({'HouseName': 'emerald'}), 'emerald');
+
+    // Composite strings containing house name
+    expect(AuthService.extractHouse({'house_name': 'Ruby House Pride'}), 'ruby');
+    expect(AuthService.extractHouse({'house': 'house_emerald_senior'}), 'emerald');
+    expect(AuthService.extractHouse({'houseName': 'Topaz Guardians'}), 'topaz');
+    expect(AuthService.extractHouse({'house_id': 'Sapphire-Squad'}), 'sapphire');
+
+    // Invalid / empty / null inputs
+    expect(AuthService.extractHouse(null), isNull);
+    expect(AuthService.extractHouse({}), isNull);
+    expect(AuthService.extractHouse({'house_name': ''}), isNull);
+    expect(AuthService.extractHouse({'house_name': '   '}), isNull);
+    expect(AuthService.extractHouse({'house_name': 'null'}), isNull);
+    expect(AuthService.extractHouse({'house_name': 'none'}), isNull);
+    expect(AuthService.extractHouse({'house_name': 'undefined'}), isNull);
+    expect(AuthService.extractHouse({'house_name': 'unknown_house'}), isNull);
+    expect(AuthService.extractHouse({'house_name': 'VERIFIED: 12345'}), isNull);
+    expect(AuthService.extractHouse({'house_name': 'Gryffindor'}), isNull);
+  });
+
+  test('AuthService.inferHouseFromScholarNo correctly infers house or returns null', () {
+    expect(AuthService.inferHouseFromScholarNo('10001'), 'emerald');
+    expect(AuthService.inferHouseFromScholarNo('20002'), 'emerald');
+    expect(AuthService.inferHouseFromScholarNo('11089'), 'emerald');
+    expect(AuthService.inferHouseFromScholarNo('30003'), 'sapphire');
+    expect(AuthService.inferHouseFromScholarNo('12001'), 'topaz');
+    expect(AuthService.inferHouseFromScholarNo('11012'), 'topaz');
+    expect(AuthService.inferHouseFromScholarNo('40001'), 'topaz');
+
+    // Substring fallback
+    expect(AuthService.inferHouseFromScholarNo('scholar_emerald_01'), 'emerald');
+    expect(AuthService.inferHouseFromScholarNo('sapphire_lead'), 'sapphire');
+    expect(AuthService.inferHouseFromScholarNo('topaz_vice'), 'topaz');
+
+    // Unknown scholar
+    expect(AuthService.inferHouseFromScholarNo('99999'), isNull);
+    expect(AuthService.inferHouseFromScholarNo(''), isNull);
+  });
+
+  test('QR token cascade logic guards against VERIFIED keyword becoming house name', () {
+    const legacyTokenWithVerified = 'ASB-ID:2310910:VERIFIED';
+    final parts = legacyTokenWithVerified.split(':');
+    expect(parts.length, 3);
+    final scholar = parts[1];
+    String house = 'Ruby';
+
+    if (parts.length == 3) {
+      if (parts[2].toUpperCase() == 'VERIFIED') {
+        house = AuthService.inferHouseFromScholarNo(scholar) ?? 'Ruby';
+      } else {
+        house = parts[2];
+      }
+    }
+
+    // Must NOT be 'VERIFIED'
+    expect(house, isNot('VERIFIED'));
+    expect(house.toLowerCase(), anyOf('ruby', 'sapphire', 'emerald', 'topaz'));
+  });
+
+  test('CartItem class strictly clamps quantities between 1 and 99', () {
+    const dummyProduct = MerchProduct(
+      id: 'hoodie_ruby',
+      name: 'Ruby Hoodie',
+      price: '50 Pts',
+      rating: 4.9,
+      imageUrl: '',
+      category: 'Hoodies',
+      house: 'ruby',
+      description: 'Official hoodie',
+    );
+
+    // Constructor clamping
+    final itemNeg = CartItem(product: dummyProduct, size: 'L', qty: -5);
+    expect(itemNeg.qty, 1);
+
+    final itemZero = CartItem(product: dummyProduct, size: 'L', qty: 0);
+    expect(itemZero.qty, 1);
+
+    final itemOver = CartItem(product: dummyProduct, size: 'L', qty: 250);
+    expect(itemOver.qty, 99);
+
+    // Setter clamping
+    final item = CartItem(product: dummyProduct, size: 'M', qty: 2);
+    expect(item.qty, 2);
+
+    item.qty = -10;
+    expect(item.qty, 1);
+
+    item.qty = 1000;
+    expect(item.qty, 99);
+
+    item.qty = 5;
+    expect(item.qty, 5);
+    expect(item.pointsPrice, 250);
+  });
+
+  test('VoucherSecurityService generates valid HMAC tokens and catches tampering', () {
+    const billNo = 'ASB-BILL-9876';
+    const points = 250;
+    const scholarNo = '2310910';
+    final ts = DateTime.now().millisecondsSinceEpoch;
+
+    final token = VoucherSecurityService.generateVoucherToken(
+      billNo: billNo,
+      points: points,
+      scholarNo: scholarNo,
+      timestampMillis: ts,
+    );
+    expect(token, isNotEmpty);
+
+    // Valid check
+    expect(
+      VoucherSecurityService.validateVoucherToken(
+        token: token,
+        billNo: billNo,
+        points: points,
+        scholarNo: scholarNo,
+        timestampMillis: ts,
+      ),
+      isTrue,
+    );
+
+    // Tampered points
+    expect(
+      VoucherSecurityService.validateVoucherToken(
+        token: token,
+        billNo: billNo,
+        points: 9999,
+        scholarNo: scholarNo,
+        timestampMillis: ts,
+      ),
+      isFalse,
+    );
+
+    // Tampered scholar
+    expect(
+      VoucherSecurityService.validateVoucherToken(
+        token: token,
+        billNo: billNo,
+        points: points,
+        scholarNo: '10001',
+        timestampMillis: ts,
+      ),
+      isFalse,
+    );
+
+    // Full JSON payload generation and parsing
+    final payload = VoucherSecurityService.generateVoucherPayload(
+      billNo: billNo,
+      points: points,
+      scholarNo: scholarNo,
+      items: ['Sapphire Elite Jersey - M', 'ASB Cap'],
+      timestampMillis: ts,
+    );
+
+    final verified = VoucherSecurityService.validateVoucherPayload(payload);
+    expect(verified.isValid, isTrue);
+    expect(verified.isTampered, isFalse);
+    expect(verified.billNo, billNo);
+    expect(verified.points, points);
+    expect(verified.scholarNo, scholarNo);
+    expect(verified.items, hasLength(2));
+
+    // Tampered payload detected
+    final tamperedPayload = payload.replaceAll('"pts":250', '"pts":5000');
+    final tamperedResult = VoucherSecurityService.validateVoucherPayload(tamperedPayload);
+    expect(tamperedResult.isValid, isFalse);
+    expect(tamperedResult.isTampered, isTrue);
+
+    // Legacy format
+    final legacyResult = VoucherSecurityService.validateVoucherPayload('ASB-ORDER-ASB-999');
+    expect(legacyResult.isValid, isTrue);
+    expect(legacyResult.billNo, 'ASB-999');
+
+    // Completely malformed
+    final malformedResult = VoucherSecurityService.validateVoucherPayload('garbage-data');
+    expect(malformedResult.isValid, isFalse);
+  });
+
+  test('Brain Blitz combo streak multipliers match game design specs', () {
+    double getMultiplier(int streak) {
+      return (streak >= 4)
+          ? 2.0
+          : (streak >= 3 ? 1.5 : (streak == 2 ? 1.25 : 1.0));
+    }
+
+    expect(getMultiplier(0), 1.0);
+    expect(getMultiplier(1), 1.0);
+    expect(getMultiplier(2), 1.25);
+    expect(getMultiplier(3), 1.5);
+    expect(getMultiplier(4), 2.0);
+    expect(getMultiplier(5), 2.0);
+
+    // Score increments for 20 base pts per question
+    expect((20 * getMultiplier(1)).round(), 20);
+    expect((20 * getMultiplier(2)).round(), 25);
+    expect((20 * getMultiplier(3)).round(), 30);
+    expect((20 * getMultiplier(4)).round(), 40);
+  });
+
+  test('Student conduct points clamping and reason sanitization bounds logic', () {
+    int clampPoints(int pts) => pts.abs().clamp(1, 100);
+    String sanitizeReason(String r) {
+      final trimmed = r.trim();
+      if (trimmed.isEmpty) return 'General Conduct Observation';
+      return trimmed.length > 250 ? trimmed.substring(0, 250) : trimmed;
+    }
+
+    // Bounds check
+    expect(clampPoints(-50), 50);
+    expect(clampPoints(0), 1);
+    expect(clampPoints(500), 100);
+    expect(clampPoints(25), 25);
+
+    // Reason check
+    expect(sanitizeReason('   '), 'General Conduct Observation');
+    expect(sanitizeReason('Great presentation'), 'Great presentation');
+    final longStr = 'A' * 300;
+    expect(sanitizeReason(longStr).length, 250);
   });
 }
 
