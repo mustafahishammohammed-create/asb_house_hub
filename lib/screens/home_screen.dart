@@ -129,15 +129,13 @@ class _HomeScreenState extends State<HomeScreen>
                 'uid': user.uid,
                 'scholar_no': currentScholar,
                 'full_name': user.displayName ??
-                    (currentScholar == '10001'
-                        ? 'Noaman Nizamuddin'
-                        : (currentScholar == '20002'
-                            ? 'Sarah Student Rep'
-                            : 'Student')),
+                    (user.email != null && user.email!.contains('@')
+                        ? user.email!.split('@').first
+                        : 'Student Scholar'),
                 'house_name': fallbackHouse,
-                'role': currentScholar == '10001' ? 'captain' : 'student',
-                'class_level': '11-E',
-                'division': 'E',
+                'role': user.email?.contains('admin') == true ? 'super_admin' : 'student',
+                'class_level': 'Grade 11',
+                'division': 'A',
               };
               _profile = fallbackProfile;
               _cachedHouse = fallbackHouse;
@@ -1308,7 +1306,7 @@ class _HomeScreenState extends State<HomeScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(7),
               decoration: BoxDecoration(
                 gradient: LinearGradient(colors: [houseColor, houseDark]),
                 borderRadius: BorderRadius.circular(12),
@@ -1323,31 +1321,33 @@ class _HomeScreenState extends State<HomeScreen>
               child: const Icon(
                 Icons.shield_rounded,
                 color: Colors.white,
-                size: 20,
+                size: 18,
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
             const Flexible(
               child: Text(
                 'ASB House Hub',
                 style: TextStyle(
                   fontWeight: FontWeight.w900,
-                  fontSize: 19,
-                  letterSpacing: -0.5,
+                  fontSize: 18,
+                  letterSpacing: -0.4,
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
         ),
-        centerTitle: true,
+        centerTitle: false,
         actions: [
           if (isCouncilOrTeacher)
             IconButton(
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
               icon: const Icon(
                 Icons.qr_code_scanner_rounded,
                 color: Colors.blueAccent,
-                size: 26,
+                size: 24,
               ),
               tooltip: 'Campus Digital ID Scanner (Faculty & Council)',
               onPressed: () {
@@ -1362,10 +1362,12 @@ class _HomeScreenState extends State<HomeScreen>
               },
             ),
           IconButton(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
             icon: const Icon(
               Icons.wallet_rounded,
               color: Colors.amber,
-              size: 26,
+              size: 24,
             ),
             tooltip: 'My Digital Wallet & Passes',
             onPressed: () {
@@ -1387,16 +1389,20 @@ class _HomeScreenState extends State<HomeScreen>
           ),
           if (isSuperAdmin) ...[
             IconButton(
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
               icon: const Icon(
                 Icons.campaign_rounded,
                 color: Colors.amber,
-                size: 26,
+                size: 24,
               ),
               tooltip: 'Broadcast Live Ticker',
               onPressed: () => _showEditTickerModal('', false),
             ),
           ],
           IconButton(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
             icon: Container(
               padding: const EdgeInsets.all(5),
               decoration: BoxDecoration(
@@ -1415,7 +1421,7 @@ class _HomeScreenState extends State<HomeScreen>
               child: const Icon(
                 Icons.auto_awesome_rounded,
                 color: Colors.white,
-                size: 16,
+                size: 15,
               ),
             ),
             tooltip: '🤖 ASB House AI Advisor (Gemini)',
@@ -1433,15 +1439,17 @@ class _HomeScreenState extends State<HomeScreen>
             },
           ),
           IconButton(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
             icon: Stack(
               children: [
-                const Icon(Icons.notifications_outlined, size: 26),
+                const Icon(Icons.notifications_outlined, size: 24),
                 Positioned(
                   right: 2,
                   top: 2,
                   child: Container(
-                    width: 10,
-                    height: 10,
+                    width: 9,
+                    height: 9,
                     decoration: BoxDecoration(
                       color: Colors.redAccent,
                       shape: BoxShape.circle,
@@ -1649,28 +1657,33 @@ class _HomeScreenState extends State<HomeScreen>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.22),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.3),
+              Flexible(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 6,
                   ),
-                ),
-                child: Text(
-                  '${house[0].toUpperCase()}${house.substring(1)} House',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                    letterSpacing: 0.5,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.22),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Text(
+                    '${house[0].toUpperCase()}${house.substring(1)} House',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                      letterSpacing: 0.5,
+                    ),
                   ),
                 ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 12,
@@ -1705,16 +1718,18 @@ class _HomeScreenState extends State<HomeScreen>
                   ),
                 ],
               ),
-              child: const FittedBox(
+              child: FittedBox(
                 fit: BoxFit.scaleDown,
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.stars_rounded, color: Colors.black, size: 16),
-                    SizedBox(width: 6),
+                    const Icon(Icons.stars_rounded, color: Colors.black, size: 16),
+                    const SizedBox(width: 6),
                     Text(
-                      'SUPER ADMIN & RUBY HOUSE CAPTAIN',
-                      style: TextStyle(
+                      house.isNotEmpty
+                          ? 'SUPER ADMIN & ${house.toUpperCase()} HOUSE'
+                          : 'SUPER ADMIN & CAMPUS DIRECTORATE',
+                      style: const TextStyle(
                         color: Colors.black,
                         fontWeight: FontWeight.w900,
                         fontSize: 11,
@@ -1763,24 +1778,31 @@ class _HomeScreenState extends State<HomeScreen>
               return Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.military_tech_rounded,
-                        color: Colors.amber,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'House Contribution:',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.95),
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13,
+                  Flexible(
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.military_tech_rounded,
+                          color: Colors.amber,
+                          size: 20,
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            'House Contribution:',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.95),
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
+                  const SizedBox(width: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 12,
@@ -2361,44 +2383,53 @@ class _HomeScreenState extends State<HomeScreen>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: houseColor.withValues(alpha: 0.12),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      Icons.military_tech_rounded,
-                      color: houseColor,
-                      size: 22,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'House Contribution Record',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: -0.3,
-                        ),
+              Expanded(
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: houseColor.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
                       ),
-                      Text(
-                        'Points earned for ${houseName.toUpperCase()} House',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[600],
-                          fontWeight: FontWeight.w600,
-                        ),
+                      child: Icon(
+                        Icons.military_tech_rounded,
+                        color: houseColor,
+                        size: 22,
                       ),
-                    ],
-                  ),
-                ],
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'House Contribution Record',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -0.3,
+                            ),
+                          ),
+                          Text(
+                            'Points earned for ${houseName.toUpperCase()} House',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               InkWell(
                 onTap: () {
                   Navigator.push(
@@ -3174,79 +3205,87 @@ class _HomeScreenState extends State<HomeScreen>
                             ],
                           ),
                         ),
-                        if (status == 'pending') ...[
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.amber,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Text(
-                              'Pending Review',
-                              style: TextStyle(
-                                color: Colors.black,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          if (isAdmin)
-                            ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green,
-                                foregroundColor: Colors.white,
-                                minimumSize: const Size(0, 32),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          alignment: WrapAlignment.end,
+                          children: [
+                            if (status == 'pending') ...[
+                              Container(
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
+                                  horizontal: 8,
+                                  vertical: 4,
                                 ),
-                              ),
-                              onPressed: () => _firestore
-                                  .collection('event_wall')
-                                  .doc(doc.id)
-                                  .update({'status': 'approved'}),
-                              icon: const Icon(Icons.check_rounded, size: 16),
-                              label: const Text(
-                                'Feature',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 12,
+                                decoration: BoxDecoration(
+                                  color: Colors.amber,
+                                  borderRadius: BorderRadius.circular(10),
                                 ),
-                              ),
-                            ),
-                        ] else ...[
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.green.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Row(
-                              children: [
-                                Icon(
-                                  Icons.stars_rounded,
-                                  color: Colors.green,
-                                  size: 14,
-                                ),
-                                SizedBox(width: 4),
-                                Text(
-                                  'Featured',
+                                child: const Text(
+                                  'Pending',
                                   style: TextStyle(
-                                    color: Colors.green,
-                                    fontWeight: FontWeight.w800,
+                                    color: Colors.black,
+                                    fontWeight: FontWeight.w900,
                                     fontSize: 11,
                                   ),
                                 ),
-                              ],
-                            ),
-                          ),
-                        ],
+                              ),
+                              if (isAdmin)
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.green,
+                                    foregroundColor: Colors.white,
+                                    minimumSize: const Size(0, 30),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                    ),
+                                  ),
+                                  onPressed: () => _firestore
+                                      .collection('event_wall')
+                                      .doc(doc.id)
+                                      .update({'status': 'approved'}),
+                                  icon: const Icon(Icons.check_rounded, size: 14),
+                                  label: const Text(
+                                    'Feature',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ),
+                            ] else ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.stars_rounded,
+                                      color: Colors.green,
+                                      size: 14,
+                                    ),
+                                    SizedBox(width: 4),
+                                    Text(
+                                      'Featured',
+                                      style: TextStyle(
+                                        color: Colors.green,
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                       ],
                     ),
                   ),
@@ -3659,29 +3698,7 @@ class _HomeScreenState extends State<HomeScreen>
             ),
           ),
           Divider(color: Colors.grey.withValues(alpha: 0.2)),
-          ListTile(
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 24,
-              vertical: 0,
-            ),
-            leading: const Icon(
-              Icons.switch_account_rounded,
-              color: Colors.blueAccent,
-              size: 26,
-            ),
-            title: const Text(
-              'Switch Account',
-              style: TextStyle(
-                color: Colors.blueAccent,
-                fontWeight: FontWeight.w700,
-                fontSize: 16,
-              ),
-            ),
-            onTap: () {
-              Navigator.pop(context);
-              _showAccountSwitcherModal(color);
-            },
-          ),
+
           ListTile(
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 24,
@@ -3794,9 +3811,9 @@ class _HomeScreenState extends State<HomeScreen>
                 style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
               ),
               const SizedBox(height: 4),
-              const Text(
-                'Dr. Elizabeth Vance • Science Dept Lead',
-                style: TextStyle(color: Colors.grey, fontSize: 13),
+              Text(
+                _profile?['advisor'] ?? 'House Faculty Mentor • Academic Directorate',
+                style: const TextStyle(color: Colors.grey, fontSize: 13),
               ),
               const SizedBox(height: 24),
               SizedBox(
@@ -4100,271 +4117,6 @@ class _HomeScreenState extends State<HomeScreen>
       onTap: onTap,
     );
   }
-
-  void _showAccountSwitcherModal(Color color) {
-    final currentScholar = _profile?['scholar_no'] ?? '2310910';
-
-    final presetAccounts = [
-      {
-        'name': 'Mustafa Hisham',
-        'id': '2310910',
-        'role': 'Super Admin',
-        'house': 'Ruby',
-      },
-      {
-        'name': 'Noaman Nizamuddin',
-        'id': '10001',
-        'role': 'Emerald Captain',
-        'house': 'Emerald',
-      },
-      {
-        'name': 'Sarah Student Rep',
-        'id': '20002',
-        'role': 'Student',
-        'house': 'Emerald',
-      },
-      {
-        'name': 'Dr. Elizabeth Vance',
-        'id': '30003',
-        'role': 'Teacher Lead',
-        'house': 'Sapphire',
-      },
-      {
-        'name': 'Tanish Mukherjee',
-        'id': '12001',
-        'role': 'Head Boy',
-        'house': 'Topaz',
-      },
-    ];
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      builder: (context) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
-          left: 24,
-          right: 24,
-          top: 24,
-        ),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-            Row(
-              children: [
-                Icon(Icons.switch_account_rounded, color: color, size: 28),
-                const SizedBox(width: 12),
-                const Text(
-                  'Switch Profile & Account',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              'Switch instantly between staff, council, and student profiles or add a new account.',
-              style: TextStyle(color: Colors.grey, fontSize: 13),
-            ),
-            const SizedBox(height: 20),
-            ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: presetAccounts.length,
-              separatorBuilder: (context, index) => const SizedBox(height: 10),
-              itemBuilder: (context, index) {
-                final acc = presetAccounts[index];
-                final isCurrent =
-                    acc['id'] == currentScholar ||
-                    (currentScholar == 'admin' && acc['id'] == '2310910');
-                final houseColor = HouseColors.getHouseColor(
-                  (acc['house'] ?? 'emerald').toString(),
-                );
-
-                return InkWell(
-                  onTap: () async {
-                    final messenger = ScaffoldMessenger.of(context);
-                    Navigator.pop(context);
-                    if (!isCurrent) {
-                      final targetHouse =
-                          (acc['house'] ?? 'emerald').toString().toLowerCase();
-                      final newProfile = {
-                        'full_name': acc['name'],
-                        'scholar_no': acc['id'],
-                        'role': acc['role'] == 'Super Admin'
-                            ? 'super_admin'
-                            : (acc['role'].toString().contains('Captain')
-                                ? 'captain'
-                                : (acc['role'] == 'Teacher Lead'
-                                    ? 'teacher'
-                                    : (acc['role'] == 'Head Boy'
-                                        ? 'council'
-                                        : 'student'))),
-                        'house_name': targetHouse,
-                        'class_level': '12-A',
-                        'division': 'Senior Tier',
-                      };
-                      setState(() {
-                        _loading = true;
-                        _cachedHouse = targetHouse;
-                        _profile = newProfile;
-                      });
-                      await AuthService.cacheHouse(targetHouse);
-                      await AuthService.cacheProfile(newProfile);
-                      try {
-                        if (acc['id'] == '2310910') {
-                          await _authService.signInAdmin(password: '2310910');
-                          await _loadProfile();
-                        }
-                        if (!mounted) return;
-                        messenger.showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Switched profile to ${acc['name']} (${acc['role']})',
-                            ),
-                            backgroundColor: houseColor,
-                          ),
-                        );
-                      } catch (e) {
-                        if (!mounted) return;
-                        messenger.showSnackBar(
-                          SnackBar(
-                            content: Text('Failed to switch profile: $e'),
-                            backgroundColor: Colors.red,
-                          ),
-                        );
-                      } finally {
-                        if (mounted) setState(() => _loading = false);
-                      }
-                    }
-                  },
-                  borderRadius: BorderRadius.circular(16),
-                  child: Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: isCurrent
-                          ? color.withValues(alpha: 0.12)
-                          : Theme.of(context).colorScheme.surface,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: isCurrent
-                            ? color
-                            : Colors.grey.withValues(alpha: 0.25),
-                        width: isCurrent ? 2 : 1,
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        CircleAvatar(
-                          radius: 22,
-                          backgroundColor: houseColor.withValues(alpha: 0.2),
-                          child: Text(
-                            (acc['name'] ?? 'S')[0],
-                            style: TextStyle(
-                              color: houseColor,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 18,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      acc['name'] ?? 'Profile',
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 15,
-                                      ),
-                                    ),
-                                  ),
-                                  if (isCurrent) ...[
-                                    const SizedBox(width: 6),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 2,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: color,
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: const Text(
-                                        'ACTIVE',
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 9,
-                                          fontWeight: FontWeight.w900,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                '${acc['role']} • ID #${acc['id']} • House ${acc['house']}',
-                                style: TextStyle(
-                                  color: Colors.grey[600],
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Icon(
-                          isCurrent
-                              ? Icons.check_circle_rounded
-                              : Icons.swap_horiz_rounded,
-                          color: isCurrent ? color : Colors.grey[400],
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 16),
-            const Divider(),
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  side: BorderSide(color: color, width: 1.5),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-                icon: Icon(Icons.person_add_rounded, color: color),
-                label: Text(
-                  'Log Into Another Account',
-                  style: TextStyle(color: color, fontWeight: FontWeight.w800),
-                ),
-                onPressed: () {
-                  Navigator.pop(context);
-                  _handleSignOut();
-                },
-              ),
-            ),
-            const SizedBox(height: 24),
-          ],
-        ),
-      ),
-      ),
-    );
-  }
 }
+
+

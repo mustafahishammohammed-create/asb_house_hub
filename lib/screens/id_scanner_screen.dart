@@ -1,9 +1,10 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart'
     show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:camera/camera.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_theme.dart';
@@ -25,61 +26,16 @@ class IdScannerScreen extends StatefulWidget {
 
 class _IdScannerScreenState extends State<IdScannerScreen>
     with SingleTickerProviderStateMixin {
-  CameraController? _cameraController;
+  MobileScannerController? _scannerController;
   bool _isCameraInitializing = true;
   String? _cameraErrorMessage;
   bool _isFlashOn = false;
+  bool _isProcessingScan = false;
   late AnimationController _laserController;
   late Animation<double> _laserAnimation;
 
   final TextEditingController _manualSearchController = TextEditingController();
   bool _isSearching = false;
-
-  // Preset students for fast 1-tap testing on Desktop / Web
-  final List<Map<String, String>> _demoStudents = [
-    {
-      'name': 'Mustafa Hisham',
-      'scholar': '2310910',
-      'house': 'Ruby',
-      'class': '11-D',
-      'role': 'Super Admin & Captain',
-    },
-    {
-      'name': 'Noaman Nizamuddin',
-      'scholar': '10001',
-      'house': 'Emerald',
-      'class': '11-E',
-      'role': 'Emerald House Captain',
-    },
-    {
-      'name': 'Sarah Student Rep',
-      'scholar': '20002',
-      'house': 'Emerald',
-      'class': '11-E',
-      'role': 'Student Representative',
-    },
-    {
-      'name': 'Dr. Elizabeth Vance',
-      'scholar': '30003',
-      'house': 'Sapphire',
-      'class': 'Faculty Lead',
-      'role': 'Sapphire Teacher Lead',
-    },
-    {
-      'name': 'Tanish Mukherjee',
-      'scholar': '12001',
-      'house': 'Topaz',
-      'class': '12-E',
-      'role': 'School Head Boy',
-    },
-    {
-      'name': 'Sarah Paul',
-      'scholar': '11004',
-      'house': 'Ruby',
-      'class': '11-D',
-      'role': 'Grade 11 Prefect',
-    },
-  ];
 
   @override
   void initState() {
@@ -95,43 +51,40 @@ class _IdScannerScreenState extends State<IdScannerScreen>
   }
 
   Future<void> _initCamera() async {
-    // On Desktop (Windows, macOS, Linux), mobile camera plugin is not available.
-    // Gracefully switch to desktop input mode without calling missing plugin channels.
-    final isDesktop = !kIsWeb &&
-        (defaultTargetPlatform == TargetPlatform.windows ||
-         defaultTargetPlatform == TargetPlatform.linux ||
-         defaultTargetPlatform == TargetPlatform.macOS);
+    final isMobile = !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.android ||
+         defaultTargetPlatform == TargetPlatform.iOS);
 
-    if (isDesktop) {
+    final isTestEnv = !kIsWeb &&
+        (Platform.environment.containsKey('FLUTTER_TEST') ||
+         WidgetsBinding.instance is! WidgetsFlutterBinding);
+
+    if (!isMobile || isTestEnv) {
       if (mounted) {
         setState(() {
           _isCameraInitializing = false;
           _cameraErrorMessage =
-              'Desktop Mode: Hardware camera feed active on mobile devices.\nUse Manual Scholar # search, QR image upload, or preset chips below.';
+              'Desktop / Test Mode: Point camera at student ID QR code or voucher on mobile devices.\nEnter Scholar # or upload a QR image below.';
         });
       }
       return;
     }
 
     try {
-      final cameras = await availableCameras();
-      if (cameras.isEmpty) {
-        if (mounted) {
-          setState(() {
-            _isCameraInitializing = false;
-            _cameraErrorMessage = 'No live webcam or camera device detected.';
-          });
-        }
-        return;
-      }
-
-      _cameraController = CameraController(
-        cameras.first,
-        ResolutionPreset.medium,
-        enableAudio: false,
+      _scannerController = MobileScannerController(
+        detectionSpeed: DetectionSpeed.noDuplicates,
+        facing: CameraFacing.back,
+        torchEnabled: false,
+        autoStart: true,
+        formats: const [
+          BarcodeFormat.qrCode,
+          BarcodeFormat.code128,
+          BarcodeFormat.code39,
+          BarcodeFormat.ean13,
+          BarcodeFormat.ean8,
+          BarcodeFormat.dataMatrix,
+        ],
       );
-
-      await _cameraController!.initialize();
       if (mounted) {
         setState(() {
           _isCameraInitializing = false;
@@ -141,7 +94,7 @@ class _IdScannerScreenState extends State<IdScannerScreen>
       if (mounted) {
         setState(() {
           _isCameraInitializing = false;
-          _cameraErrorMessage = 'Camera unavailable or access restricted.';
+          _cameraErrorMessage = 'Camera scanner unavailable: $e';
         });
       }
     }
@@ -150,18 +103,18 @@ class _IdScannerScreenState extends State<IdScannerScreen>
   @override
   void dispose() {
     _laserController.dispose();
-    _cameraController?.dispose();
+    _scannerController?.dispose();
     _manualSearchController.dispose();
     super.dispose();
   }
 
   Future<void> _toggleFlashlight() async {
-    final cam = _cameraController;
-    if (cam == null || !cam.value.isInitialized) {
+    final cam = _scannerController;
+    if (cam == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Flashlight is available when hardware camera is active.'),
+            content: Text('Flashlight is available when mobile camera is active.'),
             duration: Duration(seconds: 2),
           ),
         );
@@ -169,8 +122,7 @@ class _IdScannerScreenState extends State<IdScannerScreen>
       return;
     }
     try {
-      final newMode = _isFlashOn ? FlashMode.off : FlashMode.torch;
-      await cam.setFlashMode(newMode);
+      await cam.toggleTorch();
       if (mounted) {
         setState(() {
           _isFlashOn = !_isFlashOn;
@@ -185,14 +137,54 @@ class _IdScannerScreenState extends State<IdScannerScreen>
     }
   }
 
-  void _navigateToEvaluation({
+  Future<void> _flipCamera() async {
+    final cam = _scannerController;
+    if (cam == null) return;
+    try {
+      await cam.switchCamera();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Camera flip error: $e')),
+        );
+      }
+    }
+  }
+
+  void _onBarcodeDetected(BarcodeCapture capture) {
+    if (_isProcessingScan) return;
+    for (final barcode in capture.barcodes) {
+      final rawVal = barcode.rawValue;
+      if (rawVal != null && rawVal.trim().isNotEmpty) {
+        _isProcessingScan = true;
+        HapticFeedback.heavyImpact();
+        _handleDecodedString(rawVal.trim()).then((_) {
+          Future.delayed(const Duration(seconds: 2), () {
+            if (mounted) {
+              setState(() {
+                _isProcessingScan = false;
+              });
+            }
+          });
+        });
+        break;
+      }
+    }
+  }
+
+  Future<void> _navigateToEvaluation({
     required String scholarNo,
     required String studentName,
     required String houseName,
     required String classLevel,
-  }) {
+  }) async {
     HapticFeedback.mediumImpact();
-    Navigator.push(
+    try {
+      await _scannerController?.stop();
+    } catch (_) {}
+
+    if (!mounted) return;
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => StudentBehaviorEvaluationScreen(
@@ -204,12 +196,24 @@ class _IdScannerScreenState extends State<IdScannerScreen>
         ),
       ),
     );
+
+    if (mounted) {
+      setState(() {
+        _isProcessingScan = false;
+      });
+      try {
+        await _scannerController?.start();
+      } catch (_) {}
+    }
   }
 
   Future<void> _handleManualLookup() async {
     final query = _manualSearchController.text.trim();
     if (query.isEmpty) return;
+    await _handleDecodedString(query);
+  }
 
+  Future<void> _handleDecodedString(String query) async {
     setState(() => _isSearching = true);
     try {
       // 0. Check if input is a store voucher or pass
@@ -411,31 +415,17 @@ class _IdScannerScreenState extends State<IdScannerScreen>
         return;
       }
 
-      // 4. Fallback check inside preset demo students
-      final match = _demoStudents.firstWhere(
-        (s) => s['scholar'] == query || s['name']!.toLowerCase().contains(query.toLowerCase()),
-        orElse: () => {},
-      );
-
-      if (match.isNotEmpty) {
-        _navigateToEvaluation(
-          scholarNo: match['scholar']!,
-          studentName: match['name']!,
-          houseName: match['house']!,
-          classLevel: match['class']!,
-        );
-        return;
-      }
-
-      // 4. If not found, create a provisional student entry for conduct tracking
+      // 5. If not found in Firestore, infer house and create provisional student entry
+      final inferredHouse = AuthService.inferHouseFromScholarNo(query) ?? 'Ruby';
       _navigateToEvaluation(
         scholarNo: query,
         studentName: 'Scholar #$query',
-        houseName: 'Ruby',
+        houseName: inferredHouse,
         classLevel: 'Senior Tier',
       );
     } catch (e) {
       if (!mounted) return;
+      _isProcessingScan = false;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Lookup error: $e'), backgroundColor: Colors.redAccent),
       );
@@ -451,24 +441,31 @@ class _IdScannerScreenState extends State<IdScannerScreen>
       if (file == null) return;
 
       if (!mounted) return;
-      // Simulated QR extraction from uploaded photo or demo match
+      if (_scannerController != null) {
+        try {
+          final capture = await _scannerController!.analyzeImage(file.path);
+          if (capture != null && capture.barcodes.isNotEmpty) {
+            final code = capture.barcodes.first.rawValue;
+            if (code != null && code.trim().isNotEmpty) {
+              await _handleDecodedString(code.trim());
+              return;
+            }
+          }
+        } catch (_) {}
+      }
+
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Analyzing QR Image... Matched Scholar #2310910'),
-          backgroundColor: Colors.blueAccent,
+          content: Text('No QR code detected in selected image. Please try another photo or enter Scholar # below.'),
+          backgroundColor: Colors.orangeAccent,
+          duration: Duration(seconds: 3),
         ),
-      );
-
-      _navigateToEvaluation(
-        scholarNo: '2310910',
-        studentName: 'Mustafa Hisham',
-        houseName: 'Ruby',
-        classLevel: '11-D',
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error picking QR: $e')),
+        SnackBar(content: Text('Error analyzing image: $e')),
       );
     }
   }
@@ -495,6 +492,11 @@ class _IdScannerScreenState extends State<IdScannerScreen>
             tooltip: _isFlashOn ? 'Turn Flashlight Off' : 'Turn Flashlight On',
             onPressed: _toggleFlashlight,
           ),
+          IconButton(
+            icon: const Icon(Icons.flip_camera_ios_rounded),
+            tooltip: 'Flip Camera Front/Back',
+            onPressed: _flipCamera,
+          ),
         ],
       ),
       body: SingleChildScrollView(
@@ -516,7 +518,7 @@ class _IdScannerScreenState extends State<IdScannerScreen>
                   SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      'Scan a student\'s Digital ID QR code to evaluate conduct and award or deduct House Points.',
+                      'Point camera directly at student ID QR or digital voucher to scan in real-time.',
                       style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
                     ),
                   ),
@@ -525,17 +527,23 @@ class _IdScannerScreenState extends State<IdScannerScreen>
             ),
             const SizedBox(height: 20),
 
-            // Live Camera Viewfinder Box with Laser Animation
+            // Live Camera Viewfinder Box with Real-Time Scanner
             Container(
-              height: 280,
+              height: 380,
               width: double.infinity,
               decoration: BoxDecoration(
                 color: Colors.black,
                 borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: Colors.blueAccent.withValues(alpha: 0.5), width: 2),
+                border: Border.all(
+                  color: _isProcessingScan
+                      ? Colors.amberAccent
+                      : Colors.blueAccent.withValues(alpha: 0.5),
+                  width: 2,
+                ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.blueAccent.withValues(alpha: 0.2),
+                    color: (_isProcessingScan ? Colors.amberAccent : Colors.blueAccent)
+                        .withValues(alpha: 0.25),
                     blurRadius: 20,
                     offset: const Offset(0, 8),
                   ),
@@ -544,9 +552,53 @@ class _IdScannerScreenState extends State<IdScannerScreen>
               clipBehavior: Clip.antiAlias,
               child: Stack(
                 children: [
-                  // Camera feed or fallback graphic
-                  if (_cameraController != null && _cameraController!.value.isInitialized)
-                    Center(child: CameraPreview(_cameraController!))
+                  // Live Camera feed or Desktop fallback
+                  if (_scannerController != null)
+                    Positioned.fill(
+                      child: MobileScanner(
+                        controller: _scannerController!,
+                        onDetect: _onBarcodeDetected,
+                        errorBuilder: (context, error, child) {
+                          return Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(20),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.videocam_off_rounded, size: 48, color: Colors.white54),
+                                  const SizedBox(height: 10),
+                                  Text(
+                                    'Camera: ${error.errorCode.name}',
+                                    style: const TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  const Text(
+                                    'Allow camera permissions to scan student IDs.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(color: Colors.white54, fontSize: 11),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  ElevatedButton.icon(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.white24,
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    ),
+                                    onPressed: () => _initCamera(),
+                                    icon: const Icon(Icons.refresh_rounded, size: 16),
+                                    label: const Text('Retry Camera Permission', style: TextStyle(fontSize: 12)),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    )
                   else if (_isCameraInitializing)
                     const Center(
                       child: CircularProgressIndicator(color: Colors.blueAccent),
@@ -558,13 +610,14 @@ class _IdScannerScreenState extends State<IdScannerScreen>
                         children: [
                           Icon(
                             Icons.qr_code_rounded,
-                            size: 80,
-                            color: Colors.white.withValues(alpha: 0.3),
+                            size: 72,
+                            color: Colors.white.withValues(alpha: 0.35),
                           ),
+                          const SizedBox(height: 12),
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 24),
                             child: Text(
-                              _cameraErrorMessage ?? 'Ready to scan student ID QR',
+                              _cameraErrorMessage ?? 'Live Mobile Camera Active on Android/iOS',
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 color: Colors.white.withValues(alpha: 0.8),
@@ -583,7 +636,12 @@ class _IdScannerScreenState extends State<IdScannerScreen>
                       padding: const EdgeInsets.all(32),
                       child: Container(
                         decoration: BoxDecoration(
-                          border: Border.all(color: Colors.white.withValues(alpha: 0.6), width: 2),
+                          border: Border.all(
+                            color: _isProcessingScan
+                                ? Colors.amberAccent
+                                : Colors.white.withValues(alpha: 0.6),
+                            width: 2,
+                          ),
                           borderRadius: BorderRadius.circular(16),
                         ),
                       ),
@@ -595,24 +653,33 @@ class _IdScannerScreenState extends State<IdScannerScreen>
                     animation: _laserAnimation,
                     builder: (context, child) {
                       return Positioned(
-                        top: 40 + (_laserAnimation.value * 200),
+                        top: 36 + (_laserAnimation.value * 300),
                         left: 36,
                         right: 36,
                         child: Container(
                           height: 3,
                           decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [
-                                Colors.transparent,
-                                Colors.cyanAccent,
-                                Colors.greenAccent,
-                                Colors.cyanAccent,
-                                Colors.transparent,
-                              ],
+                            gradient: LinearGradient(
+                              colors: _isProcessingScan
+                                  ? [
+                                      Colors.transparent,
+                                      Colors.amberAccent,
+                                      Colors.yellowAccent,
+                                      Colors.amberAccent,
+                                      Colors.transparent,
+                                    ]
+                                  : [
+                                      Colors.transparent,
+                                      Colors.cyanAccent,
+                                      Colors.greenAccent,
+                                      Colors.cyanAccent,
+                                      Colors.transparent,
+                                    ],
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.cyanAccent.withValues(alpha: 0.8),
+                                color: (_isProcessingScan ? Colors.amberAccent : Colors.cyanAccent)
+                                    .withValues(alpha: 0.8),
                                 blurRadius: 8,
                                 spreadRadius: 2,
                               ),
@@ -623,28 +690,40 @@ class _IdScannerScreenState extends State<IdScannerScreen>
                     },
                   ),
 
-                  // Simulated Capture Trigger Button on Camera
+                  // Real-Time Scanning HUD Overlay Badge
                   Positioned(
                     bottom: 12,
-                    left: 20,
-                    right: 20,
+                    left: 16,
+                    right: 16,
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                           decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.6),
-                            borderRadius: BorderRadius.circular(8),
+                            color: Colors.black.withValues(alpha: 0.72),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: _isProcessingScan
+                                  ? Colors.amberAccent.withValues(alpha: 0.7)
+                                  : Colors.greenAccent.withValues(alpha: 0.7),
+                            ),
                           ),
-                          child: const Row(
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.camera_alt_rounded, color: Colors.greenAccent, size: 14),
-                              SizedBox(width: 6),
+                              Icon(
+                                _isProcessingScan
+                                    ? Icons.sync_rounded
+                                    : Icons.qr_code_scanner_rounded,
+                                color: _isProcessingScan ? Colors.amberAccent : Colors.greenAccent,
+                                size: 14,
+                              ),
+                              const SizedBox(width: 6),
                               Text(
-                                'AI QR READY',
+                                _isProcessingScan ? 'RESOLVING QR...' : 'REAL-TIME SCANNER ACTIVE',
                                 style: TextStyle(
-                                  color: Colors.greenAccent,
+                                  color: _isProcessingScan ? Colors.amberAccent : Colors.greenAccent,
                                   fontSize: 11,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -652,25 +731,18 @@ class _IdScannerScreenState extends State<IdScannerScreen>
                             ],
                           ),
                         ),
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blueAccent,
-                            foregroundColor: Colors.white,
-                            minimumSize: const Size(0, 36),
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        if (_scannerController != null)
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.6),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: IconButton(
+                              icon: const Icon(Icons.flip_camera_ios_rounded, color: Colors.white, size: 18),
+                              tooltip: 'Flip Camera',
+                              onPressed: _flipCamera,
+                            ),
                           ),
-                          onPressed: () {
-                            _navigateToEvaluation(
-                              scholarNo: '2310910',
-                              studentName: 'Mustafa Hisham',
-                              houseName: 'Ruby',
-                              classLevel: '11-D',
-                            );
-                          },
-                          icon: const Icon(Icons.flash_on_rounded, size: 16),
-                          label: const Text('Capture QR', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
-                        ),
                       ],
                     ),
                   ),
@@ -745,115 +817,6 @@ class _IdScannerScreenState extends State<IdScannerScreen>
               ),
             ),
             const SizedBox(height: 24),
-
-            // One-Tap Quick Test Scans
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  '⚡ One-Tap Demo Scans (Fast Desktop Testing)',
-                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.amber.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Text(
-                    'INSTANT',
-                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.amber),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-
-            ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _demoStudents.length,
-              separatorBuilder: (context, index) => const SizedBox(height: 10),
-              itemBuilder: (context, index) {
-                final student = _demoStudents[index];
-                final houseColor = HouseColors.getHouseColor(student['house']!);
-
-                return InkWell(
-                  onTap: () {
-                    _navigateToEvaluation(
-                      scholarNo: student['scholar']!,
-                      studentName: student['name']!,
-                      houseName: student['house']!,
-                      classLevel: student['class']!,
-                    );
-                  },
-                  borderRadius: BorderRadius.circular(16),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: houseColor.withValues(alpha: 0.3)),
-                    ),
-                    child: Row(
-                      children: [
-                        CircleAvatar(
-                          radius: 20,
-                          backgroundColor: houseColor.withValues(alpha: 0.15),
-                          child: Text(
-                            student['name']![0],
-                            style: TextStyle(
-                              color: houseColor,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                student['name']!,
-                                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
-                              ),
-                              Text(
-                                '${student['house']} House • Scholar #${student['scholar']} • ${student['class']}',
-                                style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: houseColor.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.qr_code_rounded, color: houseColor, size: 14),
-                              const SizedBox(width: 4),
-                              Text(
-                                'Scan ID',
-                                style: TextStyle(
-                                  color: houseColor,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 11,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 32),
           ],
         ),
       ),

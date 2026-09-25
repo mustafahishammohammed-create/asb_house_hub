@@ -14,6 +14,7 @@ import 'package:asb_house_hub/services/voucher_security_service.dart';
 import 'package:asb_house_hub/screens/merch_store_tab.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:asb_house_hub/screens/id_scanner_screen.dart';
 import 'package:asb_house_hub/main.dart';
 
 void main() {
@@ -47,7 +48,13 @@ void main() {
   });
 
   testWidgets('IdScannerScreen mounts cleanly', (WidgetTester tester) async {
-    // Test mounting IdScannerScreen
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: IdScannerScreen(evaluatorName: 'Lead Evaluator'),
+      ),
+    );
+    await tester.pump();
+    expect(find.text('ASB Campus Digital ID Scanner'), findsOneWidget);
   });
 
   testWidgets('HouseArenaScreen smoke test', (WidgetTester tester) async {
@@ -973,6 +980,52 @@ void main() {
     expect(sanitizeReason('Great presentation'), 'Great presentation');
     final longStr = 'A' * 300;
     expect(sanitizeReason(longStr).length, 250);
+  });
+
+  testWidgets('IdScannerScreen does not contain mock accounts or demo buttons in production UI', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: IdScannerScreen(evaluatorName: 'Lead Evaluator'),
+      ),
+    );
+    await tester.pump();
+
+    // Verifies production scanner UI is rendered
+    expect(find.text('ASB Campus Digital ID Scanner'), findsOneWidget);
+    expect(find.text('Point camera directly at student ID QR or digital voucher to scan in real-time.'), findsOneWidget);
+    expect(find.text('Manual Scholar # or QR Code Lookup'), findsOneWidget);
+    expect(find.text('Upload QR Image / Photo from Gallery'), findsOneWidget);
+
+    // Verifies that fake demo scan buttons and preset accounts were removed
+    expect(find.textContaining('One-Tap Demo Scans'), findsNothing);
+    expect(find.textContaining('Mustafa Hisham'), findsNothing);
+    expect(find.textContaining('Noaman Nizamuddin'), findsNothing);
+  });
+
+  testWidgets('Mascot3DStage non-overlapping chrome displays CAD telemetry and diagram mode buttons', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: Mascot3DStage(
+            userHouse: 'ruby',
+            userName: 'Student Scholar',
+            scholarNo: '12345',
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.textContaining('CAD • YAW:'), findsOneWidget);
+    expect(find.text('Solid'), findsOneWidget);
+    expect(find.text('Blueprint'), findsOneWidget);
+    expect(find.text('X-Ray'), findsOneWidget);
+    expect(find.textContaining('Callouts:'), findsOneWidget);
+    expect(find.text('360° Drag • Pinch'), findsOneWidget);
   });
 }
 

@@ -420,24 +420,31 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Row(
-                              children: [
-                                const Icon(
-                                  Icons.military_tech_rounded,
-                                  color: Colors.amber,
-                                  size: 22,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  'My Contribution to ${widget.userHouse.toUpperCase()}',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 14,
+                            Expanded(
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.military_tech_rounded,
+                                    color: Colors.amber,
+                                    size: 22,
                                   ),
-                                ),
-                              ],
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'My Contribution to ${widget.userHouse.toUpperCase()}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
+                            const SizedBox(width: 8),
                             Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 10,
@@ -558,7 +565,7 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
                     title: 'ASB OFFICIAL CAMPUS ENTRY ID',
                     subtitle: widget.userName.isNotEmpty
                         ? widget.userName
-                        : 'Mustafa Hisham (Super Admin)',
+                        : (widget.isAdmin ? 'House Administrator' : 'Student Scholar'),
                     status: widget.isAdmin
                         ? 'SUPER ADMIN ACCESS 👑'
                         : 'VERIFIED STUDENT 🟢',

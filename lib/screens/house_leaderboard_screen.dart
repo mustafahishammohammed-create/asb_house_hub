@@ -28,22 +28,22 @@ class _HouseLeaderboardScreenState extends State<HouseLeaderboardScreen> {
   final Map<String, Map<String, String>> _houseDetails = {
     'Ruby': {
       'motto': 'Courage, Passion & Victory',
-      'captain': 'Mustafa Hisham',
+      'captain': 'Ruby House Captain Council',
       'icon': '🛡️',
     },
     'Emerald': {
       'motto': 'Wisdom, Growth & Honor',
-      'captain': 'Noaman Nizamuddin',
+      'captain': 'Emerald House Captain Council',
       'icon': '🌿',
     },
     'Sapphire': {
       'motto': 'Integrity, Loyalty & Truth',
-      'captain': 'Dr. Elizabeth Vance',
+      'captain': 'Sapphire House Captain Council',
       'icon': '💎',
     },
     'Topaz': {
       'motto': 'Brilliance, Strength & Unity',
-      'captain': 'Tanish Mukherjee',
+      'captain': 'Topaz House Captain Council',
       'icon': '⚡',
     },
   };

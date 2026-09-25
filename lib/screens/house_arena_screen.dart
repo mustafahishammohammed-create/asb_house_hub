@@ -494,9 +494,12 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
                 style: const TextStyle(fontSize: 22),
               ),
               const SizedBox(width: 8),
-              const Text(
-                'ASB House Warroom',
-                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+              const Flexible(
+                child: Text(
+                  'ASB House Warroom',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+                ),
               ),
             ],
           ),
@@ -735,8 +738,10 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
                 ),
                 const SizedBox(height: 10),
                 // Legend
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                Wrap(
+                  alignment: WrapAlignment.spaceAround,
+                  spacing: 12,
+                  runSpacing: 6,
                   children: [
                     _buildSpiritLegendItem('Ruby', _rubySpirit, HouseColors.ruby),
                     _buildSpiritLegendItem('Sapphire', _sapphireSpirit, HouseColors.sapphire),

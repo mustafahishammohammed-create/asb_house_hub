@@ -1756,7 +1756,7 @@ class _Mascot3DStageState extends State<Mascot3DStage>
   Widget _buildTrue3DStage(MascotLoreData mascot) {
     return Container(
       width: double.infinity,
-      height: 420,
+      height: 440,
       decoration: BoxDecoration(
         color: const Color(0xFF03050A),
         borderRadius: BorderRadius.circular(32),
@@ -1789,33 +1789,37 @@ class _Mascot3DStageState extends State<Mascot3DStage>
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(32),
-        child: GestureDetector(
-          onScaleStart: (_) {
-            _baseZoom = _zoomScale;
-          },
-          onScaleUpdate: (details) {
-            if (_isAutoRotating) {
-              _isAutoRotating = false;
-              _turntableController.stop();
-            }
-            _springBackController.stop();
+        child: Column(
+          children: [
+            _buildStageTopBar(mascot),
+            Expanded(
+              child: GestureDetector(
+                onScaleStart: (_) {
+                  _baseZoom = _zoomScale;
+                },
+                onScaleUpdate: (details) {
+                  if (_isAutoRotating) {
+                    _isAutoRotating = false;
+                    _turntableController.stop();
+                  }
+                  _springBackController.stop();
 
-            setState(() {
-              // Multi-touch pinch zoom
-              if (details.pointerCount > 1) {
-                _zoomScale = (_baseZoom * details.scale).clamp(0.72, 1.95);
-              } else {
-                // Single-touch 360 degree 3D rotation
-                _rotY = (_rotY + details.focalPointDelta.dx * 0.016) % (math.pi * 2);
-                _rotX -= details.focalPointDelta.dy * 0.016;
-                _rotX = _rotX.clamp(-0.85, 0.85);
-              }
-            });
-          },
-          onDoubleTap: _triggerRoar,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
+                  setState(() {
+                    // Multi-touch pinch zoom
+                    if (details.pointerCount > 1) {
+                      _zoomScale = (_baseZoom * details.scale).clamp(0.72, 1.95);
+                    } else {
+                      // Single-touch 360 degree 3D rotation
+                      _rotY = (_rotY + details.focalPointDelta.dx * 0.016) % (math.pi * 2);
+                      _rotX -= details.focalPointDelta.dy * 0.016;
+                      _rotX = _rotX.clamp(-0.85, 0.85);
+                    }
+                  });
+                },
+                onDoubleTap: _triggerRoar,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
               // 1. Swirling 3D Elemental Particles (Projected with 3D camera)
               Positioned.fill(
                 child: CustomPaint(
@@ -1972,169 +1976,187 @@ class _Mascot3DStageState extends State<Mascot3DStage>
                 },
               ),
 
-              // 6. Top-Left: Live 3D CAD Telemetry HUD
-              Positioned(
-                top: 12,
-                left: 12,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.72),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white12),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 7,
-                        height: 7,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: const Color(0xFF00E676),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFF00E676).withValues(alpha: 0.6),
-                              blurRadius: 4,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'CAD • YAW: ${(((_rotY * 180 / math.pi) % 360).toInt() + 360) % 360}°  PITCH: ${(_rotX * 180 / math.pi).toInt()}°  ZOOM: ${(_zoomScale * 100).toInt()}%',
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w800,
-                          fontFamily: 'monospace',
-                          letterSpacing: 0.3,
-                        ),
-                      ),
-                    ],
-                  ),
+                  ],
                 ),
               ),
+            ),
+            _buildStageBottomBar(mascot),
+          ],
+        ),
+      ),
+    );
+  }
 
-              // 7. Top-Right: Technical Diagram Display Modes
-              Positioned(
-                top: 12,
-                right: 12,
-                child: Container(
-                  padding: const EdgeInsets.all(3),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.75),
-                    borderRadius: BorderRadius.circular(13),
-                    border: Border.all(color: Colors.white12),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _buildDiagramModeBtn(
-                        label: 'Solid',
-                        icon: Icons.view_in_ar_rounded,
-                        mode: MascotDiagramMode.solidRender,
-                        activeColor: mascot.accentColor,
-                      ),
-                      const SizedBox(width: 3),
-                      _buildDiagramModeBtn(
-                        label: 'Blueprint',
-                        icon: Icons.grid_4x4_rounded,
-                        mode: MascotDiagramMode.holoBlueprint,
-                        activeColor: const Color(0xFF00E5FF),
-                      ),
-                      const SizedBox(width: 3),
-                      _buildDiagramModeBtn(
-                        label: 'X-Ray',
-                        icon: Icons.biotech_rounded,
-                        mode: MascotDiagramMode.tacticalXRay,
-                        activeColor: const Color(0xFFFF4081),
-                      ),
-                    ],
-                  ),
-                ),
+  Widget _buildStageTopBar(MascotLoreData mascot) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 4),
+      child: Row(
+        children: [
+          // CAD Telemetry HUD
+          Flexible(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.75),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white12),
               ),
-
-              // 8. Bottom-Left: Interactive Anatomical Callout Pins Toggle
-              Positioned(
-                bottom: 12,
-                left: 12,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () {
-                    HapticFeedback.selectionClick();
-                    setState(() {
-                      _showDiagramCallouts = !_showDiagramCallouts;
-                    });
-                  },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 7,
+                    height: 7,
                     decoration: BoxDecoration(
-                      color: _showDiagramCallouts
-                          ? mascot.glowColor.withValues(alpha: 0.28)
-                          : Colors.black.withValues(alpha: 0.72),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: _showDiagramCallouts ? mascot.accentColor : Colors.white12,
-                        width: 1.2,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          _showDiagramCallouts ? Icons.push_pin_rounded : Icons.push_pin_outlined,
-                          size: 12,
-                          color: _showDiagramCallouts ? Colors.white : Colors.white60,
-                        ),
-                        const SizedBox(width: 5),
-                        Text(
-                          _showDiagramCallouts ? 'Callouts: ACTIVE' : 'Callouts: HIDDEN',
-                          style: TextStyle(
-                            color: _showDiagramCallouts ? Colors.white : Colors.white60,
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.2,
-                          ),
+                      shape: BoxShape.circle,
+                      color: const Color(0xFF00E676),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF00E676).withValues(alpha: 0.6),
+                          blurRadius: 4,
                         ),
                       ],
                     ),
                   ),
-                ),
-              ),
-
-              // 9. Bottom-Right: Interactive Manipulation Tip Pill
-              Positioned(
-                bottom: 12,
-                right: 12,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.72),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white12),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      'CAD • YAW: ${(((_rotY * 180 / math.pi) % 360).toInt() + 360) % 360}°  PITCH: ${(_rotX * 180 / math.pi).toInt()}°  ${(_zoomScale * 100).toInt()}%',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w800,
+                        fontFamily: 'monospace',
+                        letterSpacing: 0.3,
+                      ),
+                    ),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.threed_rotation_rounded, size: 12, color: mascot.accentColor),
-                      const SizedBox(width: 5),
-                      const Text(
-                        '360° Drag • Pinch Zoom',
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          // Technical Diagram Display Modes
+          Container(
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.78),
+              borderRadius: BorderRadius.circular(13),
+              border: Border.all(color: Colors.white12),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildDiagramModeBtn(
+                  label: 'Solid',
+                  icon: Icons.view_in_ar_rounded,
+                  mode: MascotDiagramMode.solidRender,
+                  activeColor: mascot.accentColor,
+                ),
+                const SizedBox(width: 2),
+                _buildDiagramModeBtn(
+                  label: 'Blueprint',
+                  icon: Icons.grid_4x4_rounded,
+                  mode: MascotDiagramMode.holoBlueprint,
+                  activeColor: const Color(0xFF00E5FF),
+                ),
+                const SizedBox(width: 2),
+                _buildDiagramModeBtn(
+                  label: 'X-Ray',
+                  icon: Icons.biotech_rounded,
+                  mode: MascotDiagramMode.tacticalXRay,
+                  activeColor: const Color(0xFFFF4081),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStageBottomBar(MascotLoreData mascot) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 4, 10, 10),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Flexible(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () {
+                HapticFeedback.selectionClick();
+                setState(() {
+                  _showDiagramCallouts = !_showDiagramCallouts;
+                });
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                decoration: BoxDecoration(
+                  color: _showDiagramCallouts
+                      ? mascot.glowColor.withValues(alpha: 0.28)
+                      : Colors.black.withValues(alpha: 0.75),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: _showDiagramCallouts ? mascot.accentColor : Colors.white12,
+                    width: 1.2,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _showDiagramCallouts ? Icons.push_pin_rounded : Icons.push_pin_outlined,
+                      size: 12,
+                      color: _showDiagramCallouts ? Colors.white : Colors.white60,
+                    ),
+                    const SizedBox(width: 5),
+                    Flexible(
+                      child: Text(
+                        _showDiagramCallouts ? 'Callouts: ACTIVE' : 'Callouts: HIDDEN',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: Colors.white70,
+                          color: _showDiagramCallouts ? Colors.white : Colors.white60,
                           fontSize: 9.5,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.2,
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
-            ],
+            ),
           ),
-        ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.75),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white12),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.threed_rotation_rounded, size: 12, color: mascot.accentColor),
+                const SizedBox(width: 5),
+                const Text(
+                  '360° Drag • Pinch',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2156,7 +2178,7 @@ class _Mascot3DStageState extends State<Mascot3DStage>
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
         decoration: BoxDecoration(
           color: isSelected ? activeColor.withValues(alpha: 0.32) : Colors.transparent,
           borderRadius: BorderRadius.circular(10),
@@ -2169,14 +2191,14 @@ class _Mascot3DStageState extends State<Mascot3DStage>
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon, size: 11, color: isSelected ? Colors.white : Colors.white60),
-            const SizedBox(width: 4),
+            const SizedBox(width: 3),
             Text(
               label,
               style: TextStyle(
                 color: isSelected ? Colors.white : Colors.white60,
-                fontSize: 10,
+                fontSize: 9.5,
                 fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                letterSpacing: 0.2,
+                letterSpacing: 0.1,
               ),
             ),
           ],
@@ -2236,12 +2258,16 @@ class _Mascot3DStageState extends State<Mascot3DStage>
                       color: isSel ? Colors.white : Colors.white60,
                     ),
                     const SizedBox(width: 5),
-                    Text(
-                      f['label'] as String,
-                      style: TextStyle(
-                        color: isSel ? Colors.white : Colors.white70,
-                        fontWeight: isSel ? FontWeight.w900 : FontWeight.w600,
-                        fontSize: 11,
+                    Flexible(
+                      child: Text(
+                        f['label'] as String,
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                        style: TextStyle(
+                          color: isSel ? Colors.white : Colors.white70,
+                          fontWeight: isSel ? FontWeight.w900 : FontWeight.w600,
+                          fontSize: 11,
+                        ),
                       ),
                     ),
                   ],
@@ -2316,112 +2342,127 @@ class _Mascot3DStageState extends State<Mascot3DStage>
   // 5. 3D CONTROL HUD (Turntable, Zoom +/- , Reset, Roar)
   // ===========================================================================
   Widget _build3DControlHud(MascotLoreData mascot) {
-    return Row(
-      children: [
-        // 1. Turntable 360 Auto-Spin Toggle
-        Expanded(
-          flex: 4,
-          child: OutlinedButton.icon(
-            icon: Icon(
-              _isAutoRotating ? Icons.pause_circle_filled_rounded : Icons.rotate_right_rounded,
-              size: 18,
-              color: _isAutoRotating ? Colors.amberAccent : Colors.white70,
-            ),
-            label: Text(
-              _isAutoRotating ? 'Spinning' : '360° Spin',
-              style: TextStyle(
-                color: _isAutoRotating ? Colors.amberAccent : Colors.white70,
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 360;
+        return Row(
+          children: [
+            // 1. Turntable 360 Auto-Spin Toggle
+            Expanded(
+              flex: 4,
+              child: OutlinedButton.icon(
+                icon: Icon(
+                  _isAutoRotating ? Icons.pause_circle_filled_rounded : Icons.rotate_right_rounded,
+                  size: 16,
+                  color: _isAutoRotating ? Colors.amberAccent : Colors.white70,
+                ),
+                label: Text(
+                  _isAutoRotating ? 'Spinning' : (isNarrow ? 'Spin' : '360° Spin'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: _isAutoRotating ? Colors.amberAccent : Colors.white70,
+                    fontSize: isNarrow ? 11 : 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  backgroundColor: _isAutoRotating ? Colors.amber.withValues(alpha: 0.12) : const Color(0xFF101624),
+                  side: BorderSide(
+                    color: _isAutoRotating ? Colors.amberAccent : Colors.white12,
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                onPressed: _toggleAutoRotate,
               ),
             ),
-            style: OutlinedButton.styleFrom(
-              backgroundColor: _isAutoRotating ? Colors.amber.withValues(alpha: 0.12) : const Color(0xFF101624),
-              side: BorderSide(
-                color: _isAutoRotating ? Colors.amberAccent : Colors.white12,
+            const SizedBox(width: 6),
+
+            // Zoom -
+            IconButton.outlined(
+              icon: const Icon(Icons.remove_rounded, size: 16, color: Colors.white70),
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              padding: EdgeInsets.zero,
+              style: IconButton.styleFrom(
+                backgroundColor: const Color(0xFF101624),
+                side: const BorderSide(color: Colors.white12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              onPressed: () {
+                HapticFeedback.lightImpact();
+                setState(() {
+                  _zoomScale = (_zoomScale - 0.15).clamp(0.72, 1.95);
+                });
+              },
             ),
-            onPressed: _toggleAutoRotate,
-          ),
-        ),
-        const SizedBox(width: 8),
+            const SizedBox(width: 4),
 
-        // Zoom -
-        IconButton.outlined(
-          icon: const Icon(Icons.remove_rounded, size: 18, color: Colors.white70),
-          style: IconButton.styleFrom(
-            backgroundColor: const Color(0xFF101624),
-            side: const BorderSide(color: Colors.white12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          ),
-          onPressed: () {
-            HapticFeedback.lightImpact();
-            setState(() {
-              _zoomScale = (_zoomScale - 0.15).clamp(0.72, 1.95);
-            });
-          },
-        ),
-        const SizedBox(width: 4),
-
-        // Zoom +
-        IconButton.outlined(
-          icon: const Icon(Icons.add_rounded, size: 18, color: Colors.white70),
-          style: IconButton.styleFrom(
-            backgroundColor: const Color(0xFF101624),
-            side: const BorderSide(color: Colors.white12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          ),
-          onPressed: () {
-            HapticFeedback.lightImpact();
-            setState(() {
-              _zoomScale = (_zoomScale + 0.15).clamp(0.72, 1.95);
-            });
-          },
-        ),
-        const SizedBox(width: 8),
-
-        // 3. Reset View
-        IconButton.outlined(
-          icon: const Icon(Icons.center_focus_strong_rounded, size: 18, color: Colors.white70),
-          style: IconButton.styleFrom(
-            backgroundColor: const Color(0xFF101624),
-            side: const BorderSide(color: Colors.white12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          ),
-          onPressed: () {
-            HapticFeedback.lightImpact();
-            if (_isAutoRotating) {
-              _isAutoRotating = false;
-              _turntableController.stop();
-            }
-            setState(() => _zoomScale = 1.0);
-            _snapToAngle(0.08, 0.0);
-          },
-        ),
-        const SizedBox(width: 8),
-
-        // 4. Unleash Roar Button
-        Expanded(
-          flex: 4,
-          child: ElevatedButton.icon(
-            icon: const Icon(Icons.volume_up_rounded, size: 18, color: Colors.white),
-            label: const Text(
-              'Roar!',
-              style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w900),
+            // Zoom +
+            IconButton.outlined(
+              icon: const Icon(Icons.add_rounded, size: 16, color: Colors.white70),
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              padding: EdgeInsets.zero,
+              style: IconButton.styleFrom(
+                backgroundColor: const Color(0xFF101624),
+                side: const BorderSide(color: Colors.white12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () {
+                HapticFeedback.lightImpact();
+                setState(() {
+                  _zoomScale = (_zoomScale + 0.15).clamp(0.72, 1.95);
+                });
+              },
             ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: mascot.primaryColor,
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              shadowColor: mascot.glowColor.withValues(alpha: 0.5),
-              elevation: 4,
+            const SizedBox(width: 4),
+
+            // 3. Reset View
+            IconButton.outlined(
+              icon: const Icon(Icons.center_focus_strong_rounded, size: 16, color: Colors.white70),
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              padding: EdgeInsets.zero,
+              style: IconButton.styleFrom(
+                backgroundColor: const Color(0xFF101624),
+                side: const BorderSide(color: Colors.white12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () {
+                HapticFeedback.lightImpact();
+                if (_isAutoRotating) {
+                  _isAutoRotating = false;
+                  _turntableController.stop();
+                }
+                setState(() => _zoomScale = 1.0);
+                _snapToAngle(0.08, 0.0);
+              },
             ),
-            onPressed: _triggerRoar,
-          ),
-        ),
-      ],
+            const SizedBox(width: 6),
+
+            // 4. Unleash Roar Button
+            Expanded(
+              flex: 4,
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.volume_up_rounded, size: 16, color: Colors.white),
+                label: Text(
+                  'Roar!',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: Colors.white, fontSize: isNarrow ? 11 : 12, fontWeight: FontWeight.w900),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: mascot.primaryColor,
+                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  shadowColor: mascot.glowColor.withValues(alpha: 0.5),
+                  elevation: 4,
+                ),
+                onPressed: _triggerRoar,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -2801,12 +2842,14 @@ class _Mascot3DStageState extends State<Mascot3DStage>
                   children: [
                     Icon(Icons.check_circle_rounded, color: mascot.accentColor, size: 16),
                     const SizedBox(width: 8),
-                    Text(
-                      v,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
+                    Expanded(
+                      child: Text(
+                        v,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
                       ),
                     ),
                   ],
@@ -3092,7 +3135,7 @@ class _Mascot3DRendererPainter extends CustomPainter {
         final isLeft = x1 < 0;
         final knee = Offset(anchor.dx + (isLeft ? -24 : 24), anchor.dy - 16);
         final tagX = knee.dx + (isLeft ? -45 : 45);
-        final tagY = knee.dy;
+        final tagY = knee.dy.clamp(16.0, size.height - 16.0);
 
         // Draw glowing anchor pin
         pinOuterPaint.color = glowColor.withValues(alpha: 0.35);
@@ -3146,6 +3189,25 @@ class _Mascot3DRendererPainter extends CustomPainter {
           isLeft ? (tagX - textPainter.width - 4) : (tagX + 4),
           tagY - (textPainter.height / 2),
         );
+
+        final badgeRect = RRect.fromRectAndRadius(
+          Rect.fromLTWH(
+            textOffset.dx - 4,
+            textOffset.dy - 2,
+            textPainter.width + 8,
+            textPainter.height + 4,
+          ),
+          const Radius.circular(6),
+        );
+        canvas.drawRRect(badgeRect, Paint()..color = Colors.black.withValues(alpha: 0.85));
+        canvas.drawRRect(
+          badgeRect,
+          Paint()
+            ..color = glowColor.withValues(alpha: 0.45)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 0.8,
+        );
+
         textPainter.paint(canvas, textOffset);
       }
     }

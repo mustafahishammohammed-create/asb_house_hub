@@ -1129,8 +1129,10 @@ class _AppleFitnessBadgeModalState extends State<_AppleFitnessBadgeModal>
                   const SizedBox(height: 8),
 
                   // Rarity & Status Tags
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 8,
+                    runSpacing: 6,
                     children: [
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
@@ -1154,7 +1156,6 @@ class _AppleFitnessBadgeModalState extends State<_AppleFitnessBadgeModal>
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                         decoration: BoxDecoration(

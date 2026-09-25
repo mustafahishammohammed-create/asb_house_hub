@@ -2178,35 +2178,42 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      floatingActionButton: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          FloatingActionButton.extended(
-            heroTag: 'wallet_btn',
-            onPressed: _showOrdersLockerSheet,
-            backgroundColor: const Color(0xFF111827),
-            foregroundColor: Colors.white,
-            elevation: 8,
-            icon: const Icon(Icons.wallet_rounded, color: Colors.amber),
-            label: Text(
-              'My Wallet (${GlobalWalletStore.orders.length})',
-              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
-            ),
-          ),
-          const SizedBox(width: 12),
-          FloatingActionButton.extended(
-            heroTag: 'bag_btn',
-            onPressed: _showCartReviewSheet,
-            backgroundColor: widget.houseColor,
-            foregroundColor: Colors.white,
-            elevation: 8,
-            icon: const Icon(Icons.shopping_bag_rounded),
-            label: Text(
-              '$totalCartItems Bag',
-              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
-            ),
-          ),
-        ],
+      floatingActionButton: Builder(
+        builder: (context) {
+          final isNarrow = MediaQuery.of(context).size.width < 380;
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              FloatingActionButton.extended(
+                heroTag: 'wallet_btn',
+                onPressed: _showOrdersLockerSheet,
+                backgroundColor: const Color(0xFF111827),
+                foregroundColor: Colors.white,
+                elevation: 8,
+                icon: const Icon(Icons.wallet_rounded, color: Colors.amber, size: 18),
+                label: Text(
+                  isNarrow
+                      ? '(${GlobalWalletStore.orders.length})'
+                      : 'Wallet (${GlobalWalletStore.orders.length})',
+                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
+                ),
+              ),
+              const SizedBox(width: 8),
+              FloatingActionButton.extended(
+                heroTag: 'bag_btn',
+                onPressed: _showCartReviewSheet,
+                backgroundColor: widget.houseColor,
+                foregroundColor: Colors.white,
+                elevation: 8,
+                icon: const Icon(Icons.shopping_bag_rounded, size: 18),
+                label: Text(
+                  '$totalCartItems Bag',
+                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
+                ),
+              ),
+            ],
+          );
+        },
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
