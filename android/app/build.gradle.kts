@@ -11,7 +11,7 @@ plugins {
 android {
     namespace = "bh.asianschool.asb_house_hub"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    ndkVersion = "27.0.12077973"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
