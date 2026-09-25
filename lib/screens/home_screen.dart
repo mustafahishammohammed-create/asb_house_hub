@@ -2072,85 +2072,92 @@ class _HomeScreenState extends State<HomeScreen>
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Row(
-                              children: [
-                                Container(
-                                  width: 36,
-                                  height: 36,
-                                  decoration: BoxDecoration(
-                                    color: rank == 1
-                                        ? Colors.amber.withValues(alpha: 0.2)
-                                        : rank == 2
-                                        ? const Color(
-                                            0xFFC0C0C0,
-                                          ).withValues(alpha: 0.2)
-                                        : rank == 3
-                                        ? const Color(
-                                            0xFFCD7F32,
-                                          ).withValues(alpha: 0.2)
-                                        : color.withValues(alpha: 0.12),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Center(
-                                    child: medal != null
-                                        ? Text(
-                                            medal,
-                                            style: const TextStyle(fontSize: 18),
-                                          )
-                                        : Text(
-                                            '#$rank',
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w800,
-                                              color: color,
+                            Expanded(
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 36,
+                                    height: 36,
+                                    decoration: BoxDecoration(
+                                      color: rank == 1
+                                          ? Colors.amber.withValues(alpha: 0.2)
+                                          : rank == 2
+                                          ? const Color(
+                                              0xFFC0C0C0,
+                                            ).withValues(alpha: 0.2)
+                                          : rank == 3
+                                          ? const Color(
+                                              0xFFCD7F32,
+                                            ).withValues(alpha: 0.2)
+                                          : color.withValues(alpha: 0.12),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Center(
+                                      child: medal != null
+                                          ? Text(
+                                              medal,
+                                              style: const TextStyle(fontSize: 18),
+                                            )
+                                          : Text(
+                                              '#$rank',
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w800,
+                                                color: color,
+                                              ),
                                             ),
-                                          ),
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(width: 14),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Text(
-                                          houseNameDisplay,
-                                          style: const TextStyle(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w700,
-                                          ),
+                                        Row(
+                                          children: [
+                                            Flexible(
+                                              child: Text(
+                                                houseNameDisplay,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            Icon(
+                                              Icons.leaderboard_outlined,
+                                              size: 14,
+                                              color: color.withValues(alpha: 0.8),
+                                            ),
+                                          ],
                                         ),
-                                        const SizedBox(width: 6),
-                                        Icon(
-                                          Icons.leaderboard_outlined,
-                                          size: 14,
-                                          color: color.withValues(alpha: 0.8),
+                                        Text(
+                                          rank == 1
+                                              ? 'Leading • Tap for Leaderboard'
+                                              : 'Tap to view contributor roster',
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: rank == 1
+                                                ? FontWeight.w700
+                                                : FontWeight.w500,
+                                            color: rank == 1
+                                                ? Colors.amber[800]
+                                                : Colors.grey[500],
+                                          ),
                                         ),
                                       ],
                                     ),
-                                    if (rank == 1)
-                                      Text(
-                                        'Leading • Tap for Leaderboard',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w700,
-                                          color: Colors.amber[800],
-                                        ),
-                                      )
-                                    else
-                                      Text(
-                                        'Tap to view contributor roster',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w500,
-                                          color: Colors.grey[500],
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ],
+                                  ),
+                                ],
+                              ),
                             ),
+                            const SizedBox(width: 8),
                             Row(
+                              mainAxisSize: MainAxisSize.min,
                               children: [
                                 Container(
                                   padding: const EdgeInsets.symmetric(
