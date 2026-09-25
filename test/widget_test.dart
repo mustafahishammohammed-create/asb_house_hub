@@ -7,7 +7,12 @@ import 'package:asb_house_hub/screens/house_ai_chat_screen.dart';
 import 'package:asb_house_hub/screens/signup_screen.dart';
 import 'package:asb_house_hub/widgets/apple_fitness_badges_vault.dart';
 import 'package:asb_house_hub/widgets/mascot_3d_stage.dart';
+import 'dart:async';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:asb_house_hub/services/auth_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:asb_house_hub/main.dart';
 
 void main() {
   setUp(() {
@@ -541,6 +546,201 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('TOPAZ HOUSE'), findsOneWidget);
     expect(find.textContaining('Solis the Golden Chimera'), findsOneWidget);
+  });
+
+  test('AuthService house caching and profile persistence logic', () async {
+    SharedPreferences.setMockInitialValues({});
+    await AuthService.initPreferences();
+
+    // Initial state: nothing cached
+    expect(AuthService.getCachedHouse(), isNull);
+    expect(AuthService.getCachedProfile(), isNull);
+
+    // Cache emerald house
+    await AuthService.cacheHouse('emerald');
+    expect(AuthService.getCachedHouse(), 'emerald');
+
+    // Case and whitespace resilience
+    await AuthService.cacheHouse('   SAPPHIRE  ');
+    expect(AuthService.getCachedHouse(), 'sapphire');
+
+    // Profile caching updates house and handles Firestore Timestamps safely without throwing
+    final mockTimestamp = Timestamp.fromDate(DateTime(2026, 9, 25));
+    await AuthService.cacheProfile({
+      'full_name': 'Noaman Nizamuddin',
+      'scholar_no': '10001',
+      'house_name': 'emerald',
+      'created_at': mockTimestamp,
+      'role': 'captain',
+    });
+    expect(AuthService.getCachedHouse(), 'emerald');
+    expect(AuthService.getCachedScholarNo(), '10001');
+    final profile = AuthService.getCachedProfile();
+    expect(profile, isNotNull);
+    expect(profile?['full_name'], 'Noaman Nizamuddin');
+    expect(profile?['house_name'], 'emerald');
+    expect(profile?['created_at'], isNotNull);
+
+    // extractHouse handles house, houseName, house_id, house_name
+    expect(AuthService.extractHouse({'house': 'Emerald'}), 'emerald');
+    expect(AuthService.extractHouse({'houseName': 'SAPPHIRE'}), 'sapphire');
+    expect(AuthService.extractHouse({'house_id': 'TOPAZ'}), 'topaz');
+    expect(AuthService.extractHouse({'house_name': 'Ruby'}), 'ruby');
+
+    // inferHouseFromScholarNo for all 4 houses
+    expect(AuthService.inferHouseFromScholarNo('10001'), 'emerald');
+    expect(AuthService.inferHouseFromScholarNo('20002'), 'emerald');
+    expect(AuthService.inferHouseFromScholarNo('30003'), 'sapphire');
+    expect(AuthService.inferHouseFromScholarNo('12001'), 'topaz');
+    expect(AuthService.inferHouseFromScholarNo('2310910'), 'ruby');
+    expect(AuthService.inferHouseFromScholarNo('admin'), 'ruby');
+
+    // Clear cache
+    await AuthService.clearCache();
+    expect(AuthService.getCachedHouse(), isNull);
+    expect(AuthService.getCachedProfile(), isNull);
+    expect(AuthService.getCachedScholarNo(), isNull);
+  });
+
+  testWidgets('Loading state glows in Emerald and displays house-themed assets for Emerald user', (
+    WidgetTester tester,
+  ) async {
+    const houseName = 'emerald';
+    final houseColor = HouseColors.getHouseColor(houseName);
+    final houseDark = HouseColors.getHouseDarkColor(houseName);
+    final houseGlow = HouseColors.getHouseGlowColor(houseName);
+    final houseAccent = HouseColors.getHouseAccentColor(houseName);
+    final houseEmoji = HouseColors.getHouseEmoji(houseName);
+    final houseMascot = HouseColors.getHouseMascotName(houseName);
+    final houseMotto = HouseColors.getHouseMotto(houseName);
+
+    expect(houseColor, HouseColors.emerald);
+    expect(houseGlow, HouseColors.emeraldGlow);
+    expect(houseEmoji, '🐺');
+    expect(houseMascot, 'Sylva the Titan Wolf');
+    expect(houseMotto, 'Honor & Growth');
+
+    // Build the themed glowing loading screen component
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 104,
+                  height: 104,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [houseAccent, houseColor, houseDark],
+                    ),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: houseGlow.withValues(alpha: 0.5),
+                        blurRadius: 36,
+                        spreadRadius: 6,
+                      ),
+                    ],
+                  ),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      const Icon(Icons.shield_rounded, color: Colors.white, size: 56),
+                      Text(houseEmoji, style: const TextStyle(fontSize: 22)),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 28),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(houseEmoji),
+                      const SizedBox(width: 8),
+                      Text('${houseName.toUpperCase()} HOUSE'),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Text('ASB House Hub', style: TextStyle(color: houseColor)),
+                const SizedBox(height: 6),
+                Text('Loading your ${houseName[0].toUpperCase()}${houseName.substring(1)} dashboard...'),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: 160,
+                  height: 4,
+                  child: LinearProgressIndicator(
+                    backgroundColor: houseColor.withValues(alpha: 0.15),
+                    valueColor: AlwaysStoppedAnimation<Color>(houseGlow),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text('“$houseMotto”'),
+                const SizedBox(height: 4),
+                Text(houseMascot),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Verify emerald house loading dashboard elements
+    expect(find.text('ASB House Hub'), findsOneWidget);
+    expect(find.text('Loading your Emerald dashboard...'), findsOneWidget);
+    expect(find.text('EMERALD HOUSE'), findsOneWidget);
+    expect(find.text('🐺'), findsWidgets);
+    expect(find.text('“Honor & Growth”'), findsOneWidget);
+    expect(find.text('Sylva the Titan Wolf'), findsOneWidget);
+
+    final progressFinder = find.byType(LinearProgressIndicator);
+    expect(progressFinder, findsOneWidget);
+    final indicator = tester.widget<LinearProgressIndicator>(progressFinder);
+    expect((indicator.valueColor as AlwaysStoppedAnimation<Color>).value, HouseColors.emeraldGlow);
+  });
+
+  testWidgets('AuthGate in waiting state glows with cached house colors', (
+    WidgetTester tester,
+  ) async {
+    final waitingStream1 = StreamController<User?>().stream;
+    SharedPreferences.setMockInitialValues({'cached_house_name': 'emerald'});
+    await AuthService.initPreferences();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AuthGate(authStateStream: waitingStream1),
+      ),
+    );
+
+    // Verify emerald house mascot emoji and progress indicator glow
+    expect(find.text('🐺'), findsOneWidget);
+    final progressFinder = find.byType(LinearProgressIndicator);
+    expect(progressFinder, findsOneWidget);
+    final indicator = tester.widget<LinearProgressIndicator>(progressFinder);
+    expect(
+      (indicator.valueColor as AlwaysStoppedAnimation<Color>).value,
+      HouseColors.emeraldGlow,
+    );
+
+    // Now test with sapphire cached
+    final waitingStream2 = StreamController<User?>().stream;
+    await AuthService.cacheHouse('sapphire');
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AuthGate(authStateStream: waitingStream2),
+      ),
+    );
+
+    expect(find.text('🦅'), findsOneWidget);
+    final indicatorSapphire = tester.widget<LinearProgressIndicator>(progressFinder);
+    expect(
+      (indicatorSapphire.valueColor as AlwaysStoppedAnimation<Color>).value,
+      HouseColors.sapphireGlow,
+    );
   });
 }
 

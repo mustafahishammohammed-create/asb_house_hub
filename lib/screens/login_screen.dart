@@ -45,17 +45,41 @@ class _LoginScreenState extends State<LoginScreen> {
           (idText == 'admin' || idText == '2310910' || idText.isEmpty)) {
         await _authService.signInAdmin(password: _passwordController.text);
       } else {
+        final scholarInput = _scholarController.text.trim();
+        final inferredHouse = AuthService.inferHouseFromScholarNo(scholarInput);
+        if (inferredHouse != null) {
+          await AuthService.cacheHouse(inferredHouse);
+        }
+
         final cred = await _authService.signIn(
-          scholarNo: _scholarController.text.trim(),
+          scholarNo: scholarInput,
           password: _passwordController.text,
         );
 
+        final profile = await _authService.getUserProfile(cred.user!.uid);
+        final house = AuthService.extractHouse(profile) ?? inferredHouse ?? 'emerald';
+        await AuthService.cacheHouse(house);
+        if (profile != null) {
+          await AuthService.cacheProfile(profile);
+        } else {
+          await AuthService.cacheProfile({
+            'uid': cred.user!.uid,
+            'scholar_no': scholarInput,
+            'full_name': cred.user!.displayName ??
+                (scholarInput == '10001'
+                    ? 'Noaman Nizamuddin'
+                    : (scholarInput == '20002'
+                        ? 'Sarah Student Rep'
+                        : 'Student')),
+            'house_name': house,
+            'role': scholarInput == '10001' ? 'captain' : 'student',
+          });
+        }
+
         if (_isAdminLogin) {
-          final profile = await _authService.getUserProfile(cred.user!.uid);
           final roleStr = profile?['role']?.toString();
           final nameStr = profile?['full_name']?.toString();
-          final scholarNo = profile?['scholar_no']?.toString() ??
-              _scholarController.text.trim();
+          final scholarNo = profile?['scholar_no']?.toString() ?? scholarInput;
 
           final isAuthorized = HierarchyService.isAdmin(
             scholarNo: scholarNo,

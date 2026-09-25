@@ -33,6 +33,7 @@ class _HomeScreenState extends State<HomeScreen>
   final _firestore = FirebaseFirestore.instance;
 
   Map<String, dynamic>? _profile;
+  String? _cachedHouse;
   bool _loading = true;
   int _selectedIndex = 0;
   bool _isMyHouseFirstPlace = false;
@@ -40,11 +41,34 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void initState() {
     super.initState();
+    final currentUser = _authService.currentUser;
+    final currentEmail = (currentUser?.email ?? '').toLowerCase();
+    final currentScholar = currentEmail.contains('@') ? currentEmail.split('@').first : currentEmail;
+    final cachedProfile = AuthService.getCachedProfile();
+    final cachedScholar = (cachedProfile?['scholar_no'] ?? AuthService.getCachedScholarNo() ?? '').toString().trim().toLowerCase();
+
+    if (currentUser != null && cachedScholar.isNotEmpty && currentScholar.isNotEmpty && cachedScholar != currentScholar) {
+      _profile = null;
+      _cachedHouse = AuthService.inferHouseFromUser(currentUser);
+    } else {
+      _cachedHouse = AuthService.getCachedHouse();
+      if (cachedProfile != null) {
+        _profile = cachedProfile;
+        final pKey = AuthService.extractHouse(cachedProfile);
+        if (pKey != null && pKey.isNotEmpty) {
+          _cachedHouse = pKey;
+        }
+      }
+    }
+    if (_cachedHouse == null && currentUser != null) {
+      _cachedHouse = AuthService.inferHouseFromUser(currentUser);
+    }
+
     _pulseController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 1400),
     )..repeat(reverse: true);
-    _pulseAnimation = Tween<double>(begin: 0.3, end: 1.0).animate(
+    _pulseAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
     _loadProfile();
@@ -60,12 +84,76 @@ class _HomeScreenState extends State<HomeScreen>
     _authService.seedAdminRoster(); // Auto-seed slots in background if empty
     final user = _authService.currentUser;
     if (user != null) {
-      final profile = await _authService.getUserProfile(user.uid);
-      if (mounted) {
-        setState(() {
-          _profile = profile;
-          _loading = false;
-        });
+      final currentEmail = (user.email ?? '').toLowerCase();
+      final currentScholar = currentEmail.contains('@') ? currentEmail.split('@').first : currentEmail;
+
+      if (_profile == null || AuthService.extractHouse(_profile) == null) {
+        try {
+          final cachedDoc = await _firestore
+              .collection('users')
+              .doc(user.uid)
+              .get(const GetOptions(source: Source.cache));
+          if (cachedDoc.exists && cachedDoc.data() != null) {
+            final data = Map<String, dynamic>.from(cachedDoc.data()!);
+            data['uid'] = user.uid;
+            await AuthService.cacheProfile(data);
+            final pKey = AuthService.extractHouse(data);
+            if (pKey != null && pKey.isNotEmpty) {
+              await AuthService.cacheHouse(pKey);
+            }
+            if (mounted) {
+              setState(() {
+                _profile = data;
+                if (pKey != null && pKey.isNotEmpty) {
+                  _cachedHouse = pKey;
+                }
+              });
+            }
+          }
+        } catch (_) {}
+      }
+
+      try {
+        final profile = await _authService.getUserProfile(user.uid);
+        if (mounted) {
+          setState(() {
+            if (profile != null) {
+              _profile = profile;
+              final pKey = AuthService.extractHouse(profile);
+              if (pKey != null && pKey.isNotEmpty) {
+                _cachedHouse = pKey;
+              }
+            } else if (_profile == null) {
+              final fallbackHouse = _cachedHouse ?? AuthService.inferHouseFromUser(user) ?? 'emerald';
+              final fallbackProfile = {
+                'uid': user.uid,
+                'scholar_no': currentScholar,
+                'full_name': user.displayName ??
+                    (currentScholar == '10001'
+                        ? 'Noaman Nizamuddin'
+                        : (currentScholar == '20002'
+                            ? 'Sarah Student Rep'
+                            : 'Student')),
+                'house_name': fallbackHouse,
+                'role': currentScholar == '10001' ? 'captain' : 'student',
+                'class_level': '11-E',
+                'division': 'E',
+              };
+              _profile = fallbackProfile;
+              _cachedHouse = fallbackHouse;
+              AuthService.cacheProfile(fallbackProfile);
+              AuthService.cacheHouse(fallbackHouse);
+              _firestore
+                  .collection('users')
+                  .doc(user.uid)
+                  .set(fallbackProfile, SetOptions(merge: true))
+                  .catchError((_) {});
+            }
+            _loading = false;
+          });
+        }
+      } catch (_) {
+        if (mounted) setState(() => _loading = false);
       }
     } else {
       if (mounted) setState(() => _loading = false);
@@ -622,11 +710,21 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   Widget build(BuildContext context) {
     final user = _authService.currentUser;
-    final houseName = (_profile?['house_name'] ?? 'ruby')
-        .toString()
+    final extractedProfileHouse = AuthService.extractHouse(_profile);
+    final inferredUserHouse = user != null ? AuthService.inferHouseFromUser(user) : null;
+    final houseName = (extractedProfileHouse ??
+            _cachedHouse ??
+            AuthService.getCachedHouse() ??
+            inferredUserHouse ??
+            'emerald')
         .toLowerCase();
     final houseColor = HouseColors.getHouseColor(houseName);
     final houseDark = HouseColors.getHouseDarkColor(houseName);
+    final houseGlow = HouseColors.getHouseGlowColor(houseName);
+    final houseAccent = HouseColors.getHouseAccentColor(houseName);
+    final houseEmoji = HouseColors.getHouseEmoji(houseName);
+    final houseMascot = HouseColors.getHouseMascotName(houseName);
+    final houseMotto = HouseColors.getHouseMotto(houseName);
     final fullName = _profile?['full_name'] ?? user?.displayName ?? 'Student';
     final scholarNo = _profile?['scholar_no'] ?? '---';
     final classLevel = _profile?['class_level'] ?? '--';
@@ -652,58 +750,189 @@ class _HomeScreenState extends State<HomeScreen>
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     if (_loading) {
+      final capitalizedHouse = houseName.isNotEmpty
+          ? '${houseName[0].toUpperCase()}${houseName.substring(1)}'
+          : 'House';
+
       return Scaffold(
         backgroundColor: Theme.of(context).colorScheme.surface,
         body: Center(
           child: AnimatedBuilder(
             animation: _pulseAnimation,
-            builder: (context, child) =>
-                Opacity(opacity: _pulseAnimation.value, child: child),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(colors: [houseColor, houseDark]),
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: houseColor.withValues(alpha: 0.35),
-                        blurRadius: 24,
-                        offset: const Offset(0, 8),
+            builder: (context, child) {
+              final pulse = _pulseAnimation.value;
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Glowing Mascot / Shield Emblem
+                  Transform.scale(
+                    scale: 0.95 + 0.05 * pulse,
+                    child: Container(
+                      width: 104,
+                      height: 104,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [houseAccent, houseColor, houseDark],
+                        ),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          // Multi-layered pulsing neon aura glow
+                          BoxShadow(
+                            color: houseGlow.withValues(
+                              alpha: 0.35 + 0.35 * pulse,
+                            ),
+                            blurRadius: 32 + 20 * pulse,
+                            spreadRadius: 4 + 8 * pulse,
+                          ),
+                          BoxShadow(
+                            color: houseColor.withValues(
+                              alpha: 0.25 + 0.25 * pulse,
+                            ),
+                            blurRadius: 50 + 24 * pulse,
+                            spreadRadius: 8 + 12 * pulse,
+                          ),
+                        ],
                       ),
-                    ],
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Icon(
+                            Icons.shield_rounded,
+                            color: Colors.white.withValues(alpha: 0.95),
+                            size: 56,
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 2),
+                            child: Text(
+                              houseEmoji,
+                              style: const TextStyle(fontSize: 22),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                  child: const Icon(
-                    Icons.shield_rounded,
-                    color: Colors.white,
-                    size: 48,
+                  const SizedBox(height: 28),
+
+                  // Dynamic Themed House Badge
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 7,
+                    ),
+                    decoration: BoxDecoration(
+                      color: houseColor.withValues(alpha: isDark ? 0.2 : 0.1),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: houseColor.withValues(
+                          alpha: 0.35 + 0.35 * pulse,
+                        ),
+                        width: 1.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: houseGlow.withValues(alpha: 0.25 * pulse),
+                          blurRadius: 14,
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(houseEmoji, style: const TextStyle(fontSize: 14)),
+                        const SizedBox(width: 8),
+                        Text(
+                          '$capitalizedHouse House'.toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w900,
+                            color: houseColor,
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 24),
-                Text(
-                  'ASB House Hub',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
-                    color: houseColor,
-                    letterSpacing: -0.5,
+                  const SizedBox(height: 18),
+
+                  // Brand Title
+                  Text(
+                    'ASB House Hub',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                      color: houseColor,
+                      letterSpacing: -0.5,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Loading your dashboard...',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withValues(alpha: 0.5),
+                  const SizedBox(height: 6),
+
+                  // Themed Subtitle
+                  Text(
+                    'Loading your $capitalizedHouse dashboard...',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withValues(alpha: 0.6),
+                    ),
                   ),
-                ),
-              ],
-            ),
+                  const SizedBox(height: 24),
+
+                  // Glowing Loading Progress Bar
+                  Container(
+                    width: 160,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(4),
+                      boxShadow: [
+                        BoxShadow(
+                          color: houseGlow.withValues(
+                            alpha: 0.35 + 0.45 * pulse,
+                          ),
+                          blurRadius: 12,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        backgroundColor: houseColor.withValues(alpha: 0.15),
+                        valueColor: AlwaysStoppedAnimation<Color>(houseGlow),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // House Motto & Mascot
+                  Text(
+                    '“$houseMotto”',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontStyle: FontStyle.italic,
+                      fontWeight: FontWeight.w600,
+                      color: houseColor.withValues(alpha: 0.85),
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    houseMascot,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: houseColor.withValues(alpha: 0.65),
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
         ),
       );
@@ -1763,8 +1992,10 @@ class _HomeScreenState extends State<HomeScreen>
         );
         final maxPts = totalSchoolPoints > 0 ? totalSchoolPoints : 1;
 
-        final myHouse = (_profile?['house_name'] ?? 'ruby')
-            .toString()
+        final myHouse = (AuthService.extractHouse(_profile) ??
+                _cachedHouse ??
+                AuthService.getCachedHouse() ??
+                'emerald')
             .toLowerCase();
         final isFirst =
             sortedHouses.isNotEmpty &&
@@ -3872,10 +4103,10 @@ class _HomeScreenState extends State<HomeScreen>
         'house': 'Ruby',
       },
       {
-        'name': 'Ruby House Captain',
+        'name': 'Noaman Nizamuddin',
         'id': '10001',
-        'role': 'Council Leader',
-        'house': 'Ruby',
+        'role': 'Emerald Captain',
+        'house': 'Emerald',
       },
       {
         'name': 'Sarah Student Rep',
@@ -3888,6 +4119,12 @@ class _HomeScreenState extends State<HomeScreen>
         'id': '30003',
         'role': 'Teacher Lead',
         'house': 'Sapphire',
+      },
+      {
+        'name': 'Tanish Mukherjee',
+        'id': '12001',
+        'role': 'Head Boy',
+        'house': 'Topaz',
       },
     ];
 
@@ -3937,7 +4174,7 @@ class _HomeScreenState extends State<HomeScreen>
                     acc['id'] == currentScholar ||
                     (currentScholar == 'admin' && acc['id'] == '2310910');
                 final houseColor = HouseColors.getHouseColor(
-                  (acc['house'] ?? 'ruby').toString(),
+                  (acc['house'] ?? 'emerald').toString(),
                 );
 
                 return InkWell(
@@ -3945,32 +4182,35 @@ class _HomeScreenState extends State<HomeScreen>
                     final messenger = ScaffoldMessenger.of(context);
                     Navigator.pop(context);
                     if (!isCurrent) {
+                      final targetHouse =
+                          (acc['house'] ?? 'emerald').toString().toLowerCase();
+                      final newProfile = {
+                        'full_name': acc['name'],
+                        'scholar_no': acc['id'],
+                        'role': acc['role'] == 'Super Admin'
+                            ? 'super_admin'
+                            : (acc['role'].toString().contains('Captain')
+                                ? 'captain'
+                                : (acc['role'] == 'Teacher Lead'
+                                    ? 'teacher'
+                                    : (acc['role'] == 'Head Boy'
+                                        ? 'council'
+                                        : 'student'))),
+                        'house_name': targetHouse,
+                        'class_level': '12-A',
+                        'division': 'Senior Tier',
+                      };
                       setState(() {
                         _loading = true;
+                        _cachedHouse = targetHouse;
+                        _profile = newProfile;
                       });
+                      await AuthService.cacheHouse(targetHouse);
+                      await AuthService.cacheProfile(newProfile);
                       try {
                         if (acc['id'] == '2310910') {
                           await _authService.signInAdmin(password: '2310910');
                           await _loadProfile();
-                        } else {
-                          setState(() {
-                            _profile = {
-                              'full_name': acc['name'],
-                              'scholar_no': acc['id'],
-                              'role': acc['role'] == 'Super Admin'
-                                  ? 'super_admin'
-                                  : (acc['role'] == 'Council Leader'
-                                      ? 'council'
-                                      : (acc['role'] == 'Teacher Lead'
-                                          ? 'teacher'
-                                          : 'student')),
-                              'house_name': (acc['house'] ?? 'ruby')
-                                  .toString()
-                                  .toLowerCase(),
-                              'class_level': '12-A',
-                              'division': 'Senior Tier',
-                            };
-                          });
                         }
                         if (!mounted) return;
                         messenger.showSnackBar(
