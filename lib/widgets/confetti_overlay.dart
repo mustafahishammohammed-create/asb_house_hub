@@ -24,17 +24,18 @@ class _ConfettiOverlayState extends State<ConfettiOverlay>
       vsync: this,
       duration: const Duration(seconds: 4),
     );
-    _controller.addListener(() {
-      if (!mounted) return;
-      setState(() {
-        for (var p in _particles) {
-          p.update();
-        }
-      });
-    });
+    // Use addListener only to update particle positions — no setState needed;
+    // AnimatedBuilder will rebuild only the canvas layer.
+    _controller.addListener(_updateParticles);
 
     if (widget.show) {
       _startConfetti();
+    }
+  }
+
+  void _updateParticles() {
+    for (var p in _particles) {
+      p.update();
     }
   }
 
@@ -43,6 +44,9 @@ class _ConfettiOverlayState extends State<ConfettiOverlay>
     super.didUpdateWidget(oldWidget);
     if (widget.show && !oldWidget.show) {
       _startConfetti();
+    } else if (!widget.show && oldWidget.show) {
+      _controller.stop();
+      _particles.clear();
     }
   }
 
@@ -52,7 +56,7 @@ class _ConfettiOverlayState extends State<ConfettiOverlay>
       const Color(0xFFDC2626), // Ruby
       const Color(0xFF2563EB), // Sapphire
       const Color(0xFF059669), // Emerald
-      const Color(0xFFD97706), // Topaz
+      const Color(0xFFB45309), // Topaz (WCAG AA compliant)
       Colors.amber,
       Colors.purpleAccent,
       Colors.pinkAccent,
@@ -78,6 +82,7 @@ class _ConfettiOverlayState extends State<ConfettiOverlay>
 
   @override
   void dispose() {
+    _controller.removeListener(_updateParticles);
     _controller.dispose();
     super.dispose();
   }
@@ -87,19 +92,33 @@ class _ConfettiOverlayState extends State<ConfettiOverlay>
     return Stack(
       children: [
         widget.child,
-        if (_controller.isAnimating)
-          IgnorePointer(
-            child: CustomPaint(
-              size: Size.infinite,
-              painter: _ConfettiPainter(_particles),
-            ),
-          ),
+        // AnimatedBuilder rebuilds only the RepaintBoundary+CustomPaint layer
+        // on each animation frame — no parent setState, no full tree rebuild.
+        AnimatedBuilder(
+          animation: _controller,
+          builder: (context, _) {
+            if (!_controller.isAnimating && _particles.isEmpty) {
+              return const SizedBox.shrink();
+            }
+            return ExcludeSemantics(
+              child: IgnorePointer(
+                child: RepaintBoundary(
+                  child: CustomPaint(
+                    size: Size.infinite,
+                    painter: _ConfettiPainter(_particles),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
       ],
     );
   }
 }
 
 class ConfettiParticle {
+  static final Random _rng = Random();
   double x;
   double y;
   double vx;
@@ -125,7 +144,7 @@ class ConfettiParticle {
     y += vy;
     rotation += vRotation;
     // flutter side-to-side
-    vx += (Random().nextDouble() - 0.5) * 0.002;
+    vx += (_rng.nextDouble() - 0.5) * 0.002;
   }
 }
 

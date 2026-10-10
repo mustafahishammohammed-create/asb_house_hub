@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/semantics.dart';
 import 'apple_fitness_badge.dart';
 
 /// Complete Apple Fitness Awards Vault featuring 3D interactive medals,
@@ -380,188 +381,222 @@ class _AppleFitnessBadgesVaultState extends State<AppleFitnessBadgesVault>
   Widget _buildHonoursSummaryHeader(int unlocked, int total, int totalMerits) {
     final progress = total > 0 ? (unlocked / total) : 0.0;
 
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: const Color(0xFF090D16),
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-        gradient: const RadialGradient(
-          center: Alignment(0.7, -0.6),
-          radius: 1.4,
-          colors: [
-            Color(0xFF162035),
-            Color(0xFF0A0E18),
-            Color(0xFF060910),
-          ],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.6),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          // Circular Triple-Ring Gauge
-          SizedBox(
-            width: 86,
-            height: 86,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                // Outer Track
-                CircularProgressIndicator(
-                  value: progress,
-                  strokeWidth: 9,
-                  backgroundColor: Colors.white.withValues(alpha: 0.08),
-                  valueColor: const AlwaysStoppedAnimation(Color(0xFFFFD700)),
-                  strokeCap: StrokeCap.round,
-                ),
-                // Inner Track (Merits ratio)
-                SizedBox(
-                  width: 60,
-                  height: 60,
-                  child: CircularProgressIndicator(
-                    value: math.min(1.0, totalMerits / 600.0),
-                    strokeWidth: 7,
-                    backgroundColor: Colors.white.withValues(alpha: 0.05),
-                    valueColor: const AlwaysStoppedAnimation(Color(0xFF00E676)),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 360;
+        final gauge = Semantics(
+          container: true,
+          readOnly: true,
+          label:
+              'Collegiate Honours Activity Rings: $unlocked of $total badges unlocked, ${(progress * 100).toInt()} percent complete, $totalMerits merit points earned',
+          child: ExcludeSemantics(
+            child: SizedBox(
+              width: 86,
+              height: 86,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  // Outer Track
+                  CircularProgressIndicator(
+                    value: progress,
+                    strokeWidth: 9,
+                    backgroundColor: Colors.white.withValues(alpha: 0.08),
+                    valueColor: const AlwaysStoppedAnimation(Color(0xFFFFD700)),
                     strokeCap: StrokeCap.round,
                   ),
-                ),
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '$unlocked/$total',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 14,
-                        letterSpacing: -0.5,
-                      ),
+                  // Inner Track (Merits ratio)
+                  SizedBox(
+                    width: 60,
+                    height: 60,
+                    child: CircularProgressIndicator(
+                      value: math.min(1.0, totalMerits / 600.0),
+                      strokeWidth: 7,
+                      backgroundColor: Colors.white.withValues(alpha: 0.05),
+                      valueColor: const AlwaysStoppedAnimation(Color(0xFF00E676)),
+                      strokeCap: StrokeCap.round,
                     ),
-                    const Text(
-                      'HONOURS',
-                      style: TextStyle(
-                        color: Colors.grey,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 7,
-                        letterSpacing: 0.8,
-                      ),
+                  ),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '$unlocked/$total',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 14,
+                            letterSpacing: -0.5,
+                          ),
+                        ),
+                        const Text(
+                          'HONOURS',
+                          style: TextStyle(
+                            color: Colors.grey,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 7,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
           ),
-          const SizedBox(width: 20),
-          // Statistics & Glory Level
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        );
+
+        final details = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
               children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFFFFD700), Color(0xFFFF9100)],
-                        ),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Text(
-                        'TITAN VAULT',
-                        style: TextStyle(
-                          color: Colors.black,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.8,
-                        ),
-                      ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFFFD700), Color(0xFFFF9100)],
                     ),
-                    const Spacer(),
-                    Text(
-                      '${(progress * 100).toInt()}% Done',
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                      ),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'TITAN VAULT',
+                    style: TextStyle(
+                      color: Colors.black,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.8,
                     ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  'House Championship Honours',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -0.3,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const Spacer(),
                 Text(
-                  '+$totalMerits Merit Points across collegiate awards.',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.65),
+                  '${(progress * 100).toInt()}% Done',
+                  style: const TextStyle(
+                    color: Colors.white70,
                     fontSize: 11,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ],
             ),
+            const SizedBox(height: 6),
+            const Text(
+              'House Championship Honours',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.3,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '+$totalMerits Merit Points across collegiate awards.',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.65),
+                fontSize: 11,
+              ),
+            ),
+          ],
+        );
+
+        return Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: const Color(0xFF090D16),
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+            gradient: const RadialGradient(
+              center: Alignment(0.7, -0.6),
+              radius: 1.4,
+              colors: [
+                Color(0xFF162035),
+                Color(0xFF0A0E18),
+                Color(0xFF060910),
+              ],
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.6),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              ),
+            ],
           ),
-        ],
-      ),
+          child: isNarrow
+              ? Column(
+                  children: [
+                    gauge,
+                    const SizedBox(height: 16),
+                    details,
+                  ],
+                )
+              : Row(
+                  children: [
+                    gauge,
+                    const SizedBox(width: 20),
+                    Expanded(child: details),
+                  ],
+                ),
+        );
+      },
     );
   }
 
   Widget _buildCategoryFilters() {
     return SizedBox(
-      height: 38,
+      height: 48,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: _filters.length,
         separatorBuilder: (_, _) => const SizedBox(width: 8),
         itemBuilder: (context, index) {
           final isSel = _selectedFilterIndex == index;
-          return InkWell(
-            borderRadius: BorderRadius.circular(16),
-            onTap: () {
-              HapticFeedback.selectionClick();
-              setState(() => _selectedFilterIndex = index);
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: isSel ? Colors.white : const Color(0xFF141A26),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: isSel ? Colors.white : Colors.white12,
-                ),
-                boxShadow: isSel
-                    ? [
-                        BoxShadow(
-                          color: Colors.white.withValues(alpha: 0.3),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ]
-                    : null,
-              ),
-              child: Center(
-                child: Text(
-                  _filters[index],
-                  style: TextStyle(
-                    color: isSel ? Colors.black : Colors.white70,
-                    fontWeight: isSel ? FontWeight.w900 : FontWeight.w600,
-                    fontSize: 12,
+          return Semantics(
+            button: true,
+            selected: isSel,
+            excludeSemantics: true,
+            label: '${_filters[index]} filter',
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () {
+                HapticFeedback.selectionClick();
+                setState(() => _selectedFilterIndex = index);
+              },
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 48, minWidth: 48),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: isSel ? Colors.white : const Color(0xFF141A26),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: isSel ? Colors.white : Colors.white12,
+                    ),
+                    boxShadow: isSel
+                        ? [
+                            BoxShadow(
+                              color: Colors.white.withValues(alpha: 0.3),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: Center(
+                    child: Text(
+                      _filters[index],
+                      style: TextStyle(
+                        color: isSel ? Colors.black : Colors.white70,
+                        fontWeight: isSel ? FontWeight.w900 : FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -574,7 +609,7 @@ class _AppleFitnessBadgesVaultState extends State<AppleFitnessBadgesVault>
 }
 
 /// Freestanding 3D Shield without any bounding boxes — supports interactive press-to-tilt
-class _FreestandingShieldItem extends StatefulWidget {
+class _FreestandingShieldItem extends StatelessWidget {
   final AppleFitnessBadgeData badge;
   final double gleam;
   final String userName;
@@ -592,229 +627,179 @@ class _FreestandingShieldItem extends StatefulWidget {
   });
 
   @override
-  State<_FreestandingShieldItem> createState() => _FreestandingShieldItemState();
-}
-
-class _FreestandingShieldItemState extends State<_FreestandingShieldItem>
-    with SingleTickerProviderStateMixin {
-  double _tiltX = 0.0;
-  double _tiltY = 0.0;
-  late final AnimationController _springController;
-  late Animation<double> _springAnimX;
-  late Animation<double> _springAnimY;
-
-  @override
-  void initState() {
-    super.initState();
-    _springController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 350),
-    )..addListener(() {
-        if (!mounted) return;
-        setState(() {
-          _tiltX = _springAnimX.value;
-          _tiltY = _springAnimY.value;
-        });
-      });
-    _springAnimX = const AlwaysStoppedAnimation(0.0);
-    _springAnimY = const AlwaysStoppedAnimation(0.0);
-  }
-
-  @override
-  void dispose() {
-    _springController.dispose();
-    super.dispose();
-  }
-
-  void _onPanUpdate(DragUpdateDetails details) {
-    _springController.stop();
-    setState(() {
-      _tiltY += details.delta.dx * 0.018;
-      _tiltX -= details.delta.dy * 0.018;
-      _tiltX = _tiltX.clamp(-0.45, 0.45);
-      _tiltY = _tiltY.clamp(-0.45, 0.45);
-    });
-  }
-
-  void _onPanEnd(DragEndDetails details) {
-    _springAnimX = Tween<double>(begin: _tiltX, end: 0.0).animate(
-      CurvedAnimation(parent: _springController, curve: Curves.easeOutBack),
-    );
-    _springAnimY = Tween<double>(begin: _tiltY, end: 0.0).animate(
-      CurvedAnimation(parent: _springController, curve: Curves.easeOutBack),
-    );
-    _springController.forward(from: 0.0);
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final b = widget.badge;
+    final b = badge;
     final glowColor = AppleFitnessBadge.getGlowColor(b.metal);
 
-    return GestureDetector(
-      onTap: widget.onTap,
-      onPanUpdate: _onPanUpdate,
-      onPanEnd: _onPanEnd,
-      behavior: HitTestBehavior.opaque,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Freestanding 3D Shield Stage with Radial Aura & Dynamic Shadow
-          SizedBox(
-            width: 130,
-            height: 130,
-            child: Stack(
-              alignment: Alignment.center,
+    return Semantics(
+      button: true,
+      label:
+          '${b.title} badge, ${b.unlocked ? 'unlocked, +${b.meritPoints} merits' : 'locked, ${b.progressLabel}'}. Tap to inspect in 3D.',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 170),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                // 1. Ambient Luminous Aura (No bounding box)
-                Positioned.fill(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: RadialGradient(
-                        colors: [
-                          glowColor.withValues(alpha: b.unlocked ? 0.32 : 0.06),
-                          glowColor.withValues(alpha: b.unlocked ? 0.10 : 0.01),
-                          Colors.transparent,
-                        ],
-                        stops: const [0.0, 0.55, 1.0],
+                // Freestanding 3D Shield Stage with Radial Aura & Dynamic Shadow
+                SizedBox(
+                  width: 130,
+                  height: 130,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // 1. Ambient Luminous Aura (No bounding box)
+                      Positioned.fill(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: RadialGradient(
+                              colors: [
+                                glowColor.withValues(alpha: b.unlocked ? 0.32 : 0.06),
+                                glowColor.withValues(alpha: b.unlocked ? 0.10 : 0.01),
+                                Colors.transparent,
+                              ],
+                              stops: const [0.0, 0.55, 1.0],
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
+
+                      // 2. Dynamic 3D Ground Shadow
+                      Positioned(
+                        bottom: 6,
+                        child: Container(
+                          width: 80,
+                          height: 18,
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.6),
+                            borderRadius: const BorderRadius.all(Radius.elliptical(80, 18)),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.75),
+                                blurRadius: 10,
+                                spreadRadius: 2,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      // 3. Freestanding 3D Shield
+                      AppleFitnessBadge(
+                        badge: b,
+                        size: 110,
+                        gleamOffset: gleam,
+                        tiltX: 0.0,
+                        tiltY: 0.0,
+                        recipientName: userName,
+                        scholarNo: scholarNo,
+                        houseName: userHouse,
+                      ),
+                    ],
                   ),
                 ),
 
-                // 2. Dynamic 3D Ground Shadow moving with tilt perspective
-                Positioned(
-                  bottom: 6,
-                  child: Transform(
-                    alignment: Alignment.center,
-                    transform: Matrix4.translationValues(_tiltY * 20, -_tiltX * 10, 0.0),
-                    child: Container(
-                      width: 80,
-                      height: 18,
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.6),
-                        borderRadius: const BorderRadius.all(Radius.elliptical(80, 18)),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.75),
-                            blurRadius: 10,
-                            spreadRadius: 2,
+                const SizedBox(height: 8),
+
+                // Title
+                Text(
+                  b.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: b.unlocked ? Colors.white : Colors.white60,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13,
+                    letterSpacing: -0.2,
+                    shadows: b.unlocked
+                        ? [
+                            Shadow(
+                              color: glowColor.withValues(alpha: 0.5),
+                              blurRadius: 6,
+                              offset: const Offset(0, 1),
+                            ),
+                          ]
+                        : null,
+                  ),
+                ),
+
+                const SizedBox(height: 4),
+
+                // Status & Merits Indicator (Clean typography, no box)
+                if (b.unlocked)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.greenAccent.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 5,
+                            height: 5,
+                            decoration: const BoxDecoration(
+                              color: Colors.greenAccent,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            '+${b.meritPoints} MERITS',
+                            style: const TextStyle(
+                              color: Colors.greenAccent,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.5,
+                            ),
                           ),
                         ],
                       ),
                     ),
+                  )
+                else
+                  SizedBox(
+                    width: 90,
+                    child: Column(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(3),
+                          child: LinearProgressIndicator(
+                            value: b.progress,
+                            minHeight: 3,
+                            backgroundColor: Colors.white10,
+                            valueColor: const AlwaysStoppedAnimation(Colors.white38),
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            b.progressLabel,
+                            style: const TextStyle(
+                              color: Colors.white38,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-
-                // 3. Freestanding 3D Shield with Interactive Tilt
-                Transform(
-                  alignment: Alignment.center,
-                  transform: Matrix4.identity()
-                    ..setEntry(3, 2, 0.002) // 3D Perspective!
-                    ..rotateX(_tiltX)
-                    ..rotateY(_tiltY),
-                  child: AppleFitnessBadge(
-                    badge: b,
-                    size: 110,
-                    gleamOffset: widget.gleam,
-                    tiltX: _tiltX,
-                    tiltY: _tiltY,
-                    recipientName: widget.userName,
-                    scholarNo: widget.scholarNo,
-                    houseName: widget.userHouse,
-                  ),
-                ),
               ],
             ),
           ),
-
-          const SizedBox(height: 8),
-
-          // Title
-          Text(
-            b.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: b.unlocked ? Colors.white : Colors.white60,
-              fontWeight: FontWeight.w900,
-              fontSize: 13,
-              letterSpacing: -0.2,
-              shadows: b.unlocked
-                  ? [
-                      Shadow(
-                        color: glowColor.withValues(alpha: 0.5),
-                        blurRadius: 6,
-                        offset: const Offset(0, 1),
-                      ),
-                    ]
-                  : null,
-            ),
-          ),
-
-          const SizedBox(height: 4),
-
-          // Status & Merits Indicator (Clean typography, no box)
-          if (b.unlocked)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.greenAccent.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 5,
-                    height: 5,
-                    decoration: const BoxDecoration(
-                      color: Colors.greenAccent,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 5),
-                  Text(
-                    '+${b.meritPoints} MERITS',
-                    style: const TextStyle(
-                      color: Colors.greenAccent,
-                      fontSize: 9,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ],
-              ),
-            )
-          else
-            SizedBox(
-              width: 90,
-              child: Column(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(3),
-                    child: LinearProgressIndicator(
-                      value: b.progress,
-                      minHeight: 3,
-                      backgroundColor: Colors.white10,
-                      valueColor: const AlwaysStoppedAnimation(Colors.white38),
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    b.progressLabel,
-                    style: const TextStyle(
-                      color: Colors.white38,
-                      fontSize: 9,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-        ],
+        ),
       ),
     );
   }
@@ -840,6 +825,7 @@ class _AppleFitnessBadgeModal extends StatefulWidget {
 
 class _AppleFitnessBadgeModalState extends State<_AppleFitnessBadgeModal>
     with TickerProviderStateMixin {
+  late final FocusNode _focusNode;
   late final AnimationController _flipController;
   late final Animation<double> _flipAnimation;
   late final AnimationController _modalGleamController;
@@ -855,6 +841,7 @@ class _AppleFitnessBadgeModalState extends State<_AppleFitnessBadgeModal>
   @override
   void initState() {
     super.initState();
+    _focusNode = FocusNode();
     _flipController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 600),
@@ -886,6 +873,7 @@ class _AppleFitnessBadgeModalState extends State<_AppleFitnessBadgeModal>
 
   @override
   void dispose() {
+    _focusNode.dispose();
     _modalGleamController.dispose();
     _springBackController.dispose();
     _flipController.dispose();
@@ -902,6 +890,17 @@ class _AppleFitnessBadgeModalState extends State<_AppleFitnessBadgeModal>
     setState(() {
       _isBack = !_isBack;
     });
+    _announce(_isBack ? 'Inspecting engraved backplate' : 'Viewing front crest');
+  }
+
+  void _announce(String message) {
+    try {
+      SemanticsService.sendAnnouncement(
+        View.of(context),
+        message,
+        TextDirection.ltr,
+      );
+    } catch (_) {}
   }
 
   @override
@@ -909,8 +908,48 @@ class _AppleFitnessBadgeModalState extends State<_AppleFitnessBadgeModal>
     final b = widget.badge;
     final glowColor = AppleFitnessBadge.getGlowColor(b.metal);
 
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.90,
+    return Focus(
+      focusNode: _focusNode,
+      autofocus: true,
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent) {
+          if (event.logicalKey == LogicalKeyboardKey.space ||
+              event.logicalKey == LogicalKeyboardKey.enter) {
+            _toggleFlip();
+            return KeyEventResult.handled;
+          } else if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+            setState(() {
+              _dragY = (_dragY - 0.12).clamp(-0.65, 0.65);
+            });
+            _announce('Tilted left');
+            return KeyEventResult.handled;
+          } else if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+            setState(() {
+              _dragY = (_dragY + 0.12).clamp(-0.65, 0.65);
+            });
+            _announce('Tilted right');
+            return KeyEventResult.handled;
+          } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+            setState(() {
+              _dragX = (_dragX + 0.12).clamp(-0.55, 0.55);
+            });
+            _announce('Tilted up');
+            return KeyEventResult.handled;
+          } else if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+            setState(() {
+              _dragX = (_dragX - 0.12).clamp(-0.55, 0.55);
+            });
+            _announce('Tilted down');
+            return KeyEventResult.handled;
+          } else if (event.logicalKey == LogicalKeyboardKey.escape) {
+            Navigator.pop(context);
+            return KeyEventResult.handled;
+          }
+        }
+        return KeyEventResult.ignored;
+      },
+      child: Container(
+        height: MediaQuery.of(context).size.height * 0.90,
       decoration: BoxDecoration(
         color: const Color(0xFF04060A),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(36)),
@@ -962,9 +1001,16 @@ class _AppleFitnessBadgeModalState extends State<_AppleFitnessBadgeModal>
                     ),
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.close_rounded, color: Colors.white70),
-                  onPressed: () => Navigator.pop(context),
+                Semantics(
+                  button: true,
+                  excludeSemantics: true,
+                  label: 'Close award inspection',
+                  child: IconButton(
+                    constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                    tooltip: 'Close award inspection',
+                    icon: const Icon(Icons.close_rounded, color: Colors.white70),
+                    onPressed: () => Navigator.pop(context),
+                  ),
                 ),
               ],
             ),
@@ -1073,31 +1119,39 @@ class _AppleFitnessBadgeModalState extends State<_AppleFitnessBadgeModal>
                   const SizedBox(height: 14),
 
                   // Floating Glassmorphic Flip Pill
-                  InkWell(
-                    onTap: _toggleFlip,
-                    borderRadius: BorderRadius.circular(20),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.white24, width: 0.8),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.sync_rounded, size: 16, color: Colors.amberAccent),
-                          const SizedBox(width: 8),
-                          Text(
-                            _isBack ? 'View Front Crest' : 'Inspect Engraved Plate',
-                            style: const TextStyle(
-                              color: Colors.amberAccent,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.3,
-                            ),
+                  Semantics(
+                    button: true,
+                    excludeSemantics: true,
+                    label: _isBack ? 'View Front Crest' : 'Inspect Engraved Plate',
+                    child: InkWell(
+                      onTap: _toggleFlip,
+                      borderRadius: BorderRadius.circular(24),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(minHeight: 48, minWidth: 48),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(color: Colors.white24, width: 0.8),
                           ),
-                        ],
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.sync_rounded, size: 18, color: Colors.amberAccent),
+                              const SizedBox(width: 8),
+                              Text(
+                                _isBack ? 'View Front Crest' : 'Inspect Engraved Plate',
+                                style: const TextStyle(
+                                  color: Colors.amberAccent,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.3,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -1281,6 +1335,7 @@ class _AppleFitnessBadgeModalState extends State<_AppleFitnessBadgeModal>
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 }

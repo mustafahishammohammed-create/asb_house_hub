@@ -69,9 +69,20 @@ class CartItem {
   set qty(int value) => _qty = value.clamp(1, 99);
 
   int get pointsPrice {
-    final parsed =
-        int.tryParse(product.price.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
-    return parsed * _qty;
+    if (product.price.contains('Pts')) {
+      final parsed =
+          int.tryParse(product.price.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      return parsed * _qty;
+    }
+    return 0;
+  }
+
+  double get bhdPrice {
+    final match = RegExp(r'([0-9]+\.?[0-9]*)').firstMatch(product.price);
+    if (match != null) {
+      return (double.tryParse(match.group(1)!) ?? 0.0) * _qty;
+    }
+    return 0.0;
   }
 
   Map<String, dynamic> toJson() => {
@@ -93,6 +104,9 @@ class OrderRecord {
   final int totalPts;
   final DateTime date;
   final String qrData;
+  final String status;
+  final DateTime? claimedAt;
+  final String? claimedBy;
 
   OrderRecord({
     required this.receiptId,
@@ -100,25 +114,65 @@ class OrderRecord {
     required this.totalPts,
     required this.date,
     required this.qrData,
+    this.status = 'ready',
+    this.claimedAt,
+    this.claimedBy,
   });
 
-  Map<String, dynamic> toJson() => {
+  bool get isClaimed => status.toLowerCase() == 'claimed';
+
+  OrderRecord copyWith({
+    String? receiptId,
+    List<CartItem>? items,
+    int? totalPts,
+    DateTime? date,
+    String? qrData,
+    String? status,
+    DateTime? claimedAt,
+    String? claimedBy,
+  }) {
+    return OrderRecord(
+      receiptId: receiptId ?? this.receiptId,
+      items: items ?? this.items,
+      totalPts: totalPts ?? this.totalPts,
+      date: date ?? this.date,
+      qrData: qrData ?? this.qrData,
+      status: status ?? this.status,
+      claimedAt: claimedAt ?? this.claimedAt,
+      claimedBy: claimedBy ?? this.claimedBy,
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
     'receiptId': receiptId,
     'items': items.map((i) => i.toJson()).toList(),
     'totalPts': totalPts,
     'date': date.toIso8601String(),
     'qrData': qrData,
+    'status': status,
+    'claimedAt': claimedAt?.toIso8601String(),
+    'claimedBy': claimedBy,
   };
 
-  factory OrderRecord.fromJson(Map<String, dynamic> json) => OrderRecord(
-    receiptId: json['receiptId'] as String? ?? '',
-    items: (json['items'] as List<dynamic>? ?? [])
+  Map<String, dynamic> toJson() => toMap();
+
+  factory OrderRecord.fromMap(Map<String, dynamic> map) => OrderRecord(
+    receiptId: map['receiptId'] as String? ?? '',
+    items: (map['items'] as List<dynamic>? ?? [])
         .map((i) => CartItem.fromJson(i as Map<String, dynamic>))
         .toList(),
-    totalPts: json['totalPts'] as int? ?? 0,
-    date: DateTime.tryParse(json['date'] as String? ?? '') ?? DateTime.now(),
-    qrData: json['qrData'] as String? ?? '',
+    totalPts: map['totalPts'] as int? ?? 0,
+    date: DateTime.tryParse(map['date'] as String? ?? '') ?? DateTime.now(),
+    qrData: map['qrData'] as String? ?? '',
+    status: map['status'] as String? ?? 'ready',
+    claimedAt: map['claimedAt'] != null
+        ? DateTime.tryParse(map['claimedAt'] as String)
+        : null,
+    claimedBy: map['claimedBy'] as String?,
   );
+
+  factory OrderRecord.fromJson(Map<String, dynamic> json) =>
+      OrderRecord.fromMap(json);
 }
 
 // Global static storage so cart and wallet orders NEVER get lost when switching tabs
@@ -161,6 +215,35 @@ class GlobalWalletStore {
     } catch (_) {}
   }
 
+  static Future<void> markOrderClaimed(
+    String receiptId, {
+    String? claimedBy,
+    DateTime? claimedAt,
+  }) async {
+    final index = orders.indexWhere((o) => o.receiptId == receiptId);
+    if (index != -1) {
+      orders[index] = orders[index].copyWith(
+        status: 'claimed',
+        claimedAt: claimedAt ?? DateTime.now(),
+        claimedBy: claimedBy,
+      );
+    } else {
+      orders.add(
+        OrderRecord(
+          receiptId: receiptId,
+          items: [],
+          totalPts: 0,
+          date: DateTime.now(),
+          qrData: '',
+          status: 'claimed',
+          claimedAt: claimedAt ?? DateTime.now(),
+          claimedBy: claimedBy,
+        ),
+      );
+    }
+    await saveOrders();
+  }
+
   static Future<void> clearAllBills() async {
     orders.clear();
     try {
@@ -199,7 +282,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     const MerchProduct(
       id: 'hero_champion',
       name: 'The Premium Champion Hoodie',
-      price: '450 Pts (BHD 14.500)',
+      price: 'BHD 14.500',
       rating: 4.9,
       imageUrl:
           'https://images.unsplash.com/photo-1556905055-8f358a7a47b2?auto=format&fit=crop&w=800&q=80',
@@ -212,7 +295,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     const MerchProduct(
       id: 'drop_varsity',
       name: 'Championship Gold Varsity Jacket',
-      price: '650 Pts (BHD 22.000)',
+      price: 'BHD 22.000',
       rating: 5.0,
       imageUrl:
           'https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=800&q=80',
@@ -224,7 +307,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     const MerchProduct(
       id: 'drop_earbuds',
       name: 'House Hub Pro Wireless Earbuds Case',
-      price: '250 Pts (BHD 7.500)',
+      price: 'BHD 7.500',
       rating: 4.9,
       imageUrl:
           'https://images.unsplash.com/photo-1590658268037-6bf12165a8df?auto=format&fit=crop&w=600&q=80',
@@ -236,7 +319,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     const MerchProduct(
       id: 'ruby_hoodie',
       name: 'Ruby House Elite Hoodie',
-      price: '380 Pts (BHD 12.000)',
+      price: 'BHD 12.000',
       rating: 4.8,
       imageUrl:
           'https://images.unsplash.com/photo-1509967419530-da38b4704bc6?auto=format&fit=crop&w=600&q=80',
@@ -248,7 +331,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     const MerchProduct(
       id: 'sapphire_hoodie',
       name: 'Sapphire Crest Pullover',
-      price: '380 Pts (BHD 12.000)',
+      price: 'BHD 12.000',
       rating: 4.8,
       imageUrl:
           'https://images.unsplash.com/photo-1578632767115-351597cf2477?auto=format&fit=crop&w=600&q=80',
@@ -260,7 +343,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     const MerchProduct(
       id: 'emerald_tee',
       name: 'Emerald Performance Tee',
-      price: '180 Pts (BHD 6.500)',
+      price: 'BHD 6.500',
       rating: 4.7,
       imageUrl:
           'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=600&q=80',
@@ -272,7 +355,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     const MerchProduct(
       id: 'topaz_tee',
       name: 'Topaz Solar Graphic Tee',
-      price: '180 Pts (BHD 6.500)',
+      price: 'BHD 6.500',
       rating: 4.9,
       imageUrl:
           'https://images.unsplash.com/photo-1583743814966-8936f5b7be1a?auto=format&fit=crop&w=600&q=80',
@@ -284,7 +367,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     const MerchProduct(
       id: 'asb_cap',
       name: 'Official ASB Varsity Cap',
-      price: '140 Pts (BHD 4.500)',
+      price: 'BHD 4.500',
       rating: 4.6,
       imageUrl:
           'https://images.unsplash.com/photo-1588850561407-ed78c282e89b?auto=format&fit=crop&w=600&q=80',
@@ -296,7 +379,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     const MerchProduct(
       id: 'hydro_bottle',
       name: 'Insulated Hydro Flask (1L)',
-      price: '160 Pts (BHD 5.500)',
+      price: 'BHD 5.500',
       rating: 4.9,
       imageUrl:
           'https://images.unsplash.com/photo-1602143407151-7111542de6e8?auto=format&fit=crop&w=600&q=80',
@@ -308,7 +391,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     const MerchProduct(
       id: 'duffel_bag',
       name: 'ASB Elite Gym Duffel Bag',
-      price: '320 Pts (BHD 15.000)',
+      price: 'BHD 15.000',
       rating: 4.9,
       imageUrl:
           'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=600&q=80',
@@ -319,8 +402,6 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     ),
   ];
 
-  int _userPoints = 120;
-  bool _pointsLoaded = false;
   bool _isProcessingOrder = false;
 
   @override
@@ -331,247 +412,6 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     });
     _selectedCategory =
         'For You (${widget.userHouse[0].toUpperCase()}${widget.userHouse.substring(1)})';
-    _loadUserPoints();
-  }
-
-  Future<void> _loadUserPoints() async {
-    try {
-      final sNo = widget.scholarNo?.trim();
-      final uid = FirebaseAuth.instance.currentUser?.uid;
-
-      if (sNo != null && sNo.isNotEmpty && sNo != '---') {
-        final doc = await FirebaseFirestore.instance
-            .collection('house_contributors')
-            .doc(sNo)
-            .get();
-        if (doc.exists && doc.data() != null) {
-          final pts = (doc.data()?['total_contributed'] as num?)?.toInt() ?? 0;
-          if (mounted) {
-            setState(() {
-              _userPoints = pts < 0 ? 0 : pts;
-              _pointsLoaded = true;
-            });
-            return;
-          }
-        }
-      }
-
-      if (uid != null) {
-        final uDoc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(uid)
-            .get();
-        if (uDoc.exists && uDoc.data() != null) {
-          final pts =
-              (uDoc.data()?['points_contributed'] as num?)?.toInt() ?? 0;
-          if (mounted) {
-            setState(() {
-              _userPoints = pts < 0 ? 0 : pts;
-              _pointsLoaded = true;
-            });
-            return;
-          }
-        }
-      }
-    } catch (_) {}
-    if (mounted) {
-      setState(() => _pointsLoaded = true);
-    }
-  }
-
-  void _showInsufficientPointsDialog(int requiredPts) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: Row(
-          children: [
-            Icon(Icons.lock_clock_rounded, color: Colors.amber[800], size: 28),
-            const SizedBox(width: 10),
-            const Text(
-              'Points Required',
-              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'This purchase requires $requiredPts House Points.\nYour current balance is $_userPoints Pts (${requiredPts - _userPoints} points short).',
-              style: const TextStyle(fontSize: 14, height: 1.4),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: widget.houseColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: widget.houseColor.withValues(alpha: 0.3),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.workspace_premium_rounded,
-                    color: widget.houseColor,
-                    size: 22,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Earn points by submitting competition certificates, answering arena quizzes, or getting faculty merits!',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: widget.houseColor,
-                        fontWeight: FontWeight.w600,
-                        height: 1.3,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text(
-              'Back to Store',
-              style: TextStyle(fontWeight: FontWeight.w700),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<bool> _verifyAndDeductPoints(
-    int totalPts,
-    String receiptId,
-    String description,
-  ) async {
-    if (totalPts <= 0) return false;
-    if (_userPoints < totalPts) {
-      AppHaptics.error();
-      _showInsufficientPointsDialog(totalPts);
-      return false;
-    }
-
-    final sNo = widget.scholarNo?.trim();
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-
-    try {
-      final firestore = FirebaseFirestore.instance;
-      final contribRef = (sNo != null && sNo.isNotEmpty && sNo != '---')
-          ? firestore.collection('house_contributors').doc(sNo)
-          : null;
-      final uRef = (uid != null && uid.isNotEmpty)
-          ? firestore.collection('users').doc(uid)
-          : null;
-
-      await firestore.runTransaction((tx) async {
-        // Step 1: All reads FIRST
-        DocumentSnapshot? contribSnap;
-        DocumentSnapshot? userSnap;
-
-        if (contribRef != null) {
-          contribSnap = await tx.get(contribRef);
-        }
-        if (uRef != null) {
-          userSnap = await tx.get(uRef);
-        }
-
-        // Check contributor balance if record exists
-        int contribPts = 0;
-        if (contribSnap != null && contribSnap.exists) {
-          final data = contribSnap.data() as Map<String, dynamic>?;
-          contribPts = (data?['total_contributed'] as num?)?.toInt() ?? 0;
-          if (contribPts < totalPts) {
-            throw Exception('Insufficient verified points ($contribPts < $totalPts)');
-          }
-        }
-
-        // Check user profile balance if user doc exists
-        int userPts = 0;
-        if (userSnap != null && userSnap.exists) {
-          final uData = userSnap.data() as Map<String, dynamic>?;
-          userPts = (uData?['points_contributed'] as num?)?.toInt() ?? 0;
-          if (userPts < totalPts && contribSnap == null) {
-            throw Exception('Insufficient verified points in user profile ($userPts < $totalPts)');
-          }
-        }
-
-        // Step 2: All writes SECOND (atomic execution)
-        if (contribRef != null) {
-          if (contribSnap != null && contribSnap.exists) {
-            final nextContrib = (contribPts - totalPts).clamp(0, 999999);
-            tx.update(contribRef, {
-              'total_contributed': nextContrib,
-              'last_updated': FieldValue.serverTimestamp(),
-            });
-          } else {
-            final nextContrib = (_userPoints - totalPts).clamp(0, 999999);
-            tx.set(contribRef, {
-              'scholar_no': sNo,
-              'student_name': widget.studentName ?? 'Scholar $sNo',
-              'house_name': widget.userHouse.toLowerCase(),
-              'class_level': 'Senior Tier',
-              'total_contributed': nextContrib,
-              'merits_count': 0,
-              'demerits_count': 0,
-              'last_updated': FieldValue.serverTimestamp(),
-            });
-          }
-        }
-
-        if (uRef != null && userSnap != null && userSnap.exists) {
-          final nextUserPts = (userPts - totalPts).clamp(0, 999999);
-          tx.update(uRef, {
-            'points_contributed': nextUserPts,
-            'last_updated': FieldValue.serverTimestamp(),
-          });
-        }
-      });
-
-      // Step 3: Deduct local points ONLY after Firestore transaction commits successfully
-      if (mounted) {
-        setState(() {
-          _userPoints = (_userPoints - totalPts).clamp(0, 999999);
-        });
-      } else {
-        _userPoints = (_userPoints - totalPts).clamp(0, 999999);
-      }
-
-      // Step 4: Dispatch in-app notification if user doc exists
-      if (uid != null) {
-        try {
-          await firestore.collection('users').doc(uid).collection('notifications').add({
-            'title': '🛍️ Merch Pass Redeemed (-$totalPts Pts)',
-            'body':
-                'Successfully ordered $description! Digital pass #$receiptId generated and saved to your Digital Wallet.',
-            'timestamp': FieldValue.serverTimestamp(),
-            'is_read': false,
-            'type': 'store_purchase',
-          });
-        } catch (_) {}
-      }
-
-      return true;
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Points redemption transaction failed: $e'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      }
-      return false;
-    }
   }
 
   @override
@@ -635,71 +475,62 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     _isProcessingOrder = true;
     try {
       final safeQty = qty.clamp(1, 99);
-      final parsedPrice =
-          int.tryParse(product.price.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
-      final totalPts = parsedPrice * safeQty;
       final receiptId =
           'ASB-${DateTime.now().millisecondsSinceEpoch.toString().substring(6)}';
 
-      final allowed = await _verifyAndDeductPoints(
-        totalPts,
-        receiptId,
-        '${safeQty}x ${product.name} ($size)',
+      AppHaptics.success();
+      final itemsList = [CartItem(product: product, size: size, qty: safeQty)];
+      final qrData = VoucherSecurityService.generateVoucherPayload(
+        billNo: receiptId,
+        points: 0,
+        scholarNo: widget.scholarNo ?? '2310910',
+        items: itemsList
+            .map((i) => '${i.qty}x ${i.product.name} (${i.size})')
+            .toList(),
       );
-      if (!allowed) return;
 
-    AppHaptics.success();
-    final itemsList = [CartItem(product: product, size: size, qty: safeQty)];
-    final qrData = VoucherSecurityService.generateVoucherPayload(
-      billNo: receiptId,
-      points: totalPts,
-      scholarNo: widget.scholarNo ?? '2310910',
-      items: itemsList
-          .map((i) => '${i.qty}x ${i.product.name} (${i.size})')
-          .toList(),
-    );
+      final newOrder = OrderRecord(
+        receiptId: receiptId,
+        items: itemsList,
+        totalPts: 0,
+        date: DateTime.now(),
+        qrData: qrData,
+      );
 
-    final newOrder = OrderRecord(
-      receiptId: receiptId,
-      items: itemsList,
-      totalPts: totalPts,
-      date: DateTime.now(),
-      qrData: qrData,
-    );
+      setState(() {
+        GlobalWalletStore.orders.add(newOrder);
+      });
+      GlobalWalletStore.saveOrders();
 
-    setState(() {
-      GlobalWalletStore.orders.add(newOrder);
-    });
-    GlobalWalletStore.saveOrders();
+      // Save order to Firestore database
+      FirebaseFirestore.instance
+          .collection('orders')
+          .doc(receiptId)
+          .set({
+            'receipt_id': receiptId,
+            'user_id': FirebaseAuth.instance.currentUser?.uid ?? 'anonymous',
+            'scholar_no': widget.scholarNo ?? '',
+            'student_name': widget.studentName ?? '',
+            'house': widget.userHouse.toLowerCase(),
+            'total_pts': 0,
+            'currency': 'BHD',
+            'items': itemsList
+                .map(
+                  (i) => {
+                    'name': i.product.name,
+                    'size': i.size,
+                    'qty': i.qty,
+                    'price': i.product.price,
+                  },
+                )
+                .toList(),
+            'created_at': FieldValue.serverTimestamp(),
+            'status': 'verified',
+          })
+          .catchError((_) {});
 
-    // Save order to Firestore database
-    FirebaseFirestore.instance
-        .collection('orders')
-        .doc(receiptId)
-        .set({
-          'receipt_id': receiptId,
-          'user_id': FirebaseAuth.instance.currentUser?.uid ?? 'anonymous',
-          'scholar_no': widget.scholarNo ?? '',
-          'student_name': widget.studentName ?? '',
-          'house': widget.userHouse.toLowerCase(),
-          'total_pts': totalPts,
-          'items': itemsList
-              .map(
-                (i) => {
-                  'name': i.product.name,
-                  'size': i.size,
-                  'qty': i.qty,
-                  'pts': i.pointsPrice,
-                },
-              )
-              .toList(),
-          'created_at': FieldValue.serverTimestamp(),
-          'status': 'verified',
-        })
-        .catchError((_) {});
-
-    if (!mounted) return;
-    _showDigitalWalletPass(newOrder);
+      if (!mounted) return;
+      _showDigitalWalletPass(newOrder);
     } finally {
       if (mounted) {
         setState(() {
@@ -915,7 +746,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           const Text(
-                            'TOTAL POINTS',
+                            'PAYMENT STATUS',
                             style: TextStyle(
                               color: Colors.white54,
                               fontSize: 10,
@@ -924,7 +755,9 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            '${order.totalPts} Pts',
+                            order.totalPts > 0
+                                ? '${order.totalPts} Pts'
+                                : 'PAID (BHD)',
                             style: TextStyle(
                               color: widget.houseColor,
                               fontWeight: FontWeight.w900,
@@ -1186,7 +1019,9 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                                     children: [
                                       Flexible(
                                         child: Text(
-                                          '${order.totalPts} Pts Paid',
+                                          order.totalPts > 0
+                                              ? '${order.totalPts} Pts Paid'
+                                              : 'Verified Store Order',
                                           overflow: TextOverflow.ellipsis,
                                           style: TextStyle(
                                             fontWeight: FontWeight.w900,
@@ -1758,9 +1593,9 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
       builder: (context) => StatefulBuilder(
         builder: (context, setCartState) {
           final cart = GlobalWalletStore.cart;
-          final totalPts = cart.fold<int>(
-            0,
-            (acc, item) => acc + item.pointsPrice,
+          final totalBhd = cart.fold<double>(
+            0.0,
+            (acc, item) => acc + item.bhdPrice,
           );
           final totalItems = cart.fold<int>(0, (acc, item) => acc + item.qty);
 
@@ -1930,7 +1765,12 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                 ),
                 if (cart.isNotEmpty)
                   Container(
-                    padding: const EdgeInsets.all(24),
+                    padding: EdgeInsets.fromLTRB(
+                      24,
+                      16,
+                      24,
+                      24 + MediaQuery.of(context).viewInsets.bottom + MediaQuery.of(context).padding.bottom,
+                    ),
                     decoration: BoxDecoration(
                       color: Theme.of(context).colorScheme.surface,
                       boxShadow: [
@@ -1947,14 +1787,14 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             const Text(
-                              'Estimated Points Total',
+                              'Estimated Total',
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
                             Text(
-                              '$totalPts Pts',
+                              'BHD ${totalBhd.toStringAsFixed(3)}',
                               style: TextStyle(
                                 fontSize: 22,
                                 fontWeight: FontWeight.w900,
@@ -1965,37 +1805,21 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                         ),
                         const SizedBox(height: 10),
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
+                            Icon(
+                              Icons.verified_rounded,
+                              color: Colors.green[700],
+                              size: 16,
+                            ),
+                            const SizedBox(width: 6),
                             Text(
-                              'Available Balance: $_userPoints Pts',
+                              'Official Campus Store • Direct Fulfilment',
                               style: TextStyle(
                                 fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                color: _userPoints >= totalPts
-                                    ? Colors.green[700]
-                                    : Colors.redAccent,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.green[700],
                               ),
                             ),
-                            if (_userPoints < totalPts)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 3,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.red.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  '-${totalPts - _userPoints} Pts Needed',
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w800,
-                                    color: Colors.redAccent,
-                                  ),
-                                ),
-                              ),
                           ],
                         ),
                         const SizedBox(height: 14),
@@ -2012,16 +1836,9 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                                     'ASB-${DateTime.now().millisecondsSinceEpoch.toString().substring(6)}';
                                 final itemsList = List<CartItem>.from(cart);
 
-                              final allowed = await _verifyAndDeductPoints(
-                                totalPts,
-                                receiptId,
-                                '${itemsList.length} Merch Bag Items',
-                              );
-                              if (!allowed) return;
-
                               final qrData = VoucherSecurityService.generateVoucherPayload(
                                 billNo: receiptId,
-                                points: totalPts,
+                                points: 0,
                                 scholarNo: widget.scholarNo ?? '2310910',
                                 items: itemsList
                                     .map(
@@ -2033,7 +1850,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                               final newOrder = OrderRecord(
                                 receiptId: receiptId,
                                 items: itemsList,
-                                totalPts: totalPts,
+                                totalPts: 0,
                                 date: DateTime.now(),
                                 qrData: qrData,
                               );
@@ -2058,14 +1875,16 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                                     'scholar_no': widget.scholarNo ?? '',
                                     'student_name': widget.studentName ?? '',
                                     'house': widget.userHouse.toLowerCase(),
-                                    'total_pts': totalPts,
+                                    'total_pts': 0,
+                                    'currency': 'BHD',
+                                    'total_bhd': totalBhd,
                                     'items': itemsList
                                         .map(
                                           (i) => {
                                             'name': i.product.name,
                                             'size': i.size,
                                             'qty': i.qty,
-                                            'pts': i.pointsPrice,
+                                            'price': i.product.price,
                                           },
                                         )
                                         .toList(),
@@ -2178,40 +1997,44 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       floatingActionButton: Builder(
         builder: (context) {
           final isNarrow = MediaQuery.of(context).size.width < 380;
-          return Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              FloatingActionButton.extended(
-                heroTag: 'wallet_btn',
-                onPressed: _showOrdersLockerSheet,
-                backgroundColor: const Color(0xFF111827),
-                foregroundColor: Colors.white,
-                elevation: 8,
-                icon: const Icon(Icons.wallet_rounded, color: Colors.amber, size: 18),
-                label: Text(
-                  isNarrow
-                      ? '(${GlobalWalletStore.orders.length})'
-                      : 'Wallet (${GlobalWalletStore.orders.length})',
-                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 84),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FloatingActionButton.extended(
+                  heroTag: 'wallet_btn',
+                  onPressed: _showOrdersLockerSheet,
+                  backgroundColor: const Color(0xFF111827),
+                  foregroundColor: Colors.white,
+                  elevation: 8,
+                  icon: const Icon(Icons.wallet_rounded, color: Colors.amber, size: 18),
+                  label: Text(
+                    isNarrow
+                        ? '(${GlobalWalletStore.orders.length})'
+                        : 'Wallet (${GlobalWalletStore.orders.length})',
+                    style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              FloatingActionButton.extended(
-                heroTag: 'bag_btn',
-                onPressed: _showCartReviewSheet,
-                backgroundColor: widget.houseColor,
-                foregroundColor: Colors.white,
-                elevation: 8,
-                icon: const Icon(Icons.shopping_bag_rounded, size: 18),
-                label: Text(
-                  '$totalCartItems Bag',
-                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
+                const SizedBox(width: 8),
+                FloatingActionButton.extended(
+                  heroTag: 'bag_btn',
+                  onPressed: _showCartReviewSheet,
+                  backgroundColor: widget.houseColor,
+                  foregroundColor: Colors.white,
+                  elevation: 8,
+                  icon: const Icon(Icons.shopping_bag_rounded, size: 18),
+                  label: Text(
+                    '$totalCartItems Bag',
+                    style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           );
         },
       ),
@@ -2220,6 +2043,91 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Top Quick Action Bar: Wallet & Bag Buttons
+            Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: _showOrdersLockerSheet,
+                    borderRadius: BorderRadius.circular(14),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF111827),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.1),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.wallet_rounded, color: Colors.amber, size: 18),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              'Passes (${GlobalWalletStore.orders.length}) ',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 12,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: InkWell(
+                    onTap: _showCartReviewSheet,
+                    borderRadius: BorderRadius.circular(14),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: widget.houseColor,
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: [
+                          BoxShadow(
+                            color: widget.houseColor.withValues(alpha: 0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.shopping_bag_rounded, color: Colors.white, size: 18),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              'Bag ($totalCartItems)',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 12,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+
             // Drop of the Week Banner
             Container(
               padding: const EdgeInsets.all(20),
@@ -2317,7 +2225,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      Icons.stars_rounded,
+                      Icons.storefront_rounded,
                       color: widget.houseColor,
                       size: 20,
                     ),
@@ -2328,7 +2236,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'YOUR HOUSE POINTS WALLET',
+                          'ASB OFFICIAL CAMPUS STORE & APPAREL COLLECTION',
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w900,
@@ -2337,13 +2245,11 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                           ),
                         ),
                         const SizedBox(height: 2),
-                        Text(
-                          _pointsLoaded
-                              ? '$_userPoints Pts Available to Redeem'
-                              : 'Syncing Points Balance...',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
+                        const Text(
+                          'Verified School Merchandise • Orders fulfilled directly to Digital Wallet',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ],

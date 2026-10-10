@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
 
@@ -607,6 +608,39 @@ class _AddSiblingModalState extends State<AddSiblingModal> {
     super.dispose();
   }
 
+  Future<void> _submitSiblingForm() async {
+    if (_isLoading) return;
+    if (_formKey.currentState?.validate() != true) return;
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final scholarText = _scholarController.text.trim();
+      final passwordText = _passwordController.text;
+
+      final newAccount = await _authService.addSiblingAccount(
+        scholarNo: scholarText,
+        password: passwordText,
+      );
+
+      if (!mounted) return;
+      Navigator.pop(context);
+
+      await widget.onAccountAdded(newAccount);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage = e
+            .toString()
+            .replaceAll('Exception: ', '')
+            .replaceAll('[firebase_auth/', '[');
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -622,287 +656,264 @@ class _AddSiblingModalState extends State<AddSiblingModal> {
         bottom: MediaQuery.of(context).viewInsets.bottom + 24,
       ),
       child: SingleChildScrollView(
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Center(
-                child: Container(
-                  width: 44,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(2),
+        child: CallbackShortcuts(
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.enter): _submitSiblingForm,
+            const SingleActivator(LogicalKeyboardKey.numpadEnter): _submitSiblingForm,
+          },
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 44,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          previewColor,
-                          HouseColors.getHouseDarkColor(
-                            _detectedHouse.isNotEmpty
-                                ? _detectedHouse
-                                : 'emerald',
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            previewColor,
+                            HouseColors.getHouseDarkColor(
+                              _detectedHouse.isNotEmpty
+                                  ? _detectedHouse
+                                  : 'emerald',
+                            ),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(
+                        Icons.group_add_rounded,
+                        color: Colors.white,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Add Sibling Account',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          Text(
+                            'Link another student profile on this device',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                            ),
                           ),
                         ],
                       ),
-                      borderRadius: BorderRadius.circular(14),
                     ),
-                    child: const Icon(
-                      Icons.group_add_rounded,
-                      color: Colors.white,
-                      size: 24,
+                  ],
+                ),
+                const SizedBox(height: 20),
+                if (_errorMessage != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.redAccent.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.redAccent.withValues(alpha: 0.4),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 14),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    child: Row(
                       children: [
-                        Text(
-                          'Add Sibling Account',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w900,
+                        const Icon(
+                          Icons.error_outline_rounded,
+                          color: Colors.redAccent,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _errorMessage!,
+                            style: const TextStyle(
+                              color: Colors.redAccent,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
                           ),
                         ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                TextFormField(
+                  controller: _scholarController,
+                  keyboardType: TextInputType.text,
+                  textInputAction: TextInputAction.next,
+                  decoration: InputDecoration(
+                    labelText: 'Sibling Scholar Number',
+                    hintText: 'e.g. 123456',
+                    prefixIcon: Icon(
+                      Icons.badge_outlined,
+                      color: previewColor,
+                    ),
+                    filled: true,
+                    fillColor: isDark
+                        ? const Color(0xFF1E293B)
+                        : const Color(0xFFF8FAFC),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide(color: previewColor, width: 2),
+                    ),
+                  ),
+                  onChanged: (val) {
+                    final trimmed = val.trim();
+                    final inferred = AuthService.inferHouseFromScholarNo(trimmed);
+                    setState(() {
+                      _detectedHouse = inferred ?? '';
+                    });
+                  },
+                  validator: (val) {
+                    if (val == null || val.trim().isEmpty) {
+                      return 'Please enter sibling scholar number.';
+                    }
+                    return null;
+                  },
+                ),
+                if (_detectedHouse.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: previewColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: previewColor.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
                         Text(
-                          'Link another student profile on this device',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey,
+                          HouseColors.getHouseEmoji(_detectedHouse),
+                          style: const TextStyle(fontSize: 16),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '${_detectedHouse.toUpperCase()} House Detected • ${HouseColors.getHouseMascotName(_detectedHouse)}',
+                            style: TextStyle(
+                              color: previewColor,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 12,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],
                     ),
                   ),
                 ],
-              ),
-              const SizedBox(height: 20),
-              if (_errorMessage != null) ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.redAccent.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: Colors.redAccent.withValues(alpha: 0.4),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.error_outline_rounded,
-                        color: Colors.redAccent,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          _errorMessage!,
-                          style: const TextStyle(
-                            color: Colors.redAccent,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
                 const SizedBox(height: 16),
-              ],
-              TextFormField(
-                controller: _scholarController,
-                keyboardType: TextInputType.text,
-                decoration: InputDecoration(
-                  labelText: 'Sibling Scholar Number',
-                  hintText: 'e.g. 10001, 20002, 30003, 12001',
-                  prefixIcon: Icon(
-                    Icons.badge_outlined,
-                    color: previewColor,
-                  ),
-                  filled: true,
-                  fillColor: isDark
-                      ? const Color(0xFF1E293B)
-                      : const Color(0xFFF8FAFC),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: BorderSide(color: previewColor, width: 2),
-                  ),
-                ),
-                onChanged: (val) {
-                  final trimmed = val.trim();
-                  final inferred = AuthService.inferHouseFromScholarNo(trimmed);
-                  setState(() {
-                    _detectedHouse = inferred ?? '';
-                  });
-                },
-                validator: (val) {
-                  if (val == null || val.trim().isEmpty) {
-                    return 'Please enter sibling scholar number.';
-                  }
-                  return null;
-                },
-              ),
-              if (_detectedHouse.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: previewColor.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: previewColor.withValues(alpha: 0.3),
+                TextFormField(
+                  controller: _passwordController,
+                  obscureText: _obscurePassword,
+                  textInputAction: TextInputAction.done,
+                  onFieldSubmitted: (_) => _submitSiblingForm(),
+                  decoration: InputDecoration(
+                    labelText: 'Sibling Password',
+                    prefixIcon: Icon(
+                      Icons.lock_outline_rounded,
+                      color: previewColor,
                     ),
-                  ),
-                  child: Row(
-                    children: [
-                      Text(
-                        HouseColors.getHouseEmoji(_detectedHouse),
-                        style: const TextStyle(fontSize: 16),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscurePassword
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
+                        color: Colors.grey,
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          '${_detectedHouse.toUpperCase()} House Detected • ${HouseColors.getHouseMascotName(_detectedHouse)}',
-                          style: TextStyle(
-                            color: previewColor,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 12,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _passwordController,
-                obscureText: _obscurePassword,
-                decoration: InputDecoration(
-                  labelText: 'Sibling Password',
-                  prefixIcon: Icon(
-                    Icons.lock_outline_rounded,
-                    color: previewColor,
-                  ),
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscurePassword
-                          ? Icons.visibility_outlined
-                          : Icons.visibility_off_outlined,
-                      color: Colors.grey,
-                    ),
-                    onPressed: () {
-                      setState(() {
-                        _obscurePassword = !_obscurePassword;
-                      });
-                    },
-                  ),
-                  filled: true,
-                  fillColor: isDark
-                      ? const Color(0xFF1E293B)
-                      : const Color(0xFFF8FAFC),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: BorderSide(color: previewColor, width: 2),
-                  ),
-                ),
-                validator: (val) {
-                  if (val == null || val.trim().isEmpty) {
-                    return 'Please enter password.';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: previewColor,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  elevation: 2,
-                ),
-                onPressed: _isLoading
-                    ? null
-                    : () async {
-                        if (_formKey.currentState?.validate() != true) return;
+                      onPressed: () {
                         setState(() {
-                          _isLoading = true;
-                          _errorMessage = null;
+                          _obscurePassword = !_obscurePassword;
                         });
-
-                        try {
-                          final scholarText = _scholarController.text.trim();
-                          final passwordText = _passwordController.text;
-
-                          final newAccount = await _authService.addSiblingAccount(
-                            scholarNo: scholarText,
-                            password: passwordText,
-                          );
-
-                          if (!context.mounted) return;
-                          Navigator.pop(context);
-
-                          await widget.onAccountAdded(newAccount);
-                        } catch (e) {
-                          if (!mounted) return;
-                          setState(() {
-                            _isLoading = false;
-                            _errorMessage = e
-                                .toString()
-                                .replaceAll('Exception: ', '')
-                                .replaceAll('[firebase_auth/', '[');
-                          });
-                        }
                       },
-                child: _isLoading
-                    ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.5,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.link_rounded, size: 20),
-                          SizedBox(width: 8),
-                          Text(
-                            'Authenticate & Link Sibling',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w900,
-                              fontSize: 16,
-                            ),
+                    ),
+                    filled: true,
+                    fillColor: isDark
+                        ? const Color(0xFF1E293B)
+                        : const Color(0xFFF8FAFC),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide(color: previewColor, width: 2),
+                    ),
+                  ),
+                  validator: (val) {
+                    if (val == null || val.trim().isEmpty) {
+                      return 'Please enter password.';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: previewColor,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    elevation: 2,
+                  ),
+                  onPressed: _isLoading ? null : _submitSiblingForm,
+                  child: _isLoading
+                      ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            color: Colors.white,
                           ),
-                        ],
-                      ),
-              ),
-            ],
+                        )
+                      : const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.link_rounded, size: 20),
+                            SizedBox(width: 8),
+                            Text(
+                              'Authenticate & Link Sibling',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ],
+                        ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

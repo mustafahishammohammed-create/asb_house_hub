@@ -1,0 +1,902 @@
+import 'package:flutter/material.dart';
+import '../models/election_ballot.dart';
+import '../models/digital_ballot_cast.dart';
+import '../services/auth_service.dart';
+import '../theme/app_theme.dart';
+import 'home_screen.dart';
+
+/// Screen for exploring Student Council & House Captain elections, candidates, manifestos, and voting.
+class ElectionChamberScreen extends StatefulWidget {
+  final String userHouse;
+  final String scholarNo;
+  final String studentName;
+  final DateTime? mockNow;
+
+  const ElectionChamberScreen({
+    super.key,
+    this.userHouse = 'ruby',
+    this.scholarNo = '',
+    this.studentName = '',
+    this.mockNow,
+  });
+
+  @override
+  State<ElectionChamberScreen> createState() => _ElectionChamberScreenState();
+}
+
+class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
+  final _authService = AuthService();
+  BallotPosition _selectedPosition = BallotPosition.all;
+  String _searchQuery = '';
+
+  String get _effectiveScholarNo {
+    if (widget.scholarNo.trim().isNotEmpty) return widget.scholarNo.trim();
+    return AuthService.getCachedScholarNo() ?? '';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final houseColor = HouseColors.getHouseColor(widget.userHouse);
+    final cachedBallots = AuthService.getCachedBallots();
+
+    return Scaffold(
+      backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+      appBar: AppBar(
+        title: const Text(
+          'Election Chamber',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+      ),
+      body: StreamBuilder<List<ElectionBallot>>(
+        initialData: cachedBallots,
+        stream: _authService.getElectionsStream(),
+        builder: (context, snapshot) {
+          final ballots = snapshot.data ?? cachedBallots;
+          final filteredBallots = ballots.where((b) {
+            final matchesPos = _selectedPosition == BallotPosition.all ||
+                b.position == _selectedPosition;
+            final matchesSearch = _searchQuery.isEmpty ||
+                b.title.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+                b.candidates.any((c) =>
+                    c.fullName.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+                    c.scholarNo.toLowerCase().contains(_searchQuery.toLowerCase()));
+            return matchesPos && matchesSearch;
+          }).toList();
+
+          final openBallots = ballots.where((b) => b.isOpen).toList();
+
+          return FocusTraversalGroup(
+            policy: OrderedTraversalPolicy(),
+            child: CustomScrollView(
+              slivers: [
+                // Active Polling Telemetry HUD
+                if (openBallots.isNotEmpty)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: _buildPollingStatusHUD(openBallots, houseColor, isDark),
+                    ),
+                  ),
+
+                // Position Selector Pills
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: _buildPositionFilterBar(ballots, houseColor, isDark),
+                  ),
+                ),
+
+                // Search Box
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: TextField(
+                      decoration: InputDecoration(
+                        hintText: 'Search candidates, scholar #, or positions...',
+                        prefixIcon: const Icon(Icons.search_rounded),
+                        filled: true,
+                        fillColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
+                      ),
+                      onChanged: (val) => setState(() => _searchQuery = val),
+                    ),
+                  ),
+                ),
+
+                // Ballots List
+                if (filteredBallots.isEmpty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: _buildEmptyState(isDark),
+                  )
+                else
+                  SliverPadding(
+                    padding: const EdgeInsets.all(16),
+                    sliver: SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final ballot = filteredBallots[index];
+                          return _buildBallotCard(ballot, houseColor, isDark);
+                        },
+                        childCount: filteredBallots.length,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildPollingStatusHUD(
+    List<ElectionBallot> openBallots,
+    Color houseColor,
+    bool isDark,
+  ) {
+    final first = openBallots.first;
+    return Semantics(
+      container: true,
+      liveRegion: true,
+      label: 'Active Election: ${first.title}, ${first.formattedRemaining}',
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF2563EB), Color(0xFF1D4ED8)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.blue.withValues(alpha: 0.3),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.blueAccent,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.how_to_vote_rounded, color: Colors.white, size: 14),
+                      SizedBox(width: 4),
+                      Text(
+                        'POLLS OPEN',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 11,
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  first.formattedRemaining,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              first.title,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+                fontSize: 18,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${first.candidates.length} Certified Candidates • Eligible: ${first.eligibleGrades.join(", ")}',
+              style: const TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPositionFilterBar(
+    List<ElectionBallot> ballots,
+    Color houseColor,
+    bool isDark,
+  ) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        children: BallotPosition.values.map((pos) {
+          final isSelected = _selectedPosition == pos;
+          final count = pos == BallotPosition.all
+              ? ballots.length
+              : ballots.where((b) => b.position == pos).length;
+
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Semantics(
+              button: true,
+              selected: isSelected,
+              label: 'Filter by ${pos.displayName} elections, $count ballots available',
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                child: InkWell(
+                  onTap: () => setState(() => _selectedPosition = pos),
+                  borderRadius: BorderRadius.circular(24),
+                  child: Container(
+                    alignment: Alignment.center,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? houseColor
+                          : isDark
+                              ? const Color(0xFF1E293B)
+                              : Colors.white,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: isSelected
+                            ? houseColor
+                            : isDark
+                                ? const Color(0xFF334155)
+                                : const Color(0xFFCBD5E1),
+                      ),
+                    ),
+                    child: Text(
+                      pos.displayName,
+                      style: TextStyle(
+                        fontWeight: isSelected ? FontWeight.w900 : FontWeight.w700,
+                        fontSize: 13,
+                        color: isSelected
+                            ? Colors.white
+                            : isDark
+                                ? Colors.white70
+                                : Colors.black87,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildBallotCard(
+    ElectionBallot ballot,
+    Color houseColor,
+    bool isDark,
+  ) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Ballot Header
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: houseColor.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        ballot.position.displayName.toUpperCase(),
+                        style: TextStyle(
+                          color: houseColor,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 10,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: ballot.isOpen
+                            ? Colors.green.withValues(alpha: 0.15)
+                            : Colors.grey.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        ballot.status.displayName.toUpperCase(),
+                        style: TextStyle(
+                          color: ballot.isOpen ? Colors.green : Colors.grey,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      ballot.formattedRemaining,
+                      style: TextStyle(
+                        color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  ballot.title,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Eligible Voters: ${ballot.eligibleGrades.join(", ")} • Total Votes: ${ballot.totalVotesCast}',
+                  style: const TextStyle(color: Colors.grey, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+
+          const Divider(height: 1),
+
+          // Candidates List
+          if (ballot.candidates.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Center(
+                child: Text(
+                  'No candidates registered for this ballot yet.',
+                  style: TextStyle(color: isDark ? Colors.grey.shade400 : Colors.grey.shade600),
+                ),
+              ),
+            )
+          else
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: ballot.candidates.length,
+              separatorBuilder: (context, i) => Divider(
+                height: 1,
+                color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+              ),
+              itemBuilder: (context, i) {
+                final candidate = ballot.candidates[i];
+                return _buildCandidateRow(ballot, candidate, houseColor, isDark);
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCandidateRow(
+    ElectionBallot ballot,
+    ElectionCandidate candidate,
+    Color houseColor,
+    bool isDark,
+  ) {
+    final candHouseColor = HouseColors.getHouseColor(candidate.houseName);
+    final hasVoted = AuthService.hasVotedInBallotCached(ballot.id);
+
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // Candidate Portrait
+          ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: SizedBox(
+              width: 54,
+              height: 54,
+              child: candidate.avatarUrl.isNotEmpty
+                  ? HomeScreen.buildResilientImage(candidate.avatarUrl, height: 54)
+                  : Container(
+                      color: candHouseColor.withValues(alpha: 0.15),
+                      child: Center(
+                        child: Text(
+                          candidate.fullName.isNotEmpty
+                              ? candidate.fullName[0].toUpperCase()
+                              : 'C',
+                          style: TextStyle(
+                            color: candHouseColor,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 20,
+                          ),
+                        ),
+                      ),
+                    ),
+            ),
+          ),
+          const SizedBox(width: 14),
+
+          // Details
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        candidate.fullName,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 15,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (candidate.isVerified) ...[
+                      const SizedBox(width: 4),
+                      const Icon(
+                        Icons.verified_rounded,
+                        size: 16,
+                        color: Colors.blueAccent,
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                      decoration: BoxDecoration(
+                        color: candHouseColor.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        candidate.houseName.toUpperCase(),
+                        style: TextStyle(
+                          color: candHouseColor,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '#${candidate.scholarNo} • ${candidate.classLevel}',
+                      style: const TextStyle(color: Colors.grey, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+
+          // Read Manifesto Button
+          ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              icon: const Icon(Icons.description_outlined, size: 16),
+              label: const Text(
+                'Manifesto',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+              ),
+              onPressed: () => _showManifestoDialog(candidate, isDark),
+            ),
+          ),
+
+          // Vote Button or Voted Indicator
+          if (ballot.isOpen) ...[
+            const SizedBox(width: 6),
+            ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+              child: hasVoted
+                  ? Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.check_circle_rounded, color: Colors.green, size: 16),
+                          SizedBox(width: 4),
+                          Text(
+                            'Voted',
+                            style: TextStyle(
+                              color: Colors.green,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: houseColor,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      icon: const Icon(Icons.how_to_vote_rounded, size: 16),
+                      label: const Text(
+                        'Vote',
+                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+                      ),
+                      onPressed: () => _showVoteConfirmationModal(
+                        ballot: ballot,
+                        candidate: candidate,
+                        scholarNo: _effectiveScholarNo,
+                        houseColor: houseColor,
+                      ),
+                    ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  void _showVoteConfirmationModal({
+    required ElectionBallot ballot,
+    required ElectionCandidate candidate,
+    required String scholarNo,
+    required Color houseColor,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (modalCtx) => Container(
+        padding: const EdgeInsets.all(28),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 44,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 22,
+                  backgroundColor: houseColor.withValues(alpha: 0.15),
+                  child: Icon(Icons.how_to_vote_rounded, color: houseColor),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Confirm Official Vote',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      Text(
+                        ballot.title,
+                        style: const TextStyle(fontSize: 13, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: houseColor.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: houseColor.withValues(alpha: 0.3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Candidate: ${candidate.fullName}',
+                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${candidate.runningPosition} • ${candidate.houseName.toUpperCase()} House',
+                    style: TextStyle(color: houseColor, fontWeight: FontWeight.w700, fontSize: 13),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    '🔒 Ballot Secrecy Protection: Your voter identity is cryptographically hashed with HMAC-SHA256. This ballot choice is completely anonymous and cannot be changed once cast.',
+                    style: TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: houseColor,
+                foregroundColor: Colors.white,
+                minimumSize: const Size.fromHeight(48),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              onPressed: () async {
+                Navigator.pop(modalCtx);
+                final res = await AuthService().castDigitalVote(
+                  ballotId: ballot.id,
+                  ballotTitle: ballot.title,
+                  candidate: candidate,
+                  scholarNo: scholarNo,
+                );
+
+                if (mounted) {
+                  if (res.success && res.receipt != null) {
+                    setState(() {});
+                    _showReceiptModal(context, res.receipt!, houseColor);
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(res.error ?? 'Voting transaction failed'),
+                        backgroundColor: Colors.redAccent,
+                      ),
+                    );
+                  }
+                }
+              },
+              child: const Text('Confirm & Cast My Ballot', style: TextStyle(fontWeight: FontWeight.w800)),
+            ),
+            const SizedBox(height: 10),
+            TextButton(
+              style: TextButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+              onPressed: () => Navigator.pop(modalCtx),
+              child: const Text('Cancel'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showReceiptModal(BuildContext context, BallotCastReceipt receipt, Color houseColor) {
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Row(
+          children: [
+            Icon(Icons.verified_rounded, color: Colors.green, size: 28),
+            SizedBox(width: 10),
+            Expanded(child: Text('Official Ballot Receipt', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900))),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.green.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+              ),
+              child: SelectableText(
+                receipt.formattedReceiptNumber,
+                style: const TextStyle(fontWeight: FontWeight.w900, color: Colors.green, fontSize: 16),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text('Ballot: ${receipt.ballotTitle}', style: const TextStyle(fontWeight: FontWeight.w700)),
+            Text('Candidate: ${receipt.candidateName} (${receipt.candidateHouse.toUpperCase()})'),
+            Text('Position: ${receipt.runningPosition}'),
+            const SizedBox(height: 10),
+            Text(
+              'Certified: ${receipt.timestamp.toLocal().toString().split('.').first}',
+              style: const TextStyle(fontSize: 11, color: Colors.grey),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: houseColor,
+              foregroundColor: Colors.white,
+              minimumSize: const Size(100, 48),
+            ),
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Done'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showManifestoDialog(ElectionCandidate candidate, bool isDark) {
+    final candHouseColor = HouseColors.getHouseColor(candidate.houseName);
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
+        contentPadding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
+        title: Row(
+          children: [
+            CircleAvatar(
+              backgroundColor: candHouseColor.withValues(alpha: 0.2),
+              child: Text(
+                HouseColors.getHouseEmoji(candidate.houseName),
+                style: const TextStyle(fontSize: 18),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    candidate.fullName,
+                    style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17),
+                  ),
+                  Text(
+                    '${candidate.runningPosition} • ${candidate.houseName.toUpperCase()} House',
+                    style: TextStyle(color: candHouseColor, fontSize: 12, fontWeight: FontWeight.w700),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              const Text(
+                'Campaign Manifesto & Pledges:',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                  ),
+                ),
+                child: Text(
+                  candidate.manifesto.isNotEmpty
+                      ? candidate.manifesto
+                      : 'No manifesto text submitted yet for this candidate.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    height: 1.5,
+                    color: isDark ? Colors.grey.shade300 : Colors.grey.shade800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+            child: TextButton(
+              onPressed: () => Navigator.pop(dialogCtx),
+              child: const Text(
+                'Dismiss',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(bool isDark) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.how_to_vote_outlined,
+              size: 64,
+              color: isDark ? Colors.grey.shade600 : Colors.grey.shade400,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'No active election ballots found.',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Student Council and House Captain polls will be registered here by school administration.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

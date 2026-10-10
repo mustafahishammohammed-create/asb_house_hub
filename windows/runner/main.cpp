@@ -1,30 +1,24 @@
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
 #include <windows.h>
+#include <cstdlib>
 
 #include "flutter_window.h"
 #include "utils.h"
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command) {
+  // 1. Force native Windows Win32 getaddrinfo resolver for gRPC/Firestore
+  _putenv_s("GRPC_DNS_RESOLVER", "native");
+  _putenv_s("GRPC_ENABLE_FORK_SUPPORT", "0");
+
   // Attach to console when present (e.g., 'flutter run') or create a
   // new console when running with a debugger.
   if (!::AttachConsole(ATTACH_PARENT_PROCESS) && ::IsDebuggerPresent()) {
     CreateAndAttachConsole();
   }
-  // Ensure the working directory is set to the executable's folder so that
-  // the "data" assets folder is resolved correctly regardless of invocation source.
-  wchar_t exe_path[MAX_PATH];
-  if (::GetModuleFileName(nullptr, exe_path, MAX_PATH) > 0) {
-    wchar_t* last_slash = wcsrchr(exe_path, L'\\');
-    if (last_slash) {
-      *last_slash = L'\0';
-      ::SetCurrentDirectory(exe_path);
-    }
-  }
 
-  // Initialize COM, so that it is available for use in the library and/or
-  // plugins.
+  // Initialize COM, so that it is available for use in the library and/or plugins.
   ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
   flutter::DartProject project(L"data");
@@ -37,7 +31,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1280, 720);
-  if (!window.Create(L"asb_house_hub", origin, size)) {
+
+  const std::wstring kWindowTitle = L"ASB House Hub — The Asian School Bahrain";
+  if (!window.Create(kWindowTitle, origin, size)) {
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);

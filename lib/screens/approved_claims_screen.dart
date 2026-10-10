@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:convert';
 import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/student_profile_modal.dart';
 
 class ApprovedClaimsScreen extends StatefulWidget {
   const ApprovedClaimsScreen({super.key});
@@ -459,41 +460,51 @@ class _ApprovedClaimsScreenState extends State<ApprovedClaimsScreen> {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Expanded(
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                        vertical: 6,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: houseColor.withValues(
-                                          alpha: 0.15,
+                                child: InkWell(
+                                  onTap: () => StudentProfileModal.show(
+                                    context,
+                                    scholarNo: scholarNo,
+                                    studentName: studentName,
+                                    houseName: house,
+                                  ),
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 6,
                                         ),
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      child: Text(
-                                        '$houseDisplay House',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w800,
-                                          color: houseColor,
+                                        decoration: BoxDecoration(
+                                          color: houseColor.withValues(
+                                            alpha: 0.15,
+                                          ),
+                                          borderRadius: BorderRadius.circular(10),
+                                        ),
+                                        child: Text(
+                                          '$houseDisplay House',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w800,
+                                            color: houseColor,
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Flexible(
-                                      child: Text(
-                                        'Scholar #$scholarNo',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                          color: Colors.grey[600],
+                                      const SizedBox(width: 8),
+                                      Flexible(
+                                        child: Text(
+                                          'Scholar #$scholarNo',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                            color: houseColor,
+                                            decoration: TextDecoration.underline,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
                                         ),
-                                        overflow: TextOverflow.ellipsis,
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
                               const SizedBox(width: 8),
@@ -543,11 +554,32 @@ class _ApprovedClaimsScreenState extends State<ApprovedClaimsScreen> {
                             ),
                           ),
                           const SizedBox(height: 4),
-                          Text(
-                            'Verified for $studentName',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey[600],
+                          InkWell(
+                            onTap: () => StudentProfileModal.show(
+                              context,
+                              scholarNo: scholarNo,
+                              studentName: studentName,
+                              houseName: house,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'Verified for $studentName',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: isDark ? Colors.cyanAccent : const Color(0xFF0369A1),
+                                    fontWeight: FontWeight.w700,
+                                    decoration: TextDecoration.underline,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Icon(
+                                  Icons.open_in_new_rounded,
+                                  size: 13,
+                                  color: isDark ? Colors.cyanAccent : const Color(0xFF0369A1),
+                                ),
+                              ],
                             ),
                           ),
                           const SizedBox(height: 16),

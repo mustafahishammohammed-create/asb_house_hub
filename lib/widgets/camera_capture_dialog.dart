@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:camera/camera.dart';
+import 'package:image_picker/image_picker.dart';
 
 class CameraCaptureDialog extends StatefulWidget {
   const CameraCaptureDialog({super.key});
@@ -26,7 +28,7 @@ class _CameraCaptureDialogState extends State<CameraCaptureDialog> {
         if (mounted) {
           setState(() {
             _isInitializing = false;
-            _errorMessage = 'No camera or webcam found on this device.';
+            _errorMessage = _getNoCameraMessage();
           });
         }
         return;
@@ -42,19 +44,34 @@ class _CameraCaptureDialogState extends State<CameraCaptureDialog> {
 
       await controller.initialize();
       if (mounted) {
-        setState(() {
-          _isInitializing = false;
-        });
+        setState(() => _isInitializing = false);
       }
     } catch (e) {
       if (mounted) {
         setState(() {
           _isInitializing = false;
-          _errorMessage =
-              'Camera permission denied or unavailable.\nPlease allow camera access in your browser settings.';
+          _errorMessage = _getCameraErrorMessage(e);
         });
       }
     }
+  }
+
+  String _getNoCameraMessage() {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+      return 'No physical webcam or video capture device was detected on this PC.\n\nYou can attach a USB webcam or browse and select an image file directly from your computer below.';
+    } else if (kIsWeb) {
+      return 'No camera detected in this browser session. Please connect a webcam or upload a file.';
+    }
+    return 'No camera found on this mobile device. You can choose a photo from your gallery below.';
+  }
+
+  String _getCameraErrorMessage(Object error) {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+      return 'Could not access the Windows camera subsystem.\nPlease verify your Windows Camera Privacy settings (Settings > Privacy & security > Camera) allow desktop apps to access the camera.';
+    } else if (kIsWeb) {
+      return 'Camera permission denied. Please allow camera access in your web browser site settings.';
+    }
+    return 'Camera access is disabled or restricted. Please grant camera permission in your system settings.';
   }
 
   @override
@@ -83,6 +100,97 @@ class _CameraCaptureDialogState extends State<CameraCaptureDialog> {
         );
       }
     }
+  }
+
+  Future<void> _pickFromFile() async {
+    try {
+      final picker = ImagePicker();
+      final file = await picker.pickImage(source: ImageSource.gallery);
+      if (file != null) {
+        final bytes = await file.readAsBytes();
+        if (mounted) {
+          Navigator.pop(context, bytes);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to select file: $e')),
+        );
+      }
+    }
+  }
+
+  Widget _buildPreviewArea() {
+    if (_isInitializing) {
+      return Semantics(
+        container: true,
+        liveRegion: true,
+        label: 'Requesting camera hardware access and initializing preview...',
+        child: const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: Colors.white),
+              SizedBox(height: 16),
+              Text(
+                'Initializing Camera...',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_errorMessage != null) {
+      return Semantics(
+        container: true,
+        liveRegion: true,
+        label: _errorMessage,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const ExcludeSemantics(
+                  child: Icon(
+                    Icons.videocam_off_rounded,
+                    color: Colors.redAccent,
+                    size: 48,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  _errorMessage!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (_controller != null && _controller!.value.isInitialized) {
+      return Semantics(
+        label:
+            'Live camera viewfinder preview. Hold certificate in view and activate Capture Photo.',
+        image: true,
+        child: CameraPreview(_controller!),
+      );
+    }
+
+    return const Center(child: CircularProgressIndicator(color: Colors.white));
   }
 
   @override
@@ -117,6 +225,8 @@ class _CameraCaptureDialogState extends State<CameraCaptureDialog> {
                   ],
                 ),
                 IconButton(
+                  constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                  tooltip: 'Close camera dialog',
                   onPressed: () => Navigator.pop(context, null),
                   icon: const Icon(Icons.close_rounded),
                 ),
@@ -131,61 +241,14 @@ class _CameraCaptureDialogState extends State<CameraCaptureDialog> {
                   borderRadius: BorderRadius.circular(20),
                 ),
                 clipBehavior: Clip.antiAlias,
-                child: _isInitializing
-                    ? const Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            CircularProgressIndicator(color: Colors.white),
-                            SizedBox(height: 16),
-                            Text(
-                              'Requesting Camera Permission...',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    : _errorMessage != null
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.videocam_off_rounded,
-                                color: Colors.redAccent,
-                                size: 48,
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                _errorMessage!,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 14,
-                                  height: 1.4,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      )
-                    : (_controller != null && _controller!.value.isInitialized)
-                        ? Center(child: CameraPreview(_controller!))
-                        : const Center(
-                            child: CircularProgressIndicator(color: Colors.white),
-                          ),
+                child: _buildPreviewArea(),
               ),
             ),
             const SizedBox(height: 20),
             if (!_isInitializing && _errorMessage == null)
               SizedBox(
                 width: double.infinity,
-                height: 54,
+                height: 52,
                 child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue,
@@ -203,10 +266,55 @@ class _CameraCaptureDialogState extends State<CameraCaptureDialog> {
                   ),
                 ),
               )
+            else if (_errorMessage != null)
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blueAccent,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      onPressed: _pickFromFile,
+                      icon: const Icon(Icons.folder_open_rounded),
+                      label: const Text(
+                        'Browse Image from Computer',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      onPressed: () => Navigator.pop(context, null),
+                      child: const Text(
+                        'Cancel',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                ],
+              )
             else
               SizedBox(
                 width: double.infinity,
-                height: 50,
+                height: 48,
                 child: OutlinedButton(
                   style: OutlinedButton.styleFrom(
                     shape: RoundedRectangleBorder(

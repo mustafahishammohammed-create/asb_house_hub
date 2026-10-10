@@ -75,7 +75,11 @@ class ChatService {
     String myHouse = AuthService.getCachedHouse() ?? 'ruby';
     String? myScholar;
     try {
-      final myDoc = await _firestore.collection('users').doc(myUid).get();
+      final myDoc = await _firestore
+          .collection('users')
+          .doc(myUid)
+          .get()
+          .timeout(const Duration(seconds: 4));
       if (myDoc.exists) {
         final d = myDoc.data() ?? {};
         myName = d['full_name']?.toString() ?? 'Council / Admin';
@@ -93,7 +97,11 @@ class ChatService {
     String resolvedOtherRole = otherUserRole;
     String resolvedOtherHouse = otherUserHouse ?? 'ruby';
     try {
-      final otherDoc = await _firestore.collection('users').doc(otherUserId).get();
+      final otherDoc = await _firestore
+          .collection('users')
+          .doc(otherUserId)
+          .get()
+          .timeout(const Duration(seconds: 4));
       if (otherDoc.exists) {
         final od = otherDoc.data() ?? {};
         resolvedOtherName = od['full_name']?.toString() ?? otherUserName;

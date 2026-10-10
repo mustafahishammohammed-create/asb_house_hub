@@ -2,12 +2,14 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/semantics.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../theme/app_theme.dart';
 import '../widgets/confetti_overlay.dart';
 import '../widgets/apple_fitness_badges_vault.dart';
 import '../widgets/mascot_3d_stage.dart';
+import '../widgets/battle_chant_synthesizer.dart';
 
 /// Interactive Mascot Data
 class HouseMascot {
@@ -150,12 +152,14 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
   late Animation<double> _pulseScale;
   late AnimationController _particleTicker;
   final List<EnergyParticle> _particles = [];
+  final ValueNotifier<int> _particleNotifier = ValueNotifier<int>(0);
   final math.Random _rng = math.Random();
 
   int _localTapCount = 0;
   int _comboMultiplier = 1;
   Timer? _comboResetTimer;
   DateTime _lastTapTime = DateTime.now();
+  bool _showChantSynthesizer = false;
 
   // Simulated live spirit gauge across 4 houses
   double _rubySpirit = 420;
@@ -244,40 +248,48 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
       vsync: this,
       duration: const Duration(milliseconds: 16),
     )..addListener(_updateParticles);
-    _particleTicker.repeat();
 
     _listenToLiveSpirit();
   }
 
   void _listenToLiveSpirit() {
-    _spiritSubscription?.cancel();
-    _spiritSubscription = FirebaseFirestore.instance
-        .collection('system_config')
-        .doc('house_spirit_reactor')
-        .snapshots()
-        .listen((doc) {
-      if (doc.exists && mounted) {
-        final d = doc.data();
-        if (d != null) {
-          setState(() {
-            _rubySpirit = (d['ruby'] as num?)?.toDouble() ?? _rubySpirit;
-            _sapphireSpirit = (d['sapphire'] as num?)?.toDouble() ?? _sapphireSpirit;
-            _emeraldSpirit = (d['emerald'] as num?)?.toDouble() ?? _emeraldSpirit;
-            _topazSpirit = (d['topaz'] as num?)?.toDouble() ?? _topazSpirit;
-          });
+    try {
+      _spiritSubscription?.cancel();
+      _spiritSubscription = FirebaseFirestore.instance
+          .collection('system_config')
+          .doc('house_spirit_reactor')
+          .snapshots()
+          .listen((doc) {
+        if (doc.exists && mounted) {
+          final d = doc.data();
+          if (d != null) {
+            setState(() {
+              _rubySpirit = (d['ruby'] as num?)?.toDouble() ?? _rubySpirit;
+              _sapphireSpirit = (d['sapphire'] as num?)?.toDouble() ?? _sapphireSpirit;
+              _emeraldSpirit = (d['emerald'] as num?)?.toDouble() ?? _emeraldSpirit;
+              _topazSpirit = (d['topaz'] as num?)?.toDouble() ?? _topazSpirit;
+            });
+          }
         }
-      }
-    });
+      });
+    } catch (_) {}
   }
 
   void _updateParticles() {
-    if (_particles.isEmpty) return;
-    setState(() {
-      for (final p in _particles) {
-        p.update();
+    if (_particles.isEmpty) {
+      if (_particleTicker.isAnimating) {
+        _particleTicker.stop();
       }
-      _particles.removeWhere((p) => p.opacity <= 0.01);
-    });
+      return;
+    }
+    for (final p in _particles) {
+      p.update();
+    }
+    _particles.removeWhere((p) => p.opacity <= 0.01);
+    _particleNotifier.value++;
+    if (_particles.isEmpty && _particleTicker.isAnimating) {
+      _particleTicker.stop();
+    }
   }
 
   @override
@@ -285,6 +297,7 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
     _spiritSubscription?.cancel();
     _pulseController.dispose();
     _particleTicker.dispose();
+    _particleNotifier.dispose();
     _comboResetTimer?.cancel();
     _blitzTimer?.cancel();
     _advanceTimer?.cancel();
@@ -314,11 +327,19 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
         ),
       );
     }
+    _particleNotifier.value++;
+    if (!_particleTicker.isAnimating) {
+      _particleTicker.repeat();
+    }
 
     // Combo streak tracking
     final now = DateTime.now();
     if (now.difference(_lastTapTime).inMilliseconds < 800) {
+      final prevMultiplier = _comboMultiplier;
       _comboMultiplier = math.min(10, _comboMultiplier + 1);
+      if (_comboMultiplier >= 5 && prevMultiplier < 5) {
+        _triggerOverdriveRallyChant();
+      }
     } else {
       _comboMultiplier = 1;
     }
@@ -351,6 +372,48 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
         'last_updated': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     }
+  }
+
+  void _triggerOverdriveRallyChant() {
+    HapticFeedback.heavyImpact();
+    final chantData = HouseChantData.forHouse(widget.userHouse);
+    final warCry = chantData.warCry;
+
+    try {
+      SemanticsService.sendAnnouncement(
+        View.of(context),
+        '5x Overdrive achieved! House battle cry: $warCry',
+        TextDirection.ltr,
+      );
+    } catch (_) {}
+
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Semantics(
+          liveRegion: true,
+          excludeSemantics: true,
+          label: 'OVERDRIVE RALLY: $warCry',
+          child: Row(
+            children: [
+              const Icon(Icons.flash_on_rounded, color: Colors.amber, size: 22),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'OVERDRIVE! $warCry',
+                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+        backgroundColor: HouseColors.getHouseColor(widget.userHouse),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
   // --- Daily Brain Blitz Logic ---
@@ -561,65 +624,91 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
     ];
 
     return Container(
-      height: 52,
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: ListView.separated(
+      height: 56,
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: tabs.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
-        itemBuilder: (context, index) {
-          final isSel = _activeNav == index;
-          return InkWell(
-            borderRadius: BorderRadius.circular(16),
-            onTap: () {
-              HapticFeedback.selectionClick();
-              if (_activeNav == 1 && index != 1) {
-                _blitzTimer?.cancel();
-                _advanceTimer?.cancel();
-              }
-              setState(() => _activeNav = index);
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-              decoration: BoxDecoration(
-                color: isSel ? houseColor : Colors.white.withValues(alpha: 0.06),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: isSel ? houseColor : Colors.white.withValues(alpha: 0.12),
-                ),
-                boxShadow: isSel
-                    ? [
-                        BoxShadow(
-                          color: houseColor.withValues(alpha: 0.35),
-                          blurRadius: 10,
-                          offset: const Offset(0, 3),
-                        )
-                      ]
-                    : null,
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    tabs[index]['icon'] as IconData,
-                    size: 16,
-                    color: isSel ? Colors.white : Colors.white70,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    tabs[index]['label'] as String,
-                    style: TextStyle(
-                      color: isSel ? Colors.white : Colors.white70,
-                      fontWeight: isSel ? FontWeight.w900 : FontWeight.w600,
-                      fontSize: 12,
+        child: Row(
+          children: [
+            for (int index = 0; index < tabs.length; index++) ...[
+              if (index > 0) const SizedBox(width: 8),
+              Builder(
+                builder: (context) {
+                  final isSel = _activeNav == index;
+                  final tabLabel = tabs[index]['label'] as String;
+                  return Semantics(
+                    button: true,
+                    selected: isSel,
+                    excludeSemantics: true,
+                    label: '$tabLabel Arena Tab',
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: 48),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(16),
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          if (_activeNav == 1 && index != 1) {
+                            _blitzTimer?.cancel();
+                            _advanceTimer?.cancel();
+                          }
+                          setState(() => _activeNav = index);
+                          try {
+                            SemanticsService.sendAnnouncement(
+                              View.of(context),
+                              '$tabLabel Arena Tab selected',
+                              TextDirection.ltr,
+                            );
+                          } catch (_) {}
+                        },
+                        child: Center(
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: isSel ? houseColor : Colors.white.withValues(alpha: 0.06),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: isSel ? houseColor : Colors.white.withValues(alpha: 0.12),
+                              ),
+                              boxShadow: isSel
+                                  ? [
+                                      BoxShadow(
+                                        color: houseColor.withValues(alpha: 0.35),
+                                        blurRadius: 10,
+                                        offset: const Offset(0, 3),
+                                      )
+                                    ]
+                                  : null,
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  tabs[index]['icon'] as IconData,
+                                  size: 16,
+                                  color: isSel ? Colors.white : Colors.white70,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  tabLabel,
+                                  style: TextStyle(
+                                    color: isSel ? Colors.white : Colors.white70,
+                                    fontWeight: isSel ? FontWeight.w900 : FontWeight.w600,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
-                ],
+                  );
+                },
               ),
-            ),
-          );
-        },
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -814,14 +903,15 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
                       shape: BoxShape.circle,
                       gradient: RadialGradient(
                         colors: [
-                          Colors.white,
-                          houseColor,
-                          const Color(0xFF0F172A),
+                          houseColor.withValues(alpha: 0.85),
+                          houseColor.withValues(alpha: 0.45),
+                          const Color(0xFF0A0F1E),
                         ],
+                        stops: const [0.0, 0.55, 1.0],
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: houseColor.withValues(alpha: 0.6),
+                          color: houseColor.withValues(alpha: 0.55),
                           blurRadius: 36,
                           spreadRadius: 4,
                         ),
@@ -850,10 +940,21 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
                     ),
                   ),
 
-                  // Custom Particle Painter for tap sparks
-                  CustomPaint(
-                    size: const Size(280, 280),
-                    painter: ParticlePainter(particles: _particles),
+                  // Custom Particle Painter for tap sparks isolated via AnimatedBuilder & RepaintBoundary
+                  ExcludeSemantics(
+                    child: IgnorePointer(
+                      child: RepaintBoundary(
+                        child: AnimatedBuilder(
+                          animation: _particleNotifier,
+                          builder: (context, _) {
+                            return CustomPaint(
+                              size: const Size(280, 280),
+                              painter: ParticlePainter(particles: _particles),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -885,6 +986,88 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
               ],
             ),
           ),
+          const SizedBox(height: 18),
+
+          // Rally Battle Chant Synthesizer Section
+          _buildRallySynthesizerSection(houseColor),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRallySynthesizerSection(Color houseColor) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: const Color(0xFF131A29),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: houseColor.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        children: [
+          Semantics(
+            button: true,
+            excludeSemantics: true,
+            label: _showChantSynthesizer ? 'Hide Battle Chant Deck' : 'Open Battle Chant Deck',
+            child: InkWell(
+              borderRadius: BorderRadius.circular(22),
+              onTap: () {
+                setState(() => _showChantSynthesizer = !_showChantSynthesizer);
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: houseColor.withValues(alpha: 0.2),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(Icons.graphic_eq_rounded, color: houseColor, size: 22),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${widget.userHouse.toUpperCase()} RALLY SYNTHESIZER',
+                            style: TextStyle(
+                              color: houseColor,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 13,
+                              letterSpacing: 0.5,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const Text(
+                            'Institutional Battle Chants & Accessible Audio',
+                            style: TextStyle(color: Colors.white70, fontSize: 11),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(
+                      _showChantSynthesizer ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                      color: Colors.white,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (_showChantSynthesizer) ...[
+            const Divider(color: Colors.white12, height: 1),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: BattleChantSynthesizer(
+                userHouse: widget.userHouse,
+                onClose: () => setState(() => _showChantSynthesizer = false),
+              ),
+            ),
+          ],
         ],
       ),
     );

@@ -1,12 +1,14 @@
+import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/rendering.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:ui';
 import '../services/auth_service.dart';
 import '../services/hierarchy_service.dart';
 import '../theme/app_theme.dart';
-import 'login_screen.dart';
 import 'admin_claims_screen.dart';
 import 'merch_store_tab.dart';
 import '../widgets/camera_capture_dialog.dart';
@@ -16,11 +18,131 @@ import 'house_leaderboard_screen.dart';
 import 'id_scanner_screen.dart';
 import 'house_arena_screen.dart';
 import 'house_ai_chat_screen.dart';
+import 'academics_screen.dart';
+import 'events_screen.dart';
+import 'election_chamber_screen.dart';
+import 'sports_tournament_screen.dart';
+import 'login_screen.dart';
 import '../widgets/confetti_overlay.dart';
 import '../widgets/account_switcher_modal.dart';
+import '../widgets/student_profile_modal.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final int initialIndex;
+  const HomeScreen({super.key, this.initialIndex = 0});
+
+  /// Dual-Mode Resilient Image Engine:
+  /// Decodes Base64 data URIs (webcam/desktop uploads) and renders Image.memory,
+  /// or renders Image.network for remote HTTP/HTTPS URLs with graceful placeholders.
+  static Widget buildResilientImage(
+    String imgUrl, {
+    double height = 280,
+    BoxFit fit = BoxFit.cover,
+  }) {
+    final clean = imgUrl.trim();
+    if (clean.isEmpty) {
+      return _buildImagePlaceholder(height);
+    }
+
+    // Dual-Mode 1: Base64 Data URI (e.g. data:image/jpeg;base64,... or raw base64 string)
+    if (clean.startsWith('data:image/') ||
+        clean.startsWith('data:application/') ||
+        clean.contains(';base64,')) {
+      try {
+        final commaIndex = clean.indexOf(',');
+        final base64Payload =
+            commaIndex != -1 ? clean.substring(commaIndex + 1).trim() : clean;
+        final bytes = base64Decode(base64Payload);
+        return Image.memory(
+          bytes,
+          width: double.infinity,
+          height: height,
+          fit: fit,
+          errorBuilder: (context, error, stackTrace) =>
+              _buildImagePlaceholder(height),
+        );
+      } catch (_) {
+        return _buildImagePlaceholder(height);
+      }
+    }
+
+    // Dual-Mode 2: Remote Network URL (http:// or https://)
+    if (clean.startsWith('http://') || clean.startsWith('https://')) {
+      return Image.network(
+        clean,
+        width: double.infinity,
+        height: height,
+        fit: fit,
+        errorBuilder: (context, error, stackTrace) =>
+            _buildImagePlaceholder(height),
+      );
+    }
+
+    // Fallback: Attempt base64 decode if it appears to be raw base64
+    if (clean.length > 50 && !clean.contains(' ') && !clean.contains('/')) {
+      try {
+        final bytes = base64Decode(clean);
+        return Image.memory(
+          bytes,
+          width: double.infinity,
+          height: height,
+          fit: fit,
+          errorBuilder: (context, error, stackTrace) =>
+              _buildImagePlaceholder(height),
+        );
+      } catch (_) {}
+    }
+
+    return _buildImagePlaceholder(height);
+  }
+
+  static Widget _buildImagePlaceholder(double height) {
+    if (height < 70) {
+      return Container(
+        width: double.infinity,
+        height: height,
+        color: Colors.grey.withValues(alpha: 0.15),
+        alignment: Alignment.center,
+        child: Icon(
+          Icons.camera_alt_outlined,
+          size: (height * 0.45).clamp(16.0, 32.0),
+          color: Colors.grey,
+        ),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      height: height,
+      color: Colors.grey.withValues(alpha: 0.15),
+      alignment: Alignment.center,
+      child: const FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Padding(
+          padding: EdgeInsets.all(8.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.camera_alt_outlined,
+                size: 40,
+                color: Colors.grey,
+              ),
+              SizedBox(height: 6),
+              Text(
+                'Photo unavailable',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -31,147 +153,153 @@ class _HomeScreenState extends State<HomeScreen>
   late final AnimationController _pulseController;
   late final Animation<double> _pulseAnimation;
   final _authService = AuthService();
-  final _firestore = FirebaseFirestore.instance;
+  FirebaseFirestore? get _safeFirestore {
+    try {
+      return FirebaseFirestore.instance;
+    } catch (_) {
+      return null;
+    }
+  }
+  FirebaseFirestore get _firestore => _safeFirestore ?? FirebaseFirestore.instance;
 
   Map<String, dynamic>? _profile;
   String? _cachedHouse;
   bool _loading = true;
-  int _selectedIndex = 0;
-  bool _isMyHouseFirstPlace = false;
+  late int _selectedIndex;
+  final ValueNotifier<bool> _isMyHouseFirstPlaceNotifier =
+      ValueNotifier<bool>(false);
+  String? _previousLeader;
+  Timer? _watchdogTimer;
 
   @override
   void initState() {
     super.initState();
-    final currentUser = _authService.currentUser;
-    final currentEmail = (currentUser?.email ?? '').toLowerCase();
-    final currentScholar = currentEmail.contains('@') ? currentEmail.split('@').first : currentEmail;
+    _selectedIndex = widget.initialIndex;
     final cachedProfile = AuthService.getCachedProfile();
-    final cachedScholar = (cachedProfile?['scholar_no'] ?? AuthService.getCachedScholarNo() ?? '').toString().trim().toLowerCase();
 
-    if (currentUser != null && cachedScholar.isNotEmpty && currentScholar.isNotEmpty && cachedScholar != currentScholar) {
-      _profile = null;
-      _cachedHouse = AuthService.inferHouseFromUser(currentUser);
+    if (cachedProfile != null) {
+      _profile = Map<String, dynamic>.from(cachedProfile);
+      _cachedHouse =
+          AuthService.extractHouse(cachedProfile) ?? AuthService.getCachedHouse();
+      _loading = false; // Zero-flash Frame-1 instant rendering
     } else {
       _cachedHouse = AuthService.getCachedHouse();
-      if (cachedProfile != null) {
-        _profile = cachedProfile;
-        final pKey = AuthService.extractHouse(cachedProfile);
-        if (pKey != null && pKey.isNotEmpty) {
-          _cachedHouse = pKey;
-        }
-        _loading = false;
+    }
+
+    // Fallback watchdog: Guarantee loading dismisses within 1200ms
+    _watchdogTimer = Timer(const Duration(milliseconds: 1200), () {
+      if (mounted && _loading) {
+        setState(() {
+          _loading = false;
+          if (_pulseController.isAnimating) {
+            _pulseController.stop();
+          }
+        });
       }
-    }
-    if (_cachedHouse == null && currentUser != null) {
-      _cachedHouse = AuthService.inferHouseFromUser(currentUser);
-    }
+    });
 
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
-    )..repeat(reverse: true);
+    );
+    if (_loading) {
+      _pulseController.repeat(reverse: true);
+    }
     _pulseAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
-    _loadProfile();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _loadProfile();
+      }
+    });
   }
 
   @override
   void dispose() {
+    _watchdogTimer?.cancel();
     _pulseController.dispose();
+    _isMyHouseFirstPlaceNotifier.dispose();
     super.dispose();
   }
 
   Future<void> _loadProfile() async {
     _authService.seedAdminRoster(); // Auto-seed slots in background if empty
     final user = _authService.currentUser;
-    if (user != null) {
-      final currentEmail = (user.email ?? '').toLowerCase();
-      final currentScholar = currentEmail.contains('@') ? currentEmail.split('@').first : currentEmail;
+    final cached = AuthService.getCachedProfile();
+    final activeScholar = (cached?['scholar_no'] ??
+            AuthService.getCachedScholarNo() ??
+            _profile?['scholar_no'] ??
+            '')
+        .toString()
+        .trim()
+        .toLowerCase();
 
-      if (_profile == null || AuthService.extractHouse(_profile) == null) {
-        try {
-          final cachedDoc = await _firestore
-              .collection('users')
-              .doc(user.uid)
-              .get(const GetOptions(source: Source.cache));
-          if (cachedDoc.exists && cachedDoc.data() != null) {
-            final data = Map<String, dynamic>.from(cachedDoc.data()!);
-            data['uid'] = user.uid;
-            await AuthService.cacheProfile(data);
-            final pKey = AuthService.extractHouse(data);
-            if (pKey != null && pKey.isNotEmpty) {
-              await AuthService.cacheHouse(pKey);
-            }
-            if (mounted) {
-              setState(() {
-                _profile = data;
-                if (pKey != null && pKey.isNotEmpty) {
-                  _cachedHouse = pKey;
-                }
-              });
-            }
+    if (cached != null) {
+      final pKey = AuthService.extractHouse(cached);
+      if (mounted) {
+        setState(() {
+          _profile = Map<String, dynamic>.from(cached);
+          if (pKey != null && pKey.isNotEmpty) {
+            _cachedHouse = pKey;
           }
-        } catch (_) {}
+          _loading = false;
+          if (_pulseController.isAnimating) {
+            _pulseController.stop();
+          }
+        });
       }
+    }
 
-      try {
-        final profile = await _authService.getUserProfile(user.uid);
-        if (mounted) {
-          setState(() {
-            if (profile != null) {
+    if (user != null) {
+      final userEmail = (user.email ?? '').toLowerCase();
+      final userScholar = userEmail.contains('@')
+          ? userEmail.split('@').first
+          : userEmail;
+
+      if (activeScholar.isEmpty || activeScholar == userScholar) {
+        try {
+          final profile = await _authService.getUserProfile(user.uid);
+          if (mounted && profile != null) {
+            setState(() {
               _profile = profile;
               final pKey = AuthService.extractHouse(profile);
               if (pKey != null && pKey.isNotEmpty) {
                 _cachedHouse = pKey;
               }
-            } else if (_profile == null) {
-              final fallbackHouse = _cachedHouse ?? AuthService.inferHouseFromUser(user) ?? 'emerald';
-              final fallbackProfile = {
-                'uid': user.uid,
-                'scholar_no': currentScholar,
-                'full_name': user.displayName ??
-                    (user.email != null && user.email!.contains('@')
-                        ? user.email!.split('@').first
-                        : 'Student Scholar'),
-                'house_name': fallbackHouse,
-                'role': user.email?.contains('admin') == true ? 'super_admin' : 'student',
-                'class_level': 'Grade 11',
-                'division': 'A',
-              };
-              _profile = fallbackProfile;
-              _cachedHouse = fallbackHouse;
-              AuthService.cacheProfile(fallbackProfile);
-              AuthService.cacheHouse(fallbackHouse);
-              _firestore
-                  .collection('users')
-                  .doc(user.uid)
-                  .set(fallbackProfile, SetOptions(merge: true))
-                  .catchError((_) {});
-            }
-            _loading = false;
-          });
-        }
-      } catch (_) {
-        if (mounted) setState(() => _loading = false);
+              _loading = false;
+            });
+          }
+        } catch (_) {}
       }
-    } else {
-      if (mounted) setState(() => _loading = false);
+    }
+
+    if (mounted) {
+      setState(() {
+        _loading = false;
+        if (_pulseController.isAnimating) {
+          _pulseController.stop();
+        }
+      });
     }
   }
 
   Future<void> _handleSignOut() async {
     await _authService.signOut();
-    if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-      (_) => false,
-    );
+    if (mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (route) => false,
+      );
+    }
   }
 
   Future<void> _switchActiveSession(SavedAccount account) async {
     setState(() {
       _loading = true;
+      if (!_pulseController.isAnimating) {
+        _pulseController.repeat(reverse: true);
+      }
     });
 
     try {
@@ -180,50 +308,26 @@ class _HomeScreenState extends State<HomeScreen>
       await AuthService.cacheProfile(account.cachedProfile);
 
       if (mounted) {
-        setState(() {
-          _cachedHouse = account.houseName;
-          _profile = Map<String, dynamic>.from(account.cachedProfile);
-          _selectedIndex = 0;
-          _loading = false;
-        });
-      }
-
-      await _loadProfile();
-
-      if (mounted) {
-        final houseColor = HouseColors.getHouseColor(account.houseName);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: houseColor,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+        // Clean slate re-navigation: forces fresh state initialization for the switched scholar
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(
+            builder: (_) => HomeScreen(
+              key: ValueKey(
+                'session_${account.scholarNo}_${DateTime.now().millisecondsSinceEpoch}',
+              ),
             ),
-            content: Row(
-              children: [
-                Text(
-                  HouseColors.getHouseEmoji(account.houseName),
-                  style: const TextStyle(fontSize: 20),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Switched to ${account.fullName} • ${account.houseName.toUpperCase()} House',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            duration: const Duration(seconds: 3),
           ),
+          (route) => false,
         );
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _loading = false);
+        setState(() {
+          _loading = false;
+          if (_pulseController.isAnimating) {
+            _pulseController.stop();
+          }
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to switch account: $e'),
@@ -627,8 +731,8 @@ class _HomeScreenState extends State<HomeScreen>
                             try {
                               final certUrl = await _authService
                                   .uploadCertificateImage(
-                                    selectedImageBytes!,
-                                    scholarNo,
+                                    fileBytes: selectedImageBytes!,
+                                    scholarNo: scholarNo,
                                   );
                               await _authService.submitHouseClaim(
                                 scholarNo: scholarNo,
@@ -642,8 +746,10 @@ class _HomeScreenState extends State<HomeScreen>
                               // Also post to Live Event Wall pending approval
                               try {
                                 await _firestore.collection('event_wall').add({
+                                  'scholar_no': scholarNo,
                                   'student_name': studentName,
                                   'house_name': houseName,
+                                  'class_level': AuthService.getCachedProfile()?['class_level'] ?? 'Senior Tier',
                                   'caption': titleController.text.trim(),
                                   'image_url': certUrl,
                                   'timestamp': FieldValue.serverTimestamp(),
@@ -676,12 +782,17 @@ class _HomeScreenState extends State<HomeScreen>
                             }
                           },
                     child: isSubmitting
-                        ? const SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2.5,
+                        ? Semantics(
+                            container: true,
+                            liveRegion: true,
+                            label: 'Uploading certificate image, please wait...',
+                            child: const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2.5,
+                              ),
                             ),
                           )
                         : const Text(
@@ -699,7 +810,11 @@ class _HomeScreenState extends State<HomeScreen>
         ),
       ),
     ).whenComplete(() {
-      titleController.dispose();
+      Future.delayed(const Duration(milliseconds: 500), () {
+        try {
+          titleController.dispose();
+        } catch (_) {}
+      });
     });
   }
 
@@ -818,7 +933,7 @@ class _HomeScreenState extends State<HomeScreen>
     final houseEmoji = HouseColors.getHouseEmoji(houseName);
     final houseMascot = HouseColors.getHouseMascotName(houseName);
     final houseMotto = HouseColors.getHouseMotto(houseName);
-    final fullName = _profile?['full_name'] ?? user?.displayName ?? 'Student';
+    final fullName = _profile?['full_name'] ?? _profile?['name'] ?? user?.displayName ?? 'Student';
     final scholarNo = _profile?['scholar_no'] ?? '---';
     final classLevel = _profile?['class_level'] ?? '--';
     final division = _profile?['division'] ?? '';
@@ -1058,54 +1173,68 @@ class _HomeScreenState extends State<HomeScreen>
                   letterSpacing: -0.5,
                 ),
               ),
-              if (_isMyHouseFirstPlace) ...[
-                const SizedBox(height: 16),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFFF59E0B), Color(0xFFD97706)],
-                    ),
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.amber.withValues(alpha: 0.4),
-                        blurRadius: 16,
-                        offset: const Offset(0, 6),
-                      ),
-                    ],
-                  ),
-                  child: const Row(
-                    children: [
-                      Text('🎉', style: TextStyle(fontSize: 32)),
-                      SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'YOUR HOUSE IS IN 1ST PLACE!',
-                              style: TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.w900,
-                                color: Colors.white,
-                              ),
+              ValueListenableBuilder<bool>(
+                valueListenable: _isMyHouseFirstPlaceNotifier,
+                builder: (context, isFirst, _) {
+                  if (!isFirst) return const SizedBox.shrink();
+                  return Semantics(
+                    container: true,
+                    liveRegion: true,
+                    label:
+                        'Celebration: Your house is in 1st place! Confetti celebrations active! Keep participating to maintain the lead.',
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 16),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFF59E0B), Color(0xFFD97706)],
                             ),
-                            Text(
-                              'Confetti celebrations active! Keep participating to maintain the lead.',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.white70,
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.amber.withValues(alpha: 0.4),
+                                blurRadius: 16,
+                                offset: const Offset(0, 6),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
+                          child: const Row(
+                            children: [
+                              Text('🎉', style: TextStyle(fontSize: 32)),
+                              SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'YOUR HOUSE IS IN 1ST PLACE!',
+                                      style: TextStyle(
+                                        fontSize: 17,
+                                        fontWeight: FontWeight.w900,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Confetti celebrations active! Keep participating to maintain the lead.',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.white70,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+                      ],
+                    ),
+                  );
+                },
+              ),
               const SizedBox(height: 20),
               _buildLiveStandingsSection(),
               const SizedBox(height: 100),
@@ -1256,6 +1385,36 @@ class _HomeScreenState extends State<HomeScreen>
 
               // 2. ASB House Warroom & Spirit Clash Arena Feature Banner
               _buildHouseArenaBanner(houseName, scholarNo, fullName, houseColor, isAdmin),
+              const SizedBox(height: 16),
+
+              // 2.5 Campus Academics Command Center Banner (Phase 5)
+              _buildCampusAcademicsBanner(
+                houseName,
+                scholarNo,
+                fullName,
+                houseColor,
+                classLevel,
+                division,
+              ),
+              const SizedBox(height: 16),
+
+              // 2.6 Inter-House Sports League Banner (Phase 7)
+              _buildSportsLeagueBanner(
+                houseName,
+                scholarNo,
+                fullName,
+                houseColor,
+              ),
+              const SizedBox(height: 16),
+
+              // 2.7 ASB House AI Companion Mentor Banner
+              _buildHouseAiCompanionBanner(
+                houseName,
+                scholarNo,
+                fullName,
+                houseColor,
+                classLevel,
+              ),
               const SizedBox(height: 24),
 
               // 3. Real-Time House Standings (Streamed Live from Firestore)
@@ -1433,69 +1592,94 @@ class _HomeScreenState extends State<HomeScreen>
         ),
         centerTitle: false,
         actions: [
-          if (isCouncilOrTeacher)
+          if (MediaQuery.of(context).size.width >= 450) ...[
+            if (isCouncilOrTeacher)
+              IconButton(
+                padding: const EdgeInsets.all(8),
+                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                icon: const Icon(
+                  Icons.qr_code_scanner_rounded,
+                  color: Colors.blueAccent,
+                  size: 24,
+                ),
+                tooltip: 'Campus Digital ID Scanner (Faculty & Council)',
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => IdScannerScreen(
+                        evaluatorName: fullName.isNotEmpty ? fullName : 'Faculty Lead',
+                      ),
+                    ),
+                  );
+                },
+              ),
             IconButton(
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+              padding: const EdgeInsets.all(8),
+              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
               icon: const Icon(
-                Icons.qr_code_scanner_rounded,
-                color: Colors.blueAccent,
+                Icons.wallet_rounded,
+                color: Colors.amber,
                 size: 24,
               ),
-              tooltip: 'Campus Digital ID Scanner (Faculty & Council)',
+              tooltip: 'My Digital Wallet & Passes',
               onPressed: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => IdScannerScreen(
-                      evaluatorName: fullName.isNotEmpty ? fullName : 'Faculty Lead',
+                    builder: (_) => DigitalWalletScreen(
+                      userName: fullName,
+                      userHouse: houseName,
+                      scholarNo: scholarNo,
+                      isAdmin: isAdmin,
+                      classLevel: classLevel != '--' ? '$classLevel $division'.trim() : 'Grade 11-D',
+                      canScanQr: isCouncilOrTeacher,
+                      userRole: roleStr.isNotEmpty ? roleStr : (isAdmin ? 'Council' : 'Student'),
                     ),
                   ),
                 );
               },
             ),
-          IconButton(
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
-            icon: const Icon(
-              Icons.wallet_rounded,
-              color: Colors.amber,
-              size: 24,
-            ),
-            tooltip: 'My Digital Wallet & Passes',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => DigitalWalletScreen(
-                    userName: fullName,
-                    userHouse: houseName,
-                    scholarNo: scholarNo,
-                    isAdmin: isAdmin,
-                    classLevel: classLevel != '--' ? '$classLevel $division'.trim() : 'Grade 11-D',
-                    canScanQr: isCouncilOrTeacher,
-                    userRole: roleStr.isNotEmpty ? roleStr : (isAdmin ? 'Council' : 'Student'),
-                  ),
-                ),
-              );
-            },
-          ),
-          if (isSuperAdmin) ...[
             IconButton(
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+              padding: const EdgeInsets.all(8),
+              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
               icon: const Icon(
-                Icons.campaign_rounded,
-                color: Colors.amber,
+                Icons.school_rounded,
+                color: Colors.tealAccent,
                 size: 24,
               ),
-              tooltip: 'Broadcast Live Ticker',
-              onPressed: () => _showEditTickerModal('', false),
+              tooltip: '🏛️ Campus Academics (Timetable, HW, Exams, Reports, Attendance)',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => AcademicsScreen(
+                      classLevel: classLevel != '--' ? '$classLevel $division'.trim() : 'Grade 10',
+                      scholarNo: scholarNo,
+                      studentName: fullName,
+                      userHouse: houseName,
+                    ),
+                  ),
+                );
+              },
             ),
+            if (isSuperAdmin) ...[
+              IconButton(
+                padding: const EdgeInsets.all(8),
+                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                icon: const Icon(
+                  Icons.campaign_rounded,
+                  color: Colors.amber,
+                  size: 24,
+                ),
+                tooltip: 'Broadcast Live Ticker',
+                onPressed: () => _showEditTickerModal('', false),
+              ),
+            ],
           ],
           IconButton(
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+            padding: const EdgeInsets.all(8),
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
             icon: Container(
               padding: const EdgeInsets.all(5),
               decoration: BoxDecoration(
@@ -1532,58 +1716,40 @@ class _HomeScreenState extends State<HomeScreen>
             },
           ),
           IconButton(
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
-            icon: Stack(
-              children: [
-                const Icon(Icons.notifications_outlined, size: 24),
-                Positioned(
-                  right: 2,
-                  top: 2,
-                  child: Container(
-                    width: 9,
-                    height: 9,
-                    decoration: BoxDecoration(
-                      color: Colors.redAccent,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: Theme.of(context).colorScheme.surface,
-                        width: 1.5,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+            padding: const EdgeInsets.all(8),
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+            icon: Icon(
+              isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
+              color: isDark ? Colors.amberAccent : const Color(0xFF64748B),
+              size: 22,
             ),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('No urgent notifications at this moment.'),
-                ),
-              );
-            },
+            tooltip: isDark ? 'Switch to Light Theme' : 'Switch to Dark Theme',
+            onPressed: () => AppThemeController.cycleTheme(),
           ),
           const SizedBox(width: 4),
           Tooltip(
             message: 'Switch Account / Siblings',
             child: InkWell(
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(24),
               onTap: () => _showSwitchAccountModal(houseColor, houseName),
               child: Container(
+                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                alignment: Alignment.center,
                 margin: const EdgeInsets.only(right: 6, left: 2),
-                padding: const EdgeInsets.all(2),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: houseColor, width: 2),
-                  boxShadow: [
-                    BoxShadow(
-                      color: houseGlow.withValues(alpha: 0.35),
-                      blurRadius: 6,
-                      spreadRadius: 1,
-                    ),
-                  ],
-                ),
-                child: Stack(
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: houseColor, width: 2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: houseGlow.withValues(alpha: 0.35),
+                        blurRadius: 6,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
+                  child: Stack(
                   alignment: Alignment.bottomRight,
                   children: [
                     CircleAvatar(
@@ -1622,8 +1788,9 @@ class _HomeScreenState extends State<HomeScreen>
               ),
             ),
           ),
-          const SizedBox(width: 4),
-        ],
+        ),
+        const SizedBox(width: 4),
+      ],
       ),
       extendBody: true,
       drawer: _buildMyJioDrawer(
@@ -1636,8 +1803,14 @@ class _HomeScreenState extends State<HomeScreen>
         isSuperAdmin,
         isCouncilOrTeacher,
       ),
-      body: ConfettiOverlay(
-        show: _selectedIndex == 2 && _isMyHouseFirstPlace,
+      body: ValueListenableBuilder<bool>(
+        valueListenable: _isMyHouseFirstPlaceNotifier,
+        builder: (context, isMyHouseFirstPlace, child) {
+          return ConfettiOverlay(
+            show: _selectedIndex == 2 && isMyHouseFirstPlace,
+            child: child!,
+          );
+        },
         child: Column(
           children: [
             _buildLiveTickerBanner(isSuperAdmin),
@@ -1661,24 +1834,27 @@ class _HomeScreenState extends State<HomeScreen>
           ],
         ),
       ),
-      bottomNavigationBar: ClipRect(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 20.0, sigmaY: 20.0),
-          child: Container(
-            decoration: BoxDecoration(
-              color: (isDark
-                      ? const Color(0xFF151D2E)
-                      : Theme.of(context).colorScheme.surface)
-                  .withValues(alpha: 0.78),
-              border: Border(
-                top: BorderSide(
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.12)
-                      : Colors.black.withValues(alpha: 0.08),
-                  width: 0.8,
-                ),
-              ),
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: isDark
+              ? const Color(0xF8151D2E)
+              : Theme.of(context).colorScheme.surface.withValues(alpha: 0.96),
+          border: Border(
+            top: BorderSide(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.12)
+                  : Colors.black.withValues(alpha: 0.08),
+              width: 0.8,
             ),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.08),
+              blurRadius: 12,
+              offset: const Offset(0, -3),
+            ),
+          ],
+        ),
             child: SafeArea(
               top: false,
               child: Padding(
@@ -1715,8 +1891,6 @@ class _HomeScreenState extends State<HomeScreen>
               ),
             ),
           ),
-        ),
-      ),
     );
   }
 
@@ -1894,29 +2068,55 @@ class _HomeScreenState extends State<HomeScreen>
             ),
             const SizedBox(height: 10),
           ],
-          Text(
-            name,
-            style: const TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.w900,
-              color: Colors.white,
-              letterSpacing: -0.5,
-            ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              return ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: constraints.maxWidth),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                ),
+              );
+            },
           ),
           const SizedBox(height: 6),
-          Text(
-            'Grade $grade $div · Asian School Bahrain',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-              color: Colors.white.withValues(alpha: 0.9),
-            ),
+          Builder(
+            builder: (_) {
+              final String classSubtitle;
+              if (isSuperAdmin || grade.toLowerCase() == 'staff' || grade.toLowerCase() == 'faculty') {
+                classSubtitle = 'Executive Administration · Asian School Bahrain';
+              } else {
+                final cleanGrade = grade.replaceAll(RegExp(r'^Grade\s*', caseSensitive: false), '').trim();
+                final gradeStr = cleanGrade.isNotEmpty && cleanGrade != '--' ? 'Grade $cleanGrade' : 'Student';
+                final divStr = div.isNotEmpty ? '-$div' : '';
+                classSubtitle = '$gradeStr$divStr · Asian School Bahrain';
+              }
+              return Text(
+                classSubtitle,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white.withValues(alpha: 0.9),
+                ),
+              );
+            },
           ),
           const Divider(color: Colors.white24, height: 28),
           StreamBuilder<DocumentSnapshot>(
             stream: (scholarNo.isNotEmpty && scholarNo != '---')
-                ? _firestore
-                    .collection('house_contributors')
+                ? _safeFirestore
+                    ?.collection('house_contributors')
                     .doc(scholarNo)
                     .snapshots()
                 : null,
@@ -2041,9 +2241,15 @@ class _HomeScreenState extends State<HomeScreen>
                 shape: BoxShape.circle,
                 color: Colors.black.withValues(alpha: 0.35),
                 border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.3),
+                  color: houseColor.withValues(alpha: 0.55),
                   width: 1.5,
                 ),
+                boxShadow: [
+                  BoxShadow(
+                    color: houseColor.withValues(alpha: 0.35),
+                    blurRadius: 14,
+                  ),
+                ],
               ),
               alignment: Alignment.center,
               child: Text(
@@ -2056,47 +2262,56 @@ class _HomeScreenState extends State<HomeScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.amber,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text(
+                            'NEW ARENA 🔥',
+                            style: TextStyle(
+                              color: Colors.black,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 9,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
                         ),
-                        decoration: BoxDecoration(
-                          color: Colors.amber,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Text(
-                          'NEW ARENA 🔥',
+                        const SizedBox(width: 8),
+                        const Text(
+                          'LIVE CLASH',
                           style: TextStyle(
-                            color: Colors.black,
+                            color: Colors.cyanAccent,
                             fontWeight: FontWeight.w900,
-                            fontSize: 9,
+                            fontSize: 10,
                             letterSpacing: 0.5,
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'LIVE CLASH',
-                        style: TextStyle(
-                          color: Colors.cyanAccent,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 10,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 6),
-                  const Text(
-                    'House Warroom & Arena',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 17,
-                      letterSpacing: -0.3,
+                  const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'House Warroom & Arena',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 17,
+                        letterSpacing: -0.3,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -2129,25 +2344,382 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  Widget _buildCampusAcademicsBanner(
+    String houseName,
+    String scholarNo,
+    String fullName,
+    Color houseColor,
+    String classLevel,
+    String division,
+  ) {
+    return InkWell(
+      onTap: () {
+        HapticFeedback.mediumImpact();
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => AcademicsScreen(
+              classLevel: classLevel != '--' ? '$classLevel $division'.trim() : 'Grade 10',
+              scholarNo: scholarNo,
+              studentName: fullName,
+              userHouse: houseName,
+            ),
+          ),
+        );
+      },
+      borderRadius: BorderRadius.circular(26),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(22),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFF064E3B),
+              Color(0xFF0F766E),
+              Color(0xFF0F172A),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(26),
+          border: Border.all(
+            color: const Color(0xFF2DD4BF).withValues(alpha: 0.6),
+            width: 1.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF0F766E).withValues(alpha: 0.35),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 58,
+              height: 58,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.black.withValues(alpha: 0.35),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.3),
+                  width: 1.5,
+                ),
+              ),
+              alignment: Alignment.center,
+              child: const Icon(
+                Icons.school_rounded,
+                color: Color(0xFF2DD4BF),
+                size: 32,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2DD4BF),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text(
+                            'ACADEMICS 🏛️',
+                            style: TextStyle(
+                              color: Colors.black,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 9,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'LIVE PORTAL',
+                          style: TextStyle(
+                            color: Color(0xFF5EEAD4),
+                            fontWeight: FontWeight.w900,
+                            fontSize: 10,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Campus Academics Command',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 17,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Timetable • Homework • Exam Vault • GPA • Attendance',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.8),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.15),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.arrow_forward_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSportsLeagueBanner(
+    String houseName,
+    String scholarNo,
+    String studentName,
+    Color houseColor,
+  ) {
+    return InkWell(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => SportsTournamentScreen(
+              userHouse: houseName,
+            ),
+          ),
+        );
+      },
+      borderRadius: BorderRadius.circular(24),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFF059669),
+              Color(0xFF047857),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF059669).withValues(alpha: 0.35),
+              blurRadius: 18,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.15),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.sports_volleyball_rounded,
+                color: Colors.white,
+                size: 28,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Inter-House Sports League',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                        SizedBox(width: 6),
+                        Text('🏆', style: TextStyle(fontSize: 14)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Live Football, Basketball, Volleyball & Track • Real-Time Standings',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.85),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.arrow_forward_ios_rounded,
+              color: Colors.white,
+              size: 16,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHouseAiCompanionBanner(
+    String houseName,
+    String scholarNo,
+    String studentName,
+    Color houseColor,
+    String? classLevel,
+  ) {
+    return InkWell(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => HouseAiChatScreen(
+              userHouse: houseName,
+              studentName: studentName,
+              scholarNo: scholarNo,
+              classLevel: classLevel,
+            ),
+          ),
+        );
+      },
+      borderRadius: BorderRadius.circular(24),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFF6366F1),
+              Color(0xFF4F46E5),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF6366F1).withValues(alpha: 0.35),
+              blurRadius: 18,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.15),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.auto_awesome_rounded,
+                color: Colors.white,
+                size: 28,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '${houseName.toUpperCase()} House AI Mentor',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        const Text('✨', style: TextStyle(fontSize: 14)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Real-Time Timetable, Attendance (75% Check), Homework, Standings & Gemini AI',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.85),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.arrow_forward_ios_rounded,
+              color: Colors.white70,
+              size: 16,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildLiveStandingsSection() {
     return StreamBuilder<QuerySnapshot>(
       stream: _authService.getHouseStandingsStream(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: CircularProgressIndicator(),
-            ),
-          );
-        }
+        final isConnecting =
+            !snapshot.hasData || (snapshot.hasData && snapshot.data!.docs.isEmpty);
 
-        Map<String, int> pointsMap = {
-          'ruby': 0,
-          'sapphire': 0,
-          'emerald': 0,
-          'topaz': 0,
-        };
+        // Pre-hydrate from local cache so the dashboard never renders blank or 0-points
+        Map<String, int> pointsMap = Map<String, int>.from(
+          AuthService.getCachedHouseStandings(),
+        );
 
         if (snapshot.hasData && snapshot.data!.docs.isNotEmpty) {
           for (var doc in snapshot.data!.docs) {
@@ -2157,6 +2729,8 @@ class _HomeScreenState extends State<HomeScreen>
             final pts = (data['total_points'] as num?)?.toInt() ?? 0;
             pointsMap[h] = pts;
           }
+          // Persist the latest live points to disk for future launches
+          AuthService.cacheHouseStandings(pointsMap);
         }
 
         final sortedHouses = pointsMap.entries.toList()
@@ -2177,13 +2751,35 @@ class _HomeScreenState extends State<HomeScreen>
             sortedHouses.isNotEmpty &&
             sortedHouses[0].key == myHouse &&
             sortedHouses[0].value > 0;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && _isMyHouseFirstPlace != isFirst) {
-            setState(() => _isMyHouseFirstPlace = isFirst);
-          }
-        });
+        if (_isMyHouseFirstPlaceNotifier.value != isFirst) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && _isMyHouseFirstPlaceNotifier.value != isFirst) {
+              _isMyHouseFirstPlaceNotifier.value = isFirst;
+            }
+          });
+        }
 
-        return Container(
+        final currentLeader =
+            (sortedHouses.isNotEmpty && sortedHouses[0].value > 0)
+                ? sortedHouses[0].key
+                : null;
+        if (currentLeader != null &&
+            _previousLeader != null &&
+            currentLeader != _previousLeader) {
+          final leaderNameDisplay =
+              '${currentLeader[0].toUpperCase()}${currentLeader.substring(1)}';
+          final leaderPts = sortedHouses[0].value;
+          try {
+            SemanticsService.sendAnnouncement(
+              View.of(context),
+              '$leaderNameDisplay House has taken 1st place with $leaderPts points!',
+              TextDirection.ltr,
+            );
+          } catch (_) {}
+        }
+        _previousLeader = currentLeader;
+
+        final standingsWidget = Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surface,
@@ -2202,7 +2798,42 @@ class _HomeScreenState extends State<HomeScreen>
             ],
           ),
           child: Column(
-            children: sortedHouses.asMap().entries.map((entry) {
+            children: [
+              if (isConnecting)
+                Semantics(
+                  container: true,
+                  liveRegion: true,
+                  label:
+                      'Offline mode: Viewing verified saved standings from local disk',
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Offline — Viewing Saved Standings',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ...sortedHouses.asMap().entries.map((entry) {
               final rank = entry.key + 1;
               final house = entry.value.key;
               final pts = entry.value.value;
@@ -2215,7 +2846,13 @@ class _HomeScreenState extends State<HomeScreen>
 
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
-                child: InkWell(
+                child: MergeSemantics(
+                  child: Semantics(
+                    container: true,
+                    button: true,
+                    label:
+                        '$houseNameDisplay House: $pts Points. Rank #$rank. Tap to view house leaderboard.',
+                    child: InkWell(
                   borderRadius: BorderRadius.circular(18),
                   onTap: () {
                     HapticFeedback.lightImpact();
@@ -2243,123 +2880,137 @@ class _HomeScreenState extends State<HomeScreen>
                     ),
                     child: Column(
                       children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(
-                              child: Row(
-                                children: [
-                                  Container(
-                                    width: 36,
-                                    height: 36,
-                                    decoration: BoxDecoration(
-                                      color: rank == 1
-                                          ? Colors.amber.withValues(alpha: 0.2)
-                                          : rank == 2
-                                          ? const Color(
-                                              0xFFC0C0C0,
-                                            ).withValues(alpha: 0.2)
-                                          : rank == 3
-                                          ? const Color(
-                                              0xFFCD7F32,
-                                            ).withValues(alpha: 0.2)
-                                          : color.withValues(alpha: 0.12),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Center(
-                                      child: medal != null
-                                          ? Text(
-                                              medal,
-                                              style: const TextStyle(fontSize: 18),
-                                            )
-                                          : Text(
-                                              '#$rank',
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            return Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 36,
+                                        height: 36,
+                                        decoration: BoxDecoration(
+                                          color: rank == 1
+                                              ? Colors.amber.withValues(alpha: 0.2)
+                                              : rank == 2
+                                              ? const Color(
+                                                  0xFFC0C0C0,
+                                                ).withValues(alpha: 0.2)
+                                              : rank == 3
+                                              ? const Color(
+                                                  0xFFCD7F32,
+                                                ).withValues(alpha: 0.2)
+                                              : color.withValues(alpha: 0.12),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: Center(
+                                          child: medal != null
+                                              ? Text(
+                                                  medal,
+                                                  style: const TextStyle(fontSize: 18),
+                                                )
+                                              : Text(
+                                                  '#$rank',
+                                                  style: TextStyle(
+                                                    fontSize: 14,
+                                                    fontWeight: FontWeight.w800,
+                                                    color: color,
+                                                  ),
+                                                ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                Flexible(
+                                                  child: Text(
+                                                    houseNameDisplay,
+                                                    overflow: TextOverflow.ellipsis,
+                                                    style: const TextStyle(
+                                                      fontSize: 16,
+                                                      fontWeight: FontWeight.w700,
+                                                    ),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 6),
+                                                Icon(
+                                                  Icons.leaderboard_outlined,
+                                                  size: 14,
+                                                  color: color.withValues(alpha: 0.8),
+                                                ),
+                                              ],
+                                            ),
+                                            Text(
+                                              rank == 1
+                                                  ? 'Leading • Tap for Leaderboard'
+                                                  : 'Tap to view contributor roster',
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: rank == 1
+                                                    ? FontWeight.w700
+                                                    : FontWeight.w500,
+                                                color: rank == 1
+                                                    ? Colors.amber[800]
+                                                    : Colors.grey[500],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                ConstrainedBox(
+                                  constraints: BoxConstraints(
+                                    maxWidth: constraints.maxWidth * 0.38,
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Flexible(
+                                        child: FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 4,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: color.withValues(alpha: 0.1),
+                                              borderRadius: BorderRadius.circular(10),
+                                            ),
+                                            child: Text(
+                                              '$pts Pts',
                                               style: TextStyle(
                                                 fontSize: 14,
                                                 fontWeight: FontWeight.w800,
                                                 color: color,
                                               ),
                                             ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Flexible(
-                                              child: Text(
-                                                houseNameDisplay,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.w700,
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 6),
-                                            Icon(
-                                              Icons.leaderboard_outlined,
-                                              size: 14,
-                                              color: color.withValues(alpha: 0.8),
-                                            ),
-                                          ],
-                                        ),
-                                        Text(
-                                          rank == 1
-                                              ? 'Leading • Tap for Leaderboard'
-                                              : 'Tap to view contributor roster',
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: rank == 1
-                                                ? FontWeight.w700
-                                                : FontWeight.w500,
-                                            color: rank == 1
-                                                ? Colors.amber[800]
-                                                : Colors.grey[500],
                                           ),
                                         ),
-                                      ],
-                                    ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Icon(
+                                        Icons.chevron_right_rounded,
+                                        size: 18,
+                                        color: color.withValues(alpha: 0.6),
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: color.withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: Text(
-                                    '$pts Pts',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w800,
-                                      color: color,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 4),
-                                Icon(
-                                  Icons.chevron_right_rounded,
-                                  size: 18,
-                                  color: color.withValues(alpha: 0.6),
                                 ),
                               ],
-                            ),
-                          ],
+                            );
+                          },
                         ),
                         const SizedBox(height: 10),
                         ClipRRect(
@@ -2375,13 +3026,28 @@ class _HomeScreenState extends State<HomeScreen>
                     ),
                   ),
                 ),
-              );
-            }).toList(),
-          ),
+              ),
+            ),
+          );
+            }),
+          ],
+        ),
+      );
+
+      if (isConnecting) {
+        return Semantics(
+          container: true,
+          liveRegion: true,
+          label:
+              'Connecting to ASB House standings, displaying cached scores...',
+          child: standingsWidget,
         );
-      },
-    );
-  }
+      }
+
+      return standingsWidget;
+    },
+  );
+}
 
   Widget _buildActionCards(
     String houseName,
@@ -2420,7 +3086,25 @@ class _HomeScreenState extends State<HomeScreen>
         'title': 'School Calendar',
         'sub': 'Upcoming holidays, exams, and inter-house events.',
         'icon': Icons.calendar_month_rounded,
-        'color': const Color(0xFFD97706),
+        'color': HouseColors.topaz,
+      },
+      {
+        'title': '🏆 Campus Events & Competitions',
+        'sub': 'View live house competitions, register, and check points.',
+        'icon': Icons.event_available_rounded,
+        'color': const Color(0xFFF59E0B),
+      },
+      {
+        'title': '🗳️ Student Council Elections',
+        'sub': 'Explore candidate manifestos, speeches, and cast your ballot.',
+        'icon': Icons.how_to_vote_rounded,
+        'color': const Color(0xFF8B5CF6),
+      },
+      {
+        'title': '🏟️ Inter-House Sports League',
+        'sub': 'Live football, basketball, volleyball & track match day scores.',
+        'icon': Icons.sports_volleyball_rounded,
+        'color': const Color(0xFF10B981),
       },
     ];
 
@@ -2448,6 +3132,57 @@ class _HomeScreenState extends State<HomeScreen>
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const ChatListScreen()),
+              );
+            } else if (item['title'] == 'Attendance Record') {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => AcademicsScreen(
+                    scholarNo: scholarNo,
+                    studentName: studentName,
+                    userHouse: houseName,
+                    initialTab: 'attendance',
+                  ),
+                ),
+              );
+            } else if (item['title'] == 'School Calendar') {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => AcademicsScreen(
+                    scholarNo: scholarNo,
+                    studentName: studentName,
+                    userHouse: houseName,
+                    initialTab: 'exams',
+                  ),
+                ),
+              );
+            } else if (item['title'] == '🏆 Campus Events & Competitions') {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => EventsScreen(
+                    userHouse: houseName,
+                  ),
+                ),
+              );
+            } else if (item['title'] == '🗳️ Student Council Elections') {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ElectionChamberScreen(
+                    userHouse: houseName,
+                  ),
+                ),
+              );
+            } else if (item['title'] == '🏟️ Inter-House Sports League') {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => SportsTournamentScreen(
+                    userHouse: houseName,
+                  ),
+                ),
               );
             } else {
               _showFeatureModal(
@@ -2635,8 +3370,8 @@ class _HomeScreenState extends State<HomeScreen>
           // Real-time metrics counters
           StreamBuilder<DocumentSnapshot>(
             stream: (scholarNo.isNotEmpty && scholarNo != '---')
-                ? _firestore
-                    .collection('house_contributors')
+                ? _safeFirestore
+                    ?.collection('house_contributors')
                     .doc(scholarNo)
                     .snapshots()
                 : null,
@@ -2932,134 +3667,308 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _buildLiveNoticesFeed(Color themeColor) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: _authService.getNoticesStream(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: CircularProgressIndicator(),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 8,
+          runSpacing: 4,
+          children: [
+            const Text(
+              'Official Circulars & Notices',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
             ),
-          );
-        }
-
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(36),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: Theme.of(
-                  context,
-                ).colorScheme.outline.withValues(alpha: 0.5),
-              ),
+            TextButton.icon(
+              onPressed: _showPostCircularDialog,
+              icon: const Icon(Icons.post_add_rounded, size: 18),
+              label: const Text('Post Circular', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
             ),
-            child: Column(
-              children: [
-                Icon(Icons.inbox_rounded, size: 52, color: Colors.grey[400]),
-                const SizedBox(height: 14),
-                const Text(
-                  'No Circulars Posted Yet',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+          ],
+        ),
+        const SizedBox(height: 8),
+        StreamBuilder<QuerySnapshot>(
+          stream: _authService.getNoticesStream(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: CircularProgressIndicator(),
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  'When school administrators publish new announcements or circulars, they will appear live right here.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[600],
-                    height: 1.4,
+              );
+            }
+
+            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+              return Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(36),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.outline.withValues(alpha: 0.5),
                   ),
                 ),
-              ],
-            ),
-          );
-        }
-
-        return ListView.separated(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: snapshot.data!.docs.length,
-          separatorBuilder: (context, index) => const SizedBox(height: 12),
-          itemBuilder: (context, index) {
-            final doc = snapshot.data!.docs[index];
-            final raw = doc.data();
-            final data = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
-            final title = data['title'] ?? 'School Announcement';
-            final desc = data['content'] ?? '';
-            final date = data['date'] ?? 'Recent';
-
-            return Container(
-              padding: const EdgeInsets.all(22),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.outline.withValues(alpha: 0.5),
+                child: Column(
+                  children: [
+                    Icon(Icons.inbox_rounded, size: 52, color: Colors.grey[400]),
+                    const SizedBox(height: 14),
+                    const Text(
+                      'No Circulars Posted Yet',
+                      style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'When school administrators publish new announcements or circulars, they will appear live right here.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              );
+            }
+
+            return ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: snapshot.data!.docs.length,
+              separatorBuilder: (context, index) => const SizedBox(height: 12),
+              itemBuilder: (context, index) {
+                final doc = snapshot.data!.docs[index];
+                final raw = doc.data();
+                final data = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+                final title = data['title'] ?? 'School Announcement';
+                final desc = data['content'] ?? '';
+                final date = data['date'] ?? 'Recent';
+
+                return Container(
+                  padding: const EdgeInsets.all(22),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surface,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.outline.withValues(alpha: 0.5),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: themeColor.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          'Circular',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            color: themeColor,
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: themeColor.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              'Circular',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: themeColor,
+                              ),
+                            ),
                           ),
+                          Flexible(
+                            child: Text(
+                              date.toString(),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.grey[500],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        title.toString(),
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
-                      Flexible(
-                        child: Text(
-                          date.toString(),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.grey[500],
-                          ),
+                      const SizedBox(height: 6),
+                      Text(
+                        desc.toString(),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey[600],
+                          height: 1.4,
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
-                  Text(
-                    title.toString(),
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
+                );
+              },
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  void _showPostCircularDialog() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final titleController = TextEditingController();
+    final contentController = TextEditingController();
+    String category = 'Academic';
+    String targetAudience = 'All Students';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: isDark ? const Color(0xFF151D2E) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 24,
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '📢 Post School Circular & Notice',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        color: isDark ? Colors.white : const Color(0xFF0F172A),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    desc.toString(),
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey[600],
-                      height: 1.4,
+                    const SizedBox(height: 6),
+                    Text(
+                      'Publish official circulars or event notices to all students and faculty.',
+                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: titleController,
+                      decoration: InputDecoration(
+                        labelText: 'Circular Title',
+                        hintText: 'e.g. Mid-Term Examination Conduct & Guidelines',
+                        filled: true,
+                        fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: category,
+                            decoration: InputDecoration(
+                              labelText: 'Category',
+                              filled: true,
+                              fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                            ),
+                            items: ['Academic', 'Sports', 'Examination', 'Holiday & Closure', 'General'].map((c) {
+                              return DropdownMenuItem(value: c, child: Text(c));
+                            }).toList(),
+                            onChanged: (val) {
+                              if (val != null) setModalState(() => category = val);
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: targetAudience,
+                            decoration: InputDecoration(
+                              labelText: 'Audience',
+                              filled: true,
+                              fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                            ),
+                            items: ['All Students', 'Middle School (6-8)', 'Secondary (9-10)', 'Senior Secondary (11-12)'].map((a) {
+                              return DropdownMenuItem(value: a, child: Text(a, overflow: TextOverflow.ellipsis));
+                            }).toList(),
+                            onChanged: (val) {
+                              if (val != null) setModalState(() => targetAudience = val);
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: contentController,
+                      maxLines: 4,
+                      decoration: InputDecoration(
+                        labelText: 'Circular Content / Details',
+                        hintText: 'Enter full proclamation or circular text...',
+                        filled: true,
+                        fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          if (titleController.text.trim().isEmpty || contentController.text.trim().isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Please enter circular title and content.')),
+                            );
+                            return;
+                          }
+                          Navigator.of(ctx).pop();
+                          await _authService.publishSchoolNotice(
+                            title: titleController.text,
+                            content: contentController.text,
+                            category: category,
+                            targetAudience: targetAudience,
+                          );
+                          if (!mounted) return;
+                          setState(() {});
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Published circular: "${titleController.text}"!'),
+                              backgroundColor: Colors.green[700],
+                            ),
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF4338CA),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        child: const Text('Broadcast Circular', style: TextStyle(fontWeight: FontWeight.w800)),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             );
           },
@@ -3070,7 +3979,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _buildLiveTickerBanner(bool isSuperAdmin) {
     return StreamBuilder<DocumentSnapshot>(
-      stream: _firestore.collection('settings').doc('ticker').snapshots(),
+      stream: _safeFirestore?.collection('settings').doc('ticker').snapshots(),
       builder: (context, snapshot) {
         String msg = '';
         bool active = false;
@@ -3243,13 +4152,19 @@ class _HomeScreenState extends State<HomeScreen>
           ],
         ),
       ),
-    ).whenComplete(() => txtController.dispose());
+    ).whenComplete(() {
+      Future.delayed(const Duration(milliseconds: 500), () {
+        try {
+          txtController.dispose();
+        } catch (_) {}
+      });
+    });
   }
 
   Widget _buildLiveEventWall(Color themeColor, bool isAdmin) {
     return StreamBuilder<QuerySnapshot>(
-      stream: _firestore
-          .collection('event_wall')
+      stream: _safeFirestore
+          ?.collection('event_wall')
           .orderBy('timestamp', descending: true)
           .limit(20)
           .snapshots(),
@@ -3303,6 +4218,19 @@ class _HomeScreenState extends State<HomeScreen>
             final imgUrl = data['image_url'] ?? '';
             final status = data['status'] ?? 'pending';
             final likes = (data['likes'] as num?)?.toInt() ?? 0;
+            final scholarNo = (data['scholar_no'] ?? data['student_id'] ?? data['scholarNo'] ?? '').toString();
+            final classLevel = (data['class_level'] ?? data['class'] ?? data['classLevel'])?.toString();
+
+            void openStudentProfile() {
+              StudentProfileModal.show(
+                context,
+                scholarNo: scholarNo,
+                studentName: name,
+                houseName: house,
+                classLevel: classLevel,
+                avatarUrl: imgUrl.isNotEmpty ? imgUrl : null,
+              );
+            }
 
             return Container(
               decoration: BoxDecoration(
@@ -3331,39 +4259,52 @@ class _HomeScreenState extends State<HomeScreen>
                     padding: const EdgeInsets.all(16),
                     child: Row(
                       children: [
-                        CircleAvatar(
-                          backgroundColor: HouseColors.getHouseColor(house),
-                          radius: 18,
-                          child: Text(
-                            name.isNotEmpty ? name[0].toUpperCase() : 'S',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
                         Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                name,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 15,
-                                ),
+                          child: InkWell(
+                            onTap: openStudentProfile,
+                            borderRadius: BorderRadius.circular(16),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
+                              child: Row(
+                                children: [
+                                  CircleAvatar(
+                                    backgroundColor: HouseColors.getHouseColor(house),
+                                    radius: 18,
+                                    child: Text(
+                                      name.isNotEmpty ? name[0].toUpperCase() : 'S',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          name,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 15,
+                                          ),
+                                        ),
+                                        Text(
+                                          'House $house • Tap to view profile ↗',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: HouseColors.getHouseColor(house),
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                               ),
-                              Text(
-                                'House $house • Live Feed',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: HouseColors.getHouseColor(house),
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
+                            ),
                           ),
                         ),
                         Wrap(
@@ -3445,32 +4386,77 @@ class _HomeScreenState extends State<HomeScreen>
                                 ),
                               ),
                             ],
+                            if (isAdmin || (scholarNo.isNotEmpty && scholarNo == (_profile?['scholar_no'] ?? AuthService.getCachedScholarNo() ?? '').toString().trim()))
+                              IconButton(
+                                constraints: const BoxConstraints(),
+                                padding: const EdgeInsets.symmetric(horizontal: 4),
+                                icon: const Icon(
+                                  Icons.delete_outline_rounded,
+                                  color: Colors.redAccent,
+                                  size: 20,
+                                ),
+                                tooltip: 'Delete Post',
+                                onPressed: () async {
+                                  final confirm = await showDialog<bool>(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                      title: const Row(
+                                        children: [
+                                          Icon(Icons.delete_forever_rounded, color: Colors.redAccent, size: 24),
+                                          SizedBox(width: 8),
+                                          Text('Delete Post', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
+                                        ],
+                                      ),
+                                      content: const Text(
+                                        'Are you sure you want to permanently delete this post from the Live Event Wall?',
+                                        style: TextStyle(fontSize: 14),
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.pop(ctx, false),
+                                          child: const Text('Cancel'),
+                                        ),
+                                        ElevatedButton(
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.redAccent,
+                                            foregroundColor: Colors.white,
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                          ),
+                                          onPressed: () => Navigator.pop(ctx, true),
+                                          child: const Text('Delete', style: TextStyle(fontWeight: FontWeight.w800)),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                  if (confirm == true) {
+                                    await _firestore.collection('event_wall').doc(doc.id).delete();
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Post deleted from Live Event Wall.'),
+                                          behavior: SnackBarBehavior.floating,
+                                          backgroundColor: Colors.redAccent,
+                                        ),
+                                      );
+                                    }
+                                  }
+                                },
+                              ),
                           ],
                         ),
                       ],
                     ),
                   ),
                   if (imgUrl.isNotEmpty)
-                    ClipRRect(
-                      borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(4),
-                        bottom: Radius.circular(4),
-                      ),
-                      child: Image.network(
-                        imgUrl,
-                        width: double.infinity,
-                        height: 280,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => Container(
-                          height: 180,
-                          color: Colors.grey[200],
-                          alignment: Alignment.center,
-                          child: const Icon(
-                            Icons.image_not_supported_rounded,
-                            size: 48,
-                            color: Colors.grey,
-                          ),
+                    GestureDetector(
+                      onTap: openStudentProfile,
+                      child: ClipRRect(
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(4),
+                          bottom: Radius.circular(4),
                         ),
+                        child: HomeScreen.buildResilientImage(imgUrl),
                       ),
                     ),
                   Padding(
@@ -3480,55 +4466,97 @@ class _HomeScreenState extends State<HomeScreen>
                       children: [
                         Row(
                           children: [
-                            InkWell(
-                              onTap: () => _firestore
-                                  .collection('event_wall')
-                                  .doc(doc.id)
-                                  .update({'likes': FieldValue.increment(1)}),
-                              borderRadius: BorderRadius.circular(20),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 4,
-                                  horizontal: 8,
-                                ),
-                                child: Row(
-                                  children: [
-                                    const Icon(
-                                      Icons.favorite_rounded,
-                                      color: Colors.redAccent,
-                                      size: 24,
+                            Builder(
+                              builder: (context) {
+                                final myScholarNo = (_profile?['scholar_no'] ??
+                                        AuthService.getCachedScholarNo() ??
+                                        _authService.currentUser?.uid ??
+                                        '')
+                                    .toString()
+                                    .trim();
+                                final myUid = _authService.currentUser?.uid ?? '';
+                                final List<dynamic> likedBy = data['liked_by'] is List
+                                    ? List<dynamic>.from(data['liked_by'])
+                                    : [];
+                                final bool isLikedByMe = (myScholarNo.isNotEmpty && likedBy.contains(myScholarNo)) ||
+                                    (myUid.isNotEmpty && likedBy.contains(myUid));
+
+                                return InkWell(
+                                  onTap: () async {
+                                    HapticFeedback.lightImpact();
+                                    final targetId = myScholarNo.isNotEmpty
+                                        ? myScholarNo
+                                        : (myUid.isNotEmpty ? myUid : 'anon');
+                                    final postRef = _firestore.collection('event_wall').doc(doc.id);
+                                    if (isLikedByMe) {
+                                      // Toggle Unlike
+                                      await postRef.update({
+                                        'likes': FieldValue.increment(-1),
+                                        'liked_by': FieldValue.arrayRemove([
+                                          if (myScholarNo.isNotEmpty) myScholarNo,
+                                          if (myUid.isNotEmpty) myUid,
+                                        ]),
+                                      });
+                                    } else {
+                                      // Toggle Like (Single Like per Student)
+                                      await postRef.update({
+                                        'likes': FieldValue.increment(1),
+                                        'liked_by': FieldValue.arrayUnion([targetId]),
+                                      });
+                                    }
+                                  },
+                                  borderRadius: BorderRadius.circular(20),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 4,
+                                      horizontal: 8,
                                     ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      '$likes likes',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w900,
-                                        fontSize: 14,
-                                      ),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          isLikedByMe
+                                              ? Icons.favorite_rounded
+                                              : Icons.favorite_border_rounded,
+                                          color: isLikedByMe ? Colors.redAccent : Colors.grey,
+                                          size: 24,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          '$likes ${likes == 1 ? 'like' : 'likes'}',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 14,
+                                            color: isLikedByMe ? Colors.redAccent : null,
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                  ],
-                                ),
-                              ),
+                                  ),
+                                );
+                              },
                             ),
                           ],
                         ),
                         if (caption.isNotEmpty) ...[
                           const SizedBox(height: 8),
-                          RichText(
-                            text: TextSpan(
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.onSurface,
-                                fontSize: 14,
-                              ),
-                              children: [
-                                TextSpan(
-                                  text: '$name ',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                  ),
+                          InkWell(
+                            onTap: openStudentProfile,
+                            child: RichText(
+                              text: TextSpan(
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.onSurface,
+                                  fontSize: 14,
                                 ),
-                                TextSpan(text: caption),
-                              ],
+                                children: [
+                                  TextSpan(
+                                    text: '$name ',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  TextSpan(text: caption),
+                                ],
+                              ),
                             ),
                           ),
                         ],
@@ -3791,6 +4819,43 @@ class _HomeScreenState extends State<HomeScreen>
                         );
                       },
                     ),
+                  _buildDrawerTile(
+                    Icons.school_rounded,
+                    '🏛️ Campus Academics (Timetable, HW, Exams)',
+                    Colors.tealAccent,
+                    () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => AcademicsScreen(
+                            scholarNo: scholarNo,
+                            studentName: name,
+                            userHouse: house,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildDrawerTile(
+                    Icons.fact_check_rounded,
+                    '📋 Attendance Registry & Leave Pass',
+                    Colors.greenAccent,
+                    () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => AcademicsScreen(
+                            scholarNo: scholarNo,
+                            studentName: name,
+                            userHouse: house,
+                            initialTab: 'attendance',
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                   _buildDrawerTile(
                     Icons.leaderboard_rounded,
                     '🏆 Inter-House Leaderboards',
@@ -4221,7 +5286,7 @@ class _HomeScreenState extends State<HomeScreen>
   void _showAppSettingsModal(Color color) {
     bool pushNotifs = true;
     bool soundEffects = true;
-    bool darkTheme = Theme.of(context).brightness == Brightness.dark;
+    bool darkTheme = AppThemeController.isDarkMode(context);
 
     showModalBottomSheet(
       context: context,
@@ -4290,7 +5355,12 @@ class _HomeScreenState extends State<HomeScreen>
                   ),
                   value: darkTheme,
                   activeThumbColor: color,
-                  onChanged: (v) => setModalState(() => darkTheme = v),
+                  onChanged: (v) {
+                    setModalState(() => darkTheme = v);
+                    AppThemeController.setThemeMode(
+                      v ? ThemeMode.dark : ThemeMode.light,
+                    );
+                  },
                 ),
                 const Divider(),
                 ListTile(

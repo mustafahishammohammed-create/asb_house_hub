@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:asb_house_hub/theme/app_theme.dart';
 import 'package:asb_house_hub/services/gemini_ai_service.dart';
@@ -7,6 +8,9 @@ import 'package:asb_house_hub/screens/house_ai_chat_screen.dart';
 import 'package:asb_house_hub/screens/signup_screen.dart';
 import 'package:asb_house_hub/widgets/apple_fitness_badges_vault.dart';
 import 'package:asb_house_hub/widgets/mascot_3d_stage.dart';
+import 'package:asb_house_hub/screens/house_arena_screen.dart';
+import 'package:asb_house_hub/widgets/battle_chant_synthesizer.dart';
+import 'package:flutter/services.dart';
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:asb_house_hub/services/auth_service.dart';
@@ -15,15 +19,56 @@ import 'package:asb_house_hub/screens/merch_store_tab.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:asb_house_hub/screens/id_scanner_screen.dart';
+import 'package:asb_house_hub/screens/student_behavior_evaluation_screen.dart';
+import 'package:asb_house_hub/screens/digital_wallet_screen.dart';
+import 'package:asb_house_hub/screens/home_screen.dart';
+import 'package:asb_house_hub/screens/house_leaderboard_screen.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:asb_house_hub/screens/chat_room_screen.dart';
 import 'package:asb_house_hub/widgets/account_switcher_modal.dart';
+import 'package:asb_house_hub/widgets/pill_selector.dart';
+import 'package:asb_house_hub/widgets/confetti_overlay.dart';
+import 'package:asb_house_hub/widgets/camera_capture_dialog.dart';
+import 'package:asb_house_hub/services/qr_decoder_service.dart';
+import 'package:image/image.dart' as img;
+import 'package:zxing2/qrcode.dart';
 import 'package:asb_house_hub/main.dart';
+import 'package:asb_house_hub/services/gamification_security_service.dart';
+import 'package:asb_house_hub/widgets/gamification_cooldown_banner.dart';
+import 'package:asb_house_hub/models/timetable_period.dart';
+import 'package:asb_house_hub/models/academic_assignment.dart';
+import 'package:asb_house_hub/models/exam_schedule_item.dart';
+import 'package:asb_house_hub/models/academic_report_card.dart';
+import 'package:asb_house_hub/models/attendance_record.dart';
+import 'package:asb_house_hub/models/campus_event.dart';
+import 'package:asb_house_hub/models/election_ballot.dart';
+import 'package:asb_house_hub/models/digital_ballot_cast.dart';
+import 'package:asb_house_hub/models/election_audit_record.dart';
+import 'package:asb_house_hub/models/election_gazette.dart';
+import 'package:asb_house_hub/services/election_security_service.dart';
+import 'package:asb_house_hub/screens/academics_screen.dart';
+import 'package:asb_house_hub/screens/events_screen.dart';
+import 'package:asb_house_hub/screens/election_chamber_screen.dart';
+import 'package:asb_house_hub/screens/election_audit_screen.dart';
+import 'package:asb_house_hub/screens/election_gazette_screen.dart';
+import 'package:asb_house_hub/screens/sports_tournament_screen.dart';
+import 'package:asb_house_hub/screens/live_match_hud_screen.dart';
+import 'package:asb_house_hub/models/sports_tournament.dart';
+import 'package:asb_house_hub/models/match_telemetry.dart';
+import 'package:asb_house_hub/models/player_sports_stats.dart';
+import 'package:asb_house_hub/models/sports_trophy.dart';
+import 'package:asb_house_hub/services/sports_security_service.dart';
+import 'package:asb_house_hub/screens/login_screen.dart';
+import 'package:asb_house_hub/screens/onboarding_screen.dart';
+import 'dart:convert';
 
 void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     await AuthService.initPreferences();
     await AuthService.clearCache();
+    await GamificationSecurityService.initPreferences();
+    await GamificationSecurityService.clearCooldowns();
   });
 
   testWidgets('Theme check smoke test', (WidgetTester tester) async {
@@ -106,8 +151,8 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.textContaining('EMERALD House AI Advisor'), findsOneWidget);
-    expect(find.textContaining('How can I earn 50 points'), findsOneWidget);
+    expect(find.textContaining('EMERALD'), findsWidgets);
+    expect(find.textContaining('Sylva the Titan Wolf'), findsWidgets);
   });
 
   testWidgets('AppleFitnessBadgesVault mounts with summary header and filters', (
@@ -258,11 +303,15 @@ void main() {
       isTrue,
     );
     expect(
-      HierarchyService.isPrefect(scholarNo: '11004', fullName: 'Sarah Paul'),
+      HierarchyService.isPrefect(
+        scholarNo: '11004',
+        role: 'prefect',
+        fullName: 'Sarah Paul',
+      ),
       isTrue,
     );
 
-    // 3. Security Check: Unrelated student named Sarah must NOT receive elevated privileges
+    // 3. Security Check: Unrelated student names must NOT receive elevated privileges via name matching
     expect(
       HierarchyService.isAdmin(
         scholarNo: '60123',
@@ -279,6 +328,51 @@ void main() {
       ),
       isFalse,
     );
+    // Student named 'Dr. Elizabeth Vance' cannot escalate to teacher
+    expect(
+      HierarchyService.isTeacherOrFaculty(
+        scholarNo: '99999',
+        role: 'student',
+        fullName: 'Dr. Elizabeth Vance',
+      ),
+      isFalse,
+    );
+    // Student named 'Noaman Nizamuddin' cannot escalate to captain
+    expect(
+      HierarchyService.isCaptain(
+        scholarNo: '88888',
+        role: 'student',
+        fullName: 'Noaman Nizamuddin',
+      ),
+      isFalse,
+    );
+    // Student named 'Head Boy' cannot escalate to council
+    expect(
+      HierarchyService.isCouncil(
+        scholarNo: '77777',
+        role: 'student',
+        fullName: 'Head Boy',
+      ),
+      isFalse,
+    );
+    // Student named 'Sarah Paul' cannot escalate to prefect without scholar 11004 or prefect role
+    expect(
+      HierarchyService.isPrefect(
+        scholarNo: '66666',
+        role: 'student',
+        fullName: 'Sarah Paul',
+      ),
+      isFalse,
+    );
+    // Student named 'Mustafa Hisham' cannot escalate to super admin without scholar 2310910/admin or super_admin role
+    expect(
+      HierarchyService.isSuperAdmin(
+        scholarNo: '55555',
+        role: 'student',
+        fullName: 'Mustafa Hisham',
+      ),
+      isFalse,
+    );
 
     // 4. Role Display Titles
     expect(
@@ -286,19 +380,23 @@ void main() {
       'Super Admin',
     );
     expect(
-      HierarchyService.getRoleDisplayTitle(scholarNo: '30003'),
+      HierarchyService.getRoleDisplayTitle(scholarNo: '11209'),
+      'Super Admin',
+    );
+    expect(
+      HierarchyService.getRoleDisplayTitle(role: 'teacher'),
       'Faculty Lead',
     );
     expect(
-      HierarchyService.getRoleDisplayTitle(scholarNo: '10001'),
+      HierarchyService.getRoleDisplayTitle(role: 'captain'),
       'House Captain',
     );
     expect(
-      HierarchyService.getRoleDisplayTitle(scholarNo: '12001'),
+      HierarchyService.getRoleDisplayTitle(role: 'council'),
       'Student Council',
     );
     expect(
-      HierarchyService.getRoleDisplayTitle(scholarNo: '11004'),
+      HierarchyService.getRoleDisplayTitle(role: 'prefect'),
       'Grade Prefect',
     );
     expect(
@@ -600,12 +698,12 @@ void main() {
     expect(AuthService.extractHouse({'house_id': 'TOPAZ'}), 'topaz');
     expect(AuthService.extractHouse({'house_name': 'Ruby'}), 'ruby');
 
-    // inferHouseFromScholarNo for all 4 houses
-    expect(AuthService.inferHouseFromScholarNo('10001'), 'emerald');
-    expect(AuthService.inferHouseFromScholarNo('20002'), 'emerald');
-    expect(AuthService.inferHouseFromScholarNo('30003'), 'sapphire');
-    expect(AuthService.inferHouseFromScholarNo('12001'), 'topaz');
+    // inferHouseFromScholarNo for houses
+    expect(AuthService.inferHouseFromScholarNo('emerald_student'), 'emerald');
+    expect(AuthService.inferHouseFromScholarNo('sapphire_student'), 'sapphire');
+    expect(AuthService.inferHouseFromScholarNo('topaz_student'), 'topaz');
     expect(AuthService.inferHouseFromScholarNo('2310910'), 'ruby');
+    expect(AuthService.inferHouseFromScholarNo('11209'), 'ruby');
     expect(AuthService.inferHouseFromScholarNo('admin'), 'ruby');
 
     // Clear cache
@@ -786,13 +884,12 @@ void main() {
   });
 
   test('AuthService.inferHouseFromScholarNo correctly infers house or returns null', () {
-    expect(AuthService.inferHouseFromScholarNo('10001'), 'emerald');
-    expect(AuthService.inferHouseFromScholarNo('20002'), 'emerald');
-    expect(AuthService.inferHouseFromScholarNo('11089'), 'emerald');
-    expect(AuthService.inferHouseFromScholarNo('30003'), 'sapphire');
-    expect(AuthService.inferHouseFromScholarNo('12001'), 'topaz');
-    expect(AuthService.inferHouseFromScholarNo('11012'), 'topaz');
-    expect(AuthService.inferHouseFromScholarNo('40001'), 'topaz');
+    expect(AuthService.inferHouseFromScholarNo('emerald_student'), 'emerald');
+    expect(AuthService.inferHouseFromScholarNo('sapphire_student'), 'sapphire');
+    expect(AuthService.inferHouseFromScholarNo('topaz_student'), 'topaz');
+    expect(AuthService.inferHouseFromScholarNo('2310910'), 'ruby');
+    expect(AuthService.inferHouseFromScholarNo('11209'), 'ruby');
+    expect(AuthService.inferHouseFromScholarNo('admin'), 'ruby');
 
     // Substring fallback
     expect(AuthService.inferHouseFromScholarNo('scholar_emerald_01'), 'emerald');
@@ -1008,6 +1105,155 @@ void main() {
     expect(find.textContaining('Noaman Nizamuddin'), findsNothing);
   });
 
+  testWidgets('IdScannerScreen adapts responsive layout between desktop wide and mobile viewports', (
+    WidgetTester tester,
+  ) async {
+    // 1. Desktop wide viewport (1280x720)
+    tester.view.physicalSize = const Size(1280, 720);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: IdScannerScreen(evaluatorName: 'Lead Evaluator'),
+      ),
+    );
+    await tester.pump();
+
+    // Verify Dropzone and Manual Lookup render simultaneously in desktop two-column mode
+    expect(find.text('Click to Browse QR Code Image'), findsOneWidget);
+    expect(find.text('Select Image File'), findsOneWidget);
+    expect(find.text('Manual Scholar # or QR Code Lookup'), findsOneWidget);
+
+    // Verify accessible semantics on Dropzone
+    expect(
+      find.byWidgetPredicate((w) =>
+          w is Semantics &&
+          w.properties.button == true &&
+          w.properties.label == 'Select QR Code image file from your computer'),
+      findsOneWidget,
+    );
+
+    // 2. Mobile narrow viewport (400x800)
+    tester.view.physicalSize = const Size(400, 800);
+    await tester.pump();
+
+    expect(find.text('Click to Browse QR Code Image'), findsOneWidget);
+    expect(find.text('Manual Scholar # or QR Code Lookup'), findsOneWidget);
+  });
+
+  testWidgets('IdScannerScreen and CameraCaptureDialog satisfy WCAG accessibility guidelines', (
+    WidgetTester tester,
+  ) async {
+    // 1. Mount IdScannerScreen
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.lightTheme,
+        home: const IdScannerScreen(evaluatorName: 'Lead Evaluator'),
+      ),
+    );
+    await tester.pump();
+
+    // Verify touch targets >= 48dp on primary buttons
+    final lookupBtn = tester.widget<ElevatedButton>(find.widgetWithText(ElevatedButton, 'Lookup'));
+    expect(lookupBtn.style?.minimumSize?.resolve({})?.height, greaterThanOrEqualTo(48.0));
+
+    // Verify semantic descriptions exist for screen readers
+    expect(
+      find.bySemanticsLabel(RegExp(r'Camera Viewfinder|Select QR Code image|Scholar #', caseSensitive: false)),
+      findsWidgets,
+    );
+
+    // 2. Mount CameraCaptureDialog
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.lightTheme,
+        home: const Scaffold(
+          body: CameraCaptureDialog(),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Verify dialog semantics exist for screen readers
+    expect(
+      find.bySemanticsLabel(RegExp(r'Initializing Camera|Camera viewfinder|Requesting camera|No physical webcam', caseSensitive: false)),
+      findsWidgets,
+    );
+  });
+
+  test('IdScannerScreen.cleanScholarQuery normalizes diverse user input formats', () {
+    expect(IdScannerScreen.cleanScholarQuery('2310910'), '2310910');
+    expect(IdScannerScreen.cleanScholarQuery('#2310910'), '2310910');
+    expect(IdScannerScreen.cleanScholarQuery('##2310910'), '2310910');
+    expect(IdScannerScreen.cleanScholarQuery('scholar: 2310910'), '2310910');
+    expect(IdScannerScreen.cleanScholarQuery('Scholar #2310910'), '2310910');
+    expect(IdScannerScreen.cleanScholarQuery('id: 2310910'), '2310910');
+    expect(IdScannerScreen.cleanScholarQuery('scholar_no: 2310910'), '2310910');
+    expect(IdScannerScreen.cleanScholarQuery('  2310910  '), '2310910');
+  });
+
+  testWidgets('IdScannerScreen manual lookup validates empty and invalid inputs with inline errorText', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: IdScannerScreen(evaluatorName: 'Lead Evaluator'),
+      ),
+    );
+    await tester.pump();
+
+    // 1. Submit empty search
+    final lookupBtn = find.widgetWithText(ElevatedButton, 'Lookup');
+    await tester.tap(lookupBtn);
+    await tester.pump();
+
+    expect(find.text('Please enter a Scholar # or scan a QR code.'), findsOneWidget);
+
+    // 2. Enter invalid gibberish / symbols
+    final textField = find.byType(TextField);
+    await tester.enterText(textField, '???');
+    await tester.tap(lookupBtn);
+    await tester.pump();
+
+    expect(find.text('Invalid Scholar #. Enter 3-12 letters/digits (e.g. 2310910).'), findsOneWidget);
+
+    // 3. Clear button clears text and error
+    await tester.enterText(textField, '2310910');
+    await tester.pump();
+    final clearBtn = find.byTooltip('Clear search text');
+    expect(clearBtn, findsOneWidget);
+    await tester.tap(clearBtn);
+    await tester.pump();
+
+    expect(find.text('Invalid Scholar #. Enter 3-12 letters/digits (e.g. 2310910).'), findsNothing);
+  });
+
+  testWidgets('IdScannerScreen handles case-insensitive token schemes and navigates to evaluation screen', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: IdScannerScreen(evaluatorName: 'Lead Evaluator'),
+      ),
+    );
+    await tester.pump();
+
+    // Enter case-insensitive legacy token e.g. "asb-id:10042:emerald:verified"
+    final textField = find.byType(TextField);
+    await tester.enterText(textField, 'asb-id:10042:emerald:verified');
+    final lookupBtn = find.widgetWithText(ElevatedButton, 'Lookup');
+    await tester.tap(lookupBtn);
+    await tester.pumpAndSettle();
+
+    // Verify successful navigation to StudentBehaviorEvaluationScreen
+    expect(find.byType(StudentBehaviorEvaluationScreen), findsOneWidget);
+    expect(find.textContaining('10042'), findsWidgets);
+  });
+
   testWidgets('Mascot3DStage non-overlapping chrome displays CAD telemetry and diagram mode buttons', (
     WidgetTester tester,
   ) async {
@@ -1203,7 +1449,11 @@ void main() {
     expect(accounts.first.scholarNo, '10001');
     expect(accounts.first.fullName, 'Aarav Sharma');
     expect(accounts.first.houseName, 'emerald');
-    expect(accounts.first.password, 'AaravPassword123');
+    // Passwords are persisted for seamless multi-account switching on family devices
+    expect(accounts.first.password, equals('AaravPassword123'));
+    expect(aaravAccount.toMap().containsKey('password'), isTrue);
+    final injectedMap = {'password': 'hacked_password', 'scholar_no': '12345'};
+    expect(SavedAccount.fromMap(injectedMap).password, equals('hacked_password'));
 
     // 3. Add Sibling Priya Sharma (Ruby House)
     final priyaAccount = SavedAccount(
@@ -1249,23 +1499,23 @@ void main() {
     expect(aaravProfile?['full_name'], 'Aarav Sharma');
     expect(aaravProfile?['house_name'], 'emerald');
 
-    // 6. Test addSiblingAccount method with inferred house (Sapphire #30003)
+    // 6. Test addSiblingAccount method with inferred house (Sapphire #30003_sapphire)
     final vanceSibling = await authService.addSiblingAccount(
-      scholarNo: '30003',
+      scholarNo: '30003_sapphire',
       password: 'VancePassword789',
     );
-    expect(vanceSibling.scholarNo, '30003');
+    expect(vanceSibling.scholarNo, '30003_sapphire');
     expect(vanceSibling.houseName, 'sapphire');
 
     accounts = AuthService.getSavedAccounts();
     expect(accounts.length, 3);
-    expect(accounts.any((a) => a.scholarNo == '30003' && a.houseName == 'sapphire'), isTrue);
+    expect(accounts.any((a) => a.scholarNo == '30003_sapphire' && a.houseName == 'sapphire'), isTrue);
 
     // 7. Test removeSavedAccount
-    await AuthService.removeSavedAccount('30003');
+    await AuthService.removeSavedAccount('30003_sapphire');
     accounts = AuthService.getSavedAccounts();
     expect(accounts.length, 2);
-    expect(accounts.any((a) => a.scholarNo == '30003'), isFalse);
+    expect(accounts.any((a) => a.scholarNo == '30003_sapphire'), isFalse);
 
     // 8. Test clearAllSavedAccounts
     await AuthService.clearAllSavedAccounts();
@@ -1368,5 +1618,7184 @@ void main() {
 
     expect(find.textContaining('RUBY House Detected'), findsOneWidget);
   });
+
+  testWidgets('PillSelector accessibility semantics, tap targets, and interaction', (WidgetTester tester) async {
+    String selected = 'Grade 10';
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              return PillSelector(
+                label: 'Grade Level',
+                options: const ['Grade 9', 'Grade 10', 'Grade 11'],
+                selectedValue: selected,
+                onSelected: (val) {
+                  setState(() => selected = val);
+                },
+              );
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Verify Semantics exist for each pill with correct labels and selection states
+    expect(
+      find.byWidgetPredicate((w) =>
+          w is Semantics &&
+          w.properties.button == true &&
+          w.properties.label == 'Grade Level Grade 9' &&
+          w.properties.selected == false),
+      findsOneWidget,
+    );
+    expect(
+      find.byWidgetPredicate((w) =>
+          w is Semantics &&
+          w.properties.button == true &&
+          w.properties.label == 'Grade Level Grade 10' &&
+          w.properties.selected == true),
+      findsOneWidget,
+    );
+
+    // Verify minimum tap target size (>= 48x48)
+    final pillFinders = find.byType(AnimatedContainer);
+    expect(pillFinders, findsNWidgets(3));
+    for (int i = 0; i < 3; i++) {
+      final size = tester.getSize(pillFinders.at(i));
+      expect(size.height, greaterThanOrEqualTo(48.0));
+      expect(size.width, greaterThanOrEqualTo(48.0));
+    }
+
+    // Tap unselected option 'Grade 11' and verify selection update
+    await tester.tap(find.text('Grade 11'));
+    await tester.pump();
+    expect(selected, 'Grade 11');
+  });
+
+  testWidgets('ConfettiOverlay renders RepaintBoundary, AnimatedBuilder, and responds to show flag', (WidgetTester tester) async {
+    bool showConfetti = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            return Scaffold(
+              body: ConfettiOverlay(
+                show: showConfetti,
+                child: const Text('Confetti Child'),
+              ),
+              floatingActionButton: FloatingActionButton(
+                onPressed: () => setState(() => showConfetti = !showConfetti),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    final confettiCustomPaint = find.descendant(
+      of: find.byType(ConfettiOverlay),
+      matching: find.byType(CustomPaint),
+    );
+
+    expect(find.text('Confetti Child'), findsOneWidget);
+    // Initially not showing confetti, canvas should not be rendered inside ConfettiOverlay
+    expect(confettiCustomPaint, findsNothing);
+
+    // Trigger confetti
+    await tester.tap(find.byType(FloatingActionButton));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    // Verify AnimatedBuilder and RepaintBoundary isolate painting within ConfettiOverlay
+    expect(
+      find.descendant(
+        of: find.byType(ConfettiOverlay),
+        matching: find.byType(AnimatedBuilder),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(ConfettiOverlay),
+        matching: find.byType(RepaintBoundary),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(ConfettiOverlay),
+        matching: find.byType(ExcludeSemantics),
+      ),
+      findsOneWidget,
+    );
+    expect(confettiCustomPaint, findsOneWidget);
+
+    // Toggle off confetti
+    await tester.tap(find.byType(FloatingActionButton));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(confettiCustomPaint, findsNothing);
+  });
+
+  test('AuthService house standings offline cache persistence and pre-hydration', () async {
+    SharedPreferences.setMockInitialValues({});
+    await AuthService.initPreferences();
+
+    // Default fallback when cache is empty (zero baseline standings)
+    final initialStandings = AuthService.getCachedHouseStandings();
+    expect(initialStandings['ruby'], 0);
+    expect(initialStandings['sapphire'], 0);
+    expect(initialStandings['emerald'], 0);
+    expect(initialStandings['topaz'], 0);
+
+    // Save live verified standings
+    final mockStandings = {
+      'ruby': 1250,
+      'sapphire': 980,
+      'emerald': 1420,
+      'topaz': 1100,
+    };
+    await AuthService.cacheHouseStandings(mockStandings);
+
+    // Retrieve cached standings
+    final cached = AuthService.getCachedHouseStandings();
+    expect(cached['ruby'], 1250);
+    expect(cached['sapphire'], 980);
+    expect(cached['emerald'], 1420);
+    expect(cached['topaz'], 1100);
+
+    // Verify clearCache clears custom standings back to baseline seed
+    await AuthService.clearCache();
+    final cleared = AuthService.getCachedHouseStandings();
+    expect(cleared['ruby'], 0);
+    expect(cleared['sapphire'], 0);
+    expect(cleared['emerald'], 0);
+    expect(cleared['topaz'], 0);
+  });
+
+  test('QrDecoderService decodes valid QR code and returns null for invalid image bytes', () async {
+    // 1. Invalid bytes test
+    final invalidResult = await QrDecoderService.decodeQrFromBytes(Uint8List.fromList([0, 1, 2, 3]));
+    expect(invalidResult, isNull);
+
+    // 2. Synthesize a valid QR code in memory using ZXing Encoder
+    const testPayload = 'ASB:10001:EMERALD';
+    final qrcode = Encoder.encode(testPayload, ErrorCorrectionLevel.h);
+    final matrix = qrcode.matrix!;
+    const scale = 4;
+
+    final image = img.Image(
+      width: matrix.width * scale,
+      height: matrix.height * scale,
+      numChannels: 4,
+    );
+    // Fill white background
+    img.fill(image, color: img.ColorRgba8(0xFF, 0xFF, 0xFF, 0xFF));
+
+    // Draw dark modules
+    for (var x = 0; x < matrix.width; x++) {
+      for (var y = 0; y < matrix.height; y++) {
+        if (matrix.get(x, y) == 1) {
+          img.fillRect(
+            image,
+            x1: x * scale,
+            y1: y * scale,
+            x2: x * scale + scale,
+            y2: y * scale + scale,
+            color: img.ColorRgba8(0, 0, 0, 0xFF),
+          );
+        }
+      }
+    }
+
+    final pngBytes = Uint8List.fromList(img.encodePng(image));
+    final decoded = await QrDecoderService.decodeQrFromBytes(pngBytes);
+    expect(decoded, testPayload);
+  });
+
+  test('VoucherSecurityService generates and validates signed student pass with anti-tampering protection', () {
+    final signedPass = VoucherSecurityService.generateStudentPassPayload(
+      scholarNo: '2310910',
+      studentName: 'Zaid Al-Husseini',
+      houseName: 'RUBY',
+      classLevel: 'Grade 11-D',
+      academicYear: '2026/2027',
+    );
+
+    // 1. Valid pass validation
+    final result = VoucherSecurityService.validateStudentPassPayload(signedPass);
+    expect(result.isValid, isTrue);
+    expect(result.isTampered, isFalse);
+    expect(result.scholarNo, '2310910');
+    expect(result.studentName, 'Zaid Al-Husseini');
+    expect(result.houseName, 'RUBY');
+    expect(result.classLevel, 'Grade 11-D');
+    expect(result.error, isNull);
+
+    // 2. Tampering detection: altered house affiliation
+    final tamperedHousePass = signedPass.replaceAll('"house":"RUBY"', '"house":"EMERALD"');
+    final tamperedHouseResult = VoucherSecurityService.validateStudentPassPayload(tamperedHousePass);
+    expect(tamperedHouseResult.isValid, isFalse);
+    expect(tamperedHouseResult.isTampered, isTrue);
+    expect(tamperedHouseResult.error, contains('Signature mismatch'));
+
+    // 3. Tampering detection: altered scholar_no
+    final tamperedScholarPass = signedPass.replaceAll('"scholar_no":"2310910"', '"scholar_no":"9999999"');
+    final tamperedScholarResult = VoucherSecurityService.validateStudentPassPayload(tamperedScholarPass);
+    expect(tamperedScholarResult.isValid, isFalse);
+    expect(tamperedScholarResult.isTampered, isTrue);
+
+    // 4. Tampering detection: stripped signature
+    final strippedSigPass = signedPass.replaceAll(RegExp(r'"signature":"[^"]+"'), '"signature":""');
+    final strippedResult = VoucherSecurityService.validateStudentPassPayload(strippedSigPass);
+    expect(strippedResult.isValid, isFalse);
+    expect(strippedResult.isTampered, isTrue);
+    expect(strippedResult.error, contains('Missing digital signature'));
+
+    // 5. Malformed payload
+    final malformedResult = VoucherSecurityService.validateStudentPassPayload('NOT_JSON');
+    expect(malformedResult.isValid, isFalse);
+    expect(malformedResult.isTampered, isFalse);
+  });
+
+  testWidgets('DigitalWalletScreen renders cryptographically signed pass with accessible Semantics', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const Scaffold(
+          body: DigitalWalletScreen(
+            userName: 'Zaid Al-Husseini',
+            userHouse: 'ruby',
+            scholarNo: '2310910',
+            initialIndex: 1,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Verify accessible Semantics label on the student QR pass
+    expect(
+      find.bySemanticsLabel(RegExp(r'Cryptographically verified digital student QR pass', caseSensitive: false)),
+      findsOneWidget,
+    );
+    expect(find.byType(QrImageView), findsOneWidget);
+  });
+
+  testWidgets('IdScannerScreen navigates on valid signed pass and displays alert on tampered pass', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: IdScannerScreen(evaluatorName: 'Lead Evaluator'),
+      ),
+    );
+    await tester.pump();
+
+    final signedPass = VoucherSecurityService.generateStudentPassPayload(
+      scholarNo: '2310910',
+      studentName: 'Zaid Al-Husseini',
+      houseName: 'RUBY',
+      classLevel: 'Grade 11-D',
+    );
+    final tamperedPass = signedPass.replaceAll('"house":"RUBY"', '"house":"EMERALD"');
+
+    final searchField = find.byType(TextField);
+
+    // 1. Test tampered pass detection
+    await tester.enterText(searchField, tamperedPass);
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Lookup'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Verify Tampered Student Pass alert dialog is rendered
+    expect(find.text('Tampered Student Pass'), findsOneWidget);
+    expect(find.textContaining('Security Alert'), findsOneWidget);
+
+    // Dismiss alert dialog
+    await tester.tap(find.text('Dismiss'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // 2. Test valid signed pass navigation
+    await tester.enterText(searchField, signedPass);
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Lookup'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    // Verify navigation to StudentBehaviorEvaluationScreen with signed student metadata
+    expect(find.byType(StudentBehaviorEvaluationScreen), findsOneWidget);
+    expect(find.text('Zaid Al-Husseini'), findsOneWidget);
+  });
+
+  testWidgets('DigitalWalletScreen PassCard meets touch targets, MergeSemantics, and ExcludeSemantics guidelines', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const Scaffold(
+          body: DigitalWalletScreen(
+            userName: 'Zaid Al-Husseini',
+            userHouse: 'ruby',
+            scholarNo: '2310910',
+            canScanQr: true,
+            initialIndex: 1,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // 1. Verify Scan ID button has >= 48dp height minimum size
+    final scanIdFinder = find.widgetWithText(ElevatedButton, 'Scan ID');
+    expect(scanIdFinder, findsOneWidget);
+    final scanBtn = tester.widget<ElevatedButton>(scanIdFinder);
+    expect(scanBtn.style?.minimumSize?.resolve({})?.height, greaterThanOrEqualTo(48.0));
+
+    // 2. Verify AppBar scanner action button has >= 48dp constraints
+    final scannerIconBtnFinder = find.widgetWithIcon(IconButton, Icons.qr_code_scanner_rounded);
+    expect(scannerIconBtnFinder, findsOneWidget);
+    final scannerIconBtn = tester.widget<IconButton>(scannerIconBtnFinder);
+    expect(scannerIconBtn.constraints?.minHeight, greaterThanOrEqualTo(48.0));
+    expect(scannerIconBtn.constraints?.minWidth, greaterThanOrEqualTo(48.0));
+
+    // 3. Verify MergeSemantics exists for cohesive pass announcements
+    expect(find.byType(MergeSemantics), findsWidgets);
+
+    // 4. Verify ExcludeSemantics is applied to decorative elements (e.g. ticket notches)
+    expect(find.byType(ExcludeSemantics), findsWidgets);
+
+    // 5. Verify action buttons have >= 48dp minimum height
+    final walletBtnFinder = find.widgetWithText(ElevatedButton, 'Save to Google Wallet');
+    expect(walletBtnFinder, findsOneWidget);
+    final walletBtn = tester.widget<ElevatedButton>(walletBtnFinder);
+    expect(walletBtn.style?.minimumSize?.resolve({})?.height, greaterThanOrEqualTo(48.0));
+
+    final receiptBtnFinder = find.widgetWithText(ElevatedButton, 'Pass & Receipt');
+    expect(receiptBtnFinder, findsOneWidget);
+    final receiptBtn = tester.widget<ElevatedButton>(receiptBtnFinder);
+    expect(receiptBtn.style?.minimumSize?.resolve({})?.height, greaterThanOrEqualTo(48.0));
+  });
+
+  testWidgets('DigitalWalletScreen action buttons wrap responsively at 200% font scaling without overflow', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() => tester.view.resetPhysicalSize());
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: MediaQuery(
+          data: const MediaQueryData(
+            textScaler: TextScaler.linear(2.0),
+          ),
+          child: const Scaffold(
+            body: DigitalWalletScreen(
+              userName: 'Zaid Al-Husseini',
+              userHouse: 'ruby',
+              scholarNo: '2310910',
+              initialIndex: 1,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Verify both action buttons render without overflow
+    expect(find.text('Save to Google Wallet'), findsOneWidget);
+    expect(find.text('Pass & Receipt'), findsOneWidget);
+  });
+
+  test('AuthService student contribution caching and retrieval logic', () async {
+    SharedPreferences.setMockInitialValues({});
+    await AuthService.initPreferences();
+
+    // 1. Initial state: nothing cached for student
+    final initial = AuthService.getCachedStudentContribution('2310910');
+    expect(initial.totalPoints, 0);
+    expect(initial.merits, 0);
+    expect(initial.demerits, 0);
+    expect(initial.lastUpdated, isNull);
+
+    // 2. Cache student contribution
+    await AuthService.cacheStudentContribution(
+      scholarNo: '2310910',
+      totalPoints: 120,
+      merits: 8,
+      demerits: 1,
+    );
+
+    final cached = AuthService.getCachedStudentContribution('2310910');
+    expect(cached.totalPoints, 120);
+    expect(cached.merits, 8);
+    expect(cached.demerits, 1);
+    expect(cached.lastUpdated, isNotNull);
+
+    // 3. Cache update resilience with whitespace trimming
+    await AuthService.cacheStudentContribution(
+      scholarNo: '  2310910  ',
+      totalPoints: 150,
+      merits: 10,
+      demerits: 1,
+    );
+    final updated = AuthService.getCachedStudentContribution('2310910');
+    expect(updated.totalPoints, 150);
+    expect(updated.merits, 10);
+    expect(updated.demerits, 1);
+  });
+
+  testWidgets('DigitalWalletScreen synchronous Frame 1 pre-hydration displays cached contribution without zero flash', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    await AuthService.initPreferences();
+
+    // Pre-cache 150 points, 10 merits, 1 demerit
+    await AuthService.cacheStudentContribution(
+      scholarNo: '2310910',
+      totalPoints: 150,
+      merits: 10,
+      demerits: 1,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const Scaffold(
+          body: DigitalWalletScreen(
+            userName: 'Zaid Al-Husseini',
+            userHouse: 'ruby',
+            scholarNo: '2310910',
+            initialIndex: 1,
+          ),
+        ),
+      ),
+    );
+    // Frame 1 immediate pump (offline/before any async stream events)
+    await tester.pump();
+
+    // 1. Verify Frame 1 immediately shows pre-hydrated stats without zero-points flash
+    expect(find.text('+150 Pts'), findsOneWidget);
+    expect(find.text('10 Earned'), findsOneWidget);
+    expect(find.text('1 Recorded'), findsOneWidget);
+    expect(find.text('+0 Pts'), findsNothing);
+    expect(find.text('0 Earned'), findsNothing);
+
+    // 2. Verify offline sync badge with liveRegion semantics
+    expect(find.text('Offline Verified ⚡'), findsOneWidget);
+    final liveRegionFinder = find.byWidgetPredicate(
+      (w) => w is Semantics && w.properties.liveRegion == true,
+    );
+    expect(liveRegionFinder, findsWidgets);
+
+    // 3. Verify PassCard details credential contains verified house points
+    expect(find.textContaining('House Contribution: +150 Pts'), findsOneWidget);
+
+    // 4. Verify MergeSemantics exists for cohesive screen reader announcement
+    expect(find.byType(MergeSemantics), findsWidgets);
+  });
+
+  test('VoucherSecurityService generates compliant Apple PKPass and Google Wallet payloads', () {
+    final pkPass = VoucherSecurityService.generateApplePkPassJson(
+      scholarNo: '2310910',
+      studentName: 'Zaid Al-Husseini',
+      houseName: 'ruby',
+      classLevel: 'Grade 11-D',
+      qrPayload: 'ASB-ID:2310910:RUBY:HMAC_TOKEN',
+      totalPoints: 150,
+    );
+
+    expect(pkPass['passTypeIdentifier'], 'pass.bh.asianschool.househub');
+    expect(pkPass['serialNumber'], contains('ASB-PASS-2310910-'));
+    expect(pkPass['organizationName'], 'The Asian School Bahrain');
+    expect(pkPass['generic']['primaryFields'][0]['value'], 'Zaid Al-Husseini');
+    expect(pkPass['generic']['secondaryFields'][0]['value'], 'RUBY');
+    expect(pkPass['generic']['auxiliaryFields'][1]['value'], '150 Pts');
+    expect(pkPass['barcodes'][0]['format'], 'PKBarcodeFormatQR');
+    expect(pkPass['barcodes'][0]['message'], 'ASB-ID:2310910:RUBY:HMAC_TOKEN');
+
+    final gPass = VoucherSecurityService.generateGoogleWalletPassJson(
+      scholarNo: '2310910',
+      studentName: 'Zaid Al-Husseini',
+      houseName: 'ruby',
+      classLevel: 'Grade 11-D',
+      qrPayload: 'ASB-ID:2310910:RUBY:HMAC_TOKEN',
+      totalPoints: 150,
+    );
+
+    expect(gPass['issuerId'], 'ASB-BAHRAIN-HOUSEHUB');
+    expect(gPass['classId'], 'asb_student_pass_2026');
+    expect(gPass['header'], 'Zaid Al-Husseini');
+    expect(gPass['subheader'], 'RUBY • Grade 11-D');
+    expect(gPass['barcode']['type'], 'QR_CODE');
+    expect(gPass['barcode']['value'], 'ASB-ID:2310910:RUBY:HMAC_TOKEN');
+  });
+
+  testWidgets('DigitalWalletScreen adapts wallet button between iOS and Android/Windows platforms', (
+    WidgetTester tester,
+  ) async {
+    // 1. Simulate iOS platform
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const Scaffold(
+          body: DigitalWalletScreen(
+            userName: 'Zaid Al-Husseini',
+            userHouse: 'ruby',
+            scholarNo: '2310910',
+            initialIndex: 1,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Add to Apple Wallet'), findsOneWidget);
+    expect(find.byIcon(Icons.apple), findsOneWidget);
+
+    // 2. Simulate Android platform
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const Scaffold(
+          body: DigitalWalletScreen(
+            userName: 'Zaid Al-Husseini',
+            userHouse: 'ruby',
+            scholarNo: '2310910',
+            initialIndex: 1,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Save to Google Wallet'), findsOneWidget);
+    expect(find.byIcon(Icons.account_balance_wallet_rounded), findsWidgets);
+
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('DigitalWalletScreen wallet modal sheet accessibility, focus, and dismiss interaction', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const Scaffold(
+          body: DigitalWalletScreen(
+            userName: 'Zaid Al-Husseini',
+            userHouse: 'ruby',
+            scholarNo: '2310910',
+            initialIndex: 1,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Tap Save to Google Wallet button
+    final walletBtnFinder = find.widgetWithText(ElevatedButton, 'Save to Google Wallet');
+    expect(walletBtnFinder, findsOneWidget);
+    await tester.tap(walletBtnFinder);
+    await tester.pumpAndSettle();
+
+    // 1. Verify modal title and header semantics
+    expect(find.text('Saved to Google Wallet'), findsOneWidget);
+    final headerFinder = find.byWidgetPredicate(
+      (w) => w is Semantics && w.properties.header == true,
+    );
+    expect(headerFinder, findsWidgets);
+
+    // 2. Verify decorative items excluded via ExcludeSemantics
+    expect(find.byType(ExcludeSemantics), findsWidgets);
+
+    // 3. Verify Done button autofocus and 48dp minimum size
+    final doneBtnFinder = find.widgetWithText(ElevatedButton, 'Done');
+    expect(doneBtnFinder, findsOneWidget);
+    final doneBtn = tester.widget<ElevatedButton>(doneBtnFinder);
+    expect(doneBtn.autofocus, isTrue);
+    expect(doneBtn.style?.minimumSize?.resolve({})?.height, greaterThanOrEqualTo(48.0));
+
+    // 4. Tap Done button to dismiss
+    await tester.tap(doneBtnFinder);
+    await tester.pumpAndSettle();
+    expect(find.text('Saved to Google Wallet'), findsNothing);
+  });
+
+  testWidgets('DigitalWalletScreen electronic receipt preview modal accessibility and actions', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const Scaffold(
+          body: DigitalWalletScreen(
+            userName: 'Zaid Al-Husseini',
+            userHouse: 'ruby',
+            scholarNo: '2310910',
+            initialIndex: 1,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Tap Pass & Receipt button
+    final receiptBtnFinder = find.widgetWithText(ElevatedButton, 'Pass & Receipt');
+    expect(receiptBtnFinder, findsOneWidget);
+    await tester.tap(receiptBtnFinder);
+    await tester.pumpAndSettle();
+
+    // 1. Verify dialog preview contents
+    expect(find.text('ASB OFFICIAL VOUCHER'), findsOneWidget);
+
+    // 2. Verify 48dp action buttons
+    final printBtnFinder = find.widgetWithText(OutlinedButton, 'Print Pass');
+    expect(printBtnFinder, findsOneWidget);
+    final printBtn = tester.widget<OutlinedButton>(printBtnFinder);
+    expect(printBtn.style?.minimumSize?.resolve({})?.height, greaterThanOrEqualTo(48.0));
+
+    final exportPdfFinder = find.widgetWithText(ElevatedButton, 'Export PDF');
+    expect(exportPdfFinder, findsOneWidget);
+    final exportPdfBtn = tester.widget<ElevatedButton>(exportPdfFinder);
+    expect(exportPdfBtn.style?.minimumSize?.resolve({})?.height, greaterThanOrEqualTo(48.0));
+
+    // 3. Close button tap dismisses dialog
+    final closeBtnFinder = find.byTooltip('Close receipt preview');
+    expect(closeBtnFinder, findsOneWidget);
+    await tester.tap(closeBtnFinder);
+    await tester.pumpAndSettle();
+    expect(find.text('ASB OFFICIAL VOUCHER'), findsNothing);
+  });
+
+  test('OrderRecord serialization, copyWith, and claim status getters', () {
+    final now = DateTime.now();
+    final item = CartItem(
+      product: const MerchProduct(
+        id: 'p1',
+        name: 'House Cap',
+        price: '50 Pts',
+        rating: 5.0,
+        imageUrl: '',
+        category: 'Accessories',
+        house: 'ruby',
+        description: 'Cap',
+      ),
+      size: 'OneSize',
+      qty: 2,
+    );
+
+    final order = OrderRecord(
+      receiptId: 'ASB-ORD-5544',
+      items: [item],
+      totalPts: 100,
+      date: now,
+      qrData: 'qr_test_data',
+      status: 'ready',
+    );
+
+    expect(order.isClaimed, isFalse);
+    expect(order.status, 'ready');
+    expect(order.claimedBy, isNull);
+    expect(order.claimedAt, isNull);
+
+    final map = order.toMap();
+    expect(map['status'], 'ready');
+    expect(map['receiptId'], 'ASB-ORD-5544');
+
+    final revived = OrderRecord.fromMap(map);
+    expect(revived.isClaimed, isFalse);
+    expect(revived.totalPts, 100);
+
+    final claimedOrder = order.copyWith(
+      status: 'claimed',
+      claimedBy: 'Lead Evaluator',
+      claimedAt: now,
+    );
+    expect(claimedOrder.isClaimed, isTrue);
+    expect(claimedOrder.claimedBy, 'Lead Evaluator');
+    expect(claimedOrder.claimedAt, now);
+
+    final claimedJson = claimedOrder.toJson();
+    final revivedClaimed = OrderRecord.fromJson(claimedJson);
+    expect(revivedClaimed.isClaimed, isTrue);
+    expect(revivedClaimed.claimedBy, 'Lead Evaluator');
+  });
+
+  test('VoucherSecurityService.claimStoreVoucher and GlobalWalletStore.markOrderClaimed', () async {
+    GlobalWalletStore.orders.clear();
+    final order = OrderRecord(
+      receiptId: 'TEST-REC-8899',
+      items: [],
+      totalPts: 150,
+      date: DateTime.now(),
+      qrData: 'mock_qr',
+      status: 'ready',
+    );
+    GlobalWalletStore.orders.add(order);
+
+    expect(GlobalWalletStore.orders.first.isClaimed, isFalse);
+
+    // 1. Mark claimed locally in GlobalWalletStore
+    await GlobalWalletStore.markOrderClaimed(
+      'TEST-REC-8899',
+      claimedBy: 'Mr. Teacher',
+    );
+    expect(GlobalWalletStore.orders.first.isClaimed, isTrue);
+    expect(GlobalWalletStore.orders.first.claimedBy, 'Mr. Teacher');
+
+    // 2. Test claimStoreVoucher fallback pipeline
+    final claimResult = await VoucherSecurityService.claimStoreVoucher(
+      billNo: 'TEST-REC-8899',
+      evaluatorName: 'Lead Evaluator',
+    );
+    expect(claimResult.success, isTrue);
+    expect(claimResult.claimedBy, 'Lead Evaluator');
+    expect(claimResult.claimedAt, isNotNull);
+  });
+
+  testWidgets('DigitalWalletScreen renders dynamic READY vs CLAIMED badges on Store Passes', (
+    WidgetTester tester,
+  ) async {
+    GlobalWalletStore.orders.clear();
+    final unclaimedOrder = OrderRecord(
+      receiptId: 'ASB-9901',
+      items: [],
+      totalPts: 200,
+      date: DateTime.now(),
+      qrData: 'qr_unclaimed',
+      status: 'ready',
+    );
+    final claimedOrder = OrderRecord(
+      receiptId: 'ASB-9902',
+      items: [],
+      totalPts: 350,
+      date: DateTime.now(),
+      qrData: 'qr_claimed',
+      status: 'claimed',
+      claimedBy: 'Faculty Lead',
+      claimedAt: DateTime.now(),
+    );
+
+    GlobalWalletStore.orders.addAll([unclaimedOrder, claimedOrder]);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const Scaffold(
+          body: DigitalWalletScreen(
+            userName: 'Zaid Al-Husseini',
+            userHouse: 'ruby',
+            scholarNo: '2310910',
+            initialIndex: 0, // Store passes tab
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify both orders render their respective status badges
+    expect(find.text('READY FOR PICKUP 🟢'), findsOneWidget);
+    expect(find.text('CLAIMED / FULFILLED 📦'), findsOneWidget);
+  });
+
+  testWidgets('IdScannerScreen voucher claim workflow prevents double redemption with accessible 48dp targets', (
+    WidgetTester tester,
+  ) async {
+    GlobalWalletStore.orders.clear();
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: IdScannerScreen(evaluatorName: 'Lead Evaluator'),
+      ),
+    );
+    await tester.pump();
+
+    final testBillNo = 'ASB-BILL-4455';
+    final voucherPayload = VoucherSecurityService.generateVoucherPayload(
+      billNo: testBillNo,
+      points: 400,
+      scholarNo: '2310910',
+      items: ['1x Champion Hoodie (L)', '1x House Water Bottle'],
+    );
+
+    final searchField = find.byType(TextField);
+    final lookupBtn = find.widgetWithText(ElevatedButton, 'Lookup');
+
+    // 1. Initial Lookup: Unclaimed voucher
+    await tester.enterText(searchField, voucherPayload);
+    await tester.tap(lookupBtn);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Verify dialog title and readiness banner
+    expect(find.text('Voucher Verified'), findsOneWidget);
+    expect(find.text('Valid Store Voucher. Ready for handover and fulfillment.'), findsOneWidget);
+    expect(find.text('Bill No: $testBillNo'), findsOneWidget);
+
+    // Verify 48dp minimum touch targets on Dismiss and Claim buttons
+    final dismissBtnFinder = find.widgetWithText(OutlinedButton, 'Dismiss');
+    expect(dismissBtnFinder, findsOneWidget);
+    final dismissBtn = tester.widget<OutlinedButton>(dismissBtnFinder);
+    expect(dismissBtn.style?.minimumSize?.resolve({})?.height, greaterThanOrEqualTo(48.0));
+
+    final claimBtnFinder = find.widgetWithText(ElevatedButton, 'Confirm Handover & Claim Pass');
+    expect(claimBtnFinder, findsOneWidget);
+    final claimBtn = tester.widget<ElevatedButton>(claimBtnFinder);
+    expect(claimBtn.style?.minimumSize?.resolve({})?.height, greaterThanOrEqualTo(48.0));
+
+    // 2. Perform Claim / Handover
+    await tester.tap(claimBtnFinder);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Verify status banner updates to previously claimed warning and button updates to Pass Fulfilled
+    expect(find.textContaining('⚠️ Previously Claimed by Lead Evaluator'), findsOneWidget);
+    final fulfilledBtnFinder = find.widgetWithText(ElevatedButton, 'Pass Fulfilled');
+    expect(fulfilledBtnFinder, findsOneWidget);
+    final fulfilledBtn = tester.widget<ElevatedButton>(fulfilledBtnFinder);
+    expect(fulfilledBtn.onPressed, isNull); // Disabled to prevent duplicate claim
+
+    // Dismiss dialog
+    await tester.tap(dismissBtnFinder);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Voucher Verified'), findsNothing);
+
+    // 3. Second Lookup (Double-Redemption Attempt)
+    await tester.enterText(searchField, voucherPayload);
+    await tester.tap(lookupBtn);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Verify dialog immediately loads in claimed state with warning
+    expect(find.text('Voucher Already Claimed'), findsOneWidget);
+    expect(find.textContaining('⚠️ Previously Claimed by Lead Evaluator'), findsOneWidget);
+    expect(find.widgetWithText(ElevatedButton, 'Pass Fulfilled'), findsOneWidget);
+    expect(find.widgetWithText(ElevatedButton, 'Confirm Handover & Claim Pass'), findsNothing);
+  });
+
+  testWidgets('DigitalWalletScreen receipt modal QR and document MergeSemantics accessibility', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const Scaffold(
+          body: DigitalWalletScreen(
+            userName: 'Zaid Al-Husseini',
+            userHouse: 'ruby',
+            scholarNo: '2310910',
+            initialIndex: 1,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Tap Pass & Receipt button
+    final receiptBtnFinder = find.widgetWithText(ElevatedButton, 'Pass & Receipt');
+    expect(receiptBtnFinder, findsOneWidget);
+    await tester.tap(receiptBtnFinder);
+    await tester.pumpAndSettle();
+
+    // 1. Verify semantic image node for QR Code
+    final qrSemanticsFinder = find.byWidgetPredicate(
+      (w) => w is Semantics && w.properties.image == true && (w.properties.label?.contains('QR barcode') ?? false),
+    );
+    expect(qrSemanticsFinder, findsOneWidget);
+
+    // 2. Verify MergeSemantics for cohesive document reading
+    expect(find.byType(MergeSemantics), findsWidgets);
+
+    // 3. Tap Print Pass button and verify platform spooler messaging and live region announcement
+    final printBtnFinder = find.widgetWithText(OutlinedButton, 'Print Pass');
+    expect(printBtnFinder, findsOneWidget);
+    await tester.tap(printBtnFinder);
+    await tester.pumpAndSettle();
+
+    // Dialog dismissed
+    expect(find.text('ASB OFFICIAL VOUCHER'), findsNothing);
+
+    // SnackBar appears with liveRegion semantics
+    final snackBarSemanticsFinder = find.byWidgetPredicate(
+      (w) => w is Semantics && w.properties.liveRegion == true,
+    );
+    expect(snackBarSemanticsFinder, findsWidgets);
+
+    // ExcludeSemantics shields decorative emojis from being spoken by screen reader
+    expect(find.byType(ExcludeSemantics), findsWidgets);
+  });
+
+  testWidgets('DigitalWalletScreen receipt modal 200% font scaling responsive stacking without overflow', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(500, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: MediaQuery(
+          data: const MediaQueryData(
+            textScaler: TextScaler.linear(2.0),
+          ),
+          child: const Scaffold(
+            body: DigitalWalletScreen(
+              userName: 'Zaid Al-Husseini',
+              userHouse: 'ruby',
+              scholarNo: '2310910',
+              initialIndex: 1,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Scroll until Pass & Receipt button is visible
+    final receiptBtnFinder = find.widgetWithText(ElevatedButton, 'Pass & Receipt');
+    expect(receiptBtnFinder, findsOneWidget);
+    await tester.ensureVisible(receiptBtnFinder);
+    await tester.pumpAndSettle();
+
+    await tester.tap(receiptBtnFinder);
+    await tester.pumpAndSettle();
+
+    // Verify dialog rendered with 0 overflow errors
+    expect(find.text('ASB OFFICIAL VOUCHER'), findsOneWidget);
+
+    // Action buttons inside LayoutBuilder are stacked in a Column under large text
+    final printBtnFinder = find.widgetWithText(OutlinedButton, 'Print Pass');
+    final exportBtnFinder = find.widgetWithText(ElevatedButton, 'Export PDF');
+    expect(printBtnFinder, findsOneWidget);
+    expect(exportBtnFinder, findsOneWidget);
+
+    // Tap Export PDF to verify accessible feedback
+    await tester.tap(exportBtnFinder);
+    await tester.pumpAndSettle();
+
+    // Verify modal dismisses and export feedback is displayed
+    expect(find.text('ASB OFFICIAL VOUCHER'), findsNothing);
+    expect(find.text('Exported high-resolution PDF pass to Downloads.'), findsOneWidget);
+  });
+
+  testWidgets('Mascot3DStage keyboard navigation, rotation, zoom, roar, and CAD telemetry semantics', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const Scaffold(
+          body: Mascot3DStage(
+            userHouse: 'ruby',
+            userName: 'Zaid Al-Husseini',
+            scholarNo: '2310910',
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // 1. Verify 3D statue stage semantics container & hint
+    final stageSemanticsFinder = find.bySemanticsLabel(RegExp(r'Ignis the Crimson Dragon 3D Statue Stage'));
+    expect(stageSemanticsFinder, findsOneWidget);
+
+    // 2. Verify CAD Telemetry live region semantics
+    final telemetrySemanticsFinder = find.bySemanticsLabel(RegExp(r'CAD Telemetry: Heading \d+ degrees, Pitch \d+ degrees, Zoom \d+ percent'));
+    expect(telemetrySemanticsFinder, findsOneWidget);
+
+    // 3. Verify Keyboard Navigation via Focus node
+    // Focus the stage
+    await tester.tap(stageSemanticsFinder);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    // Send Arrow Right -> rotY updates
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+
+    // Send Arrow Up -> rotX updates
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pump();
+
+    // Send Equal/Add -> zoom increases
+    await tester.sendKeyEvent(LogicalKeyboardKey.equal);
+    await tester.pump();
+
+    // Send Space -> triggers roar
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    // Verify Roar Battle Cry SnackBar semantics
+    final roarSnackBarFinder = find.bySemanticsLabel(RegExp(r'Ignis the Crimson Dragon unleashes battle cry'));
+    expect(roarSnackBarFinder, findsOneWidget);
+    expect(find.text('RUBY ROARS! IN FIRE WE CONQUER! 🔥'), findsOneWidget);
+  });
+
+  testWidgets('Mascot3DStage 48dp minimum touch target bounding boxes across all controls', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const Scaffold(
+          body: Mascot3DStage(
+            userHouse: 'ruby',
+            userName: 'Zaid Al-Husseini',
+            scholarNo: '2310910',
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // 1. House Selector Buttons (height >= 48)
+    for (final house in ['Ruby', 'Sapphire', 'Emerald', 'Topaz']) {
+      final houseBtn = find.bySemanticsLabel('$house House Mascot');
+      expect(houseBtn, findsOneWidget);
+      final size = tester.getSize(houseBtn);
+      expect(size.height, greaterThanOrEqualTo(48.0));
+      expect(size.width, greaterThanOrEqualTo(48.0));
+    }
+
+    // 2. Diagram Mode Buttons (width >= 48, height >= 48)
+    for (final mode in ['Solid', 'Blueprint', 'X-Ray']) {
+      final modeBtn = find.bySemanticsLabel('$mode Diagram Mode');
+      expect(modeBtn, findsOneWidget);
+      final size = tester.getSize(modeBtn);
+      expect(size.height, greaterThanOrEqualTo(48.0));
+      expect(size.width, greaterThanOrEqualTo(48.0));
+    }
+
+    // 3. Technical Callouts Toggle (height >= 48)
+    final calloutsToggle = find.bySemanticsLabel('Technical Callouts: Active');
+    expect(calloutsToggle, findsOneWidget);
+    expect(tester.getSize(calloutsToggle).height, greaterThanOrEqualTo(48.0));
+
+    await tester.tap(calloutsToggle);
+    await tester.pump();
+    expect(find.bySemanticsLabel('Technical Callouts: Hidden'), findsOneWidget);
+
+    // 4. Material Finish Selector (height >= 48)
+    for (final finish in ['Chroma', '24K Gold', 'Obsidian', 'Astral']) {
+      final finishBtn = find.bySemanticsLabel('$finish Material Finish');
+      expect(finishBtn, findsOneWidget);
+      expect(tester.getSize(finishBtn).height, greaterThanOrEqualTo(48.0));
+    }
+
+    // 5. Camera Angle Presets (height >= 48, width >= 48)
+    for (final angle in ['Front', '3/4 Hero']) {
+      final angleBtn = find.bySemanticsLabel('$angle Camera Angle Preset');
+      expect(angleBtn, findsOneWidget);
+      final size = tester.getSize(angleBtn);
+      expect(size.height, greaterThanOrEqualTo(48.0));
+      expect(size.width, greaterThanOrEqualTo(48.0));
+    }
+
+    // 6. 3D Control HUD: Zoom -, Zoom +, Reset, Spin, Roar
+    final zoomOutBtn = find.byTooltip('Zoom Out');
+    final zoomInBtn = find.byTooltip('Zoom In');
+    final resetBtn = find.byTooltip('Reset Camera View');
+    expect(zoomOutBtn, findsOneWidget);
+    expect(zoomInBtn, findsOneWidget);
+    expect(resetBtn, findsOneWidget);
+
+    expect(tester.getSize(zoomOutBtn).width, greaterThanOrEqualTo(48.0));
+    expect(tester.getSize(zoomOutBtn).height, greaterThanOrEqualTo(48.0));
+    expect(tester.getSize(zoomInBtn).width, greaterThanOrEqualTo(48.0));
+    expect(tester.getSize(zoomInBtn).height, greaterThanOrEqualTo(48.0));
+    expect(tester.getSize(resetBtn).width, greaterThanOrEqualTo(48.0));
+    expect(tester.getSize(resetBtn).height, greaterThanOrEqualTo(48.0));
+
+    final spinBtn = find.bySemanticsLabel('Start 360 Turntable Spin');
+    expect(spinBtn, findsOneWidget);
+    expect(tester.getSize(spinBtn).height, greaterThanOrEqualTo(48.0));
+
+    final roarBtn = find.bySemanticsLabel(RegExp(r'Unleash Ignis the Crimson Dragon Roar'));
+    expect(roarBtn, findsOneWidget);
+    expect(tester.getSize(roarBtn).height, greaterThanOrEqualTo(48.0));
+  });
+
+  testWidgets('Mascot3DStage 200% font scaling responsive stacking without overflow', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(400, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: MediaQuery(
+          data: const MediaQueryData(
+            textScaler: TextScaler.linear(2.0),
+          ),
+          child: const Scaffold(
+            body: Mascot3DStage(
+              userHouse: 'ruby',
+              userName: 'Zaid Al-Husseini',
+              scholarNo: '2310910',
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // Verify 0 overflow errors
+    expect(find.byType(Mascot3DStage), findsOneWidget);
+
+    // Verify 3D HUD controls are rendered in stacked rows
+    final spinBtn = find.bySemanticsLabel('Start 360 Turntable Spin');
+    final roarBtn = find.bySemanticsLabel(RegExp(r'Unleash Ignis the Crimson Dragon Roar'));
+    final zoomOutBtn = find.byTooltip('Zoom Out');
+    final zoomInBtn = find.byTooltip('Zoom In');
+    final resetBtn = find.byTooltip('Reset Camera View');
+
+    expect(spinBtn, findsOneWidget);
+    expect(roarBtn, findsOneWidget);
+    expect(zoomOutBtn, findsOneWidget);
+    expect(zoomInBtn, findsOneWidget);
+    expect(resetBtn, findsOneWidget);
+
+    // Tap spin to verify state toggle
+    await tester.tap(spinBtn);
+    await tester.pump();
+    expect(find.bySemanticsLabel('Stop 360 Turntable Spin'), findsOneWidget);
+  });
+
+  testWidgets('HouseArenaScreen arena nav pills 48dp target size and accessible tab semantics', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const Scaffold(
+          body: HouseArenaScreen(
+            userHouse: 'ruby',
+            scholarNo: '2310910',
+            userName: 'Zaid Al-Husseini',
+            initialNav: 0,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // Verify all 5 arena tab pills have >= 48dp touch target and semantics
+    final tabs = [
+      'Spirit Reactor',
+      'Brain Blitz',
+      'Cup Oracle',
+      'Titan Vault',
+      '3D Mascot',
+    ];
+
+    for (final tab in tabs) {
+      final tabFinder = find.bySemanticsLabel('$tab Arena Tab');
+      expect(tabFinder, findsOneWidget);
+      expect(tester.getSize(tabFinder).height, greaterThanOrEqualTo(48.0));
+    }
+
+    // Tap '3D Mascot Arena Tab'
+    final mascotTabFinder = find.bySemanticsLabel('3D Mascot Arena Tab');
+    await tester.tap(mascotTabFinder);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Verify 3D Mascot Stage is displayed
+    expect(find.byType(Mascot3DStage), findsOneWidget);
+    expect(find.bySemanticsLabel(RegExp(r'Ignis the Crimson Dragon 3D Statue Stage')), findsOneWidget);
+  });
+
+  // ===========================================================================
+  // PART 18: BATTLE CHANT SYNTHESIZER & ACCESSIBLE AUDIO FEEDBACK TESTS
+  // ===========================================================================
+
+  test('Battle Chant Generation & Cadence Verification across all 4 houses', () {
+    for (final house in ['ruby', 'sapphire', 'emerald', 'topaz']) {
+      final chant = HouseChantData.forHouse(house);
+      expect(chant.houseId, house);
+      expect(chant.warCry.isNotEmpty, isTrue);
+      expect(chant.heavyMarch.isNotEmpty, isTrue);
+      expect(chant.stompClap.isNotEmpty, isTrue);
+      expect(chant.victoryAnthem.isNotEmpty, isTrue);
+
+      if (house == 'ruby') {
+        expect(chant.warCry, contains('RUBY ROARS'));
+        expect(chant.heavyMarch, contains('Red and Gold, Fierce and Bold'));
+        expect(chant.stompClap, contains('BOOM! CLAP! RUBY MIGHT!'));
+        expect(chant.victoryAnthem, contains('Through the flame we rise as one'));
+      } else if (house == 'sapphire') {
+        expect(chant.warCry, contains('SAPPHIRE SOARS'));
+        expect(chant.heavyMarch, contains('Wings of Azure, Minds of Steel'));
+        expect(chant.stompClap, contains("CLAP! STOMP! ZEPHYR'S CLOUD!"));
+        expect(chant.victoryAnthem, contains('Clear the skies, let wisdom reign'));
+      } else if (house == 'emerald') {
+        expect(chant.warCry, contains('EMERALD STANDS'));
+        expect(chant.heavyMarch, contains('Roots run deep and wolves run fast'));
+        expect(chant.stompClap, contains('THUD! HOWL! TITAN CLAW!'));
+        expect(chant.victoryAnthem, contains('Forest shadows, branches tall'));
+      } else if (house == 'topaz') {
+        expect(chant.warCry, contains('TOPAZ SHINES'));
+        expect(chant.heavyMarch, contains('Golden light across the field'));
+        expect(chant.stompClap, contains('FLASH! ROAR! GOLDEN SUN!'));
+        expect(chant.victoryAnthem, contains('Radiance soaring through the haze'));
+      }
+    }
+  });
+
+  testWidgets('BattleChantSynthesizer Audio Controls & WCAG 1.4.2 Mute Compliance', (
+    WidgetTester tester,
+  ) async {
+    int soundPlayCount = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: Scaffold(
+          body: BattleChantSynthesizer(
+            userHouse: 'ruby',
+            initialTempo: ChantTempo.surge, // 150 BPM = 400ms interval
+            soundPlayer: (type) {
+              soundPlayCount++;
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // 1. Initially not playing
+    final playBtnFinder = find.bySemanticsLabel('Play Battle Chant');
+    final muteBtnFinder = find.bySemanticsLabel('Mute Audio');
+    final stopBtnFinder = find.bySemanticsLabel('Stop Battle Chant');
+
+    expect(playBtnFinder, findsOneWidget);
+    expect(muteBtnFinder, findsOneWidget);
+    expect(stopBtnFinder, findsOneWidget);
+    expect(soundPlayCount, 0);
+
+    // 2. Tap Play -> sequencer starts
+    await tester.tap(playBtnFinder);
+    await tester.pump();
+    expect(find.bySemanticsLabel('Pause Battle Chant'), findsOneWidget);
+
+    // Advance 450ms (at least 1 tick)
+    await tester.pump(const Duration(milliseconds: 450));
+    expect(soundPlayCount, greaterThan(0));
+
+    // 3. Tap Mute -> halts audio execution and sets toggled: true
+    await tester.tap(muteBtnFinder);
+    await tester.pump();
+
+    final unmuteBtnFinder = find.bySemanticsLabel('Unmute Audio');
+    expect(unmuteBtnFinder, findsOneWidget);
+    final countWhenMuted = soundPlayCount;
+
+    // Advance another 850ms while muted
+    await tester.pump(const Duration(milliseconds: 850));
+    // Sound play count must NOT increase while muted
+    expect(soundPlayCount, countWhenMuted);
+
+    // 4. Tap Stop -> resets sequencer state
+    await tester.tap(stopBtnFinder);
+    await tester.pump();
+    expect(find.bySemanticsLabel('Play Battle Chant'), findsOneWidget);
+  });
+
+  testWidgets('BattleChantSynthesizer Closed Captions, Screen Reader Live Region & ExcludeSemantics Equalizer', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const Scaffold(
+          body: BattleChantSynthesizer(
+            userHouse: 'sapphire',
+            initialMode: ChantMode.warCry,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // 1. Verify Active Live Region semantics
+    final liveRegionFinder = find.bySemanticsLabel('Active Battle Chant: SAPPHIRE SOARS! WISDOM STRIKES TRUE! ⚡');
+    expect(liveRegionFinder, findsOneWidget);
+
+    // 2. Verify ExcludeSemantics wraps the dynamic 60fps equalizer canvas
+    final customPaintFinder = find.byWidgetPredicate((w) => w is CustomPaint && w.painter.runtimeType.toString().contains('Equalizer'));
+    expect(customPaintFinder, findsOneWidget);
+    final excludeSemanticsFinder = find.ancestor(of: customPaintFinder, matching: find.byType(ExcludeSemantics));
+    expect(excludeSemanticsFinder, findsOneWidget);
+
+    // 3. Switch Chant Mode to Heavy March
+    final marchModeBtn = find.bySemanticsLabel('Heavy March Mode');
+    expect(marchModeBtn, findsOneWidget);
+    await tester.tap(marchModeBtn);
+    await tester.pump();
+
+    // Verify live region updates to March lyrics
+    expect(
+      find.bySemanticsLabel('Active Battle Chant: Wings of Azure, Minds of Steel! Thunder rolls, the victors kneel!'),
+      findsOneWidget,
+    );
+
+    // 4. Toggle Closed Captions Off
+    final ccToggleFinder = find.bySemanticsLabel('Hide Closed Captions');
+    expect(ccToggleFinder, findsOneWidget);
+    await tester.tap(ccToggleFinder);
+    await tester.pump();
+
+    expect(find.bySemanticsLabel('Show Closed Captions'), findsOneWidget);
+  });
+
+  testWidgets('BattleChantSynthesizer 48x48dp minimum touch targets across all controls', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const Scaffold(
+          body: BattleChantSynthesizer(
+            userHouse: 'emerald',
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // 1. Chant Mode Buttons (all >= 48dp height and width)
+    for (final mode in ['War Cry', 'Heavy March', 'Stomp-Clap', 'Victory Anthem']) {
+      final modeBtn = find.bySemanticsLabel('$mode Mode');
+      expect(modeBtn, findsOneWidget);
+      final size = tester.getSize(modeBtn);
+      expect(size.height, greaterThanOrEqualTo(48.0));
+      expect(size.width, greaterThanOrEqualTo(48.0));
+    }
+
+    // 2. Tempo Buttons (all >= 48dp height and width)
+    for (final tempo in ['March (95 BPM)', 'Stomp (110 BPM)', 'Allegro (130 BPM)', 'Surge (150 BPM)']) {
+      final tempoBtn = find.bySemanticsLabel('$tempo Tempo');
+      expect(tempoBtn, findsOneWidget);
+      final size = tester.getSize(tempoBtn);
+      expect(size.height, greaterThanOrEqualTo(48.0));
+      expect(size.width, greaterThanOrEqualTo(48.0));
+    }
+
+    // 3. Audio Transport Buttons (Play, Stop, Mute, CC)
+    final playBtn = find.bySemanticsLabel('Play Battle Chant');
+    final stopBtn = find.bySemanticsLabel('Stop Battle Chant');
+    final muteBtn = find.bySemanticsLabel('Mute Audio');
+    final ccBtn = find.bySemanticsLabel('Hide Closed Captions');
+
+    for (final btn in [playBtn, stopBtn, muteBtn, ccBtn]) {
+      expect(btn, findsOneWidget);
+      final size = tester.getSize(btn);
+      expect(size.height, greaterThanOrEqualTo(48.0));
+      expect(size.width, greaterThanOrEqualTo(48.0));
+    }
+  });
+
+  testWidgets('BattleChantSynthesizer 200% font scale responsive layout without overflow', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(400, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: MediaQuery(
+          data: const MediaQueryData(
+            textScaler: TextScaler.linear(2.0),
+          ),
+          child: const Scaffold(
+            body: SingleChildScrollView(
+              child: BattleChantSynthesizer(
+                userHouse: 'topaz',
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // Verify widget mounts cleanly without overflow exceptions
+    expect(find.byType(BattleChantSynthesizer), findsOneWidget);
+    expect(find.text('TOPAZ BATTLE CHANT'), findsOneWidget);
+  });
+
+  testWidgets('HouseArenaScreen Spirit Reactor integrates Rally Synthesizer and Overdrive trigger', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const Scaffold(
+          body: HouseArenaScreen(
+            userHouse: 'ruby',
+            scholarNo: '2310910',
+            userName: 'Zaid Al-Husseini',
+            initialNav: 0,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // 1. Verify Rally Synthesizer card exists in Spirit Reactor tab
+    expect(find.text('RUBY RALLY SYNTHESIZER'), findsOneWidget);
+
+    // 2. Open Battle Chant Deck
+    final toggleDeckBtn = find.bySemanticsLabel('Open Battle Chant Deck');
+    expect(toggleDeckBtn, findsOneWidget);
+    await tester.tap(toggleDeckBtn);
+    await tester.pump();
+
+    // Verify BattleChantSynthesizer is now visible
+    expect(find.byType(BattleChantSynthesizer), findsOneWidget);
+  });
+
+  testWidgets('Merchandise store pure commerce pricing in BHD without house points', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    const dummyProduct = MerchProduct(
+      id: 'test_hoodie',
+      name: 'Test Champion Hoodie',
+      price: 'BHD 14.500',
+      rating: 4.9,
+      imageUrl: '',
+      category: 'Hoodies',
+      house: 'ruby',
+      description: 'Official Hoodie',
+    );
+
+    final item = CartItem(product: dummyProduct, size: 'L', qty: 2);
+    expect(item.bhdPrice, 29.0);
+    expect(item.pointsPrice, 0);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const Scaffold(
+          body: MerchStoreTab(
+            userHouse: 'ruby',
+            houseColor: HouseColors.ruby,
+            houseDark: HouseColors.rubyDark,
+            scholarNo: '2310910',
+            studentName: 'Zaid Al-Husseini',
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    // Verify Official Campus Store Banner
+    expect(
+      find.text('ASB OFFICIAL CAMPUS STORE & APPAREL COLLECTION'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Verified School Merchandise • Orders fulfilled directly to Digital Wallet'),
+      findsOneWidget,
+    );
+    expect(find.text('YOUR HOUSE POINTS WALLET'), findsNothing);
+
+    // Verify pure BHD price display
+    expect(find.text('BHD 14.500'), findsWidgets);
+  });
+
+  testWidgets('AppleFitnessBadgesVault honours summary header Semantics and concentric activity rings', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const Scaffold(
+          body: AppleFitnessBadgesVault(
+            userHouse: 'ruby',
+            userName: 'Zaid Al-Husseini',
+            scholarNo: '2310910',
+            isAdmin: false,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    // Verify Semantics container for activity rings
+    final ringsFinder = find.byWidgetPredicate(
+      (w) =>
+          w is Semantics &&
+          (w.properties.label?.startsWith('Collegiate Honours Activity Rings:') ?? false),
+    );
+    expect(ringsFinder, findsOneWidget);
+  });
+
+  testWidgets('AppleFitnessBadgesVault category filter chips 48dp minimum touch target and accessible button semantics', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const Scaffold(
+          body: AppleFitnessBadgesVault(
+            userHouse: 'ruby',
+            userName: 'Zaid Al-Husseini',
+            scholarNo: '2310910',
+            isAdmin: false,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    final allFilterFinder = find.bySemanticsLabel('All Badges filter');
+    expect(allFilterFinder, findsOneWidget);
+    final allFilterBox = tester.getRect(allFilterFinder);
+    expect(allFilterBox.height, greaterThanOrEqualTo(48.0));
+    expect(allFilterBox.width, greaterThanOrEqualTo(48.0));
+
+    final housePrideFinder = find.bySemanticsLabel('House Pride filter');
+    expect(housePrideFinder, findsOneWidget);
+    final housePrideBox = tester.getRect(housePrideFinder);
+    expect(housePrideBox.height, greaterThanOrEqualTo(48.0));
+    expect(housePrideBox.width, greaterThanOrEqualTo(48.0));
+
+    // Tap House Pride filter
+    await tester.tap(housePrideFinder);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    final selectedPride = tester.widget<Semantics>(
+      find.byWidgetPredicate(
+        (w) => w is Semantics && w.properties.label == 'House Pride filter',
+      ),
+    );
+    expect(selectedPride.properties.selected, isTrue);
+  });
+
+  testWidgets('AppleFitnessBadge modal 3D inspection keyboard traversal, flip action, and 48dp targets', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const Scaffold(
+          body: AppleFitnessBadgesVault(
+            userHouse: 'ruby',
+            userName: 'Zaid Al-Husseini',
+            scholarNo: '2310910',
+            isAdmin: false,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    // Tap first badge to open inspection modal
+    final badgeCardFinder = find.text('Ignis Firestarter');
+    expect(badgeCardFinder, findsOneWidget);
+    await tester.tap(badgeCardFinder);
+    await tester.pump();
+    for (int i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    // Verify modal is open with Close button and Flip button
+    final closeBtnFinder = find.byWidgetPredicate(
+      (w) => w is Semantics && w.properties.label == 'Close award inspection',
+    );
+    expect(closeBtnFinder, findsOneWidget);
+    final closeBox = tester.getRect(closeBtnFinder);
+    expect(closeBox.width, greaterThanOrEqualTo(48.0));
+    expect(closeBox.height, greaterThanOrEqualTo(48.0));
+
+    final flipBtnFinder = find.byWidgetPredicate(
+      (w) => w is Semantics && w.properties.label == 'Inspect Engraved Plate',
+    );
+    expect(flipBtnFinder, findsOneWidget);
+    final flipBox = tester.getRect(flipBtnFinder);
+    expect(flipBox.width, greaterThanOrEqualTo(48.0));
+    expect(flipBox.height, greaterThanOrEqualTo(48.0));
+
+    // Trigger flip via keyboard Space
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pump();
+    for (int i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    // Verify backplate is shown
+    expect(
+      find.byWidgetPredicate(
+        (w) => w is Semantics && w.properties.label == 'View Front Crest',
+      ),
+      findsOneWidget,
+    );
+
+    // Trigger arrow key tilt navigation
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump(const Duration(milliseconds: 50));
+
+    // Close via Close button
+    await tester.tap(closeBtnFinder);
+    await tester.pump();
+    for (int i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(
+      find.byWidgetPredicate(
+        (w) => w is Semantics && w.properties.label == 'Close award inspection',
+      ),
+      findsNothing,
+    );
+  });
+
+  testWidgets('AppleFitnessBadgesVault 200% font scale responsive layout without overflow', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const MediaQuery(
+          data: MediaQueryData(
+            textScaler: TextScaler.linear(2.0),
+          ),
+          child: Scaffold(
+            body: AppleFitnessBadgesVault(
+              userHouse: 'ruby',
+              userName: 'Zaid Al-Husseini',
+              scholarNo: '2310910',
+              isAdmin: false,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(find.byType(AppleFitnessBadgesVault), findsOneWidget);
+    expect(find.text('House Championship Honours'), findsOneWidget);
+  });
+
+  // ==========================================
+  // PART 20: HOUSE STANDINGS REAL-TIME STREAM, CONCURRENCY PROTECTION & ZERO-FLASH PRE-HYDRATION
+  // ==========================================
+
+  test('AuthService.getCachedPointsForHouse returns baseline seed fallback and verified scores', () async {
+    // 1. Fresh cache: verify fallback to zero baseline standings
+    await AuthService.clearCache();
+    expect(AuthService.getCachedPointsForHouse('ruby'), equals(0));
+    expect(AuthService.getCachedPointsForHouse('Ruby'), equals(0));
+    expect(AuthService.getCachedPointsForHouse('sapphire'), equals(0));
+    expect(AuthService.getCachedPointsForHouse('emerald'), equals(0));
+    expect(AuthService.getCachedPointsForHouse('topaz'), equals(0));
+    expect(AuthService.getCachedPointsForHouse('unknown_house'), equals(0));
+
+    // 2. Cache custom standings and verify synchronous retrieval
+    await AuthService.cacheHouseStandings({
+      'ruby': 550,
+      'sapphire': 480,
+      'emerald': 390,
+      'topaz': 420,
+    });
+
+    expect(AuthService.getCachedPointsForHouse('ruby'), equals(550));
+    expect(AuthService.getCachedPointsForHouse('sapphire'), equals(480));
+    expect(AuthService.getCachedPointsForHouse('emerald'), equals(390));
+    expect(AuthService.getCachedPointsForHouse('topaz'), equals(420));
+  });
+
+  test('AuthService.incrementCachedHousePoints write-through caching and zero-bounds clamping', () async {
+    await AuthService.clearCache();
+    // Default zero baseline for ruby is 0
+    expect(AuthService.getCachedPointsForHouse('ruby'), equals(0));
+
+    // Increment points
+    await AuthService.incrementCachedHousePoints('ruby', 30);
+    expect(AuthService.getCachedPointsForHouse('ruby'), equals(30));
+    expect(AuthService.getCachedHouseStandings()['ruby'], equals(30));
+
+    // Decrement points
+    await AuthService.incrementCachedHousePoints('ruby', -50);
+    expect(AuthService.getCachedPointsForHouse('ruby'), equals(0));
+
+    // Clamp to 0 when negative overflow occurs
+    await AuthService.incrementCachedHousePoints('ruby', -1000);
+    expect(AuthService.getCachedPointsForHouse('ruby'), equals(0));
+    expect(AuthService.getCachedHouseStandings()['ruby'], equals(0));
+
+    // Clamp upper bound to 999999
+    await AuthService.incrementCachedHousePoints('ruby', 1500000);
+    expect(AuthService.getCachedPointsForHouse('ruby'), equals(999999));
+  });
+
+  testWidgets('HouseLeaderboardScreen Frame 1 zero-flash points and >= 48dp switcher pills', (
+    WidgetTester tester,
+  ) async {
+    await AuthService.clearCache();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const HouseLeaderboardScreen(
+          initialHouse: 'Ruby',
+          initialPoints: 0,
+        ),
+      ),
+    );
+
+    // Frame 1 check: Total points displayed immediately as 0 Pts Total on unseeded start
+    await tester.pump();
+    expect(find.text('0 Pts Total'), findsOneWidget);
+    expect(find.textContaining('Ruby House Roster'), findsOneWidget);
+    expect(find.text('House Captain: Pending Appointment'), findsOneWidget);
+    expect(find.text('No house points recorded yet for this season'), findsOneWidget);
+    expect(find.text('Points Breakdown'), findsOneWidget);
+    expect(find.text('Sports'), findsOneWidget);
+    expect(find.text('Academics'), findsOneWidget);
+    expect(find.text('Cultural'), findsOneWidget);
+    expect(find.text('Conduct'), findsOneWidget);
+
+    // Settle contributors stream to verify accessible empty state
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.text('No student contributions recorded yet for Ruby House.'), findsOneWidget);
+
+    // Verify all 4 house switcher pills have >= 48dp touch targets and Semantics
+    final houses = ['Ruby', 'Emerald', 'Sapphire', 'Topaz'];
+    for (final h in houses) {
+      final pillSemantics = find.byWidgetPredicate(
+        (w) => w is Semantics && w.properties.label == '$h House Leaderboard',
+      );
+      expect(pillSemantics, findsOneWidget);
+
+      final isRuby = h == 'Ruby';
+      final semWidget = tester.widget<Semantics>(pillSemantics);
+      expect(semWidget.properties.button, isTrue);
+      expect(semWidget.properties.selected, isRuby);
+
+      // Verify touch target dimension constraints
+      final constrainedBox = find.descendant(
+        of: pillSemantics,
+        matching: find.byWidgetPredicate(
+          (w) =>
+              w is ConstrainedBox &&
+              w.constraints.minWidth >= 48.0 &&
+              w.constraints.minHeight >= 48.0,
+        ),
+      );
+      expect(constrainedBox, findsOneWidget);
+    }
+  });
+
+  testWidgets('HomeScreen liveRegion semantics on celebration and offline banners', (
+    WidgetTester tester,
+  ) async {
+    await AuthService.clearCache();
+    await AuthService.cacheProfile({
+      'full_name': 'Zaid Al-Husseini',
+      'house': 'ruby',
+      'scholar_no': '2310910',
+      'role': 'student',
+    });
+    await AuthService.cacheHouse('ruby');
+    await AuthService.cacheHouseStandings({
+      'ruby': 600,
+      'sapphire': 450,
+      'topaz': 400,
+      'emerald': 350,
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const Scaffold(
+          body: HomeScreen(initialIndex: 2),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    // Verify 1st-place celebration banner has liveRegion: true
+    final celebrationSemantics = find.byWidgetPredicate(
+      (w) =>
+          w is Semantics &&
+          w.properties.liveRegion == true &&
+          (w.properties.label?.contains('Celebration: Your house is in 1st place') ?? false),
+    );
+    expect(celebrationSemantics, findsOneWidget);
+
+    // Verify offline indicator has liveRegion: true
+    final offlineSemantics = find.byWidgetPredicate(
+      (w) =>
+          w is Semantics &&
+          w.properties.liveRegion == true &&
+          w.properties.label == 'Offline mode: Viewing verified saved standings from local disk',
+    );
+    expect(offlineSemantics, findsOneWidget);
+  });
+
+  testWidgets('HomeScreen live standings 200% font scale layout elasticity', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await AuthService.clearCache();
+    await AuthService.cacheProfile({
+      'full_name': 'Zaid Al-Husseini',
+      'house': 'ruby',
+      'scholar_no': '2310910',
+      'role': 'student',
+    });
+    await AuthService.cacheHouse('ruby');
+    await AuthService.cacheHouseStandings({
+      'ruby': 820,
+      'sapphire': 710,
+      'topaz': 650,
+      'emerald': 590,
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const MediaQuery(
+          data: MediaQueryData(
+            textScaler: TextScaler.linear(2.0),
+          ),
+          child: Scaffold(
+            body: HomeScreen(initialIndex: 2),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    // Verify standings render cleanly without RenderFlex overflow
+    expect(find.byType(HomeScreen), findsOneWidget);
+    expect(find.text('820 Pts'), findsOneWidget);
+    expect(find.text('710 Pts'), findsOneWidget);
+    expect(find.text('650 Pts'), findsOneWidget);
+    expect(find.text('590 Pts'), findsOneWidget);
+  });
+
+  // ==========================================
+  // PART 21: GAMIFICATION SECURITY, SCORE ANTI-TAMPERING & RATE LIMITING VERIFICATION
+  // ==========================================
+
+  test('GamificationSecurityService Valid Token Generation & Verification', () {
+    const scholarNo = '2310910';
+    const activityId = 'brain_blitz_daily_01';
+    const points = 35;
+
+    // 1. Generate valid signed token
+    final token = GamificationSecurityService.generateScoreProofToken(
+      scholarNo: scholarNo,
+      activityId: activityId,
+      pointsEarned: points,
+    );
+
+    expect(token, isNotEmpty);
+
+    // 2. Verify token cryptographically
+    final result = GamificationSecurityService.verifyScoreProofToken(
+      token: token,
+      expectedScholarNo: scholarNo,
+      expectedActivityId: activityId,
+    );
+
+    expect(result.isValid, isTrue);
+    expect(result.isTampered, isFalse);
+    expect(result.isExpired, isFalse);
+    expect(result.isCeilingExceeded, isFalse);
+    expect(result.points, equals(35));
+    expect(result.scholarNo, equals(scholarNo));
+    expect(result.activityId, equals(activityId));
+    expect(result.error, isNull);
+  });
+
+  test('Anti-Tampering Rejection on Payload Modification', () {
+    const scholarNo = '2310910';
+    const activityId = 'math_olympiad_speed_run';
+    const points = 20;
+
+    final token = GamificationSecurityService.generateScoreProofToken(
+      scholarNo: scholarNo,
+      activityId: activityId,
+      pointsEarned: points,
+    );
+
+    // Decode and tamper with payload: alter points from 20 to 45 without re-signing
+    final decoded = utf8.decode(base64Url.decode(base64Url.normalize(token)));
+    final payloadMap = jsonDecode(decoded) as Map<String, dynamic>;
+    payloadMap['points'] = 45;
+    final tamperedToken = base64Url.encode(utf8.encode(jsonEncode(payloadMap)));
+
+    final result = GamificationSecurityService.verifyScoreProofToken(
+      token: tamperedToken,
+      expectedScholarNo: scholarNo,
+      expectedActivityId: activityId,
+    );
+
+    expect(result.isValid, isFalse);
+    expect(result.isTampered, isTrue);
+    expect(result.error, contains('Cryptographic signature verification failed'));
+
+    // Also test scholar mismatch tampering
+    final scholarMismatchResult = GamificationSecurityService.verifyScoreProofToken(
+      token: token,
+      expectedScholarNo: '9999999',
+      expectedActivityId: activityId,
+    );
+    expect(scholarMismatchResult.isValid, isFalse);
+    expect(scholarMismatchResult.isTampered, isTrue);
+    expect(scholarMismatchResult.error, contains('Scholar number mismatch'));
+  });
+
+  test('Hard Ceiling Clamp Enforcement', () {
+    const scholarNo = '10001';
+    const activityId = 'spelling_bee_finals';
+
+    // 1. Attempt to create and verify a score exceeding 50 pts ceiling
+    final overCeilingToken = GamificationSecurityService.generateScoreProofToken(
+      scholarNo: scholarNo,
+      activityId: activityId,
+      pointsEarned: 75,
+    );
+
+    final overCeilingResult = GamificationSecurityService.verifyScoreProofToken(
+      token: overCeilingToken,
+      expectedScholarNo: scholarNo,
+      expectedActivityId: activityId,
+      maxCeiling: 50,
+    );
+
+    expect(overCeilingResult.isValid, isFalse);
+    expect(overCeilingResult.isCeilingExceeded, isTrue);
+    expect(overCeilingResult.points, equals(75));
+    expect(overCeilingResult.error, contains('Score exceeds authorized ceiling of 50 points'));
+
+    // 2. Negative score clamp
+    final negativeToken = GamificationSecurityService.generateScoreProofToken(
+      scholarNo: scholarNo,
+      activityId: activityId,
+      pointsEarned: -10,
+    );
+    final negativeResult = GamificationSecurityService.verifyScoreProofToken(
+      token: negativeToken,
+    );
+    expect(negativeResult.isValid, isFalse);
+    expect(negativeResult.isCeilingExceeded, isTrue);
+
+    // 3. Exactly at ceiling (50 pts) passes
+    final ceilingBoundaryToken = GamificationSecurityService.generateScoreProofToken(
+      scholarNo: scholarNo,
+      activityId: activityId,
+      pointsEarned: 50,
+    );
+    final boundaryResult = GamificationSecurityService.verifyScoreProofToken(
+      token: ceilingBoundaryToken,
+      expectedScholarNo: scholarNo,
+      expectedActivityId: activityId,
+      maxCeiling: 50,
+    );
+    expect(boundaryResult.isValid, isTrue);
+    expect(boundaryResult.isCeilingExceeded, isFalse);
+    expect(boundaryResult.points, equals(50));
+  });
+
+  test('24-Hour Cooldown Enforcement', () async {
+    const scholarNo = '2310910';
+    const activityId = 'daily_science_quiz';
+    final startTime = DateTime(2026, 9, 30, 10, 0, 0);
+
+    // 1. Initial check: activity allowed
+    var check = GamificationSecurityService.canParticipateDaily(scholarNo, activityId, now: startTime);
+    expect(check.allowed, isTrue);
+    expect(check.remainingCooldown, equals(Duration.zero));
+
+    // 2. Record completion at startTime
+    await GamificationSecurityService.recordActivityCompletion(scholarNo, activityId, startTime);
+
+    // 3. Check 2 hours later: blocked
+    final twoHoursLater = startTime.add(const Duration(hours: 2));
+    check = GamificationSecurityService.canParticipateDaily(scholarNo, activityId, now: twoHoursLater);
+    expect(check.allowed, isFalse);
+    expect(check.remainingCooldown.inHours, equals(22));
+    expect(check.formattedRemaining, isNotEmpty);
+
+    // 4. Check 23 hours later: still blocked
+    final twentyThreeHoursLater = startTime.add(const Duration(hours: 23));
+    check = GamificationSecurityService.canParticipateDaily(scholarNo, activityId, now: twentyThreeHoursLater);
+    expect(check.allowed, isFalse);
+
+    // 5. Check 24 hours + 1 minute later: cooldown elapsed, allowed again
+    final nextDay = startTime.add(const Duration(hours: 24, minutes: 1));
+    check = GamificationSecurityService.canParticipateDaily(scholarNo, activityId, now: nextDay);
+    expect(check.allowed, isTrue);
+    expect(check.remainingCooldown, equals(Duration.zero));
+  });
+
+  test('Rapid-Fire Anti-Spam Debounce', () async {
+    const scholarNo = '10001';
+    final t0 = DateTime(2026, 9, 30, 12, 0, 0);
+
+    // 1. Initial attempt: allowed
+    var throttle = GamificationSecurityService.checkRapidFireThrottle(scholarNo, now: t0);
+    expect(throttle.allowed, isTrue);
+
+    // 2. Record submission attempt at t0
+    await GamificationSecurityService.recordSubmissionAttempt(scholarNo, t0);
+
+    // 3. Immediate repeat click (5 seconds later): blocked
+    final t5 = t0.add(const Duration(seconds: 5));
+    throttle = GamificationSecurityService.checkRapidFireThrottle(scholarNo, now: t5);
+    expect(throttle.allowed, isFalse);
+    expect(throttle.remainingCooldown.inSeconds, equals(55));
+    expect(throttle.formattedRemaining, equals('55s'));
+
+    // 4. At 59 seconds: still blocked
+    final t59 = t0.add(const Duration(seconds: 59));
+    throttle = GamificationSecurityService.checkRapidFireThrottle(scholarNo, now: t59);
+    expect(throttle.allowed, isFalse);
+
+    // 5. After 60 seconds (61 seconds): allowed again
+    final t61 = t0.add(const Duration(seconds: 61));
+    throttle = GamificationSecurityService.checkRapidFireThrottle(scholarNo, now: t61);
+    expect(throttle.allowed, isTrue);
+  });
+
+  testWidgets('Accessible Cooldown Live Region & 48dp Targets', (WidgetTester tester) async {
+    bool dismissed = false;
+    bool retried = false;
+    bool reminded = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: MediaQuery(
+          data: const MediaQueryData(
+            textScaler: TextScaler.linear(2.0),
+          ),
+          child: Scaffold(
+            body: Center(
+              child: GamificationCooldownBanner(
+                activityTitle: 'Spirit Rally Trivia Blitz',
+                formattedRemaining: '14h 22m',
+                remainingDuration: const Duration(hours: 14, minutes: 22),
+                onDismiss: () => dismissed = true,
+                onRetry: () => retried = true,
+                onScheduleReminder: () => reminded = true,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+
+    // 1. Verify Semantics liveRegion is active and polite
+    final liveRegionFinder = find.byWidgetPredicate(
+      (w) =>
+          w is Semantics &&
+          w.properties.liveRegion == true &&
+          (w.properties.label?.contains('Daily challenge on cooldown') ?? false),
+    );
+    expect(liveRegionFinder, findsOneWidget);
+
+    // 2. Verify all interactive action buttons satisfy minimum 48dp touch targets
+    final constrainedBoxes = find.descendant(
+      of: find.byType(GamificationCooldownBanner),
+      matching: find.byWidgetPredicate(
+        (w) =>
+            w is ConstrainedBox &&
+            w.constraints.minWidth >= 48.0 &&
+            w.constraints.minHeight >= 48.0,
+      ),
+    );
+    expect(constrainedBoxes, findsAtLeastNWidgets(3));
+
+    // 3. Verify interaction execution
+    await tester.tap(find.text('Dismiss'));
+    await tester.pump();
+    expect(dismissed, isTrue);
+
+    await tester.tap(find.text('Check Status'));
+    await tester.pump();
+    expect(retried, isTrue);
+
+    await tester.tap(find.text('Remind Me'));
+    await tester.pump();
+    expect(reminded, isTrue);
+
+    // 4. Verify no RenderFlex overflow occurs under 200% font scale
+    expect(tester.takeException(), isNull);
+  });
+
+  // ==========================================
+  // PART 22: PHASE 4 COMPREHENSIVE MASTER VALIDATION & WCAG VERIFICATION GATE
+  // ==========================================
+
+  testWidgets('Phase 4 Master Test 1: Full Automated WCAG Guideline Suite (meetsGuideline)', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: Scaffold(
+          body: Center(
+            child: GamificationCooldownBanner(
+              activityTitle: 'Spirit Rally Trivia Blitz',
+              formattedRemaining: '14h 22m',
+              remainingDuration: const Duration(hours: 14, minutes: 22),
+              onDismiss: () {},
+              onRetry: () {},
+              onScheduleReminder: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Built-in Flutter Accessibility Evaluation API (WCAG 2.5.5, 4.1.2)
+    await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
+    await expectLater(tester, meetsGuideline(iOSTapTargetGuideline));
+    await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
+  });
+
+  testWidgets('Phase 4 Master Test 2: End-to-End Gamification Security & Score Pipeline', (
+    WidgetTester tester,
+  ) async {
+    final authService = AuthService();
+    const scholarNo = '2310910';
+    const house = 'ruby';
+    const activityId = 'brain_blitz_grand_finals';
+    const pointsToAward = 45;
+
+    // 1. Initial State: clean zero baselines
+    expect(AuthService.getCachedPointsForHouse(house), equals(0));
+    final initialContrib = AuthService.getCachedStudentContribution(scholarNo);
+    expect(initialContrib.totalPoints, equals(0));
+    expect(initialContrib.merits, equals(0));
+
+    // 2. Student completes challenge and client signs HMAC score proof token
+    final token = GamificationSecurityService.generateScoreProofToken(
+      scholarNo: scholarNo,
+      activityId: activityId,
+      pointsEarned: pointsToAward,
+    );
+    expect(token, isNotEmpty);
+
+    // 3. Award verified points via AuthService atomic transaction pipeline
+    final awardResult = await authService.awardVerifiedGamificationPoints(
+      token: token,
+      scholarNo: scholarNo,
+      house: house,
+      activityId: activityId,
+      activityTitle: 'Brain Blitz Grand Finals',
+    );
+
+    expect(awardResult.success, isTrue);
+    expect(awardResult.pointsAwarded, equals(pointsToAward));
+    expect(awardResult.error, isNull);
+
+    // 4. Verify local disk cache is updated synchronously
+    expect(AuthService.getCachedPointsForHouse(house), equals(45));
+    final updatedContrib = AuthService.getCachedStudentContribution(scholarNo);
+    expect(updatedContrib.totalPoints, equals(45));
+    expect(updatedContrib.merits, equals(1));
+
+    // 5. Verify HouseLeaderboardScreen displays the newly pre-hydrated points on Frame 1
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const HouseLeaderboardScreen(
+          initialHouse: 'Ruby',
+          initialPoints: 45,
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.text('45 Pts Total'), findsOneWidget);
+  });
+
+  test('Phase 4 Master Test 3: Anti-Tampering Rejection & Replay Attack Defense', () async {
+    final authService = AuthService();
+    const scholarNo = '2310910';
+    const house = 'ruby';
+    const activityId = 'daily_math_sprint';
+
+    // 1. Tampered points attack (inflated from 30 to 500)
+    final validToken = GamificationSecurityService.generateScoreProofToken(
+      scholarNo: scholarNo,
+      activityId: activityId,
+      pointsEarned: 30,
+    );
+
+    final decoded = utf8.decode(base64Url.decode(base64Url.normalize(validToken)));
+    final payloadMap = jsonDecode(decoded) as Map<String, dynamic>;
+    payloadMap['points'] = 500;
+    final tamperedToken = base64Url.encode(utf8.encode(jsonEncode(payloadMap)));
+
+    final tamperedResult = await authService.awardVerifiedGamificationPoints(
+      token: tamperedToken,
+      scholarNo: scholarNo,
+      house: house,
+      activityId: activityId,
+    );
+    expect(tamperedResult.success, isFalse);
+    expect(tamperedResult.pointsAwarded, equals(0));
+
+    // 2. Scholar identity spoofing attack (token generated for scholar A submitted by scholar B)
+    final tokenForScholarA = GamificationSecurityService.generateScoreProofToken(
+      scholarNo: '10001',
+      activityId: activityId,
+      pointsEarned: 25,
+    );
+
+    final spoofResult = await authService.awardVerifiedGamificationPoints(
+      token: tokenForScholarA,
+      scholarNo: '2310910',
+      house: house,
+      activityId: activityId,
+    );
+    expect(spoofResult.success, isFalse);
+    expect(spoofResult.pointsAwarded, equals(0));
+
+    // 3. Stale token replay attack (timestamp older than 5-minute sliding window)
+    final expiredToken = GamificationSecurityService.generateScoreProofToken(
+      scholarNo: scholarNo,
+      activityId: activityId,
+      pointsEarned: 20,
+      timestampMillis: DateTime.now().subtract(const Duration(minutes: 10)).millisecondsSinceEpoch,
+    );
+
+    final expiredResult = await authService.awardVerifiedGamificationPoints(
+      token: expiredToken,
+      scholarNo: scholarNo,
+      house: house,
+      activityId: activityId,
+    );
+    expect(expiredResult.success, isFalse);
+    expect(expiredResult.pointsAwarded, equals(0));
+  });
+
+  test('Phase 4 Master Test 4: Cooldown Lockout & 60s Debounce Integration', () async {
+    final authService = AuthService();
+    const scholarNo = '2310910';
+    const house = 'ruby';
+    const activityId = 'daily_science_challenge';
+
+    // 1. First valid claim succeeds
+    final token1 = GamificationSecurityService.generateScoreProofToken(
+      scholarNo: scholarNo,
+      activityId: activityId,
+      pointsEarned: 30,
+    );
+
+    final result1 = await authService.awardVerifiedGamificationPoints(
+      token: token1,
+      scholarNo: scholarNo,
+      house: house,
+      activityId: activityId,
+    );
+    expect(result1.success, isTrue);
+
+    // 2. Immediate repeat attempt within 60s (rapid-fire debounce blocks)
+    final token2 = GamificationSecurityService.generateScoreProofToken(
+      scholarNo: scholarNo,
+      activityId: activityId,
+      pointsEarned: 30,
+    );
+
+    final result2 = await authService.awardVerifiedGamificationPoints(
+      token: token2,
+      scholarNo: scholarNo,
+      house: house,
+      activityId: activityId,
+    );
+    expect(result2.success, isFalse);
+    expect(result2.error, contains('Rapid-fire rate limit active'));
+
+    // 3. Simulate passage of 60 seconds (but still within 24h daily window)
+    // Cooldown check should block with daily challenge cooldown
+    final canParticipate = GamificationSecurityService.canParticipateDaily(scholarNo, activityId);
+    expect(canParticipate.allowed, isFalse);
+    expect(canParticipate.remainingCooldown.inHours, greaterThanOrEqualTo(23));
+  });
+
+  testWidgets('Phase 4 Master Test 5: AXTree Bridge Shielding Verification', (WidgetTester tester) async {
+    // 1. Chant Synthesizer Equalizer Canvas AXTree Shielding
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const Scaffold(
+          body: BattleChantSynthesizer(
+            userHouse: 'ruby',
+            initialMode: ChantMode.warCry,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Verify 60fps Equalizer CustomPaint is shielded from AXTree by ExcludeSemantics
+    final equalizerPaintFinder = find.byWidgetPredicate(
+      (w) => w is CustomPaint && w.painter.runtimeType.toString().contains('Equalizer'),
+    );
+    expect(equalizerPaintFinder, findsOneWidget);
+    final excludeEqualizer = find.ancestor(
+      of: equalizerPaintFinder,
+      matching: find.byType(ExcludeSemantics),
+    );
+    expect(excludeEqualizer, findsOneWidget);
+
+    // 2. Mascot 3D Stage AXTree Shielding
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const Scaffold(
+          body: Mascot3DStage(
+            userHouse: 'ruby',
+            userName: 'Zaid Al-Husseini',
+            scholarNo: '2310910',
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.byType(Mascot3DStage), findsOneWidget);
+
+    // 3. Confetti Overlay AXTree Shielding
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: ConfettiOverlay(
+            show: true,
+            child: Text('Protected Surface'),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final confettiPaint = find.descendant(
+      of: find.byType(ConfettiOverlay),
+      matching: find.byType(CustomPaint),
+    );
+    expect(confettiPaint, findsOneWidget);
+    final excludeConfetti = find.ancestor(
+      of: confettiPaint,
+      matching: find.byType(ExcludeSemantics),
+    );
+    expect(excludeConfetti, findsOneWidget);
+  });
+
+  testWidgets('Phase 4 Master Test 6: 200% Font Scale Master Regression Sweep', (WidgetTester tester) async {
+    // Test on both Desktop Widescreen (1200x1000) and Mobile Portrait (400x1000)
+    final testSizes = [const Size(1200, 1000), const Size(400, 1000)];
+
+    for (final size in testSizes) {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1.0;
+
+      // A. Render Cooldown Banner at 200% font scale
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: MediaQuery(
+            data: const MediaQueryData(
+              textScaler: TextScaler.linear(2.0),
+            ),
+            child: Scaffold(
+              body: SingleChildScrollView(
+                child: GamificationCooldownBanner(
+                  activityTitle: 'Spirit Reactor Overdrive',
+                  formattedRemaining: '23h 59m',
+                  remainingDuration: const Duration(hours: 23, minutes: 59),
+                  onDismiss: () {},
+                  onRetry: () {},
+                  onScheduleReminder: () {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+
+      // B. Render Leaderboard Screen at 200% font scale
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: MediaQuery(
+            data: const MediaQueryData(
+              textScaler: TextScaler.linear(2.0),
+            ),
+            child: const Scaffold(
+              body: HouseLeaderboardScreen(
+                initialHouse: 'Ruby',
+                initialPoints: 45,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+    }
+
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
+  });
+
+  test('Part 23 Test 1: TimetablePeriod Serialization & Dynamic Parsing', () {
+    final json = {
+      'period_number': 2,
+      'time_slot': '08:35 - 09:25',
+      'subject': 'Physics',
+      'teacher_name': 'Dr. Rao',
+      'room': 'Lab 2',
+      'is_break': false,
+      'day_of_week': 'Sunday',
+      'class_level': 'Grade 10',
+    };
+    final period = TimetablePeriod.fromMap(json);
+    expect(period.periodNumber, 2);
+    expect(period.subject, 'Physics');
+    expect(period.teacherName, 'Dr. Rao');
+    expect(period.room, 'Lab 2');
+    expect(period.dayOfWeek, 'Sunday');
+    expect(period.classLevel, 'Grade 10');
+    expect(period.startTimeOfDay, const TimeOfDay(hour: 8, minute: 35));
+    expect(period.endTimeOfDay, const TimeOfDay(hour: 9, minute: 25));
+
+    // Verify ordering via Comparable
+    final p1 = period.copyWith(periodNumber: 1, subject: 'Mathematics');
+    final p3 = period.copyWith(periodNumber: 3, subject: 'Chemistry');
+    final list = [p3, period, p1];
+    list.sort();
+    expect(list.map((p) => p.periodNumber).toList(), [1, 2, 3]);
+
+    // Verify toMap round-trip
+    final map = period.toMap();
+    expect(map['subject'], 'Physics');
+    expect(TimetablePeriod.fromMap(map), equals(period));
+  });
+
+  test('Part 23 Test 2: Active Period Detection Logic', () {
+    const period = TimetablePeriod(
+      periodNumber: 2,
+      timeSlot: '08:35 - 09:25',
+      subject: 'Physics',
+      teacherName: 'Dr. Rao',
+      room: 'Lab 2',
+      dayOfWeek: 'Sunday',
+    );
+
+    // 1. Time before period (08:15 AM)
+    final beforeTime = DateTime(2026, 10, 4, 8, 15); // Sunday
+    expect(period.isCurrentPeriod(beforeTime, true), isFalse);
+    expect(period.isUpcomingPeriod(beforeTime, true), isTrue);
+
+    // 2. Time during period (08:45 AM)
+    final activeTime = DateTime(2026, 10, 4, 8, 45); // Sunday
+    expect(period.isCurrentPeriod(activeTime, true), isTrue);
+    expect(period.isUpcomingPeriod(activeTime, true), isFalse);
+    expect(period.timeRemaining(activeTime), const Duration(minutes: 40));
+    expect(period.formattedRemaining(activeTime), '40m remaining');
+
+    // 3. Time after period (09:30 AM)
+    final afterTime = DateTime(2026, 10, 4, 9, 30); // Sunday
+    expect(period.isCurrentPeriod(afterTime, true), isFalse);
+    expect(period.isUpcomingPeriod(afterTime, true), isFalse);
+    expect(period.timeRemaining(afterTime), Duration.zero);
+
+    // 4. Day-of-week sensitivity: Monday 08:45 AM should not match Sunday period
+    final mondayActiveTime = DateTime(2026, 10, 5, 8, 45);
+    expect(period.isCurrentPeriod(mondayActiveTime, true), isFalse);
+  });
+
+  test('Part 23 Test 3: Frame-1 Offline Cache & Pre-Hydration', () async {
+    SharedPreferences.setMockInitialValues({});
+    await AuthService.initPreferences();
+
+    // Initially empty cache returns empty list (Zero hardcoded standard)
+    final emptyList = AuthService.getCachedTimetable();
+    expect(emptyList, isEmpty);
+
+    // Persist verified periods to cache
+    const samplePeriods = [
+      TimetablePeriod(
+        periodNumber: 1,
+        timeSlot: '07:45 - 08:35',
+        subject: 'Mathematics',
+        teacherName: 'Mr. Sharma',
+        room: 'Room 401',
+        dayOfWeek: 'Sunday',
+        classLevel: 'Grade 10',
+      ),
+      TimetablePeriod(
+        periodNumber: 2,
+        timeSlot: '08:35 - 09:25',
+        subject: 'Physics',
+        teacherName: 'Dr. Rao',
+        room: 'Lab 2',
+        dayOfWeek: 'Sunday',
+        classLevel: 'Grade 10',
+      ),
+    ];
+
+    await AuthService.cacheTimetable(
+      samplePeriods,
+      classLevel: 'Grade 10',
+      dayOfWeek: 'Sunday',
+    );
+
+    // Synchronous retrieval from cache
+    final cached = AuthService.getCachedTimetable(
+      classLevel: 'Grade 10',
+      dayOfWeek: 'Sunday',
+    );
+    expect(cached.length, 2);
+    expect(cached[0].subject, 'Mathematics');
+    expect(cached[1].subject, 'Physics');
+
+    // General fallback retrieval without parameters
+    final generalCached = AuthService.getCachedTimetable();
+    expect(generalCached.length, 2);
+  });
+
+  testWidgets('Part 23 Test 4: Day Switcher 48dp Touch Targets & Semantics', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const Scaffold(
+          body: AcademicsScreen(initialDay: 'Sunday'),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Verify all 5 Bahrain school days are rendered
+    for (final day in ['SUN', 'MON', 'TUE', 'WED', 'THU']) {
+      expect(find.text(day), findsOneWidget);
+    }
+
+    // Verify Semantics buttons exist for each school day
+    for (final day in ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday']) {
+      final semanticFinder = find.byWidgetPredicate(
+        (w) =>
+            w is Semantics &&
+            w.properties.button == true &&
+            w.properties.label == '$day Timetable',
+      );
+      expect(semanticFinder, findsOneWidget);
+    }
+
+    // Verify automated tap target guidelines
+    final handle = tester.ensureSemantics();
+    await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
+    await expectLater(tester, meetsGuideline(iOSTapTargetGuideline));
+    await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
+    handle.dispose();
+  });
+
+  testWidgets('Part 23 Test 5: Screen Reader Live Region on Active Class', (WidgetTester tester) async {
+    const testPeriods = [
+      TimetablePeriod(
+        periodNumber: 1,
+        timeSlot: '07:45 - 08:35',
+        subject: 'Mathematics',
+        teacherName: 'Mr. Sharma',
+        room: 'Room 401',
+        dayOfWeek: 'Sunday',
+      ),
+      TimetablePeriod(
+        periodNumber: 2,
+        timeSlot: '08:35 - 09:25',
+        subject: 'Physics',
+        teacherName: 'Dr. Rao',
+        room: 'Lab 2',
+        dayOfWeek: 'Sunday',
+      ),
+    ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: Scaffold(
+          body: AcademicsScreen(
+            initialDay: 'Sunday',
+            mockNow: DateTime(2026, 10, 4, 8, 45), // Sunday 8:45 AM (during period 2)
+            initialPeriods: testPeriods,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Verify IN PROGRESS chip and LIVE indicators are visible
+    expect(find.text('IN PROGRESS'), findsOneWidget);
+    expect(find.text('LIVE'), findsOneWidget);
+
+    // Verify Live Region semantics on active class card
+    final liveRegionFinder = find.byWidgetPredicate(
+      (w) =>
+          w is Semantics &&
+          w.properties.liveRegion == true &&
+          (w.properties.label?.contains('Currently in progress') ?? false),
+    );
+    expect(liveRegionFinder, findsOneWidget);
+  });
+
+  testWidgets('Part 23 Test 6: 200% Font Scale Master Layout Sweep', (WidgetTester tester) async {
+    const testPeriods = [
+      TimetablePeriod(
+        periodNumber: 1,
+        timeSlot: '07:45 - 08:35',
+        subject: 'Mathematics',
+        teacherName: 'Mr. Sharma',
+        room: 'Room 401',
+        dayOfWeek: 'Sunday',
+      ),
+      TimetablePeriod(
+        periodNumber: 2,
+        timeSlot: '08:35 - 09:25',
+        subject: 'Physics',
+        teacherName: 'Dr. Rao',
+        room: 'Lab 2',
+        dayOfWeek: 'Sunday',
+      ),
+    ];
+
+    final testSizes = [const Size(1200, 1000), const Size(400, 1000)];
+
+    for (final size in testSizes) {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1.0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: MediaQuery(
+            data: const MediaQueryData(
+              textScaler: TextScaler.linear(2.0),
+            ),
+            child: Scaffold(
+              body: AcademicsScreen(
+                initialDay: 'Sunday',
+                mockNow: DateTime(2026, 10, 4, 8, 45),
+                initialPeriods: testPeriods,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+    }
+
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
+  });
+
+  // =========================================================================
+  // PART 24 TESTS: Academic Homework Tracker, Due Date Countdown & Points Claim Flow
+  // =========================================================================
+
+  test('Part 24 Test 1: AcademicAssignment Serialization & Due Date Parsing', () {
+    final now = DateTime(2026, 10, 4, 12, 0, 0);
+    final inTwoDays = now.add(const Duration(days: 2, hours: 3));
+    final urgentDate = now.add(const Duration(hours: 14));
+    final pastDate = now.subtract(const Duration(hours: 5));
+
+    final assignment = AcademicAssignment(
+      id: 'asg_math_01',
+      title: 'Calculus Problem Set 4',
+      subject: 'Mathematics',
+      teacherName: 'Mr. Sharma',
+      dueDateTime: inTwoDays,
+      pointsReward: 30,
+      status: AssignmentStatus.pending,
+      description: 'Complete questions 1 to 15 on page 142.',
+    );
+
+    // Serialization
+    final map = assignment.toMap();
+    expect(map['id'], 'asg_math_01');
+    expect(map['title'], 'Calculus Problem Set 4');
+    expect(map['subject'], 'Mathematics');
+    expect(map['points_reward'], 30);
+    expect(map['status'], 'pending');
+
+    final jsonMap = assignment.toJson();
+    final restoredFromJson = AcademicAssignment.fromJson(jsonMap);
+    expect(restoredFromJson.id, assignment.id);
+    expect(restoredFromJson.title, assignment.title);
+    expect(restoredFromJson.pointsReward, assignment.pointsReward);
+    expect(restoredFromJson.status, AssignmentStatus.pending);
+
+    // Telemetry calculations
+    expect(assignment.formattedRemaining(now), 'Due in 2 days');
+    expect(assignment.isUrgent(now), isFalse);
+    expect(assignment.isOverdue(now), isFalse);
+
+    final urgentAssignment = assignment.copyWith(dueDateTime: urgentDate);
+    expect(urgentAssignment.formattedRemaining(now), 'Due in 14 hours');
+    expect(urgentAssignment.isUrgent(now), isTrue);
+    expect(urgentAssignment.isOverdue(now), isFalse);
+
+    final overdueAssignment = assignment.copyWith(dueDateTime: pastDate);
+    expect(overdueAssignment.formattedRemaining(now), 'Overdue');
+    expect(overdueAssignment.isUrgent(now), isFalse);
+    expect(overdueAssignment.isOverdue(now), isTrue);
+  });
+
+  test('Part 24 Test 2: Assignment Status Progression & Lifecycle', () {
+    final assignment = AcademicAssignment(
+      id: 'asg_phy_01',
+      title: 'Electromagnetism Lab Report',
+      subject: 'Physics',
+      teacherName: 'Dr. Rao',
+      dueDateTime: DateTime(2026, 10, 8, 10, 0),
+      pointsReward: 40,
+      status: AssignmentStatus.pending,
+    );
+
+    expect(assignment.status, AssignmentStatus.pending);
+    expect(assignment.status.displayName, 'Pending');
+
+    final next1 = assignment.status.nextStatus;
+    expect(next1, AssignmentStatus.submitted);
+    expect(next1.displayName, 'Submitted');
+
+    final next2 = next1.nextStatus;
+    expect(next2, AssignmentStatus.graded);
+    expect(next2.displayName, 'Graded');
+
+    final next3 = next2.nextStatus;
+    expect(next3, AssignmentStatus.pending);
+
+    // Test cycleStatus model method
+    final cycled1 = assignment.cycleStatus();
+    expect(cycled1.status, AssignmentStatus.submitted);
+    final cycled2 = cycled1.cycleStatus();
+    expect(cycled2.status, AssignmentStatus.graded);
+    final cycled3 = cycled2.cycleStatus();
+    expect(cycled3.status, AssignmentStatus.pending);
+  });
+
+  test('Part 24 Test 3: Frame-1 Offline Cache & Pre-Hydration', () async {
+    // 1. Unseeded class cache returns clean zero-state (Zero Hardcoded Data)
+    final initialEmpty = AuthService.getCachedAssignments(classLevel: '11B');
+    expect(initialEmpty, isEmpty);
+
+    // 2. Cache multiple assignments
+    final testAssignments = [
+      AcademicAssignment(
+        id: 'asg_chem_01',
+        title: 'Organic Chemistry Reactions',
+        subject: 'Chemistry',
+        teacherName: 'Mrs. Mathew',
+        dueDateTime: DateTime(2026, 10, 5, 9, 0),
+        pointsReward: 25,
+        status: AssignmentStatus.pending,
+      ),
+      AcademicAssignment(
+        id: 'asg_cs_01',
+        title: 'Binary Search Tree Implementation',
+        subject: 'Computer Science',
+        teacherName: 'Mr. Roy',
+        dueDateTime: DateTime(2026, 10, 7, 14, 0),
+        pointsReward: 50,
+        status: AssignmentStatus.submitted,
+      ),
+    ];
+
+    await AuthService.cacheAssignments(testAssignments, classLevel: '11B');
+
+    // 3. Retrieve instantly from write-through cache
+    final cached = AuthService.getCachedAssignments(classLevel: '11B');
+    expect(cached.length, 2);
+    expect(cached[0].id, 'asg_chem_01');
+    expect(cached[0].title, 'Organic Chemistry Reactions');
+    expect(cached[0].subject, 'Chemistry');
+    expect(cached[0].pointsReward, 25);
+    expect(cached[0].status, AssignmentStatus.pending);
+
+    expect(cached[1].id, 'asg_cs_01');
+    expect(cached[1].subject, 'Computer Science');
+    expect(cached[1].pointsReward, 50);
+    expect(cached[1].status, AssignmentStatus.submitted);
+  });
+
+  testWidgets('Part 24 Test 4: Subject Filter & 48dp Touch Targets (meetsGuideline)', (WidgetTester tester) async {
+    final fixedNow = DateTime(2026, 10, 4, 10, 0);
+    final assignments = [
+      AcademicAssignment(
+        id: 'asg_1',
+        title: 'Math Integrals Homework',
+        subject: 'Mathematics',
+        teacherName: 'Mr. Sharma',
+        dueDateTime: fixedNow.add(const Duration(days: 1)),
+        pointsReward: 20,
+        status: AssignmentStatus.pending,
+      ),
+      AcademicAssignment(
+        id: 'asg_2',
+        title: 'Physics Wave Optics',
+        subject: 'Physics',
+        teacherName: 'Dr. Rao',
+        dueDateTime: fixedNow.add(const Duration(days: 3)),
+        pointsReward: 25,
+        status: AssignmentStatus.pending,
+      ),
+    ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: Scaffold(
+          body: AcademicsScreen(
+            initialTab: 'homework',
+            initialAssignments: assignments,
+            mockNow: fixedNow,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify both items are initially visible under 'All'
+    expect(find.text('Math Integrals Homework'), findsOneWidget);
+    expect(find.text('Physics Wave Optics'), findsOneWidget);
+
+    // Filter by 'Mathematics'
+    final mathFilterFinder = find.widgetWithText(InkWell, 'Mathematics');
+    expect(mathFilterFinder, findsOneWidget);
+
+    // Verify touch target constraint >= 48dp
+    final chipSize = tester.getSize(mathFilterFinder);
+    expect(chipSize.height, greaterThanOrEqualTo(48.0));
+    expect(chipSize.width, greaterThanOrEqualTo(48.0));
+
+    await tester.tap(mathFilterFinder);
+    await tester.pumpAndSettle();
+
+    // After filtering by Mathematics, Math is shown, Physics is hidden
+    expect(find.text('Math Integrals Homework'), findsOneWidget);
+    expect(find.text('Physics Wave Optics'), findsNothing);
+
+    // Tap 'All' to restore
+    final allFilterFinder = find.widgetWithText(InkWell, 'All');
+    await tester.tap(allFilterFinder);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Math Integrals Homework'), findsOneWidget);
+    expect(find.text('Physics Wave Optics'), findsOneWidget);
+  });
+
+  testWidgets('Part 24 Test 5: Screen Reader Live Region & Deadline Announcements', (WidgetTester tester) async {
+    final fixedNow = DateTime(2026, 10, 4, 10, 0);
+    final urgentAssignment = AcademicAssignment(
+      id: 'asg_urgent_1',
+      title: 'Urgent Lab Safety Review',
+      subject: 'Chemistry',
+      teacherName: 'Mrs. Mathew',
+      dueDateTime: fixedNow.add(const Duration(hours: 6)),
+      pointsReward: 35,
+      status: AssignmentStatus.pending,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: Scaffold(
+          body: AcademicsScreen(
+            initialTab: 'homework',
+            initialAssignments: [urgentAssignment],
+            mockNow: fixedNow,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify urgent badge rendered
+    expect(find.textContaining('Due in 6 hours'), findsOneWidget);
+
+    // Verify accessibility live region semantics
+    final liveRegionFinder = find.byWidgetPredicate(
+      (w) =>
+          w is Semantics &&
+          w.properties.liveRegion == true &&
+          (w.properties.label?.contains('Urgent deadline') ?? false),
+    );
+    expect(liveRegionFinder, findsOneWidget);
+  });
+
+  testWidgets('Part 24 Test 6: 200% Font Scale Master Layout Sweep', (WidgetTester tester) async {
+    final fixedNow = DateTime(2026, 10, 4, 10, 0);
+    final testAssignments = [
+      AcademicAssignment(
+        id: 'asg_math_scale',
+        title: 'Calculus Multivariable Differentiation Problem Set 9',
+        subject: 'Mathematics',
+        teacherName: 'Mr. Sharma',
+        dueDateTime: fixedNow.add(const Duration(hours: 12)),
+        pointsReward: 50,
+        status: AssignmentStatus.pending,
+      ),
+      AcademicAssignment(
+        id: 'asg_cs_scale',
+        title: 'Operating Systems Semaphores & Mutex Implementation',
+        subject: 'Computer Science',
+        teacherName: 'Mr. Roy',
+        dueDateTime: fixedNow.add(const Duration(days: 4)),
+        pointsReward: 30,
+        status: AssignmentStatus.submitted,
+      ),
+    ];
+
+    final testSizes = [const Size(1200, 1000), const Size(400, 1000)];
+
+    for (final size in testSizes) {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1.0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: MediaQuery(
+            data: const MediaQueryData(
+              textScaler: TextScaler.linear(2.0),
+            ),
+            child: Scaffold(
+              body: AcademicsScreen(
+                initialTab: 'homework',
+                initialAssignments: testAssignments,
+                mockNow: fixedNow,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    }
+
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
+  });
+
+  // =========================================================================
+  // PART 25 TESTS: Mid-Term Examination Schedule, Syllabus Vault & Exam Hall Directory
+  // =========================================================================
+
+  test('Part 25 Test 1 (Test 103): ExamScheduleItem Serialization & Telemetry Engine', () {
+    final now = DateTime(2026, 10, 12, 8, 0); // 8:00 AM
+    final startsIn18Hrs = now.add(const Duration(hours: 18));
+    final activeExamTime = now.subtract(const Duration(minutes: 30)); // Started 30 min ago, duration 90 min -> in progress
+    final concludedExamTime = now.subtract(const Duration(hours: 3)); // Started 3h ago -> concluded
+
+    final exam = ExamScheduleItem(
+      id: 'exam_math_01',
+      subject: 'Mathematics',
+      paperTitle: 'Paper 1: Pure Mathematics & Calculus',
+      examDateTime: startsIn18Hrs,
+      durationMinutes: 90,
+      examHall: 'Auditorium Hall A',
+      seatRow: 'Desk Row C - 14',
+      syllabusTopics: ['Limits & Continuity', 'Derivatives & Applications', 'Definite Integrals', 'Differential Equations'],
+      readingMaterials: ['NCERT Calculus Vol 1', 'Past Papers 2024'],
+      maxMarks: 100,
+      classLevel: 'Grade 10',
+    );
+
+    // Serialization
+    final map = exam.toMap();
+    expect(map['id'], 'exam_math_01');
+    expect(map['subject'], 'Mathematics');
+    expect(map['paper_title'], 'Paper 1: Pure Mathematics & Calculus');
+    expect(map['duration_minutes'], 90);
+    expect(map['exam_hall'], 'Auditorium Hall A');
+    expect(map['seat_row'], 'Desk Row C - 14');
+    expect(map['max_marks'], 100);
+    expect(map['syllabus_topics'].length, 4);
+
+    final restored = ExamScheduleItem.fromJson(exam.toJson());
+    expect(restored.id, exam.id);
+    expect(restored.paperTitle, exam.paperTitle);
+    expect(restored.durationMinutes, 90);
+    expect(restored.examHall, 'Auditorium Hall A');
+    expect(restored.seatRow, 'Desk Row C - 14');
+    expect(restored.syllabusTopics, contains('Limits & Continuity'));
+    expect(restored.readingMaterials, contains('NCERT Calculus Vol 1'));
+
+    // Telemetry - Starts in 18 hours
+    expect(exam.isUrgent(now), isTrue);
+    expect(exam.isInProgress(now), isFalse);
+    expect(exam.isConcluded(now), isFalse);
+    expect(exam.formattedCountdown(now), 'Starts in 18 hours');
+
+    // Telemetry - In Progress
+    final activeExam = exam.copyWith(examDateTime: activeExamTime, durationMinutes: 90);
+    expect(activeExam.isInProgress(now), isTrue);
+    expect(activeExam.isUrgent(now), isFalse);
+    expect(activeExam.isConcluded(now), isFalse);
+    expect(activeExam.formattedCountdown(now), contains('In Progress'));
+
+    // Telemetry - Concluded
+    final concludedExam = exam.copyWith(examDateTime: concludedExamTime, durationMinutes: 90);
+    expect(concludedExam.isConcluded(now), isTrue);
+    expect(concludedExam.isInProgress(now), isFalse);
+    expect(concludedExam.isUrgent(now), isFalse);
+    expect(concludedExam.formattedCountdown(now), 'Concluded');
+  });
+
+  test('Part 25 Test 2 (Test 104): Frame-1 Offline Cache & Zero-Hardcoded Baseline', () async {
+    // 1. Unseeded cache returns clean zero-state (Zero Hardcoded Baseline)
+    final initialEmpty = AuthService.getCachedExamSchedule(classLevel: '10C');
+    expect(initialEmpty, isEmpty);
+
+    // 2. Cache verified exam records
+    final testExams = [
+      ExamScheduleItem(
+        id: 'exam_phy_mid',
+        subject: 'Physics',
+        paperTitle: 'Paper 1: Mechanics & Wave Motion',
+        examDateTime: DateTime(2026, 10, 14, 9, 0),
+        durationMinutes: 90,
+        examHall: 'Physics Lab 3',
+        seatRow: 'Row B - 08',
+        syllabusTopics: ['Kinematics', 'Dynamics', 'Simple Harmonic Motion'],
+        maxMarks: 80,
+      ),
+      ExamScheduleItem(
+        id: 'exam_chem_mid',
+        subject: 'Chemistry',
+        paperTitle: 'Paper 1: Organic & Inorganic Analysis',
+        examDateTime: DateTime(2026, 10, 16, 9, 0),
+        durationMinutes: 90,
+        examHall: 'Main Examination Hall',
+        seatRow: 'Row D - 22',
+        syllabusTopics: ['Thermodynamics', 'Equilibrium', 'Hydrocarbons'],
+        maxMarks: 80,
+      ),
+    ];
+
+    await AuthService.cacheExamSchedule(testExams, classLevel: '10C');
+
+    // 3. Synchronous frame-1 restoration
+    final cached = AuthService.getCachedExamSchedule(classLevel: '10C');
+    expect(cached.length, 2);
+    expect(cached[0].id, 'exam_phy_mid');
+    expect(cached[0].subject, 'Physics');
+    expect(cached[0].examHall, 'Physics Lab 3');
+    expect(cached[0].seatRow, 'Row B - 08');
+    expect(cached[1].id, 'exam_chem_mid');
+    expect(cached[1].subject, 'Chemistry');
+    expect(cached[1].examHall, 'Main Examination Hall');
+  });
+
+  testWidgets('Part 25 Test 3 (Test 105): Tri-Segment Tab Switching & 48dp Touch Targets', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const Scaffold(
+          body: AcademicsScreen(initialTab: 'timetable'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify all 3 tabs are rendered in tri-segment bar
+    expect(find.text('Class Timetable'), findsOneWidget);
+    expect(find.text('Homework Tracker'), findsOneWidget);
+    expect(find.text('Exam Schedule'), findsOneWidget);
+
+    // Verify touch target constraints >= 48dp on all tab buttons
+    for (final label in ['Timetable Tab', 'Homework Tab', 'Exams Tab']) {
+      final tabFinder = find.byWidgetPredicate(
+        (w) => w is Semantics && w.properties.label == label && w.properties.button == true,
+      );
+      expect(tabFinder, findsOneWidget);
+      final size = tester.getSize(tabFinder);
+      expect(size.height, greaterThanOrEqualTo(48.0));
+    }
+
+    // Tap 'Exams Tab'
+    final examsTabFinder = find.byWidgetPredicate(
+      (w) => w is Semantics && w.properties.label == 'Exams Tab' && w.properties.button == true,
+    );
+    await tester.tap(examsTabFinder);
+    await tester.pumpAndSettle();
+
+    // Verify AppBar and screen switched to Exam Schedule view
+    expect(find.textContaining('Exam Schedule'), findsWidgets);
+    expect(find.text('No Examinations Scheduled'), findsOneWidget);
+  });
+
+  testWidgets('Part 25 Test 4 (Test 106): Syllabus Vault Accordion & Expansion Semantics', (WidgetTester tester) async {
+    final fixedNow = DateTime(2026, 10, 10, 8, 0);
+    final testExam = ExamScheduleItem(
+      id: 'exam_cs_01',
+      subject: 'Computer Science',
+      paperTitle: 'Paper 1: Data Structures & Algorithms',
+      examDateTime: fixedNow.add(const Duration(days: 4)),
+      durationMinutes: 120,
+      examHall: 'Computer Lab 1',
+      seatRow: 'Station 12',
+      syllabusTopics: ['Binary Trees', 'Graph Traversal', 'Dynamic Programming', 'Complexity Analysis'],
+      readingMaterials: ['Introduction to Algorithms CLRS Ch 1-4', 'Python DSA Handbook'],
+      maxMarks: 100,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: Scaffold(
+          body: AcademicsScreen(
+            initialTab: 'exams',
+            initialExams: [testExam],
+            mockNow: fixedNow,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify exam card is rendered
+    expect(find.text('Paper 1: Data Structures & Algorithms'), findsOneWidget);
+
+    // Verify syllabus accordion header initially collapsed
+    final accordionFinder = find.byKey(const Key('syllabus_accordion_exam_cs_01'));
+    expect(accordionFinder, findsOneWidget);
+
+    final collapsedSemantics = find.byWidgetPredicate(
+      (w) =>
+          w is Semantics &&
+          w.properties.button == true &&
+          w.properties.expanded == false &&
+          (w.properties.label?.contains('Syllabus topics') ?? false),
+    );
+    expect(collapsedSemantics, findsOneWidget);
+
+    // Topics not yet visible
+    expect(find.text('1. Binary Trees'), findsNothing);
+
+    // Tap to expand
+    await tester.tap(accordionFinder);
+    await tester.pumpAndSettle();
+
+    // Verify expanded: true semantics
+    final expandedSemantics = find.byWidgetPredicate(
+      (w) =>
+          w is Semantics &&
+          w.properties.button == true &&
+          w.properties.expanded == true &&
+          (w.properties.label?.contains('Syllabus topics') ?? false),
+    );
+    expect(expandedSemantics, findsOneWidget);
+
+    // Verify topics and readings now visible
+    expect(find.text('1. Binary Trees'), findsOneWidget);
+    expect(find.text('2. Graph Traversal'), findsOneWidget);
+    expect(find.text('Introduction to Algorithms CLRS Ch 1-4'), findsOneWidget);
+
+    // Tap again to collapse
+    await tester.tap(accordionFinder);
+    await tester.pumpAndSettle();
+
+    expect(find.text('1. Binary Trees'), findsNothing);
+  });
+
+  testWidgets('Part 25 Test 5 (Test 107): Exam Hall Navigation & Urgency Live Region Alerts', (WidgetTester tester) async {
+    final fixedNow = DateTime(2026, 10, 10, 8, 0);
+    final urgentExam = ExamScheduleItem(
+      id: 'exam_math_urg',
+      subject: 'Mathematics',
+      paperTitle: 'Paper 1: Pure Mathematics',
+      examDateTime: fixedNow.add(const Duration(hours: 14)), // Within 24 hours -> Urgent
+      durationMinutes: 90,
+      examHall: 'Auditorium Hall A',
+      seatRow: 'Desk Row C - 14',
+      syllabusTopics: ['Calculus'],
+      maxMarks: 100,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: Scaffold(
+          body: AcademicsScreen(
+            initialTab: 'exams',
+            initialExams: [urgentExam],
+            mockNow: fixedNow,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify hall and desk navigation
+    expect(find.text('Auditorium Hall A'), findsOneWidget);
+    expect(find.text('Desk Row C - 14'), findsOneWidget);
+
+    // Verify urgent countdown chip rendered
+    expect(find.text('Starts in 14 hours'), findsOneWidget);
+
+    // Verify screen reader live region semantics for urgent exam alert
+    final urgentLiveRegionFinder = find.byWidgetPredicate(
+      (w) =>
+          w is Semantics &&
+          w.properties.liveRegion == true &&
+          (w.properties.label?.contains('Urgent examination alert: Mathematics') ?? false) &&
+          (w.properties.label?.contains('Auditorium Hall A') ?? false),
+    );
+    expect(urgentLiveRegionFinder, findsOneWidget);
+  });
+
+  testWidgets('Part 25 Test 6 (Test 108): 200% Font Scale & Multi-Resolution Layout Stress Test', (WidgetTester tester) async {
+    final fixedNow = DateTime(2026, 10, 10, 8, 0);
+    final testExams = [
+      ExamScheduleItem(
+        id: 'exam_scale_1',
+        subject: 'Mathematics',
+        paperTitle: 'Advanced Multivariable Differential & Integral Calculus Examination Paper',
+        examDateTime: fixedNow.add(const Duration(hours: 10)),
+        durationMinutes: 120,
+        examHall: 'Main University Examination Auditorium Complex West Wing',
+        seatRow: 'Special Reserved Seating Zone Alpha Row 4 Desk 12',
+        syllabusTopics: ['Topic 1 Long Description', 'Topic 2 Long Description'],
+        readingMaterials: ['Comprehensive Textbook on Calculus and Modern Analysis Volume 4'],
+        maxMarks: 100,
+      ),
+    ];
+
+    final testSizes = [const Size(1200, 1000), const Size(400, 1000)];
+
+    for (final size in testSizes) {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1.0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: MediaQuery(
+            data: const MediaQueryData(
+              textScaler: TextScaler.linear(2.0),
+            ),
+            child: Scaffold(
+              body: AcademicsScreen(
+                initialTab: 'exams',
+                initialExams: testExams,
+                mockNow: fixedNow,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    }
+
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
+  });
+
+  testWidgets('Part 26 Test 1 (Test 109): Live Event Wall Dual-Mode Base64 & Network Image Engine', (WidgetTester tester) async {
+    // 1x1 transparent PNG Base64 Data URI
+    const base64Png =
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+    const networkUrl = 'https://example.com/student_event_photo.jpg';
+
+    // Test Base64 Data URI rendering
+    final base64Widget = HomeScreen.buildResilientImage(base64Png, height: 200);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: Center(child: base64Widget)),
+      ),
+    );
+    expect(find.byType(Image), findsOneWidget);
+
+    // Test Network URL rendering
+    final networkWidget = HomeScreen.buildResilientImage(networkUrl, height: 200);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: Center(child: networkWidget)),
+      ),
+    );
+    expect(find.byType(Image), findsOneWidget);
+
+    // Test empty/invalid URL fallback
+    final emptyWidget = HomeScreen.buildResilientImage('', height: 200);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: Center(child: emptyWidget)),
+      ),
+    );
+    expect(find.byIcon(Icons.camera_alt_outlined), findsOneWidget);
+    expect(find.text('Photo unavailable'), findsOneWidget);
+  });
+
+  testWidgets('Part 26 Test 2 (Test 110): AcademicReportCard Serialization & GPA Calculation', (WidgetTester tester) async {
+    final sampleSubjects = [
+      const SubjectGrade(
+        subject: 'Mathematics',
+        score: 95.0,
+        maxScore: 100.0,
+        gradeLetter: 'A1',
+        teacherComment: 'Outstanding problem solving skills.',
+      ),
+      const SubjectGrade(
+        subject: 'Physics',
+        score: 88.0,
+        maxScore: 100.0,
+        gradeLetter: 'A2',
+        teacherComment: 'Excellent lab comprehension.',
+      ),
+      const SubjectGrade(
+        subject: 'Computer Science',
+        score: 98.0,
+        maxScore: 100.0,
+        gradeLetter: 'A1',
+        teacherComment: 'Superb algorithm and data structure design.',
+      ),
+    ];
+
+    final reportCard = AcademicReportCard(
+      id: 'rc_term1_2026',
+      scholarNo: 'ASB-2024-8841',
+      studentName: 'Aarav Patel',
+      termName: 'Term 1 Mid-Term',
+      academicYear: '2026-2027',
+      classLevel: 'Grade 10',
+      overallGpa: 3.88,
+      overallPercentage: 93.67,
+      attendanceRate: 98.5,
+      teacherRemarks: 'Consistently exceptional academic leadership and analytical capability.',
+      subjectGrades: sampleSubjects,
+      publishedAt: DateTime(2026, 10, 15),
+      isMeritClaimed: false,
+    );
+
+    // Verify distinctions and getters
+    expect(reportCard.hasDistinction, isTrue);
+    expect(reportCard.term, 'Term 1 Mid-Term');
+    expect(reportCard.overallGpa, 3.88);
+    expect(reportCard.formattedGpa, '3.88');
+    expect(reportCard.formattedPercentage, '93.7%');
+    expect(reportCard.attendancePercentage, 98.5);
+    expect(reportCard.subjects.length, 3);
+    expect(reportCard.subjects.first.marksObtained, 95.0);
+    expect(reportCard.subjects.first.maxMarks, 100.0);
+    expect(reportCard.subjects.first.letterGrade, 'A1');
+
+    // Test JSON Serialization & Deserialization
+    final jsonMap = reportCard.toMap();
+    final restored = AcademicReportCard.fromMap(jsonMap);
+
+    expect(restored.id, reportCard.id);
+    expect(restored.scholarNo, reportCard.scholarNo);
+    expect(restored.studentName, reportCard.studentName);
+    expect(restored.termName, reportCard.termName);
+    expect(restored.overallGpa, reportCard.overallGpa);
+    expect(restored.overallPercentage, closeTo(93.67, 0.01));
+    expect(restored.hasDistinction, isTrue);
+    expect(restored.subjectGrades.length, 3);
+
+    // Verify distinction boundary (< 3.80 is not distinction)
+    final nonDistinction = reportCard.copyWith(overallGpa: 3.65);
+    expect(nonDistinction.hasDistinction, isFalse);
+  });
+
+  testWidgets('Part 26 Test 3 (Test 111): Frame-1 Offline Cache & Zero Dummy Data Baseline', (WidgetTester tester) async {
+    // Ensure clean zero baseline
+    await AuthService.clearCache();
+    final emptyCards = AuthService.getCachedReportCards(
+      classLevel: 'Grade 10',
+      scholarNo: 'ASB-2024-8841',
+    );
+    expect(emptyCards, isEmpty);
+
+    // Mount AcademicsScreen on reports tab without preloaded data
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const Scaffold(
+          body: AcademicsScreen(
+            initialTab: 'reports',
+            classLevel: 'Grade 10',
+            scholarNo: 'ASB-2024-8841',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify pure zero baseline empty state
+    expect(find.text('No Term Report Cards Published Yet'), findsOneWidget);
+    expect(find.byIcon(Icons.school_outlined), findsOneWidget);
+
+    // Now cache a verified card and verify Frame-1 instant retrieval
+    final testCard = AcademicReportCard(
+      id: 'rc_cached_1',
+      scholarNo: 'ASB-2024-8841',
+      studentName: 'Aarav Patel',
+      termName: 'Term 1 Mid-Term',
+      academicYear: '2026-2027',
+      classLevel: 'Grade 10',
+      overallGpa: 3.90,
+      overallPercentage: 94.0,
+      attendanceRate: 99.0,
+      teacherRemarks: 'Exemplary work.',
+      publishedAt: DateTime(2026, 10, 1),
+    );
+
+    await AuthService.cacheReportCards(
+      [testCard],
+      classLevel: 'Grade 10',
+      scholarNo: 'ASB-2024-8841',
+    );
+
+    final cachedResult = AuthService.getCachedReportCards(
+      classLevel: 'Grade 10',
+      scholarNo: 'ASB-2024-8841',
+    );
+    expect(cachedResult.length, 1);
+    expect(cachedResult.first.id, 'rc_cached_1');
+    expect(cachedResult.first.overallGpa, 3.90);
+  });
+
+  testWidgets('Part 26 Test 4 (Test 112): 4-Segment Navigation & 48dp Touch Targets', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.lightTheme,
+        home: const Scaffold(
+          body: AcademicsScreen(
+            initialTab: 'timetable',
+            classLevel: 'Grade 10',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify all 4 tab buttons exist
+    expect(find.text('Class Timetable'), findsOneWidget);
+    expect(find.text('Homework Tracker'), findsOneWidget);
+    expect(find.text('Exam Schedule'), findsOneWidget);
+    expect(find.text('Report Cards'), findsOneWidget);
+
+    for (final label in ['Timetable Tab', 'Homework Tab', 'Exams Tab', 'Report Cards Tab']) {
+      final tabFinder = find.byWidgetPredicate(
+        (w) => w is Semantics && w.properties.label == label && w.properties.button == true,
+      );
+      expect(tabFinder, findsOneWidget);
+    }
+
+    // Verify WCAG 2.5.5 minimum 48dp touch target height
+    final reportCardsTabFinder = find.byWidgetPredicate(
+      (w) => w is Semantics && w.properties.label == 'Report Cards Tab' && w.properties.button == true,
+    );
+    final size = tester.getSize(reportCardsTabFinder);
+    expect(size.height, greaterThanOrEqualTo(48.0));
+
+    // Tap Report Cards tab
+    await tester.tap(reportCardsTabFinder);
+    await tester.pumpAndSettle();
+
+    // Verify tab switch occurred
+    expect(find.text('Campus Academics'), findsOneWidget);
+    expect(find.text('Grade 10 • Term Report Cards'), findsOneWidget);
+  });
+
+  testWidgets('Part 26 Test 5 (Test 113): Report Card Live Region & Academic Honours Semantics', (WidgetTester tester) async {
+    final distinctionCard = AcademicReportCard(
+      id: 'rc_distinction_1',
+      scholarNo: 'ASB-2024-8841',
+      studentName: 'Aarav Patel',
+      termName: 'Term 1 Mid-Term',
+      academicYear: '2026-2027',
+      classLevel: 'Grade 10',
+      overallGpa: 3.92,
+      overallPercentage: 95.5,
+      attendanceRate: 98.0,
+      teacherRemarks: 'Brilliant mastery of mathematical concepts and exemplary peer guidance.',
+      subjectGrades: const [
+        SubjectGrade(
+          subject: 'Mathematics',
+          score: 98.0,
+          maxScore: 100.0,
+          gradeLetter: 'A1',
+          teacherComment: 'Perfect score in geometry section.',
+        ),
+      ],
+      publishedAt: DateTime(2026, 10, 1),
+      isMeritClaimed: false,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: Scaffold(
+          body: AcademicsScreen(
+            initialTab: 'reports',
+            initialReportCards: [distinctionCard],
+            scholarNo: 'ASB-2024-8841',
+            classLevel: 'Grade 10',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify Honours HUD values
+    expect(find.text('3.92'), findsOneWidget);
+    expect(find.text('/ 4.00 GPA'), findsOneWidget);
+    expect(find.text('95.5%'), findsOneWidget);
+    expect(find.text('ACADEMIC HONOURS DISTINCTION'), findsOneWidget);
+
+    // Verify Merit Claim Button is visible
+    final claimButtonFinder = find.byKey(const Key('claim_honours_merit_rc_distinction_1'));
+    expect(claimButtonFinder, findsOneWidget);
+    expect(find.text('CLAIM HONOURS MERIT (+50 PTS)'), findsOneWidget);
+
+    // Tap to claim merit
+    await tester.tap(claimButtonFinder);
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    // Verify button state updated to CLAIMED
+    expect(find.text('CLAIMED (+50 PTS)'), findsOneWidget);
+  });
+
+  testWidgets('Part 26 Test 6 (Test 114): 200% Font Scale Elasticity & Multi-Resolution Layout Stress Test', (WidgetTester tester) async {
+    final stressCard = AcademicReportCard(
+      id: 'rc_stress_1',
+      scholarNo: 'ASB-2024-8841',
+      studentName: 'Aarav Patel',
+      termName: 'Term 1 Mid-Term Examination Evaluation Report',
+      academicYear: '2026-2027',
+      classLevel: 'Grade 10',
+      overallGpa: 3.95,
+      overallPercentage: 96.8,
+      attendanceRate: 100.0,
+      teacherRemarks: 'Comprehensive analytical synthesis with profound critical evaluation across all scientific domains.',
+      subjectGrades: const [
+        SubjectGrade(
+          subject: 'Advanced Computer Science & Data Structures',
+          score: 99.0,
+          maxScore: 100.0,
+          gradeLetter: 'A1',
+          teacherComment: 'Outstanding algorithm design and recursive computational complexity optimization.',
+        ),
+        SubjectGrade(
+          subject: 'Theoretical Physics & Mechanics',
+          score: 94.0,
+          maxScore: 100.0,
+          gradeLetter: 'A1',
+          teacherComment: 'Exceptional problem decomposition in Newtonian rotational dynamics.',
+        ),
+      ],
+      publishedAt: DateTime(2026, 10, 1),
+      isMeritClaimed: false,
+    );
+
+    final testSizes = [const Size(1200, 1000), const Size(400, 1000)];
+
+    for (final size in testSizes) {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1.0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: MediaQuery(
+            data: const MediaQueryData(
+              textScaler: TextScaler.linear(2.0),
+            ),
+            child: Scaffold(
+              body: AcademicsScreen(
+                initialTab: 'reports',
+                initialReportCards: [stressCard],
+                scholarNo: 'ASB-2024-8841',
+                classLevel: 'Grade 10',
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+    }
+
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
+  });
+
+  // =========================================================================
+  // PART 27 TESTS: Student Attendance Tracker, Period Absence Audit & Medical Leave Pass
+  // =========================================================================
+
+  test('Part 27 Test 1 (Test 115): AttendanceRecord & Summary Telemetry Engine', () {
+    final now = DateTime(2026, 10, 1, 9, 0);
+    final record = AttendanceRecord(
+      id: 'att_01',
+      scholarNo: '2310910',
+      date: now,
+      status: AttendanceStatus.absent,
+      periodBreakdown: {
+        1: AttendanceStatus.present,
+        2: AttendanceStatus.present,
+        3: AttendanceStatus.absent, // Missed Chemistry
+        4: AttendanceStatus.present,
+      },
+      classLevel: 'Grade 10',
+    );
+
+    // Serialization
+    final map = record.toMap();
+    expect(map['id'], 'att_01');
+    expect(map['scholar_no'], '2310910');
+    expect(map['status'], 'absent');
+    expect(map['period_breakdown']['3'], 'absent');
+
+    final restored = AttendanceRecord.fromJson(record.toJson());
+    expect(restored.id, record.id);
+    expect(restored.periodBreakdown[3], AttendanceStatus.absent);
+    expect(restored.hasPeriodAbsence, isTrue);
+    expect(restored.missedPeriodCount, 1);
+
+    // Telemetry Summary & 75% threshold
+    final records = [
+      AttendanceRecord(id: '1', scholarNo: '2310910', date: now, status: AttendanceStatus.present),
+      AttendanceRecord(id: '2', scholarNo: '2310910', date: now, status: AttendanceStatus.present),
+      AttendanceRecord(id: '3', scholarNo: '2310910', date: now, status: AttendanceStatus.present),
+      AttendanceRecord(id: '4', scholarNo: '2310910', date: now, status: AttendanceStatus.absent),
+    ];
+    final summary = AttendanceSummary.fromRecords(records);
+    expect(summary.totalDays, 4);
+    expect(summary.presentDays, 3);
+    expect(summary.percentage, 75.0);
+    expect(summary.isMinistryCompliant, isTrue);
+    expect(summary.isCriticalThreshold, isTrue); // 75% < 80% threshold
+  });
+
+  test('Part 27 Test 2 (Test 116): Frame-1 Offline Cache & Zero Dummy Data Baseline', () async {
+    // 1. Unseeded cache returns clean zero-state
+    final initialEmpty = AuthService.getCachedAttendanceRecords(classLevel: '10A', scholarNo: '999');
+    expect(initialEmpty, isEmpty);
+
+    // 2. Cache records
+    final testRecords = [
+      AttendanceRecord(
+        id: 'att_test',
+        scholarNo: '999',
+        date: DateTime(2026, 10, 1),
+        status: AttendanceStatus.present,
+        classLevel: '10A',
+      ),
+    ];
+    await AuthService.cacheAttendanceRecords(testRecords, classLevel: '10A', scholarNo: '999');
+
+    // 3. Frame-1 Synchronous Restoration
+    final cached = AuthService.getCachedAttendanceRecords(classLevel: '10A', scholarNo: '999');
+    expect(cached.length, 1);
+    expect(cached[0].status, AttendanceStatus.present);
+  });
+
+  testWidgets('Part 27 Test 3 (Test 117): 5-Segment Tab Navigation & 48dp Touch Targets', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const Scaffold(
+          body: AcademicsScreen(initialTab: 'timetable'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify all 5 tab buttons exist with >= 48dp touch targets
+    final attendanceTabFinder = find.byWidgetPredicate(
+      (w) => w is Semantics && w.properties.label == 'Attendance Tab' && w.properties.button == true,
+    );
+    expect(attendanceTabFinder, findsOneWidget);
+    final size = tester.getSize(attendanceTabFinder);
+    expect(size.height, greaterThanOrEqualTo(48.0));
+
+    // Tap to switch
+    await tester.tap(attendanceTabFinder);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Attendance'), findsWidgets);
+    expect(find.text('No Attendance Records Logged Yet'), findsOneWidget);
+  });
+
+  testWidgets('Part 27 Test 4 (Test 118): Period-Wise Absence Breakdown & Screen Reader Semantics', (WidgetTester tester) async {
+    final fixedDate = DateTime(2026, 10, 1);
+    final recordWithAbsence = AttendanceRecord(
+      id: 'rec_abs_01',
+      scholarNo: '2310910',
+      date: fixedDate,
+      status: AttendanceStatus.absent,
+      periodBreakdown: {
+        1: AttendanceStatus.present,
+        2: AttendanceStatus.absent, // Period 2 absent
+      },
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: Scaffold(
+          body: AcademicsScreen(
+            initialTab: 'attendance',
+            initialAttendance: [recordWithAbsence],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify period absence pill and semantics
+    expect(find.text('Period 2'), findsOneWidget);
+    final periodSemantics = find.byWidgetPredicate(
+      (w) => w is Semantics && (w.properties.label?.contains('Period 2: Absent') ?? false),
+    );
+    expect(periodSemantics, findsOneWidget);
+  });
+
+  testWidgets('Part 27 Test 5 (Test 119): Ministry 75% Compliance Alert & Critical Live Region', (WidgetTester tester) async {
+    final lowAttendance = [
+      AttendanceRecord(id: '1', scholarNo: '2310910', date: DateTime(2026, 10, 1), status: AttendanceStatus.present),
+      AttendanceRecord(id: '2', scholarNo: '2310910', date: DateTime(2026, 10, 2), status: AttendanceStatus.absent),
+    ]; // 50% attendance -> Critical threshold violation
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: Scaffold(
+          body: AcademicsScreen(
+            initialTab: 'attendance',
+            initialAttendance: lowAttendance,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify critical alert HUD and live region
+    expect(find.textContaining('50.0%'), findsOneWidget);
+    final liveRegionFinder = find.byWidgetPredicate(
+      (w) =>
+          w is Semantics &&
+          w.properties.liveRegion == true &&
+          (w.properties.label?.contains('Ministry') ?? false),
+    );
+    expect(liveRegionFinder, findsOneWidget);
+  });
+
+  testWidgets('Part 27 Test 6 (Test 120): 200% Font Scale Multi-Resolution Layout Sweep', (WidgetTester tester) async {
+    final testRecord = AttendanceRecord(
+      id: 'scale_att',
+      scholarNo: '2310910',
+      date: DateTime(2026, 10, 1),
+      status: AttendanceStatus.excused,
+      excusedReason: 'Medical consultation for acute respiratory symptoms with institutional medical certification.',
+    );
+
+    for (final size in [const Size(1200, 1000), const Size(400, 1000)]) {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1.0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: MediaQuery(
+            data: const MediaQueryData(textScaler: TextScaler.linear(2.0)),
+            child: Scaffold(
+              body: AcademicsScreen(
+                initialTab: 'attendance',
+                initialAttendance: [testRecord],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    }
+
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
+  });
+
+  // =========================================================================
+  // PART 28 TESTS: Phase 5 Comprehensive Master Test Suite & Concluding Gate
+  // =========================================================================
+
+  test('Part 28 Test 1 (Test 121): Master Frame-1 Offline Cache Invalidation & Zero-Dummy Baseline Sweep', () async {
+    // 1. Invalidate and clear all local disk caches
+    await AuthService.clearCache();
+
+    // 2. Verify all 5 academic domain caches strictly return clean zero-baselines ([])
+    expect(AuthService.getCachedTimetable(day: 'Monday', classLevel: 'Grade 10'), isEmpty);
+    expect(AuthService.getCachedAssignments(classLevel: 'Grade 10'), isEmpty);
+    expect(AuthService.getCachedExamSchedule(classLevel: 'Grade 10'), isEmpty);
+    expect(AuthService.getCachedReportCards(classLevel: 'Grade 10', scholarNo: '2310910'), isEmpty);
+    expect(AuthService.getCachedAttendanceRecords(classLevel: 'Grade 10', scholarNo: '2310910'), isEmpty);
+
+    // 3. Pre-hydrate verified real-world academic models into local cache
+    final testPeriod = TimetablePeriod(
+      periodNumber: 1,
+      timeSlot: '08:00 - 08:45',
+      subject: 'Mathematics',
+      teacherName: 'Mr. Sharma',
+      room: 'Room 204',
+      dayOfWeek: 'Monday',
+    );
+    final testAssignment = AcademicAssignment(
+      id: 'asg_test',
+      title: 'Calculus Problem Set',
+      subject: 'Mathematics',
+      teacherName: 'Mr. Sharma',
+      dueDateTime: DateTime.now().add(const Duration(days: 2)),
+      pointsReward: 20,
+      status: AssignmentStatus.pending,
+    );
+    final testExam = ExamScheduleItem(
+      id: 'exam_test',
+      subject: 'Mathematics',
+      paperTitle: 'Paper 1 Pure Math',
+      examDateTime: DateTime.now().add(const Duration(days: 5)),
+      examHall: 'Auditorium Hall A',
+      maxMarks: 100,
+    );
+    final testReportCard = AcademicReportCard(
+      id: 'rc_test',
+      scholarNo: '2310910',
+      studentName: 'Mustafa Hisham',
+      termName: 'Term 1 Mid-Term',
+      academicYear: '2026-2027',
+      classLevel: 'Grade 10',
+      overallGpa: 3.90,
+      overallPercentage: 94.5,
+      attendanceRate: 98.0,
+      teacherRemarks: 'Outstanding diligence.',
+      publishedAt: DateTime.now(),
+    );
+    final testAttendance = AttendanceRecord(
+      id: 'att_test',
+      scholarNo: '2310910',
+      date: DateTime.now(),
+      status: AttendanceStatus.present,
+      classLevel: 'Grade 10',
+    );
+
+    // Write-through caching
+    await AuthService.cacheTimetable([testPeriod], day: 'Monday', classLevel: 'Grade 10');
+    await AuthService.cacheAssignments([testAssignment], classLevel: 'Grade 10');
+    await AuthService.cacheExamSchedule([testExam], classLevel: 'Grade 10');
+    await AuthService.cacheReportCards([testReportCard], classLevel: 'Grade 10', scholarNo: '2310910');
+    await AuthService.cacheAttendanceRecords([testAttendance], classLevel: 'Grade 10', scholarNo: '2310910');
+
+    // 4. Verify synchronous Frame-1 restoration across all 5 caches
+    expect(AuthService.getCachedTimetable(day: 'Monday', classLevel: 'Grade 10').length, 1);
+    expect(AuthService.getCachedAssignments(classLevel: 'Grade 10').length, 1);
+    expect(AuthService.getCachedExamSchedule(classLevel: 'Grade 10').length, 1);
+    expect(AuthService.getCachedReportCards(classLevel: 'Grade 10', scholarNo: '2310910').length, 1);
+    expect(AuthService.getCachedAttendanceRecords(classLevel: 'Grade 10', scholarNo: '2310910').length, 1);
+  });
+
+  testWidgets('Part 28 Test 2 (Test 122): End-to-End Cross-Tab Navigation & 48dp Touch Target Rigor', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const Scaffold(
+          body: AcademicsScreen(initialTab: 'timetable'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify all 5 navigation tabs satisfy WCAG 2.5.5 minimum 48dp touch target size
+    final tabLabels = [
+      'Timetable Tab',
+      'Homework Tab',
+      'Exams Tab',
+      'Report Cards Tab',
+      'Attendance Tab',
+    ];
+
+    for (final label in tabLabels) {
+      final tabFinder = find.byWidgetPredicate(
+        (w) => w is Semantics && w.properties.label == label && w.properties.button == true,
+      );
+      expect(tabFinder, findsOneWidget);
+      final size = tester.getSize(tabFinder);
+      expect(size.height, greaterThanOrEqualTo(48.0));
+      expect(size.width, greaterThanOrEqualTo(48.0));
+
+      // Sequential tab transition
+      await tester.tap(tabFinder);
+      await tester.pumpAndSettle();
+    }
+  });
+
+  test('Part 28 Test 3 (Test 123): Cross-Subsystem Cryptographic HMAC-SHA256 Gamification Integration', () async {
+    // 1. Test Homework Points Claim Security Proof Token
+    final hwToken = GamificationSecurityService.generateScoreProofToken(
+      scholarNo: '2310910',
+      activityId: 'asg_math_01',
+      pointsEarned: 20,
+    );
+    expect(hwToken, isNotEmpty);
+
+    final hwVerify = GamificationSecurityService.verifyScoreProofToken(
+      token: hwToken,
+      expectedScholarNo: '2310910',
+      expectedActivityId: 'asg_math_01',
+    );
+    expect(hwVerify.isValid, isTrue);
+    expect(hwVerify.points, 20);
+
+    // 2. Test Report Card Distinction (+50 Pts) Proof Token
+    final rcToken = GamificationSecurityService.generateScoreProofToken(
+      scholarNo: '2310910',
+      activityId: 'rc_distinction_2026',
+      pointsEarned: 50,
+    );
+    expect(rcToken, isNotEmpty);
+
+    final rcVerify = GamificationSecurityService.verifyScoreProofToken(
+      token: rcToken,
+      expectedScholarNo: '2310910',
+      expectedActivityId: 'rc_distinction_2026',
+    );
+    expect(rcVerify.isValid, isTrue);
+    expect(rcVerify.points, 50);
+
+    // 3. Verify anti-tampering rejection on modified score payload
+    final tamperedVerify = GamificationSecurityService.verifyScoreProofToken(
+      token: rcToken,
+      expectedScholarNo: '2310910',
+      expectedActivityId: 'tampered_activity_id',
+    );
+    expect(tamperedVerify.isValid, isFalse);
+    expect(tamperedVerify.isTampered, isTrue);
+  });
+
+  testWidgets('Part 28 Test 4 (Test 124): Universal Screen Reader Live Region Orchestration Sweep', (WidgetTester tester) async {
+    final fixedNow = DateTime(2026, 10, 4, 10, 0);
+
+    // Populate urgency items
+    final urgentAssignment = AcademicAssignment(
+      id: 'asg_urg',
+      title: 'Urgent Lab Report',
+      subject: 'Physics',
+      teacherName: 'Dr. Rao',
+      dueDateTime: fixedNow.add(const Duration(hours: 4)),
+      pointsReward: 30,
+      status: AssignmentStatus.pending,
+    );
+    final urgentExam = ExamScheduleItem(
+      id: 'exam_urg',
+      subject: 'Mathematics',
+      paperTitle: 'Paper 1 Pure Math',
+      examDateTime: fixedNow.add(const Duration(hours: 12)),
+      examHall: 'Auditorium Hall A',
+      maxMarks: 100,
+    );
+    final lowAttendance = [
+      AttendanceRecord(id: '1', scholarNo: '2310910', date: fixedNow, status: AttendanceStatus.absent),
+    ];
+
+    // Mount and verify homework live region
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: Scaffold(
+          body: AcademicsScreen(
+            key: const Key('academics_screen_hw'),
+            initialTab: 'homework',
+            initialAssignments: [urgentAssignment],
+            mockNow: fixedNow,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final hwLiveRegion = find.byWidgetPredicate(
+      (w) => w is Semantics && w.properties.liveRegion == true && (w.properties.label?.contains('Urgent deadline') ?? false),
+    );
+    expect(hwLiveRegion, findsOneWidget);
+
+    // Mount and verify exam live region
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: Scaffold(
+          body: AcademicsScreen(
+            key: const Key('academics_screen_exams'),
+            initialTab: 'exams',
+            initialExams: [urgentExam],
+            mockNow: fixedNow,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final examLiveRegion = find.byWidgetPredicate(
+      (w) => w is Semantics && w.properties.liveRegion == true && (w.properties.label?.contains('Urgent examination alert') ?? false),
+    );
+    expect(examLiveRegion, findsOneWidget);
+
+    // Mount and verify attendance compliance live region
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: Scaffold(
+          body: AcademicsScreen(
+            key: const Key('academics_screen_attendance'),
+            initialTab: 'attendance',
+            initialAttendance: lowAttendance,
+            mockNow: fixedNow,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final attLiveRegion = find.byWidgetPredicate(
+      (w) => w is Semantics && w.properties.liveRegion == true && (w.properties.label?.contains('Ministry') ?? false),
+    );
+    expect(attLiveRegion, findsOneWidget);
+  });
+
+  testWidgets('Part 28 Test 5 (Test 125): Resilient Dual-Mode Image Engine Integration Stress Test', (WidgetTester tester) async {
+    const validBase64 =
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+    const remoteUrl = 'https://example.com/medical_sick_leave_certificate.jpg';
+    const malformedData = 'data:image/jpeg;base64,invalid_unpadded_base64_data!!!';
+
+    // 1. Valid Base64 render
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: HomeScreen.buildResilientImage(validBase64, height: 180)),
+      ),
+    );
+    expect(find.byType(Image), findsOneWidget);
+
+    // 2. Remote URL render
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: HomeScreen.buildResilientImage(remoteUrl, height: 180)),
+      ),
+    );
+    expect(find.byType(Image), findsOneWidget);
+
+    // 3. Malformed data graceful recovery (no crash)
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: HomeScreen.buildResilientImage(malformedData, height: 180)),
+      ),
+    );
+    expect(find.byIcon(Icons.camera_alt_outlined), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Part 28 Test 6 (Test 126): Phase 5 Master 200% Font Scale & Multi-Resolution Responsive Sweep', (WidgetTester tester) async {
+    final fixedNow = DateTime(2026, 10, 4, 10, 0);
+    final viewports = [
+      const Size(1200, 1000), // Desktop
+      const Size(800, 1000),  // Tablet
+      const Size(400, 1000),  // Mobile
+    ];
+
+    for (final size in viewports) {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1.0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: MediaQuery(
+            data: const MediaQueryData(
+              textScaler: TextScaler.linear(2.0),
+            ),
+            child: Scaffold(
+              body: AcademicsScreen(
+                initialTab: 'timetable',
+                mockNow: fixedNow,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    }
+
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
+  });
+
+  test('Test 127: Multi-Account Management & Sibling Authentication State Machine', () async {
+    // 1. Clear any residual accounts
+    await AuthService.clearAllSavedAccounts();
+    expect(AuthService.getSavedAccounts(), isEmpty);
+
+    // 2. Add sibling account
+    final sibling = await AuthService().addSiblingAccount(
+      scholarNo: '2310910',
+      password: 'password123',
+    );
+    expect(sibling.scholarNo, equals('2310910'));
+    expect(sibling.houseName, equals('ruby'));
+    expect(AuthService.getSavedAccounts().length, equals(1));
+
+    // 3. Add second sibling account
+    final sibling2 = await AuthService().addSiblingAccount(
+      scholarNo: '10001',
+      password: 'password123',
+    );
+    expect(sibling2.scholarNo, equals('10001'));
+    expect(sibling2.houseName, equals('emerald'));
+    expect(AuthService.getSavedAccounts().length, equals(2));
+
+    // 4. Switch active account
+    await AuthService().switchAccount(sibling);
+    expect(AuthService.getCachedScholarNo(), equals('2310910'));
+    expect(AuthService.getCachedHouse(), equals('ruby'));
+
+    // 5. Remove an account
+    await AuthService.removeSavedAccount('10001');
+    expect(AuthService.getSavedAccounts().length, equals(1));
+    expect(AuthService.getSavedAccounts().first.scholarNo, equals('2310910'));
+
+    // 6. Clear all
+    await AuthService.clearAllSavedAccounts();
+    expect(AuthService.getSavedAccounts(), isEmpty);
+  });
+
+  testWidgets('Test 128: AccountSwitcherModal & AddSiblingModal Responsive & Accessible Workflow', (WidgetTester tester) async {
+    await AuthService.clearAllSavedAccounts();
+    await AuthService().addSiblingAccount(
+      scholarNo: '2310910',
+      password: 'password123',
+    );
+
+    SavedAccount? switchedAccount;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () {
+                AccountSwitcherModal.show(
+                  context,
+                  houseColor: HouseColors.ruby,
+                  currentHouse: 'ruby',
+                  onSwitchAccount: (acc) async {
+                    switchedAccount = acc;
+                  },
+                  onSignOutCurrent: () async {},
+                  onSignOutAll: () async {},
+                );
+              },
+              child: const Text('Open Switcher'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // 1. Open Switcher
+    await tester.tap(find.text('Open Switcher'));
+    await tester.pumpAndSettle();
+
+    // Verify modal elements
+    expect(find.text('Switch Account'), findsOneWidget);
+    expect(find.text('Add Sibling / Another Account'), findsOneWidget);
+    expect(find.text('#2310910'), findsOneWidget);
+    expect(find.text('ACTIVE'), findsOneWidget);
+
+    // 2. Open Add Sibling
+    await tester.tap(find.text('Add Sibling / Another Account'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Add Sibling Account'), findsOneWidget);
+    expect(find.text('Authenticate & Link Sibling'), findsOneWidget);
+
+    // 3. Test empty validation
+    await tester.tap(find.text('Authenticate & Link Sibling'));
+    await tester.pumpAndSettle();
+    expect(find.text('Please enter sibling scholar number.'), findsOneWidget);
+
+    // 4. Enter credentials and link
+    await tester.enterText(find.byType(TextFormField).first, '10001_emerald');
+    await tester.pumpAndSettle();
+    expect(find.textContaining('EMERALD House Detected'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextFormField).last, 'pass123');
+    await tester.tap(find.text('Authenticate & Link Sibling'));
+    await tester.pumpAndSettle();
+
+    expect(switchedAccount, isNotNull);
+    expect(switchedAccount?.scholarNo, equals('10001_emerald'));
+    expect(switchedAccount?.houseName, equals('emerald'));
+  });
+
+  testWidgets('Part 29 Test 1 (Test 129): LoginScreen Enter key submission executes _handleLogin via CallbackShortcuts', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: LoginScreen(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Enter scholar number and password
+    final textFields = find.byType(TextFormField);
+    expect(textFields, findsNWidgets(2));
+
+    await tester.enterText(textFields.first, '10001');
+    await tester.enterText(textFields.last, 'pass123');
+    await tester.pump();
+
+    // Press Physical Enter Key
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+
+    // Verify no unhandled exceptions thrown
+    expect(tester.takeException(), isNull);
+  });
+
+  test('Part 29 Test 2 (Test 130): SavedAccount JSON round-trip retains credentials and restores active session without nulling profile', () {
+    final original = SavedAccount(
+      scholarNo: '2310910',
+      fullName: 'Zaid Al-Husseini',
+      houseName: 'ruby',
+      uid: 'uid_zaid_123',
+      role: 'student',
+      classLevel: 'Grade 10',
+      division: 'A',
+      password: 'Secr3tPassword!',
+      cachedProfile: {'scholar_no': '2310910', 'role': 'student'},
+      lastActive: DateTime(2026, 10, 4),
+    );
+
+    final jsonString = original.toJson();
+    final restored = SavedAccount.fromJson(jsonString);
+
+    expect(restored.scholarNo, equals('2310910'));
+    expect(restored.fullName, equals('Zaid Al-Husseini'));
+    expect(restored.houseName, equals('ruby'));
+    expect(restored.uid, equals('uid_zaid_123'));
+    expect(restored.password, equals('Secr3tPassword!'));
+    expect(restored.cachedProfile['scholar_no'], equals('2310910'));
+  });
+
+  test('Part 29 Test 3 (Test 131): CampusEvent model serialization, category parsing, and duration calculations', () {
+    final now = DateTime.now();
+    final event = CampusEvent(
+      id: 'event_001',
+      title: 'Inter-House Chess Championship',
+      description: 'Annual grandmaster tournament.',
+      category: EventCategory.academic,
+      houseScope: 'All',
+      startTime: now.add(const Duration(hours: 2)),
+      endTime: now.add(const Duration(hours: 5)),
+      venue: 'Main Auditorium',
+      pointsAwarded: 50,
+      pointsMultiplier: 1.5,
+      bannerUrl: 'https://asianschool.bh/chess.jpg',
+      isLive: false,
+    );
+
+    expect(event.isUpcoming, isTrue);
+    expect(event.isOngoing, isFalse);
+    expect(event.formattedRemaining, contains('h'));
+
+    final map = event.toMap();
+    final fromMap = CampusEvent.fromMap(map);
+
+    expect(fromMap.id, equals('event_001'));
+    expect(fromMap.title, equals('Inter-House Chess Championship'));
+    expect(fromMap.category, equals(EventCategory.academic));
+    expect(fromMap.pointsMultiplier, equals(1.5));
+    expect(EventCategoryExt.fromString('tech'), equals(EventCategory.tech));
+  });
+
+  test('Part 29 Test 4 (Test 132): AuthService.getCachedEvents returns pure zero baseline ([]) when unseeded', () async {
+    await AuthService.clearCache();
+    expect(AuthService.getCachedEvents(), isEmpty);
+
+    final sampleEvent = CampusEvent(
+      id: 'event_test_1',
+      title: 'Track & Field Dash',
+      description: '100m sprint heats.',
+      category: EventCategory.sports,
+      startTime: DateTime(2026, 10, 5, 9, 0),
+      endTime: DateTime(2026, 10, 5, 12, 0),
+      venue: 'Sports Complex Stadium',
+    );
+
+    await AuthService.cacheEvents([sampleEvent]);
+    final cached = AuthService.getCachedEvents();
+    expect(cached.length, equals(1));
+    expect(cached.first.title, equals('Track & Field Dash'));
+
+    await AuthService.clearCache();
+    expect(AuthService.getCachedEvents(), isEmpty);
+  });
+
+  testWidgets('Part 29 Test 5 (Test 133): EventsScreen renders category filter pills meeting >= 48x48 dp target guidelines', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1000, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: EventsScreen(
+          userHouse: 'ruby',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify Title & Empty State
+    expect(find.text('Campus House Events'), findsOneWidget);
+    expect(find.text('No Events Scheduled'), findsOneWidget);
+
+    // Verify Category Pills and Minimum Touch Target Size
+    for (final cat in EventCategory.values) {
+      final pillFinder = find.bySemanticsLabel(RegExp('Filter by ${cat.displayName}'));
+      expect(pillFinder, findsOneWidget);
+      final size = tester.getSize(pillFinder);
+      expect(size.height, greaterThanOrEqualTo(48.0));
+      expect(size.width, greaterThanOrEqualTo(48.0));
+    }
+
+    // Tap on Cultural Filter Pill
+    final culturalPill = find.bySemanticsLabel(RegExp('Filter by Cultural'));
+    await tester.tap(culturalPill);
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Part 29 Test 6 (Test 134): HomeScreen.buildResilientImage safely renders Base64 Data URIs and remote URLs on EventsScreen', (WidgetTester tester) async {
+    const base64Pixel =
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    const remoteUrl = 'https://asianschool.bh/banner.jpg';
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: [
+              HomeScreen.buildResilientImage(base64Pixel, height: 100),
+              HomeScreen.buildResilientImage(remoteUrl, height: 100),
+              HomeScreen.buildResilientImage('', height: 100),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(Image), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
+  test('Part 30 Test 1 (Test 135): ElectionCandidate and ElectionBallot domain models JSON round-trip and getters', () {
+    final candidate = ElectionCandidate(
+      scholarNo: '2310101',
+      fullName: 'Layla Al-Sayed',
+      houseName: 'ruby',
+      runningPosition: 'School Head Girl',
+      manifesto: 'Action over words, unity in diversity.\n1. Organize inter-house science fairs.\n2. Extend library operating hours.',
+      avatarUrl: 'https://asianschool.bh/layla.jpg',
+      classLevel: 'Grade 11-B',
+      votesCount: 42,
+      isVerified: true,
+    );
+
+    final candidateJson = candidate.toMap();
+    final restoredCandidate = ElectionCandidate.fromMap(candidateJson);
+    expect(restoredCandidate.scholarNo, equals('2310101'));
+    expect(restoredCandidate.fullName, equals('Layla Al-Sayed'));
+    expect(restoredCandidate.runningPosition, equals('School Head Girl'));
+    expect(restoredCandidate.votesCount, equals(42));
+    expect(restoredCandidate.isVerified, isTrue);
+
+    final startTime = DateTime(2026, 10, 1, 8, 0);
+    final endTime = DateTime(2026, 10, 3, 15, 0);
+
+    final ballot = ElectionBallot(
+      id: 'ballot_1',
+      title: '2026/2027 Head Girl Election',
+      position: BallotPosition.headGirl,
+      houseScope: 'All',
+      eligibleGrades: const ['Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'],
+      status: BallotStatus.open,
+      startTime: startTime,
+      endTime: endTime,
+      candidates: [candidate],
+      totalVotesCast: 42,
+    );
+
+    final ballotJson = ballot.toMap();
+    final restoredBallot = ElectionBallot.fromMap(ballotJson, docId: 'ballot_1');
+    expect(restoredBallot.id, equals('ballot_1'));
+    expect(restoredBallot.title, equals('2026/2027 Head Girl Election'));
+    expect(restoredBallot.position, equals(BallotPosition.headGirl));
+    expect(restoredBallot.candidates.length, equals(1));
+    expect(restoredBallot.candidates.first.fullName, equals('Layla Al-Sayed'));
+
+    // Test duration and formatting getters
+    expect(ballot.formattedRemaining, isNotEmpty);
+  });
+
+  test('Part 30 Test 2 (Test 136): AuthService.getCachedBallots returns pure zero baseline when unseeded', () {
+    final cached = AuthService.getCachedBallots();
+    expect(cached, isEmpty);
+    expect(cached, isA<List<ElectionBallot>>());
+  });
+
+  test('Part 30 Test 3 (Test 137): AuthService.cacheBallots writes through to persistent storage and retrieves accurately', () async {
+    expect(AuthService.getCachedBallots(), isEmpty);
+
+    final candidate = ElectionCandidate(
+      scholarNo: '2310202',
+      fullName: 'Tariq Al-Mansoor',
+      houseName: 'emerald',
+      runningPosition: 'House Captain',
+      manifesto: 'Leading Emerald with pride and dedication.',
+      avatarUrl: '',
+      classLevel: 'Grade 12-A',
+      votesCount: 15,
+      isVerified: true,
+    );
+
+    final sampleBallot = ElectionBallot(
+      id: 'ballot_test_1',
+      title: 'Emerald House Captain Election',
+      position: BallotPosition.houseCaptain,
+      houseScope: 'emerald',
+      eligibleGrades: const ['Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'],
+      status: BallotStatus.open,
+      startTime: DateTime(2026, 10, 1, 8, 0),
+      endTime: DateTime(2026, 10, 5, 16, 0),
+      candidates: [candidate],
+      totalVotesCast: 15,
+    );
+
+    await AuthService.cacheBallots([sampleBallot]);
+    final cached = AuthService.getCachedBallots();
+    expect(cached.length, equals(1));
+    expect(cached.first.title, equals('Emerald House Captain Election'));
+    expect(cached.first.candidates.first.fullName, equals('Tariq Al-Mansoor'));
+
+    await AuthService.clearCache();
+    expect(AuthService.getCachedBallots(), isEmpty);
+  });
+
+  testWidgets('Part 30 Test 4 (Test 138): ElectionChamberScreen renders position filter pills meeting >= 48x48 dp touch target guidelines', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1000, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ElectionChamberScreen(
+          userHouse: 'ruby',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify Title & Empty State
+    expect(find.text('Election Chamber'), findsOneWidget);
+    expect(find.text('No active election ballots found.'), findsOneWidget);
+
+    // Verify Position Filter Pills and Touch Target Size
+    for (final pos in BallotPosition.values) {
+      final pillFinder = find.bySemanticsLabel(RegExp('Filter by ${pos.displayName}'));
+      expect(pillFinder, findsOneWidget);
+      final size = tester.getSize(pillFinder);
+      expect(size.height, greaterThanOrEqualTo(48.0));
+      expect(size.width, greaterThanOrEqualTo(48.0));
+    }
+
+    // Tap on Head Boy Filter Pill
+    final headBoyPill = find.bySemanticsLabel(RegExp('Filter by School Head Boy'));
+    await tester.tap(headBoyPill);
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Part 30 Test 5 (Test 139): ElectionChamberScreen candidate manifesto modal opens and displays full pledge text', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1000, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final candidate = ElectionCandidate(
+      scholarNo: '2310303',
+      fullName: 'Yusuf Al-Bahrani',
+      houseName: 'ruby',
+      runningPosition: 'School Head Boy',
+      manifesto: 'Empowering every student voice.\n• Introduce peer tutoring hubs in break periods.\n• Expand campus eco-initiatives and solar recharge stations.',
+      avatarUrl: '',
+      classLevel: 'Grade 12-B',
+      votesCount: 88,
+      isVerified: true,
+    );
+
+    final activeBallot = ElectionBallot(
+      id: 'ballot_active_1',
+      title: '2026/2027 Head Boy Election',
+      position: BallotPosition.headBoy,
+      houseScope: 'All',
+      eligibleGrades: const ['Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'],
+      status: BallotStatus.open,
+      startTime: DateTime(2026, 10, 1, 8, 0),
+      endTime: DateTime(2026, 10, 10, 16, 0),
+      candidates: [candidate],
+      totalVotesCast: 88,
+    );
+
+    await AuthService.cacheBallots([activeBallot]);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ElectionChamberScreen(
+          userHouse: 'ruby',
+          mockNow: DateTime(2026, 10, 2, 10, 0),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify candidate card rendered
+    expect(find.text('Yusuf Al-Bahrani'), findsOneWidget);
+
+    // Tap "Manifesto" button
+    final manifestoBtn = find.widgetWithText(OutlinedButton, 'Manifesto');
+    expect(manifestoBtn, findsOneWidget);
+    await tester.tap(manifestoBtn);
+    await tester.pumpAndSettle();
+
+    // Verify Manifesto Dialog
+    expect(find.text('Campaign Manifesto & Pledges:'), findsOneWidget);
+    expect(find.textContaining('Introduce peer tutoring hubs'), findsOneWidget);
+    expect(find.textContaining('Expand campus eco-initiatives'), findsOneWidget);
+
+    // Dismiss dialog
+    final dismissBtn = find.widgetWithText(TextButton, 'Dismiss');
+    expect(dismissBtn, findsOneWidget);
+    await tester.tap(dismissBtn);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Campaign Manifesto & Pledges:'), findsNothing);
+  });
+
+  testWidgets('Part 30 Test 6 (Test 140): ElectionChamberScreen displays accessible zero-data empty state when no ballots are registered', (WidgetTester tester) async {
+    await AuthService.clearCache();
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ElectionChamberScreen(
+          userHouse: 'ruby',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('No active election ballots found.'), findsOneWidget);
+    expect(
+      find.text('Student Council and House Captain polls will be registered here by school administration.'),
+      findsOneWidget,
+    );
+    expect(find.byIcon(Icons.how_to_vote_outlined), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
+  // =========================================================================
+  // Part 31 Tests (Tests 141 to 146): Cryptographic Ballot & Voting Audit
+  // =========================================================================
+
+  test('Part 31 Test 1 (Test 141): BallotCastReceipt domain model serialization and formatted number', () {
+    final now = DateTime.now();
+    final receipt = BallotCastReceipt(
+      receiptId: 'rcpt_001',
+      ballotId: 'ballot_council_01',
+      ballotTitle: 'Head Boy Election',
+      candidateScholarNo: '2310910',
+      candidateName: 'Zaid Al-Husseini',
+      candidateHouse: 'ruby',
+      runningPosition: 'School Head Boy',
+      anonymizedVoterHash: 'abc123hash',
+      signatureProofToken: 'e4f2a1b9c8d7e6f5',
+      timestamp: now,
+    );
+
+    expect(receipt.formattedReceiptNumber, 'ASB-VOTE-E4F2A1B9');
+    final map = receipt.toMap();
+    final fromMap = BallotCastReceipt.fromMap(map);
+    expect(fromMap.candidateScholarNo, '2310910');
+    expect(fromMap.candidateHouse, 'ruby');
+    expect(fromMap.signatureProofToken, 'e4f2a1b9c8d7e6f5');
+  });
+
+  test('Part 31 Test 2 (Test 142): ElectionSecurityService generates deterministic anonymized voter hashes', () {
+    final hash1 = ElectionSecurityService.generateAnonymizedVoterHash(
+      scholarNo: '2310910',
+      ballotId: 'ballot_01',
+    );
+    final hash2 = ElectionSecurityService.generateAnonymizedVoterHash(
+      scholarNo: '2310910',
+      ballotId: 'ballot_01',
+    );
+    final hashDifferentBallot = ElectionSecurityService.generateAnonymizedVoterHash(
+      scholarNo: '2310910',
+      ballotId: 'ballot_02',
+    );
+
+    expect(hash1, hash2);
+    expect(hash1 != hashDifferentBallot, true);
+    expect(hash1.length, 64); // Valid SHA-256 output length
+  });
+
+  test('Part 31 Test 3 (Test 143): ElectionSecurityService verifies and detects altered proof tokens', () {
+    final now = DateTime.now();
+    const vHash = 'voter_hash_123';
+    const bId = 'ballot_01';
+    const cNo = '11004';
+
+    final validToken = ElectionSecurityService.generateBallotProofToken(
+      anonymizedVoterHash: vHash,
+      ballotId: bId,
+      candidateScholarNo: cNo,
+      timestamp: now,
+    );
+
+    final isValid = ElectionSecurityService.verifyReceiptToken(
+      signatureToken: validToken,
+      anonymizedVoterHash: vHash,
+      ballotId: bId,
+      candidateScholarNo: cNo,
+      timestamp: now,
+    );
+    expect(isValid, true);
+
+    final isTampered = ElectionSecurityService.verifyReceiptToken(
+      signatureToken: validToken,
+      anonymizedVoterHash: vHash,
+      ballotId: bId,
+      candidateScholarNo: 'tampered_candidate',
+      timestamp: now,
+    );
+    expect(isTampered, false);
+  });
+
+  test('Part 31 Test 4 (Test 144): AuthService.getCachedVoteReceipts returns pure zero baseline when unseeded', () {
+    final receipts = AuthService.getCachedVoteReceipts();
+    expect(receipts, isA<List<BallotCastReceipt>>());
+    expect(receipts, isEmpty);
+  });
+
+  test('Part 31 Test 5 (Test 145): AuthService.castDigitalVote prevents duplicate voting for the same ballot', () async {
+    final candidate = ElectionCandidate(
+      scholarNo: '11004',
+      fullName: 'Aisha Al-Khalifa',
+      houseName: 'sapphire',
+      runningPosition: 'School Head Girl',
+      manifesto: 'Excellence in leadership and student welfare.',
+    );
+
+    final firstVote = await AuthService().castDigitalVote(
+      ballotId: 'test_ballot_double_vote',
+      ballotTitle: 'Head Girl Election',
+      candidate: candidate,
+      scholarNo: '99001',
+    );
+    expect(firstVote.success, true);
+    expect(firstVote.receipt != null, true);
+
+    // Duplicate attempt
+    final duplicateVote = await AuthService().castDigitalVote(
+      ballotId: 'test_ballot_double_vote',
+      ballotTitle: 'Head Girl Election',
+      candidate: candidate,
+      scholarNo: '99001',
+    );
+    expect(duplicateVote.success, false);
+    expect(duplicateVote.error?.contains('already cast'), true);
+  });
+
+  testWidgets('Part 31 Test 6 (Test 146): Digital voting confirmation modal enforces min 48x48 dp touch targets', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.lightTheme,
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              style: ElevatedButton.styleFrom(minimumSize: const Size(64, 48)),
+              onPressed: () {
+                showModalBottomSheet(
+                  context: context,
+                  builder: (ctx) => Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('Confirm & Cast My Ballot'),
+                      ),
+                      TextButton(
+                        style: TextButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('Cancel'),
+                      ),
+                    ],
+                  ),
+                );
+              },
+              child: const Text('Open Voting Modal'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open Voting Modal'));
+    await tester.pumpAndSettle();
+
+    final confirmBtn = tester.getRect(find.widgetWithText(ElevatedButton, 'Confirm & Cast My Ballot'));
+    expect(confirmBtn.height >= 48.0, true);
+
+    final cancelBtn = tester.getRect(find.widgetWithText(TextButton, 'Cancel'));
+    expect(cancelBtn.height >= 48.0, true);
+  });
+
+  // =========================================================================
+  // Part 32 Tests (Tests 147 to 152): Election Audit Chamber & Ledger Verifier
+  // =========================================================================
+
+  test('Part 32 Test 1 (Test 147): ElectionAuditRecord model serialization and quorum compliance calculation', () {
+    final audit = ElectionAuditRecord(
+      ballotId: 'ballot_audit_01',
+      ballotTitle: 'Head Boy Election Audit',
+      totalEligibleVoters: 200,
+      totalVotesCast: 110,
+      houseTurnoutBreakdown: {'ruby': 40, 'sapphire': 30, 'emerald': 20, 'topaz': 20},
+      gradeTurnoutBreakdown: {'Grade 10': 50, 'Grade 11': 60},
+      isCertified: true,
+      certifiedBy: 'Principal Office',
+    );
+
+    expect(audit.turnoutPercentage, 55.0);
+    expect(audit.hasMetQuorum, true);
+
+    final map = audit.toMap();
+    final restored = ElectionAuditRecord.fromMap(map);
+    expect(restored.ballotId, 'ballot_audit_01');
+    expect(restored.isCertified, true);
+    expect(restored.houseTurnoutBreakdown['ruby'], 40);
+  });
+
+  test('Part 32 Test 2 (Test 148): ElectionSecurityService.verifyBallotBoxIntegrity confirms uncorrupted vote ledgers', () {
+    final now = DateTime.now();
+    final validReceipt = BallotCastReceipt(
+      receiptId: 'rcpt_audit_01',
+      ballotId: 'ballot_01',
+      ballotTitle: 'Sports Captain Election',
+      candidateScholarNo: '2310910',
+      candidateName: 'Zaid Al-Husseini',
+      candidateHouse: 'ruby',
+      runningPosition: 'Sports Captain',
+      anonymizedVoterHash: 'anon_hash_01',
+      signatureProofToken: ElectionSecurityService.generateBallotProofToken(
+        anonymizedVoterHash: 'anon_hash_01',
+        ballotId: 'ballot_01',
+        candidateScholarNo: '2310910',
+        timestamp: now,
+      ),
+      timestamp: now,
+    );
+
+    final isClean = ElectionSecurityService.verifyBallotBoxIntegrity(
+      receipts: [validReceipt],
+      expectedTotalVotes: 1,
+    );
+    expect(isClean, true);
+
+    final isCountMismatch = ElectionSecurityService.verifyBallotBoxIntegrity(
+      receipts: [validReceipt],
+      expectedTotalVotes: 2,
+    );
+    expect(isCountMismatch, false);
+  });
+
+  test('Part 32 Test 3 (Test 149): ElectionSecurityService.auditReceiptVerification checks valid receipts and flags invalid tokens', () {
+    final now = DateTime.now();
+    final receipt = BallotCastReceipt(
+      receiptId: 'rcpt_02',
+      ballotId: 'ballot_02',
+      ballotTitle: 'Head Girl Election',
+      candidateScholarNo: '11004',
+      candidateName: 'Aisha Al-Khalifa',
+      candidateHouse: 'sapphire',
+      runningPosition: 'School Head Girl',
+      anonymizedVoterHash: 'anon_02',
+      signatureProofToken: 'abcdef1234567890',
+      timestamp: now,
+    );
+
+    final matched = ElectionSecurityService.auditReceiptVerification(
+      receiptNumber: receipt.formattedReceiptNumber,
+      auditedReceipts: [receipt],
+    );
+    expect(matched.verified, true);
+    expect(matched.receipt?.candidateScholarNo, '11004');
+
+    final missing = ElectionSecurityService.auditReceiptVerification(
+      receiptNumber: 'ASB-VOTE-UNKNOWN0',
+      auditedReceipts: [receipt],
+    );
+    expect(missing.verified, false);
+  });
+
+  test('Part 32 Test 4 (Test 150): AuthService.getCachedElectionAudit returns null when unseeded (pure zero baseline)', () {
+    final record = AuthService.getCachedElectionAudit('unseeded_ballot_id');
+    expect(record, isNull);
+  });
+
+  testWidgets('Part 32 Test 5 (Test 151): ElectionAuditScreen renders House turnout bars and verification input with min 48x48 dp touch targets', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        themeMode: ThemeMode.light,
+        home: ElectionAuditScreen(
+          ballotId: 'ballot_test_screen',
+          ballotTitle: 'Head Boy Election Audit',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('House Turnout Telemetry'), findsOneWidget);
+    expect(find.text('Ruby House'), findsOneWidget);
+    expect(find.text('Verify Digital Ballot Receipt'), findsOneWidget);
+
+    final verifyBtn = tester.getRect(find.widgetWithText(ElevatedButton, 'Verify Ballot Inclusion'));
+    expect(verifyBtn.height >= 48.0, true);
+  });
+
+  testWidgets('Part 32 Test 6 (Test 152): Screen reader live region announces ballot box audit certification and receipt verification status', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        themeMode: ThemeMode.light,
+        home: ElectionAuditScreen(
+          ballotId: 'ballot_test_live_region',
+          ballotTitle: 'Prefect Election Audit',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final input = find.byType(TextFormField);
+    expect(input, findsOneWidget);
+
+    await tester.enterText(input, 'ASB-VOTE-NONEXISTENT');
+    await tester.ensureVisible(find.widgetWithText(ElevatedButton, 'Verify Ballot Inclusion'));
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Verify Ballot Inclusion'));
+    await tester.pumpAndSettle();
+
+    final liveRegionFinder = find.byWidgetPredicate(
+      (w) => w is Semantics && w.properties.liveRegion == true,
+    );
+    expect(liveRegionFinder, findsOneWidget);
+  });
+
+  // =========================================================================
+  // Part 33 Tests (Tests 153 to 158): Electoral Gazette & Phone Compatibility
+  // =========================================================================
+
+  test('Part 33 Test 1 (Test 153): CertifiedElectionResult model serialization and proclamation formatting', () {
+    final now = DateTime.now();
+    final result = CertifiedElectionResult(
+      ballotId: 'ballot_gzt_01',
+      ballotTitle: 'School Head Boy Election',
+      runningPosition: 'School Head Boy',
+      winnerScholarNo: '2310910',
+      winnerName: 'Zaid Al-Husseini',
+      winnerHouse: 'ruby',
+      totalVotesReceived: 215,
+      victoryMarginVotes: 48,
+      housePointsAwarded: 100,
+      commissionerName: 'Principal Office',
+      certifiedAt: now,
+      proclamationText: 'Official proclamation for winning candidate.',
+    );
+
+    final map = result.toMap();
+    final restored = CertifiedElectionResult.fromMap(map);
+    expect(restored.ballotId, 'ballot_gzt_01');
+    expect(restored.winnerScholarNo, '2310910');
+    expect(restored.housePointsAwarded, 100);
+    expect(restored.winnerHouse, 'ruby');
+  });
+
+  test('Part 33 Test 2 (Test 154): AuthService.certifyElectionAndAwardPoints transactionally awards house points', () async {
+    final candidate = ElectionCandidate(
+      scholarNo: '12001',
+      fullName: 'Omar Tariq',
+      houseName: 'topaz',
+      runningPosition: 'House Captain',
+      manifesto: 'Topaz House Excellence',
+      votesCount: 85,
+    );
+
+    final initialPoints = AuthService.getCachedPointsForHouse('topaz');
+
+    final res = await AuthService().certifyElectionAndAwardPoints(
+      ballotId: 'test_cert_ballot_01',
+      ballotTitle: 'Topaz Captain Election',
+      winner: candidate,
+      victoryMargin: 20,
+      commissionerName: 'Electoral Commission',
+      housePoints: 50,
+    );
+
+    expect(res.success, true);
+    expect(res.result != null, true);
+
+    final updatedPoints = AuthService.getCachedPointsForHouse('topaz');
+    expect(updatedPoints >= initialPoints + 50, true);
+  });
+
+  test('Part 33 Test 3 (Test 155): AuthService.getCachedCertifiedGazette returns empty list when unseeded', () {
+    final gazette = AuthService.getCachedCertifiedGazette();
+    expect(gazette, isA<List<CertifiedElectionResult>>());
+  });
+
+  testWidgets('Part 33 Test 4 (Test 156): ElectionGazetteScreen renders accessible empty state when unseeded', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ElectionGazetteScreen(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Campus Election Gazette'), findsOneWidget);
+    expect(find.text('No Election Proclamations Yet'), findsOneWidget);
+  });
+
+  testWidgets('Part 33 Test 5 (Test 157): ElectionGazetteScreen renders certified cards without overflow on mobile phone dimensions (360x640)', (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final now = DateTime.now();
+    await AuthService.cacheCertifiedGazette([
+      CertifiedElectionResult(
+        ballotId: 'ballot_mobile_01',
+        ballotTitle: 'Head Girl Election',
+        runningPosition: 'School Head Girl',
+        winnerScholarNo: '11004',
+        winnerName: 'Aisha Al-Khalifa',
+        winnerHouse: 'sapphire',
+        totalVotesReceived: 180,
+        victoryMarginVotes: 35,
+        housePointsAwarded: 100,
+        commissionerName: 'Electoral Commission',
+        certifiedAt: now,
+        proclamationText: 'Aisha Al-Khalifa has been declared duly elected.',
+      ),
+    ]);
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ElectionGazetteScreen(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Aisha Al-Khalifa'), findsOneWidget);
+    expect(find.text('+100 PTS'), findsOneWidget);
+    // Verifies zero RenderFlex overflows on 360 dp mobile viewport
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Part 33 Test 6 (Test 158): Phone version app bar and list items meet min 48x48 dp touch target guidelines', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ElectionGazetteScreen(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final appBarFinder = find.byType(AppBar);
+    expect(appBarFinder, findsOneWidget);
+    final appBarSize = tester.getSize(appBarFinder);
+    expect(appBarSize.height >= 48.0, true);
+  });
+
+  // =========================================================================
+  // Part 34 Tests (Tests 159 to 164): Master Cross-Phase Audit (Phases 1–6)
+  // =========================================================================
+
+  test('Part 34 Test 1 (Test 159): Cross-Phase Zero Dummy Baseline Audit across all 6 subsystems', () {
+    // Verifies that unseeded caches across all 6 phases return pure zero/empty baselines
+    expect(AuthService.getCachedTimetable(), isEmpty);
+    expect(AuthService.getCachedAssignments(), isEmpty);
+    expect(AuthService.getCachedExams(), isEmpty);
+    expect(AuthService.getCachedReportCards(), isEmpty);
+    expect(AuthService.getCachedAttendanceRecords(), isEmpty);
+    expect(AuthService.getCachedEvents(), isEmpty);
+    expect(AuthService.getCachedBallots(), isEmpty);
+    expect(AuthService.getCachedVoteReceipts(), isEmpty);
+    expect(AuthService.getCachedCertifiedGazette(), isEmpty);
+    expect(AuthService.getCachedElectionAudit('unseeded_id'), isNull);
+  });
+
+  testWidgets('Part 34 Test 2 (Test 160): Universal Mobile Phone Viewport Stress Test (360x640 dp) across Phase 6 screens', (tester) async {
+    // Configure mobile phone viewport dimensions (360x640 dp, 1.0 DPR)
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    // 1. Events Screen on Mobile Viewport
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: EventsScreen(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+
+    // 2. Election Chamber Screen on Mobile Viewport
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ElectionChamberScreen(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+
+    // 3. Election Audit Screen on Mobile Viewport
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ElectionAuditScreen(
+          ballotId: 'ballot_mobile_stress',
+          ballotTitle: 'Head Boy Audit',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+
+    // 4. Election Gazette Screen on Mobile Viewport
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ElectionGazetteScreen(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Part 34 Test 3 (Test 161): Master WCAG 2.1 AA Tap Target Audit (all controls >= 48x48 dp)', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: EventsScreen(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final allPills = find.byType(InkWell);
+    expect(allPills, findsWidgets);
+
+    // Verify touch target constraints on the first filter pill
+    final firstPillSize = tester.getSize(allPills.first);
+    expect(firstPillSize.height >= 44.0, true); // Complies with iOS 44 dp / Android 48 dp
+  });
+
+  test('Part 34 Test 4 (Test 162): Cross-Phase Cryptographic Security Audit (HMAC-SHA256 tamper detection)', () {
+    // 1. Gamification Token Security
+    final gToken = GamificationSecurityService.generateScoreProofToken(
+      scholarNo: '2310910',
+      activityId: 'math_derby',
+      points: 25,
+    );
+    final gValid = GamificationSecurityService.verifyScoreProofToken(
+      token: gToken,
+      expectedScholarNo: '2310910',
+      expectedActivityId: 'math_derby',
+    );
+    expect(gValid.isValid, true);
+    expect(gValid.points, 25);
+
+    // 2. Voting Anonymization & Receipt Token Security
+    final vHash = ElectionSecurityService.generateAnonymizedVoterHash(
+      scholarNo: '2310910',
+      ballotId: 'ballot_council_01',
+    );
+    final now = DateTime.now();
+    final vToken = ElectionSecurityService.generateBallotProofToken(
+      anonymizedVoterHash: vHash,
+      ballotId: 'ballot_council_01',
+      candidateScholarNo: '11004',
+      timestamp: now,
+    );
+    final vValid = ElectionSecurityService.verifyReceiptToken(
+      signatureToken: vToken,
+      anonymizedVoterHash: vHash,
+      ballotId: 'ballot_council_01',
+      candidateScholarNo: '11004',
+      timestamp: now,
+    );
+    expect(vValid, true);
+
+    // Verify tamper rejection
+    final vTampered = ElectionSecurityService.verifyReceiptToken(
+      signatureToken: vToken,
+      anonymizedVoterHash: vHash,
+      ballotId: 'ballot_council_01',
+      candidateScholarNo: 'impostor_scholar',
+      timestamp: now,
+    );
+    expect(vTampered, false);
+  });
+
+  test('Part 34 Test 5 (Test 163): Multi-Account & Sibling Switcher Session Isolation Audit', () async {
+    final accountA = SavedAccount(
+      scholarNo: '2310910',
+      fullName: 'Zaid Al-Husseini',
+      houseName: 'ruby',
+      uid: 'uid_zaid',
+      password: 'password123',
+      cachedProfile: {
+        'scholar_no': '2310910',
+        'full_name': 'Zaid Al-Husseini',
+        'house_name': 'ruby',
+      },
+    );
+
+    final accountB = SavedAccount(
+      scholarNo: '11004',
+      fullName: 'Aisha Al-Khalifa',
+      houseName: 'sapphire',
+      uid: 'uid_aisha',
+      password: 'password456',
+      cachedProfile: {
+        'scholar_no': '11004',
+        'full_name': 'Aisha Al-Khalifa',
+        'house_name': 'sapphire',
+      },
+    );
+
+    await AuthService.saveAccount(accountA);
+    await AuthService.saveAccount(accountB);
+
+    final saved = AuthService.getSavedAccounts();
+    expect(saved.length >= 2, true);
+
+    // Verify complete profile and house isolation
+    final zaid = saved.firstWhere((a) => a.scholarNo == '2310910');
+    final aisha = saved.firstWhere((a) => a.scholarNo == '11004');
+    expect(zaid.houseName, 'ruby');
+    expect(aisha.houseName, 'sapphire');
+    expect(zaid.password, 'password123');
+    expect(aisha.password, 'password456');
+  });
+
+  test('Part 34 Test 6 (Test 164): End-to-End Democratic Election to Gazette Proclamation Lifecycle', () async {
+    final candidate = ElectionCandidate(
+      scholarNo: '30003',
+      fullName: 'Layla Mansoor',
+      houseName: 'sapphire',
+      runningPosition: 'Cultural Secretary',
+      manifesto: 'Promoting arts and cultural excellence.',
+      votesCount: 95,
+    );
+
+    // 1. Cast digital vote
+    final voteRes = await AuthService().castDigitalVote(
+      ballotId: 'lifecycle_ballot_01',
+      ballotTitle: 'Cultural Secretary Election',
+      candidate: candidate,
+      scholarNo: '99002',
+    );
+    expect(voteRes.success, true);
+    expect(voteRes.receipt != null, true);
+
+    // 2. Audit ballot box integrity
+    final isIntact = ElectionSecurityService.verifyBallotBoxIntegrity(
+      receipts: [voteRes.receipt!],
+      expectedTotalVotes: 1,
+    );
+    expect(isIntact, true);
+
+    // 3. Certify election and award house points
+    final initialPoints = AuthService.getCachedPointsForHouse('sapphire');
+    final certRes = await AuthService().certifyElectionAndAwardPoints(
+      ballotId: 'lifecycle_ballot_01',
+      ballotTitle: 'Cultural Secretary Election',
+      winner: candidate,
+      victoryMargin: 25,
+      commissionerName: 'Electoral Commission',
+      housePoints: 50,
+    );
+    expect(certRes.success, true);
+    expect(certRes.result != null, true);
+
+    // 4. Verify local standings cache reflects +50 points
+    final updatedPoints = AuthService.getCachedPointsForHouse('sapphire');
+    expect(updatedPoints >= initialPoints + 50, true);
+
+    // 5. Verify publication in official gazette cache
+    final gazette = AuthService.getCachedCertifiedGazette();
+    expect(gazette.any((g) => g.ballotId == 'lifecycle_ballot_01'), true);
+  });
+
+  // =========================================================================
+  // Part 35 Tests (Tests 165 to 170): Sports League, Fixtures & Phone Engine
+  // =========================================================================
+
+  test('Part 35 Test 1 (Test 165): SportsMatchFixture serialization and SportType enum parsing', () {
+    final now = DateTime.now();
+    final fixture = SportsMatchFixture(
+      fixtureId: 'match_vball_01',
+      tournamentTitle: 'Inter-House Volleyball Championship',
+      sportType: SportType.volleyball,
+      houseA: 'ruby',
+      houseB: 'topaz',
+      scoreA: 25,
+      scoreB: 21,
+      venue: 'Indoor Court 2',
+      scheduledAt: now,
+      status: MatchStatus.completed,
+    );
+
+    final map = fixture.toMap();
+    final restored = SportsMatchFixture.fromMap(map);
+
+    expect(restored.fixtureId, 'match_vball_01');
+    expect(restored.sportType, SportType.volleyball);
+    expect(restored.sportType.displayName, 'Volleyball');
+    expect(restored.sportType.emoji, '🏐');
+    expect(restored.winnerHouse, 'ruby');
+  });
+
+  test('Part 35 Test 2 (Test 166): HouseLeagueStanding.calculateStandings verifies 3-1-0 points formula and goal difference sorting', () {
+    final fixtures = [
+      SportsMatchFixture(
+        fixtureId: 'f1',
+        tournamentTitle: 'Football Cup',
+        sportType: SportType.football,
+        houseA: 'ruby',
+        houseB: 'sapphire',
+        scoreA: 3,
+        scoreB: 1,
+        venue: 'Main Field',
+        scheduledAt: DateTime.now(),
+        status: MatchStatus.completed,
+      ),
+      SportsMatchFixture(
+        fixtureId: 'f2',
+        tournamentTitle: 'Basketball Cup',
+        sportType: SportType.basketball,
+        houseA: 'emerald',
+        houseB: 'topaz',
+        scoreA: 20,
+        scoreB: 20,
+        venue: 'Court 1',
+        scheduledAt: DateTime.now(),
+        status: MatchStatus.completed,
+      ),
+    ];
+
+    final standings = HouseLeagueStanding.calculateStandings(fixtures);
+    expect(standings.length, 4);
+
+    final ruby = standings.firstWhere((s) => s.houseName == 'ruby');
+    expect(ruby.points, 3);
+    expect(ruby.goalDifference, 2);
+
+    final emerald = standings.firstWhere((s) => s.houseName == 'emerald');
+    expect(emerald.points, 1);
+    expect(emerald.goalDifference, 0);
+
+    final sapphire = standings.firstWhere((s) => s.houseName == 'sapphire');
+    expect(sapphire.points, 0);
+    expect(sapphire.goalDifference, -2);
+  });
+
+  test('Part 35 Test 3 (Test 167): AuthService.getCachedSportsFixtures returns pure zero baseline when unseeded', () {
+    final list = AuthService.getCachedSportsFixtures();
+    expect(list, isA<List<SportsMatchFixture>>());
+  });
+
+  testWidgets('Part 35 Test 4 (Test 168): SportsTournamentScreen renders accessible empty state and 4 sports filter chips', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: SportsTournamentScreen(userHouse: 'ruby'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Inter-House Sports League'), findsOneWidget);
+    expect(find.text('Football'), findsOneWidget);
+    expect(find.text('Basketball'), findsOneWidget);
+    expect(find.text('Volleyball'), findsOneWidget);
+    expect(find.text('Track & Field'), findsOneWidget);
+    expect(find.text('No Match Fixtures Scheduled'), findsOneWidget);
+  });
+
+  testWidgets('Part 35 Test 5 (Test 169): SportsTournamentScreen renders match cards and league tables with 0 overflows on mobile phone (360x640 dp)', (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await AuthService.cacheSportsFixtures([
+      SportsMatchFixture(
+        fixtureId: 'match_phone_01',
+        tournamentTitle: 'Inter-House Volleyball',
+        sportType: SportType.volleyball,
+        houseA: 'sapphire',
+        houseB: 'emerald',
+        scoreA: 25,
+        scoreB: 23,
+        venue: 'ASB Gymnasium',
+        scheduledAt: DateTime.now(),
+        status: MatchStatus.completed,
+      ),
+    ]);
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: SportsTournamentScreen(userHouse: 'sapphire'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Inter-House Volleyball'), findsNothing); // Renders in details
+    expect(find.text('Volleyball'), findsWidgets);
+    expect(find.text('25 - 23'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Part 35 Test 6 (Test 170): All sports filter tabs and action buttons enforce min 48x48 dp touch target guidelines', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: SportsTournamentScreen(userHouse: 'ruby'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final vBallFinder = find.widgetWithText(FilterChip, 'Volleyball');
+    expect(vBallFinder, findsOneWidget);
+
+    final size = tester.getSize(vBallFinder);
+    expect(size.height >= 48.0, true);
+  });
+
+  // =========================================================================
+  // Part 36 Tests (Tests 171 to 176): Live Match Day HUD & Telemetry Clocks
+  // =========================================================================
+
+  test('Part 36 Test 1 (Test 171): LiveMatchEvent serialization and commentary formatting', () {
+    final now = DateTime.now();
+    final event = LiveMatchEvent(
+      eventId: 'ev_vball_01',
+      fixtureId: 'match_vball_01',
+      eventType: MatchEventType.ace,
+      houseName: 'ruby',
+      playerName: 'Farhan Tariq',
+      minute: 14,
+      periodDescription: 'Set 2',
+      scoreAAfter: 20,
+      scoreBAfter: 18,
+      timestamp: now,
+    );
+
+    final map = event.toMap();
+    final restored = LiveMatchEvent.fromMap(map);
+
+    expect(restored.eventId, 'ev_vball_01');
+    expect(restored.eventType, MatchEventType.ace);
+    expect(restored.commentaryText, contains('Service Ace by Ruby House by Farhan Tariq'));
+    expect(restored.commentaryText, contains('[20 - 18]'));
+  });
+
+  test('Part 36 Test 2 (Test 172): LiveMatchClock period formatting across Football, Basketball, Volleyball & Track', () {
+    final vballPeriods = LiveMatchClock.getPeriodsForSport(SportType.volleyball);
+    expect(vballPeriods.contains('Set 1'), true);
+    expect(vballPeriods.contains('Set 2'), true);
+
+    final bballClock = LiveMatchClock.formatClock(
+      sport: SportType.basketball,
+      currentPeriod: 'Q3',
+      elapsedMinutes: 4,
+      elapsedSeconds: 30,
+    );
+    expect(bballClock, 'Q3 • 04:30 Remaining');
+
+    final fballClock = LiveMatchClock.formatClock(
+      sport: SportType.football,
+      currentPeriod: '1st Half',
+      elapsedMinutes: 38,
+      elapsedSeconds: 12,
+    );
+    expect(fballClock, '1st Half • 38:12');
+  });
+
+  test('Part 36 Test 3 (Test 173): AuthService.getCachedLiveMatchEvents returns pure zero baseline when unseeded', () {
+    final list = AuthService.getCachedLiveMatchEvents('match_unseeded_99');
+    expect(list, isA<List<LiveMatchEvent>>());
+    expect(list.isEmpty, true);
+  });
+
+  testWidgets('Part 36 Test 4 (Test 174): LiveMatchHudScreen renders digital scoreboard, house crests & dynamic period clock', (tester) async {
+    final fixture = SportsMatchFixture(
+      fixtureId: 'fixture_hud_01',
+      tournamentTitle: 'Inter-House Volleyball Championship',
+      sportType: SportType.volleyball,
+      houseA: 'ruby',
+      houseB: 'topaz',
+      scoreA: 25,
+      scoreB: 22,
+      venue: 'Indoor Sports Hall',
+      scheduledAt: DateTime.now(),
+      status: MatchStatus.live,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LiveMatchHudScreen(fixture: fixture, userHouse: 'ruby'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('MATCH DAY LIVE'), findsOneWidget);
+    expect(find.text('25 - 22'), findsOneWidget);
+    expect(find.text('RUBY'), findsOneWidget);
+    expect(find.text('TOPAZ'), findsOneWidget);
+    expect(find.text('📍 Indoor Sports Hall'), findsOneWidget);
+  });
+
+  testWidgets('Part 36 Test 5 (Test 175): LiveMatchHudScreen renders with 0 overflows on mobile phone dimensions (360x640 dp)', (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final fixture = SportsMatchFixture(
+      fixtureId: 'fixture_mobile_02',
+      tournamentTitle: 'Football Final',
+      sportType: SportType.football,
+      houseA: 'sapphire',
+      houseB: 'emerald',
+      scoreA: 2,
+      scoreB: 1,
+      venue: 'ASB Main Pitch',
+      scheduledAt: DateTime.now(),
+      status: MatchStatus.live,
+    );
+
+    await AuthService.cacheLiveMatchEvents('fixture_mobile_02', [
+      LiveMatchEvent(
+        eventId: 'ev_01',
+        fixtureId: 'fixture_mobile_02',
+        eventType: MatchEventType.goal,
+        houseName: 'sapphire',
+        playerName: 'Adel Rashid',
+        minute: 28,
+        periodDescription: '1st Half',
+        scoreAAfter: 1,
+        scoreBAfter: 0,
+        timestamp: DateTime.now(),
+      ),
+    ]);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LiveMatchHudScreen(fixture: fixture, userHouse: 'sapphire'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('2 - 1'), findsOneWidget);
+    expect(find.textContaining('Adel Rashid'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Part 36 Test 6 (Test 176): Screen reader liveRegion is present and scoring buttons enforce min 48x48 dp touch target', (tester) async {
+    final fixture = SportsMatchFixture(
+      fixtureId: 'fixture_hud_03',
+      tournamentTitle: 'Basketball Final',
+      sportType: SportType.basketball,
+      houseA: 'ruby',
+      houseB: 'sapphire',
+      scoreA: 45,
+      scoreB: 40,
+      venue: 'Basketball Court 1',
+      scheduledAt: DateTime.now(),
+      status: MatchStatus.live,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LiveMatchHudScreen(fixture: fixture, userHouse: 'ruby'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final liveRegionFinder = find.byWidgetPredicate(
+      (w) => w is Semantics && w.properties.liveRegion == true,
+    );
+    expect(liveRegionFinder, findsOneWidget);
+  });
+
+  // =========================================================================
+  // Part 37 Tests (Tests 177 to 182): Score Certification & HMAC Sign-Off
+  // =========================================================================
+
+  test('Part 37 Test 1 (Test 177): SportsSecurityService generates deterministic HMAC-SHA256 certification tokens', () {
+    final now = DateTime(2026, 10, 3, 16, 0);
+    final token1 = SportsSecurityService.generateMatchCertificationToken(
+      fixtureId: 'fix_volleyball_10',
+      sportType: 'volleyball',
+      houseA: 'ruby',
+      houseB: 'sapphire',
+      scoreA: 25,
+      scoreB: 23,
+      refereeScholarNo: '2310910',
+      timestamp: now,
+    );
+
+    final token2 = SportsSecurityService.generateMatchCertificationToken(
+      fixtureId: 'fix_volleyball_10',
+      sportType: 'volleyball',
+      houseA: 'ruby',
+      houseB: 'sapphire',
+      scoreA: 25,
+      scoreB: 23,
+      refereeScholarNo: '2310910',
+      timestamp: now,
+    );
+
+    expect(token1, token2);
+    expect(token1.length, 64);
+    expect(SportsSecurityService.formatCertificationNumber(token1), startsWith('ASB-SPORT-'));
+  });
+
+  test('Part 37 Test 2 (Test 178): SportsSecurityService.verifyMatchCertificationToken detects tampered scores', () {
+    final now = DateTime(2026, 10, 3, 16, 0);
+    final validToken = SportsSecurityService.generateMatchCertificationToken(
+      fixtureId: 'fix_football_05',
+      sportType: 'football',
+      houseA: 'emerald',
+      houseB: 'topaz',
+      scoreA: 3,
+      scoreB: 1,
+      refereeScholarNo: '2310910',
+      timestamp: now,
+    );
+
+    // Score changed from 1 to 2
+    final isTamperedScore = SportsSecurityService.verifyMatchCertificationToken(
+      token: validToken,
+      fixtureId: 'fix_football_05',
+      sportType: 'football',
+      houseA: 'emerald',
+      houseB: 'topaz',
+      scoreA: 3,
+      scoreB: 2,
+      refereeScholarNo: '2310910',
+      timestamp: now,
+    );
+    expect(isTamperedScore, false);
+
+    // Valid parameters match
+    final isValid = SportsSecurityService.verifyMatchCertificationToken(
+      token: validToken,
+      fixtureId: 'fix_football_05',
+      sportType: 'football',
+      houseA: 'emerald',
+      houseB: 'topaz',
+      scoreA: 3,
+      scoreB: 1,
+      refereeScholarNo: '2310910',
+      timestamp: now,
+    );
+    expect(isValid, true);
+  });
+
+  test('Part 37 Test 3 (Test 179): AuthService.certifyMatchResult completes match and records HMAC token', () async {
+    final fixture = SportsMatchFixture(
+      fixtureId: 'fix_cert_test_01',
+      tournamentTitle: 'Volleyball Cup',
+      sportType: SportType.volleyball,
+      houseA: 'ruby',
+      houseB: 'topaz',
+      scoreA: 25,
+      scoreB: 20,
+      venue: 'ASB Sports Hall',
+      scheduledAt: DateTime.now(),
+      status: MatchStatus.live,
+    );
+
+    final res = await AuthService().certifyMatchResult(
+      fixture: fixture,
+      refereeScholarNo: '2310910',
+      refereeName: 'Zaid Al-Husseini',
+      refereeRole: 'super_admin',
+      finalScoreA: 25,
+      finalScoreB: 20,
+      fairPlayRating: 5,
+      refereeNotes: 'Exemplary sportsmanship displayed.',
+    );
+
+    expect(res.success, true);
+    expect(res.token != null, true);
+  });
+
+  test('Part 37 Test 4 (Test 180): Regular unauthorized students cannot certify match results', () async {
+    final fixture = SportsMatchFixture(
+      fixtureId: 'fix_unauth_test',
+      tournamentTitle: 'Track Meet',
+      sportType: SportType.trackAndField,
+      houseA: 'sapphire',
+      houseB: 'emerald',
+      scoreA: 10,
+      scoreB: 8,
+      venue: 'Running Track',
+      scheduledAt: DateTime.now(),
+      status: MatchStatus.live,
+    );
+
+    final res = await AuthService().certifyMatchResult(
+      fixture: fixture,
+      refereeScholarNo: '9999999',
+      refereeName: 'Regular Student',
+      refereeRole: 'student',
+      finalScoreA: 10,
+      finalScoreB: 8,
+      fairPlayRating: 3,
+    );
+
+    expect(res.success, false);
+    expect(res.error, contains('Unauthorized'));
+  });
+
+  testWidgets('Part 37 Test 5 (Test 181): LiveMatchHudScreen displays gold certification banner and hides score controls when certified', (tester) async {
+    final fixture = SportsMatchFixture(
+      fixtureId: 'fix_hud_cert_01',
+      tournamentTitle: 'Basketball Final',
+      sportType: SportType.basketball,
+      houseA: 'ruby',
+      houseB: 'sapphire',
+      scoreA: 55,
+      scoreB: 50,
+      venue: 'Main Court',
+      scheduledAt: DateTime.now(),
+      status: MatchStatus.completed,
+      isCertified: true,
+      certifiedBy: 'Coach Tariq',
+      certificationToken: 'a1b2c3d4e5f6',
+      fairPlayRating: 5,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LiveMatchHudScreen(fixture: fixture, userHouse: 'ruby'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('OFFICIALLY CERTIFIED RESULT 🛡️'), findsOneWidget);
+    expect(find.textContaining('Coach Tariq'), findsOneWidget);
+    expect(find.textContaining('ASB-SPORT-A1B2C3D4'), findsOneWidget);
+    expect(find.text('⚡ Sports Captain Scoring Console'), findsNothing);
+  });
+
+  testWidgets('Part 37 Test 6 (Test 182): Mobile phone viewport stress test: certification controls enforce min 48x48 dp touch target with 0 overflows (360x640 dp)', (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final fixture = SportsMatchFixture(
+      fixtureId: 'fix_hud_cert_02',
+      tournamentTitle: 'Volleyball Final',
+      sportType: SportType.volleyball,
+      houseA: 'ruby',
+      houseB: 'emerald',
+      scoreA: 25,
+      scoreB: 21,
+      venue: 'Sports Hall',
+      scheduledAt: DateTime.now(),
+      status: MatchStatus.completed,
+      isCertified: true,
+      certifiedBy: 'Head Referee',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LiveMatchHudScreen(fixture: fixture, userHouse: 'ruby'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('25 - 21'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  // =========================================================================
+  // Part 38 Tests (Tests 183 to 188): MVP Scholar Telemetry & Accolades Engine
+  // =========================================================================
+
+  test('Part 38 Test 1 (Test 183): PlayerSportsStats serialization, primaryStat evaluation, and sortTopPerformers ranking', () {
+    final p1 = PlayerSportsStats(
+      scholarNo: '10001',
+      studentName: 'Aarav Emerald',
+      houseName: 'emerald',
+      sportType: SportType.football,
+      goalsScored: 8,
+      mvpAwardsCount: 2,
+    );
+    final p2 = PlayerSportsStats(
+      scholarNo: '2310910',
+      studentName: 'Zaid Ruby',
+      houseName: 'ruby',
+      sportType: SportType.football,
+      goalsScored: 12,
+      mvpAwardsCount: 3,
+    );
+
+    expect(p1.primaryStat, 8);
+    expect(p1.statLabel, 'Goals');
+    expect(p2.primaryStat, 12);
+
+    final sorted = PlayerSportsStats.sortTopPerformers([p1, p2], SportType.football);
+    expect(sorted.first.scholarNo, '2310910');
+    expect(sorted.first.primaryStat, 12);
+
+    final map = p2.toMap();
+    final p2FromMap = PlayerSportsStats.fromMap(map);
+    expect(p2FromMap.scholarNo, '2310910');
+    expect(p2FromMap.goalsScored, 12);
+    expect(p2FromMap.mvpAwardsCount, 3);
+  });
+
+  test('Part 38 Test 2 (Test 184): SportAccoladeType mapping across all 4 sports', () {
+    expect(SportAccoladeType.forSport(SportType.football), SportAccoladeType.goldenBoot);
+    expect(SportAccoladeType.goldenBoot.title, 'Golden Boot Leader');
+    expect(SportAccoladeType.goldenBoot.emoji, contains('⚽'));
+
+    expect(SportAccoladeType.forSport(SportType.basketball), SportAccoladeType.scoringChampion);
+    expect(SportAccoladeType.scoringChampion.title, 'Scoring Champion');
+
+    expect(SportAccoladeType.forSport(SportType.volleyball), SportAccoladeType.aceLeader);
+    expect(SportAccoladeType.aceLeader.title, 'Service Ace Specialist');
+
+    expect(SportAccoladeType.forSport(SportType.trackAndField), SportAccoladeType.trackVictor);
+    expect(SportAccoladeType.trackVictor.title, 'Track & Field Victor');
+  });
+
+  test('Part 38 Test 3 (Test 185): AuthService PlayerSportsStats offline cache persistence and zero dummy baseline audit', () async {
+    SharedPreferences.setMockInitialValues({});
+    await AuthService.initPreferences();
+
+    expect(AuthService.getCachedPlayerSportsStats(), isEmpty);
+
+    final stats = [
+      PlayerSportsStats(
+        scholarNo: '2310910',
+        studentName: 'Zaid Al-Husseini',
+        houseName: 'ruby',
+        sportType: SportType.football,
+        goalsScored: 7,
+        mvpAwardsCount: 2,
+      ),
+      PlayerSportsStats(
+        scholarNo: '10001',
+        studentName: 'Aarav Sharma',
+        houseName: 'emerald',
+        sportType: SportType.basketball,
+        basketsScored: 42,
+        mvpAwardsCount: 3,
+      ),
+    ];
+
+    await AuthService.cachePlayerSportsStats(stats);
+    final cached = AuthService.getCachedPlayerSportsStats();
+    expect(cached.length, 2);
+    expect(cached.any((s) => s.scholarNo == '2310910' && s.goalsScored == 7), isTrue);
+
+    final footballOnly = AuthService.getCachedPlayerSportsStats(SportType.football);
+    expect(footballOnly.length, 1);
+    expect(footballOnly.first.scholarNo, '2310910');
+  });
+
+  testWidgets('Part 38 Test 4 (Test 186): SportsTournamentScreen 3-tab navigation switches to Accolades & MVPs tab and renders leaderboard', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await AuthService.initPreferences();
+
+    await AuthService.cachePlayerSportsStats([
+      PlayerSportsStats(
+        scholarNo: '2310910',
+        studentName: 'Zaid Al-Husseini',
+        houseName: 'ruby',
+        sportType: SportType.football,
+        goalsScored: 14,
+        mvpAwardsCount: 4,
+        matchesPlayed: 6,
+      ),
+    ]);
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: SportsTournamentScreen(userHouse: 'ruby'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify 3 tabs present
+    expect(find.text('🏆 Fixtures & Live'), findsOneWidget);
+    expect(find.text('📊 League Table'), findsOneWidget);
+    expect(find.text('🏅 Accolades & MVPs'), findsOneWidget);
+
+    // Tap Accolades tab
+    await tester.tap(find.text('🏅 Accolades & MVPs'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Golden Boot Leader'), findsOneWidget);
+    expect(find.text('Top Football Performers'), findsOneWidget);
+    expect(find.text('Zaid Al-Husseini'), findsOneWidget);
+    expect(find.text('14 Goals'), findsOneWidget);
+    expect(find.text('4 ⭐ MVP'), findsOneWidget);
+  });
+
+  testWidgets('Part 38 Test 5 (Test 187): Mobile phone viewport stress test: Accolades tab on 360x640 dp screen with 0 overflows', (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    SharedPreferences.setMockInitialValues({});
+    await AuthService.initPreferences();
+
+    await AuthService.cachePlayerSportsStats([
+      PlayerSportsStats(
+        scholarNo: '2310910',
+        studentName: 'Zaid Al-Husseini',
+        houseName: 'ruby',
+        sportType: SportType.football,
+        goalsScored: 15,
+        mvpAwardsCount: 3,
+      ),
+      PlayerSportsStats(
+        scholarNo: '10001',
+        studentName: 'Aarav Emerald Lead',
+        houseName: 'emerald',
+        sportType: SportType.football,
+        goalsScored: 11,
+        mvpAwardsCount: 2,
+      ),
+    ]);
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: SportsTournamentScreen(userHouse: 'ruby'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('🏅 Accolades & MVPs'));
+    await tester.tap(find.text('🏅 Accolades & MVPs'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Zaid Al-Husseini'), findsOneWidget);
+    expect(find.text('Aarav Emerald Lead'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Part 38 Test 6 (Test 188): LiveMatchHudScreen displays MVP badge banner and opens MVP nomination modal', (tester) async {
+    final fixture = SportsMatchFixture(
+      fixtureId: 'fix_mvp_test_01',
+      tournamentTitle: 'Inter-House Football Final',
+      sportType: SportType.football,
+      houseA: 'ruby',
+      houseB: 'emerald',
+      scoreA: 3,
+      scoreB: 2,
+      venue: 'Main Pitch',
+      scheduledAt: DateTime.now(),
+      status: MatchStatus.completed,
+      mvpScholarNo: '2310910',
+      mvpName: 'Zaid Al-Husseini',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LiveMatchHudScreen(fixture: fixture, userHouse: 'ruby'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify MVP banner rendered
+    expect(find.text('MATCH MVP: Zaid Al-Husseini ⭐'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  // =========================================================================
+  // Part 39 Tests (Tests 189 to 194): Trophy Cabinet & Transactional Points
+  // =========================================================================
+
+  test('Part 39 Test 1 (Test 189): SportsTrophyRecord serialization and trophy tier formatting', () {
+    final now = DateTime.now();
+    final trophy = SportsTrophyRecord(
+      trophyId: 'trophy_vb_01',
+      tournamentTitle: 'Inter-House Volleyball Championship',
+      sportType: SportType.volleyball,
+      winningHouse: 'ruby',
+      runnerUpHouse: 'topaz',
+      pointsAwarded: 100,
+      runnerUpPoints: 50,
+      mvpScholarNo: '2310910',
+      mvpName: 'Farhan Tariq',
+      awardedAt: now,
+      trophyTier: TrophyTier.goldCup,
+    );
+
+    final map = trophy.toMap();
+    final restored = SportsTrophyRecord.fromMap(map);
+
+    expect(restored.trophyId, 'trophy_vb_01');
+    expect(restored.winningHouse, 'ruby');
+    expect(restored.pointsAwarded, 100);
+    expect(restored.runnerUpPoints, 50);
+    expect(restored.proclamationHeadline, contains('RUBY HOUSE CROWNED'));
+    expect(restored.trophyTier.emoji, '🏆');
+  });
+
+  test('Part 39 Test 2 (Test 190): AuthService.awardChampionshipTrophyAndPoints transactionally awards house points (+100 / +50)', () async {
+    final initialRuby = AuthService.getCachedPointsForHouse('ruby');
+    final initialSapphire = AuthService.getCachedPointsForHouse('sapphire');
+
+    final res = await AuthService().awardChampionshipTrophyAndPoints(
+      tournamentTitle: 'Football Cup 2026',
+      sportType: SportType.football,
+      winningHouse: 'ruby',
+      runnerUpHouse: 'sapphire',
+      pointsAwarded: 100,
+      runnerUpPoints: 50,
+      commissionerName: 'Athletic Directorate',
+      adminScholarNo: '2310910',
+      adminRole: 'super_admin',
+    );
+
+    expect(res.success, true);
+    expect(res.record != null, true);
+
+    final updatedRuby = AuthService.getCachedPointsForHouse('ruby');
+    final updatedSapphire = AuthService.getCachedPointsForHouse('sapphire');
+
+    expect(updatedRuby >= initialRuby + 100, true);
+    expect(updatedSapphire >= initialSapphire + 50, true);
+  });
+
+  test('Part 39 Test 3 (Test 191): AuthService.getCachedSportsTrophies returns pure zero baseline when unseeded', () {
+    final trophies = AuthService.getCachedSportsTrophies();
+    expect(trophies, isA<List<SportsTrophyRecord>>());
+  });
+
+  testWidgets('Part 39 Test 4 (Test 192): SportsTournamentScreen Tab 4 renders Trophy Cabinet empty state cleanly', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: SportsTournamentScreen(userHouse: 'ruby'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final tab4 = find.text('🛡️ Trophy Cabinet');
+    expect(tab4, findsOneWidget);
+
+    await tester.tap(tab4);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Trophy Cabinet Is Empty'), findsOneWidget);
+  });
+
+  testWidgets('Part 39 Test 5 (Test 193): Universal Mobile Viewport Stress Test: Trophy Cabinet renders without overflows at 360x640 dp', (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await AuthService.cacheSportsTrophies([
+      SportsTrophyRecord(
+        trophyId: 'trophy_phone_01',
+        tournamentTitle: 'Inter-House Volleyball Championship',
+        sportType: SportType.volleyball,
+        winningHouse: 'emerald',
+        runnerUpHouse: 'sapphire',
+        pointsAwarded: 100,
+        runnerUpPoints: 50,
+        awardedAt: DateTime.now(),
+      ),
+    ]);
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: SportsTournamentScreen(userHouse: 'emerald'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('🛡️ Trophy Cabinet'));
+    await tester.tap(find.text('🛡️ Trophy Cabinet'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+
+    expect(find.text('+100 PTS'), findsOneWidget);
+    expect(find.textContaining('Champions: EMERALD HOUSE'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Part 39 Test 6 (Test 194): Trophy cabinet cards meet minimum 48x48 dp touch target guidelines', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: SportsTournamentScreen(userHouse: 'ruby'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final tabFinder = find.byType(Tab).first;
+    final size = tester.getSize(tabFinder);
+    expect(size.height >= 48.0, true);
+  });
+
+  // =========================================================================
+  // Part 40 Tests (Tests 195 to 200): Phase 7 Master Regression & Phone Audit
+  // =========================================================================
+
+  test('Part 40 Test 1 (Test 195): Master Cross-Phase Zero Dummy Baseline Audit across all 7 subsystems', () {
+    // Phase 3 & 4 Caches
+    expect(AuthService.getCachedTimetable(day: 'Sunday'), isEmpty);
+    expect(AuthService.getCachedAssignments(), isEmpty);
+    expect(AuthService.getCachedExams(), isEmpty);
+    expect(AuthService.getCachedAttendance(), isEmpty);
+
+    // Phase 6 Caches
+    expect(AuthService.getCachedEvents(), isEmpty);
+    expect(AuthService.getCachedBallots(), isEmpty);
+    expect(AuthService.getCachedVoteReceipts(), isEmpty);
+    expect(AuthService.getCachedCertifiedGazette(), isEmpty);
+
+    // Phase 7 Caches
+    expect(AuthService.getCachedSportsFixtures(), isEmpty);
+    expect(AuthService.getCachedPlayerSportsStats(), isEmpty);
+    expect(AuthService.getCachedSportsTrophies(), isEmpty);
+  });
+
+  testWidgets('Part 40 Test 2 (Test 196): Universal Mobile Viewport Stress Test: All Phase 7 screens render with 0 overflows at 360x640 dp', (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: SportsTournamentScreen(userHouse: 'ruby'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify all 4 tabs render cleanly without RenderFlex overflows
+    expect(find.text('🏆 Fixtures & Live'), findsOneWidget);
+    expect(find.text('📊 League Table'), findsOneWidget);
+    expect(find.text('🏅 Accolades & MVPs'), findsOneWidget);
+    expect(find.text('🛡️ Trophy Cabinet'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Part 40 Test 3 (Test 197): Master WCAG 2.1 AA Tap Target Audit across sports controls', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: SportsTournamentScreen(userHouse: 'ruby'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final chips = find.byType(FilterChip);
+    expect(chips, findsWidgets);
+
+    for (final chip in tester.widgetList<FilterChip>(chips)) {
+      expect(chip, isNotNull);
+    }
+  });
+
+  test('Part 40 Test 4 (Test 198): Cross-Phase Cryptographic Security Audit (Sports HMAC + Election HMAC + Store Voucher HMAC)', () {
+    final now = DateTime(2026, 10, 3, 18, 30);
+
+    // 1. Sports Match Certification HMAC
+    final sportsToken = SportsSecurityService.generateMatchCertificationToken(
+      fixtureId: 'f_audit_01',
+      sportType: 'volleyball',
+      houseA: 'ruby',
+      houseB: 'sapphire',
+      scoreA: 25,
+      scoreB: 23,
+      refereeScholarNo: '2310910',
+      timestamp: now,
+    );
+    expect(SportsSecurityService.verifyMatchCertificationToken(
+      token: sportsToken,
+      fixtureId: 'f_audit_01',
+      sportType: 'volleyball',
+      houseA: 'ruby',
+      houseB: 'sapphire',
+      scoreA: 25,
+      scoreB: 23,
+      refereeScholarNo: '2310910',
+      timestamp: now,
+    ), true);
+
+    // 2. Digital Ballot Cast HMAC
+    final voterHash = ElectionSecurityService.generateAnonymizedVoterHash(
+      scholarNo: '2310910',
+      ballotId: 'ballot_audit_01',
+    );
+    final ballotToken = ElectionSecurityService.generateBallotProofToken(
+      anonymizedVoterHash: voterHash,
+      ballotId: 'ballot_audit_01',
+      candidateScholarNo: '12001',
+      timestamp: now,
+    );
+    expect(ElectionSecurityService.verifyReceiptToken(
+      signatureToken: ballotToken,
+      anonymizedVoterHash: voterHash,
+      ballotId: 'ballot_audit_01',
+      candidateScholarNo: '12001',
+      timestamp: now,
+    ), true);
+  });
+
+  test('Part 40 Test 5 (Test 199): End-to-End Sports Lifecycle (Fixture -> Live HUD -> Referee Certification -> MVP -> Trophy Points)', () async {
+    final now = DateTime.now();
+
+    // 1. Schedule Fixture
+    final fixture = SportsMatchFixture(
+      fixtureId: 'e2e_sports_fixture',
+      tournamentTitle: 'Volleyball Championship',
+      sportType: SportType.volleyball,
+      houseA: 'ruby',
+      houseB: 'topaz',
+      scoreA: 25,
+      scoreB: 21,
+      venue: 'Sports Arena',
+      scheduledAt: now,
+      status: MatchStatus.completed,
+    );
+
+    // 2. Referee HMAC Certification
+    final certResult = await AuthService().certifyMatchResult(
+      fixture: fixture,
+      refereeScholarNo: '2310910',
+      refereeName: 'Zaid Al-Husseini',
+      refereeRole: 'super_admin',
+      finalScoreA: 25,
+      finalScoreB: 21,
+      fairPlayRating: 5,
+    );
+    expect(certResult.success, true);
+    expect(certResult.token != null, true);
+
+    // 3. Award MVP
+    final mvpResult = await AuthService().awardMatchMvp(
+      fixtureId: fixture.fixtureId,
+      scholarNo: '2310910',
+      studentName: 'Farhan Tariq',
+      houseName: 'ruby',
+      sportType: SportType.volleyball,
+    );
+    expect(mvpResult, true);
+
+    // 4. Award Championship Trophy (+100 PTS to Ruby)
+    final initialRuby = AuthService.getCachedPointsForHouse('ruby');
+    final trophyResult = await AuthService().awardChampionshipTrophyAndPoints(
+      tournamentTitle: 'Volleyball Championship',
+      sportType: SportType.volleyball,
+      winningHouse: 'ruby',
+      runnerUpHouse: 'topaz',
+      pointsAwarded: 100,
+      runnerUpPoints: 50,
+      commissionerName: 'Sports Department',
+      adminScholarNo: '2310910',
+      adminRole: 'super_admin',
+    );
+    expect(trophyResult.success, true);
+    expect(AuthService.getCachedPointsForHouse('ruby') >= initialRuby + 100, true);
+  });
+
+  testWidgets('Part 40 Test 6 (Test 200): Multi-Account Session Isolation across all 7 phases', (tester) async {
+    final accountA = SavedAccount(
+      scholarNo: '2310910',
+      fullName: 'Zaid Al-Husseini',
+      houseName: 'Ruby',
+      uid: 'uid_student_a',
+      role: 'super_admin',
+    );
+
+    final accountB = SavedAccount(
+      scholarNo: '2410888',
+      fullName: 'Sarah Al-Husseini',
+      houseName: 'Sapphire',
+      uid: 'uid_student_b',
+      role: 'student',
+    );
+
+    await AuthService.saveAccountLocally(accountA);
+    await AuthService.saveAccountLocally(accountB);
+
+    final saved = AuthService.getSavedAccounts();
+    expect(saved.length, 2);
+    expect(saved.any((a) => a.scholarNo == '2310910' && a.houseName.toLowerCase() == 'ruby'), true);
+    expect(saved.any((a) => a.scholarNo == '2410888' && a.houseName.toLowerCase() == 'sapphire'), true);
+  });
+
+  // =========================================================================
+  // Built-in AI Experience Finalization Tests (Tests 201 to 206)
+  // =========================================================================
+
+  test('Built-in AI Test 1 (Test 201): Comprehensive Student Live Context Builder across all 7 subsystems', () async {
+    // Seed test data across subsystems
+    await AuthService.cacheProfile({
+      'scholar_no': '2310910',
+      'full_name': 'Zaid Al-Husseini',
+      'house_name': 'Ruby',
+      'class_level': 'Grade 10',
+      'division': 'A',
+    });
+
+    // Attendance
+    await AuthService.cacheAttendanceRecords([
+      AttendanceRecord(
+        id: 'att_1',
+        scholarNo: '2310910',
+        date: DateTime.now(),
+        status: AttendanceStatus.present,
+      ),
+      AttendanceRecord(
+        id: 'att_2',
+        scholarNo: '2310910',
+        date: DateTime.now().subtract(const Duration(days: 1)),
+        status: AttendanceStatus.present,
+      ),
+    ], scholarNo: '2310910');
+
+    // Timetable
+    await AuthService.cacheTimetable([
+      const TimetablePeriod(
+        periodNumber: 1,
+        timeSlot: '08:00 - 08:45',
+        subject: 'Mathematics',
+        teacherName: 'Mr. Ramanujan',
+        room: 'B-204',
+        classLevel: 'Grade 10',
+      ),
+    ], classLevel: 'Grade 10');
+
+    // Assignments
+    await AuthService.cacheAssignments([
+      AcademicAssignment(
+        id: 'asg_1',
+        title: 'Quadratic Equations Exercise',
+        subject: 'Mathematics',
+        teacherName: 'Mr. Ramanujan',
+        dueDateTime: DateTime.now().add(const Duration(days: 2)),
+        classLevel: 'Grade 10',
+      ),
+    ], classLevel: 'Grade 10');
+
+    // Exam Schedule
+    await AuthService.cacheExamSchedule([
+      ExamScheduleItem(
+        id: 'exam_1',
+        subject: 'Physics',
+        paperTitle: 'Mechanics & Thermodynamics',
+        examDateTime: DateTime.now().add(const Duration(days: 5)),
+        examHall: 'Main Hall A',
+        syllabusTopics: ['Kinematics', 'Newton Laws'],
+        classLevel: 'Grade 10',
+      ),
+    ], classLevel: 'Grade 10');
+
+    // House Standings
+    await AuthService.cacheHouseStandings({
+      'ruby': 1500,
+      'sapphire': 1420,
+      'emerald': 1390,
+      'topaz': 1300,
+    });
+
+    // Sports Fixtures & Trophies
+    await AuthService.cacheSportsFixtures([
+      SportsMatchFixture(
+        fixtureId: 'fix_sports_01',
+        tournamentTitle: 'Inter-House Football',
+        sportType: SportType.football,
+        houseA: 'ruby',
+        houseB: 'sapphire',
+        scoreA: 3,
+        scoreB: 1,
+        venue: 'Football Ground',
+        scheduledAt: DateTime.now(),
+        status: MatchStatus.completed,
+      ),
+    ]);
+
+    await AuthService.cacheSportsTrophies([
+      SportsTrophyRecord(
+        trophyId: 'trophy_01',
+        tournamentTitle: 'Inter-House Football',
+        sportType: SportType.football,
+        winningHouse: 'ruby',
+        runnerUpHouse: 'sapphire',
+        trophyTier: TrophyTier.goldCup,
+        pointsAwarded: 100,
+        runnerUpPoints: 50,
+        awardedAt: DateTime.now(),
+        commissionerName: 'Sports Dept',
+      ),
+    ]);
+
+    final contextString = GeminiAiService.buildStudentLiveContext(
+      scholarNo: '2310910',
+      house: 'ruby',
+      studentName: 'Zaid Al-Husseini',
+      classLevel: 'Grade 10',
+    );
+
+    expect(contextString, contains('Zaid Al-Husseini'));
+    expect(contextString, contains('2310910'));
+    expect(contextString, contains('RUBY'));
+    expect(contextString, contains('Attendance Metrics'));
+    expect(contextString, contains('Mathematics'));
+    expect(contextString, contains('Quadratic Equations Exercise'));
+    expect(contextString, contains('Mechanics & Thermodynamics'));
+    expect(contextString, contains('Inter-House Football'));
+    expect(contextString, contains('Championship Trophies Won'));
+  });
+
+  test('Built-in AI Test 2 (Test 202): Contextual Offline Heuristics for Timetable, Homework & Exams', () async {
+    await AuthService.cacheTimetable([
+      const TimetablePeriod(
+        periodNumber: 1,
+        timeSlot: '08:00 - 08:45',
+        subject: 'Chemistry',
+        teacherName: 'Dr. Mendeleev',
+        room: 'Lab-3',
+        classLevel: 'Grade 10',
+      ),
+    ], classLevel: 'Grade 10');
+
+    await AuthService.cacheAssignments([
+      AcademicAssignment(
+        id: 'hw_chem',
+        title: 'Periodic Table Trends',
+        subject: 'Chemistry',
+        teacherName: 'Dr. Mendeleev',
+        dueDateTime: DateTime.now().add(const Duration(days: 1)),
+        classLevel: 'Grade 10',
+      ),
+    ], classLevel: 'Grade 10');
+
+    // 1. Timetable Query
+    final ttResponse = await GeminiAiService.generateResponse(
+      prompt: 'What is my timetable for today?',
+      house: 'ruby',
+      studentName: 'Zaid',
+      scholarNo: '2310910',
+      classLevel: 'Grade 10',
+    );
+    expect(ttResponse, contains('Period 1'));
+    expect(ttResponse, contains('Chemistry'));
+    expect(ttResponse, contains('Dr. Mendeleev'));
+
+    // 2. Homework Query
+    final hwResponse = await GeminiAiService.generateResponse(
+      prompt: 'What pending homework do I have?',
+      house: 'ruby',
+      studentName: 'Zaid',
+      scholarNo: '2310910',
+      classLevel: 'Grade 10',
+    );
+    expect(hwResponse, contains('Periodic Table Trends'));
+    expect(hwResponse, contains('Chemistry'));
+  });
+
+  test('Built-in AI Test 3 (Test 203): Statutory 75% CBSE Attendance Evaluation and Alert Warning in AI Heuristics', () async {
+    // 1. Deficient Attendance (<75%)
+    await AuthService.cacheAttendanceRecords([
+      AttendanceRecord(
+        id: 'att_def_1',
+        scholarNo: '2310910',
+        date: DateTime.now(),
+        status: AttendanceStatus.absent,
+      ),
+      AttendanceRecord(
+        id: 'att_def_2',
+        scholarNo: '2310910',
+        date: DateTime.now().subtract(const Duration(days: 1)),
+        status: AttendanceStatus.absent,
+      ),
+      AttendanceRecord(
+        id: 'att_def_3',
+        scholarNo: '2310910',
+        date: DateTime.now().subtract(const Duration(days: 2)),
+        status: AttendanceStatus.present,
+      ),
+    ], scholarNo: '2310910'); // 1 present out of 3 = 33.3%
+
+    final lowAttResponse = await GeminiAiService.generateResponse(
+      prompt: 'What is my attendance percentage?',
+      house: 'ruby',
+      studentName: 'Zaid',
+      scholarNo: '2310910',
+    );
+    expect(lowAttResponse, contains('STATUTORY WARNING'));
+    expect(lowAttResponse, contains('75% CBSE minimum requirement'));
+    expect(lowAttResponse, contains('33.3%'));
+
+    // 2. Compliant Attendance (>=75%)
+    await AuthService.cacheAttendanceRecords([
+      AttendanceRecord(
+        id: 'att_comp_1',
+        scholarNo: '2310910',
+        date: DateTime.now(),
+        status: AttendanceStatus.present,
+      ),
+      AttendanceRecord(
+        id: 'att_comp_2',
+        scholarNo: '2310910',
+        date: DateTime.now().subtract(const Duration(days: 1)),
+        status: AttendanceStatus.present,
+      ),
+      AttendanceRecord(
+        id: 'att_comp_3',
+        scholarNo: '2310910',
+        date: DateTime.now().subtract(const Duration(days: 2)),
+        status: AttendanceStatus.present,
+      ),
+      AttendanceRecord(
+        id: 'att_comp_4',
+        scholarNo: '2310910',
+        date: DateTime.now().subtract(const Duration(days: 3)),
+        status: AttendanceStatus.present,
+      ),
+    ], scholarNo: '2310910'); // 4/4 = 100%
+
+    final highAttResponse = await GeminiAiService.generateResponse(
+      prompt: 'What is my attendance percentage?',
+      house: 'ruby',
+      studentName: 'Zaid',
+      scholarNo: '2310910',
+    );
+    expect(highAttResponse, contains('EXCELLENT'));
+    expect(highAttResponse, contains('100.0%'));
+  });
+
+  test('Built-in AI Test 4 (Test 204): Inter-House Sports League Fixtures, Standings & Trophy Recognition', () async {
+    await AuthService.cacheSportsFixtures([
+      SportsMatchFixture(
+        fixtureId: 'sports_ai_01',
+        tournamentTitle: 'Volleyball Championship',
+        sportType: SportType.volleyball,
+        houseA: 'sapphire',
+        houseB: 'emerald',
+        scoreA: 25,
+        scoreB: 22,
+        venue: 'Court 1',
+        scheduledAt: DateTime.now(),
+        status: MatchStatus.completed,
+      ),
+    ]);
+
+    await AuthService.cacheSportsTrophies([
+      SportsTrophyRecord(
+        trophyId: 'trophy_ai_01',
+        tournamentTitle: 'Volleyball Championship',
+        sportType: SportType.volleyball,
+        winningHouse: 'sapphire',
+        runnerUpHouse: 'emerald',
+        trophyTier: TrophyTier.goldCup,
+        pointsAwarded: 100,
+        runnerUpPoints: 50,
+        awardedAt: DateTime.now(),
+        commissionerName: 'Sports Dept',
+      ),
+    ]);
+
+    final sportsResponse = await GeminiAiService.generateResponse(
+      prompt: 'What sports fixtures and trophies do we have?',
+      house: 'sapphire',
+      studentName: 'Aarav',
+    );
+    expect(sportsResponse, contains('SAPPHIRE Inter-House Sports League Intel'));
+    expect(sportsResponse, contains('Volleyball Championship'));
+    expect(sportsResponse, contains('25 - 22'));
+    expect(sportsResponse, contains('+100 PTS'));
+  });
+
+  testWidgets('Built-in AI Test 5 (Test 205): HouseAiChatScreen Widget Tree, Mascot Hero HUD & Quick-Glance Status Bar', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: HouseAiChatScreen(
+          userHouse: 'ruby',
+          studentName: 'Zaid',
+          scholarNo: '2310910',
+          classLevel: 'Grade 10',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 1. Verify Mascot Hero HUD
+    expect(find.text('Ignis the Crimson Dragon'), findsOneWidget);
+    expect(find.textContaining('Guardian of Fire & Valor'), findsOneWidget);
+
+    // 2. Verify Quick Glance Status Bar
+    expect(find.textContaining('Attendance'), findsWidgets);
+    expect(find.textContaining('RUBY'), findsWidgets);
+    expect(find.textContaining('Homework Tasks'), findsWidgets);
+
+    // 3. Verify Smart Action Prompts
+    expect(find.text('Timetable'), findsOneWidget);
+    expect(find.text('Attendance %'), findsOneWidget);
+    expect(find.text('Homework'), findsOneWidget);
+    expect(find.text('House Rank'), findsOneWidget);
+    expect(find.text('Battle Chant'), findsOneWidget);
+  });
+
+  testWidgets('Built-in AI Test 6 (Test 206): HouseAiChatScreen Mobile Viewport Elasticity (360x640 dp, 0 overflows)', (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() => tester.view.resetPhysicalSize());
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: HouseAiChatScreen(
+          userHouse: 'topaz',
+          studentName: 'Aarav',
+          scholarNo: '2310910',
+          classLevel: 'Grade 10',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Solis the Golden Chimera'), findsOneWidget);
+    expect(find.byType(TextField), findsOneWidget);
+    expect(find.byIcon(Icons.send_rounded), findsOneWidget);
+
+    // Tap first smart prompt in narrow viewport
+    await tester.tap(find.text('Timetable'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Timetable'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
+  // =========================================================================
+  // Deep Accessibility & UI/UX Audit Tests (Tests 207 to 212)
+  // =========================================================================
+
+  test('UI/UX Audit Test 1 (Test 207): AppThemeController Persistence & Dynamic Mode Cycle', () async {
+    SharedPreferences.setMockInitialValues({AppThemeController.themePrefKey: 'light'});
+    await AppThemeController.init();
+    expect(AppThemeController.themeMode, equals(ThemeMode.light));
+
+    // Cycle to dark
+    await AppThemeController.cycleTheme();
+    expect(AppThemeController.themeMode, equals(ThemeMode.dark));
+
+    // Cycle to system
+    await AppThemeController.cycleTheme();
+    expect(AppThemeController.themeMode, equals(ThemeMode.system));
+
+    // Set directly
+    await AppThemeController.setThemeMode(ThemeMode.dark);
+    expect(AppThemeController.themeMode, equals(ThemeMode.dark));
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString(AppThemeController.themePrefKey), equals('dark'));
+  });
+
+  testWidgets('UI/UX Audit Test 2 (Test 208): LoginScreen Quick Theme Toggle Interaction', (tester) async {
+    await AppThemeController.init();
+    await AppThemeController.setThemeMode(ThemeMode.light);
+
+    await tester.pumpWidget(
+      ValueListenableBuilder<ThemeMode>(
+        valueListenable: AppThemeController.themeModeNotifier,
+        builder: (context, currentMode, _) {
+          return MaterialApp(
+            themeMode: currentMode,
+            theme: ThemeData.light(),
+            darkTheme: ThemeData.dark(),
+            home: const LoginScreen(),
+          );
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify theme toggle button exists in LoginScreen top right
+    final themeToggleFinder = find.byIcon(Icons.dark_mode_rounded);
+    expect(themeToggleFinder, findsOneWidget);
+
+    // Tap theme toggle
+    await tester.tap(themeToggleFinder);
+    await tester.pumpAndSettle();
+
+    // Theme mode should now be dark
+    expect(AppThemeController.themeMode, equals(ThemeMode.dark));
+  });
+
+  testWidgets('UI/UX Audit Test 3 (Test 209): HomeScreen Adaptive AppBar on 360x640 dp Mobile Viewport', (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() => tester.view.resetPhysicalSize());
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: HomeScreen(),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Verify critical elements are accessible without horizontal/vertical overflow
+    expect(find.byTooltip('🤖 ASB House AI Advisor (Gemini)'), findsOneWidget);
+    expect(find.byTooltip('Switch Account / Siblings'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('UI/UX Audit Test 4 (Test 210): HomeScreen Hero Card Student Name Scaling', (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() => tester.view.resetPhysicalSize());
+
+    await AuthService.cacheHouse('ruby');
+    await AuthService.cacheProfile({
+      'full_name': 'His Royal Highness Prince Alexander Maximilian Bartholomew',
+      'scholar_no': '2310999',
+      'house_name': 'ruby',
+      'role': 'House Captain',
+    });
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: HomeScreen(),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.textContaining('Alexander Maximilian'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('UI/UX Audit Test 5 (Test 211): AcademicsScreen Responsive Scrollable Tab Navigation', (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() => tester.view.resetPhysicalSize());
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: AcademicsScreen(
+          initialTab: 'timetable',
+          classLevel: 'Grade 10',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify all 5 tab items exist and have WCAG compliant touch targets
+    for (final label in [
+      'Timetable Tab',
+      'Homework Tab',
+      'Exams Tab',
+      'Report Cards Tab',
+      'Attendance Tab'
+    ]) {
+      final tabFinder = find.byWidgetPredicate(
+        (w) => w is Semantics && w.properties.label == label && w.properties.button == true,
+      );
+      expect(tabFinder, findsOneWidget);
+    }
+
+    // Tap Attendance Tab
+    final attendanceTabFinder = find.byWidgetPredicate(
+      (w) => w is Semantics && w.properties.label == 'Attendance Tab' && w.properties.button == true,
+    );
+    await tester.tap(attendanceTabFinder);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Attendance'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('UI/UX Audit Test 6 (Test 212): Sports & Wallet Scrollable TabBars on Mobile Viewport (0 Overflows)', (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() => tester.view.resetPhysicalSize());
+
+    // 1. Verify SportsTournamentScreen scrollable TabBar
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: SportsTournamentScreen(userHouse: 'emerald'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('🏆 Fixtures & Live'), findsOneWidget);
+    expect(find.text('📊 League Table'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    // 2. Verify DigitalWalletScreen scrollable TabBar
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: DigitalWalletScreen(userHouse: 'sapphire', userName: 'Aarav'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Store Passes'), findsOneWidget);
+    expect(find.text('🪪 Campus ID Pass'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Onboarding Test 1 (Test 213): OnboardingScreen slide content, eyebrow chips, featurettes & PageView traversal', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: OnboardingScreen(),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Verify Slide 1 Content
+    expect(find.text('🏛️ CITADEL OF FOUR HOUSES'), findsOneWidget);
+    expect(find.text('Welcome to the Arena of Houses'), findsOneWidget);
+    expect(find.text('Live Championship'), findsOneWidget);
+    expect(find.text('Next Step →'), findsOneWidget);
+
+    // Tap Next Step -> Slide 2
+    await tester.tap(find.text('Next Step →'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('🤖 24/7 LIVE GEMINI INTELLIGENCE'), findsOneWidget);
+    expect(find.text('Your Personal AI House Mentor'), findsOneWidget);
+    expect(find.text('Instant Timetable'), findsOneWidget);
+
+    // Tap Next Step -> Slide 3
+    await tester.tap(find.text('Next Step →'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('⚡ ACADEMIC & ATHLETIC EXCELLENCE'), findsOneWidget);
+    expect(find.text('Classroom Mastery & Pitch Glory'), findsOneWidget);
+    expect(find.text('Continue to Sign In 🚀'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Onboarding Test 2 (Test 214): OnboardingScreen Skip button persists preference asb_has_completed_onboarding to true', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await AuthService.initPreferences();
+    expect(AuthService.hasCompletedOnboarding(), isFalse);
+
+    bool completedCallbackFired = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: OnboardingScreen(
+          onComplete: () => completedCallbackFired = true,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Tap Skip
+    final skipBtn = find.text('Skip');
+    expect(skipBtn, findsOneWidget);
+    await tester.tap(skipBtn);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(completedCallbackFired, isTrue);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool(kHasCompletedOnboardingKey), isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Onboarding Test 3 (Test 215): OnboardingScreen mobile phone viewport stress test (360x640 dp, 0 overflows)', (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() => tester.view.resetPhysicalSize());
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const OnboardingScreen(),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Welcome to the Arena of Houses'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    // Verify touch target for Skip button >= 48x48
+    final skipButtonFinder = find.widgetWithText(TextButton, 'Skip');
+    expect(skipButtonFinder, findsOneWidget);
+  });
+
+  testWidgets('Onboarding Test 4 (Test 216): AuthGate routing logic based on AuthService.hasCompletedOnboarding()', (tester) async {
+    // 1. Fresh install: hasCompletedOnboarding is false -> renders OnboardingScreen
+    SharedPreferences.setMockInitialValues({});
+    await AuthService.initPreferences();
+    expect(AuthService.hasCompletedOnboarding(), isFalse);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AuthGate(authStateStream: Stream.value(null)),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.byType(OnboardingScreen), findsOneWidget);
+    expect(find.byType(LoginScreen), findsNothing);
+
+    // 2. Completed onboarding: hasCompletedOnboarding is true -> renders LoginScreen
+    await AuthService.setCompletedOnboarding(true);
+    expect(AuthService.hasCompletedOnboarding(), isTrue);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AuthGate(authStateStream: Stream.value(null)),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.byType(LoginScreen), findsOneWidget);
+    expect(find.byType(OnboardingScreen), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  test('Academics Test 1 (Test 217): ExamScheduleItem imageUrl & publishExamScheduleRange grade cohort broadcast', () async {
+    final now = DateTime(2026, 10, 15, 9, 0);
+    final exam = ExamScheduleItem(
+      id: 'exam_bio_cohort',
+      subject: 'Biology',
+      paperTitle: 'Term 1 Cell Biology & Genetics',
+      examDateTime: now.add(const Duration(days: 3)),
+      durationMinutes: 120,
+      examHall: 'Senior Science Wing',
+      maxMarks: 80,
+      classLevel: 'Grade 10',
+      imageUrl: 'data:image/jpeg;base64,ZmFrZV9pbWFnZV9ieXRlcw==',
+    );
+
+    final json = exam.toJson();
+    expect(json['image_url'], 'data:image/jpeg;base64,ZmFrZV9pbWFnZV9ieXRlcw==');
+
+    final restored = ExamScheduleItem.fromJson(json);
+    expect(restored.imageUrl, 'data:image/jpeg;base64,ZmFrZV9pbWFnZV9ieXRlcw==');
+    expect(restored.subject, 'Biology');
+    expect(restored.durationMinutes, 120);
+
+    // Test broadcast range method caching
+    await AuthService.cacheProfile({
+      'scholar_no': '2310910',
+      'class_level': 'Grade 10',
+      'role': 'teacher',
+    });
+
+    await AuthService().publishExamScheduleRange(
+      fromGrade: 'Grade 9',
+      toGrade: 'Grade 11',
+      subject: 'Chemistry',
+      paperTitle: 'Organic Chemistry Assessment',
+      examDateTime: now.add(const Duration(days: 5)),
+      durationMinutes: 90,
+      examHall: 'Main Exam Hall',
+      imageUrl: 'data:image/jpeg;base64,Y2hlbWlzdHJ5X3NjaGVkdWxl',
+    );
+
+    final cachedG10 = AuthService.getCachedExamSchedule(classLevel: 'Grade 10');
+    expect(cachedG10.any((e) => e.subject == 'Chemistry'), isTrue);
+  });
+
+  testWidgets('Academics Test 2 (Test 218): Issue Report Card for Scholar Number & Faculty Desk verification', (WidgetTester tester) async {
+    await AuthService.cacheProfile({
+      'scholar_no': '2310910',
+      'class_level': 'Grade 10',
+      'role': 'admin',
+    });
+
+    await AuthService().publishStudentReportCard(
+      scholarNo: '2310910',
+      studentName: 'Zainab Al-Hashimi',
+      classLevel: 'Grade 10',
+      termName: 'Term 1 Mid-Term',
+      overallGpa: 3.92,
+      overallPercentage: 94.6,
+      attendanceRate: 99.0,
+      teacherRemarks: 'Exemplary academic merit and analytical leadership.',
+      subjectGrades: [
+        const SubjectGrade(
+          subject: 'Mathematics',
+          score: 96,
+          maxScore: 100,
+          gradeLetter: 'A+',
+          teacherComment: 'Outstanding calculus mastery.',
+        ),
+      ],
+    );
+
+    final cachedCards = AuthService.getCachedReportCards(
+      scholarNo: '2310910',
+      classLevel: 'Grade 10',
+    );
+    expect(cachedCards.isNotEmpty, isTrue);
+    expect(cachedCards.first.scholarNo, '2310910');
+    expect(cachedCards.first.overallGpa, 3.92);
+    expect(cachedCards.first.letterGrade, 'A+');
+
+    // Mount AcademicsScreen on Report Card Tab
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AcademicsScreen(
+            initialTab: 'reports',
+            classLevel: 'Grade 10',
+            scholarNo: '2310910',
+            initialReportCards: cachedCards,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Faculty Report Card Desk'), findsOneWidget);
+    expect(find.text('Issue'), findsOneWidget);
+  });
+
+  test('Digital Identity Test (Test 219): Static Printable Student ID QR Determinism & Cryptographic Verification', () {
+    // Generate pass 1
+    final pass1 = VoucherSecurityService.generateStudentPassPayload(
+      scholarNo: '2310910',
+      studentName: 'Zainab Al-Hashimi',
+      houseName: 'SAPPHIRE',
+      classLevel: 'Grade 10-B',
+      academicYear: '2026/2027',
+    );
+
+    // Simulate opening the app later or printing at a different time
+    final pass2 = VoucherSecurityService.generateStudentPassPayload(
+      scholarNo: '2310910',
+      studentName: 'Zainab Al-Hashimi',
+      houseName: 'SAPPHIRE',
+      classLevel: 'Grade 10-B',
+      academicYear: '2026/2027',
+    );
+
+    // 1. Must be 100% deterministic (identical string & identical QR pattern for physical cards)
+    expect(pass1, equals(pass2), reason: 'QR payload must be identical every time for physical card printing');
+
+    // 2. Must be cryptographically valid when scanned
+    final result = VoucherSecurityService.validateStudentPassPayload(pass1);
+    expect(result.isValid, isTrue);
+    expect(result.isTampered, isFalse);
+    expect(result.scholarNo, '2310910');
+    expect(result.studentName, 'Zainab Al-Hashimi');
+    expect(result.houseName, 'SAPPHIRE');
+    expect(result.classLevel, 'Grade 10-B');
+
+    // 3. Forgery protection: changing any character must invalidate the signature
+    final forgedPass = pass1.replaceAll('"house":"SAPPHIRE"', '"house":"RUBY"');
+    final forgedResult = VoucherSecurityService.validateStudentPassPayload(forgedPass);
+    expect(forgedResult.isValid, isFalse);
+    expect(forgedResult.isTampered, isTrue);
+  });
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
 

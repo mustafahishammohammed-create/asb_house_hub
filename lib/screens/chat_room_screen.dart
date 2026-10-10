@@ -155,6 +155,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
   final _msgController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
+  bool _isSending = false;
 
   late String _otherName;
   late String _otherRole;
@@ -376,7 +377,8 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
 
   void _send() async {
     final text = _msgController.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty || _isSending) return;
+    _isSending = true;
     AppHaptics.light();
     _msgController.clear();
     _focusNode.requestFocus();
@@ -385,7 +387,15 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
         _focusNode.requestFocus();
       }
     });
-    await _chatService.sendMessage(widget.roomId, text);
+    try {
+      await _chatService.sendMessage(widget.roomId, text);
+    } catch (_) {} finally {
+      if (mounted) {
+        setState(() => _isSending = false);
+      } else {
+        _isSending = false;
+      }
+    }
     if (!mounted) return;
     if (_scrollController.hasClients) {
       _scrollController.animateTo(

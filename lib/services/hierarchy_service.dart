@@ -6,15 +6,13 @@ class HierarchyService {
   static bool isSuperAdmin({
     String? scholarNo,
     String? role,
-    String? fullName,
+    String? fullName, // retained for API compatibility — NOT used for authorization
   }) {
     final sNo = (scholarNo ?? '').trim().toLowerCase();
     final rStr = (role ?? '').trim().toLowerCase();
-    final fName = (fullName ?? '').trim().toLowerCase();
 
-    if (sNo == 'admin' || sNo == '2310910') return true;
+    if (sNo == 'admin' || sNo == '2310910' || sNo == '11209') return true;
     if (rStr == 'super_admin' || rStr == 'admin') return true;
-    if (fName == 'mustafa hisham') return true;
 
     return false;
   }
@@ -23,20 +21,18 @@ class HierarchyService {
   static bool isTeacherOrFaculty({
     String? scholarNo,
     String? role,
-    String? fullName,
+    String? fullName, // retained for API compatibility — NOT used for authorization
   }) {
-    final sNo = (scholarNo ?? '').trim();
     final rStr = (role ?? '').trim().toLowerCase();
-    final fName = (fullName ?? '').trim().toLowerCase();
 
     if (rStr == 'teacher' ||
         rStr == 'faculty' ||
         rStr == 'principal' ||
-        rStr == 'staff') {
+        rStr == 'staff' ||
+        rStr == 'faculty_advisor' ||
+        rStr == 'teacher_lead') {
       return true;
     }
-    if (sNo == '30003') return true; // Dr. Elizabeth Vance
-    if (fName == 'dr. elizabeth vance' || fName == 'elizabeth vance') return true;
 
     return false;
   }
@@ -45,19 +41,16 @@ class HierarchyService {
   static bool isCaptain({
     String? scholarNo,
     String? role,
-    String? fullName,
+    String? fullName, // retained for API compatibility — NOT used for authorization
   }) {
-    final sNo = (scholarNo ?? '').trim();
     final rStr = (role ?? '').trim().toLowerCase();
-    final fName = (fullName ?? '').trim().toLowerCase();
 
     if (rStr == 'captain' ||
         rStr == 'vice_captain' ||
-        rStr == 'house_captain') {
+        rStr == 'house_captain' ||
+        rStr == 'house_vice_captain') {
       return true;
     }
-    if (sNo == '10001') return true; // Noaman Nizamuddin (Emerald Captain)
-    if (fName == 'noaman nizamuddin') return true;
 
     return false;
   }
@@ -66,11 +59,9 @@ class HierarchyService {
   static bool isCouncil({
     String? scholarNo,
     String? role,
-    String? fullName,
+    String? fullName, // retained for API compatibility — NOT used for authorization
   }) {
-    final sNo = (scholarNo ?? '').trim();
     final rStr = (role ?? '').trim().toLowerCase();
-    final fName = (fullName ?? '').trim().toLowerCase();
 
     if (rStr == 'council' ||
         rStr == 'head_boy' ||
@@ -79,15 +70,11 @@ class HierarchyService {
         rStr == 'deputy_head_girl' ||
         rStr == 'head_of_activities' ||
         rStr == 'cultural_secretary' ||
-        rStr == 'sports_captain') {
+        rStr == 'sports_captain' ||
+        rStr == 'sports_vice_captain' ||
+        rStr == 'executive_council') {
       return true;
     }
-
-    // Specific verified executive officers by scholar number or exact name
-    if (sNo == '12001' || fName == 'tanish mukherjee') return true; // Head Boy
-    if (fName == 'ann binu') return true; // Head Girl
-    if (sNo == '11089' || fName == 'saakshat guhan') return true; // Deputy Head Boy
-    if (sNo == '11012' || fName == 'nayla muhammad') return true; // Deputy Head Girl
 
     return false;
   }
@@ -96,17 +83,15 @@ class HierarchyService {
   static bool isPrefect({
     String? scholarNo,
     String? role,
-    String? fullName,
+    String? fullName, // retained for API compatibility — NOT used for authorization
   }) {
-    final sNo = (scholarNo ?? '').trim();
     final rStr = (role ?? '').trim().toLowerCase();
-    final fName = (fullName ?? '').trim().toLowerCase();
 
-    if (rStr == 'prefect' || rStr == 'student_rep') return true;
-
-    // Specific appointed prefects
-    if (sNo == '11004' || fName == 'sarah paul') return true; // G11 Prefect Girl
-    if (sNo == '11015' || fName == 'galwin britto') return true; // G11 Prefect Boy
+    if (rStr == 'prefect' ||
+        rStr == 'student_rep' ||
+        rStr == 'grade_prefect') {
+      return true;
+    }
 
     return false;
   }
