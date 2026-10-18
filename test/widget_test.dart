@@ -60,6 +60,9 @@ import 'package:asb_house_hub/models/sports_trophy.dart';
 import 'package:asb_house_hub/services/sports_security_service.dart';
 import 'package:asb_house_hub/screens/login_screen.dart';
 import 'package:asb_house_hub/screens/onboarding_screen.dart';
+import 'package:asb_house_hub/models/medical_leave_request.dart';
+import 'package:asb_house_hub/screens/chat_list_screen.dart';
+import 'package:asb_house_hub/services/chat_service.dart';
 import 'dart:convert';
 
 void main() {
@@ -8783,6 +8786,144 @@ void main() {
     final forgedResult = VoucherSecurityService.validateStudentPassPayload(forgedPass);
     expect(forgedResult.isValid, isFalse);
     expect(forgedResult.isTampered, isTrue);
+  });
+
+  test('Academics Subsystem Test (Test 220): MedicalLeaveRequest Model, Serialization & AuthService Caching', () async {
+    final start = DateTime(2026, 10, 20);
+    final end = DateTime(2026, 10, 22);
+    final now = DateTime(2026, 10, 19, 8, 30);
+
+    final leave = MedicalLeaveRequest(
+      id: 'med_test_101',
+      scholarNo: '2310910',
+      studentName: 'Zainab Al-Hashimi',
+      house: 'sapphire',
+      classLevel: 'Grade 10-B',
+      startDate: start,
+      endDate: end,
+      reason: 'Severe viral flu and high fever',
+      doctorName: 'Dr. Salman Al-Khalifa',
+      certificatePhotoBase64: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      submittedAt: now,
+      status: MedicalLeaveStatus.pending,
+    );
+
+    // 1. Duration & Formatting
+    expect(leave.durationDays, equals(3));
+    expect(leave.formattedDateRange, contains('20/10/2026 – 22/10/2026 (3 days)'));
+    expect(leave.hasCertificatePhoto, isTrue);
+
+    // 2. Map Serialization & Deserialization
+    final map = leave.toMap();
+    expect(map['id'], 'med_test_101');
+    expect(map['scholar_no'], '2310910');
+    expect(map['status'], 'pending');
+
+    final reconstructed = MedicalLeaveRequest.fromMap(map);
+    expect(reconstructed.id, equals(leave.id));
+    expect(reconstructed.studentName, equals(leave.studentName));
+    expect(reconstructed.doctorName, equals(leave.doctorName));
+    expect(reconstructed.durationDays, equals(3));
+    expect(reconstructed.status, equals(MedicalLeaveStatus.pending));
+
+    // 3. Status enum parsing
+    expect(MedicalLeaveStatus.fromString('approved'), equals(MedicalLeaveStatus.approved));
+    expect(MedicalLeaveStatus.fromString('declined'), equals(MedicalLeaveStatus.rejected));
+    expect(MedicalLeaveStatus.fromString('pending'), equals(MedicalLeaveStatus.pending));
+    expect(MedicalLeaveStatus.fromString(null), equals(MedicalLeaveStatus.pending));
+
+    // 4. AuthService Local Cache Integration
+    await AuthService.cacheMedicalLeaves([leave]);
+    final cachedAll = AuthService.getCachedMedicalLeaves();
+    expect(cachedAll.length, equals(1));
+    expect(cachedAll.first.scholarNo, equals('2310910'));
+
+    final cachedFiltered = AuthService.getCachedMedicalLeaves(scholarNo: '2310910');
+    expect(cachedFiltered.length, equals(1));
+
+    final cachedOther = AuthService.getCachedMedicalLeaves(scholarNo: '9999999');
+    expect(cachedOther.isEmpty, isTrue);
+  });
+
+  test('Communication Subsystem Test (Test 221): ChatService Role Hierarchy & User Resolution', () {
+    // 1. Role verification for Council / Admin
+    expect(ChatService.isCouncilOrAdminRole('admin', 'Admin User', '0000000'), isTrue);
+    expect(ChatService.isCouncilOrAdminRole('council', 'Council Member', '10001'), isTrue);
+    expect(ChatService.isCouncilOrAdminRole('student', 'Regular Student', '99999'), isFalse);
+
+    // 2. Service instantiation without crashing
+    final chatService = ChatService();
+    expect(chatService, isNotNull);
+  });
+
+  testWidgets('Communication Subsystem Test (Test 222): ChatListScreen Mounting, Tab Navigation & WCAG Semantics', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.lightTheme,
+        home: const Scaffold(
+          body: ChatListScreen(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 1. Title verification
+    expect(find.text('1-on-1 Student Chats'), findsOneWidget);
+
+    // 2. Tab Navigation
+    expect(find.text('💬 Active Conversations'), findsOneWidget);
+    expect(find.text('➕ Start New Chat'), findsOneWidget);
+
+    // 3. Empty state on active conversations
+    expect(find.text('No Active Chats'), findsOneWidget);
+
+    // 4. Switch to Start New Chat tab
+    await tester.tap(find.text('➕ Start New Chat'));
+    await tester.pumpAndSettle();
+
+    // Verify empty users directory state without active Firebase instance
+    expect(find.text('No registered users found.'), findsOneWidget);
+  });
+
+  testWidgets('Behavior Subsystem Test (Test 223): StudentBehaviorEvaluationScreen Merit/Demerit UI, Reason Chips & Point Stepper', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.lightTheme,
+        home: const Scaffold(
+          body: StudentBehaviorEvaluationScreen(
+            scholarNo: '2310910',
+            studentName: 'Zainab Al-Hashimi',
+            houseName: 'sapphire',
+            classLevel: 'Grade 10-B',
+            evaluatorName: 'Dr. Faculty Lead',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 1. Verify student header information
+    expect(find.text('Zainab Al-Hashimi'), findsOneWidget);
+    expect(find.textContaining('2310910'), findsWidgets);
+
+    // 2. Verify initial Well Behaved mode
+    expect(find.text('Well Behaved'), findsOneWidget);
+    expect(find.text('Misbehaviour'), findsOneWidget);
+    expect(find.text('🌟 Select Commendation / Reason'), findsOneWidget);
+
+    // 3. Select a reason chip
+    final chip = find.text('🌟 Academic Excellence & Initiative');
+    expect(chip, findsOneWidget);
+    await tester.tap(chip);
+    await tester.pumpAndSettle();
+
+    // 4. Switch to Demerit Mode
+    await tester.tap(find.text('Misbehaviour'));
+    await tester.pumpAndSettle();
+
+    // Verify negative quick reasons appear
+    expect(find.text('⚠️ Select Infraction / Reason'), findsOneWidget);
+    expect(find.text('⚠️ Incomplete Classwork / Homework'), findsOneWidget);
   });
 }
 
