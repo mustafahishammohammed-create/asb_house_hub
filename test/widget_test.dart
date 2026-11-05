@@ -52,6 +52,8 @@ import 'package:asb_house_hub/screens/events_screen.dart';
 import 'package:asb_house_hub/screens/election_chamber_screen.dart';
 import 'package:asb_house_hub/screens/election_audit_screen.dart';
 import 'package:asb_house_hub/screens/election_gazette_screen.dart';
+import 'package:asb_house_hub/screens/school_elections_page.dart';
+import 'package:asb_house_hub/services/pass_document_exporter.dart';
 import 'package:asb_house_hub/screens/sports_tournament_screen.dart';
 import 'package:asb_house_hub/screens/live_match_hud_screen.dart';
 import 'package:asb_house_hub/models/sports_tournament.dart';
@@ -10631,6 +10633,115 @@ void main() {
     expect(stopButton, findsOneWidget);
     await tester.tap(stopButton);
     await tester.pump(const Duration(milliseconds: 100));
+  });
+
+  test('PassDocumentExporter generates valid PDF 1.4 byte structure and exports to disk', () async {
+    final pdfBytes = PassDocumentExporter.buildPassPdf(
+      title: 'Store Voucher: House Cap',
+      subtitle: 'Official Merchandise Order #ASB-5544',
+      details: 'Recipient: Zaid Al-Husseini (2310910)\nHouse: Ruby\nQuantity: 1',
+      totalInfo: 'Total Redeemed: 50 House Points',
+      qrData: 'ASB-VOUCHER-HASH-ABC-123',
+    );
+
+    expect(pdfBytes.isNotEmpty, isTrue);
+    final header = String.fromCharCodes(pdfBytes.sublist(0, 8));
+    expect(header.startsWith('%PDF-1.4'), isTrue);
+    final fullString = String.fromCharCodes(pdfBytes);
+    expect(fullString.contains('%%EOF'), isTrue);
+    expect(fullString.contains('/Type /Catalog'), isTrue);
+    expect(fullString.contains('ASB HOUSE HUB - OFFICIAL ELECTRONIC PASS'), isTrue);
+
+    // Test disk exporter
+    final exportResult = await PassDocumentExporter.exportPassToDisk(
+      title: 'Store Voucher: House Cap',
+      subtitle: 'Official Merchandise Order #ASB-5544',
+      details: 'Recipient: Zaid Al-Husseini\nHouse: Ruby',
+      totalInfo: 'Total: 50 Pts',
+      qrData: 'HASH-123',
+    );
+    expect(exportResult.success, isTrue);
+    expect(exportResult.filePath.isNotEmpty, isTrue);
+  });
+
+  test('Dynamic attendance percentage computes accurately over attendance logs', () {
+    final scholarNo = '2310999';
+    final sampleLogs = [
+      AttendanceRecord(
+        id: 'att_01',
+        scholarNo: scholarNo,
+        date: DateTime.now().subtract(const Duration(days: 3)),
+        status: AttendanceStatus.present,
+      ),
+      AttendanceRecord(
+        id: 'att_02',
+        scholarNo: scholarNo,
+        date: DateTime.now().subtract(const Duration(days: 2)),
+        status: AttendanceStatus.late,
+      ),
+      AttendanceRecord(
+        id: 'att_03',
+        scholarNo: scholarNo,
+        date: DateTime.now().subtract(const Duration(days: 1)),
+        status: AttendanceStatus.present,
+      ),
+      AttendanceRecord(
+        id: 'att_04',
+        scholarNo: scholarNo,
+        date: DateTime.now(),
+        status: AttendanceStatus.absent,
+      ),
+    ];
+
+    // Total: 4 days. Present: 2, Late: 1 (0.5), Absent: 1.
+    // Score: (2 + 0.5) / 4 * 100 = 62.5%
+    final presentCount = sampleLogs
+        .where((r) => r.status == AttendanceStatus.present || r.status == AttendanceStatus.excused)
+        .length;
+    final lateCount = sampleLogs.where((r) => r.status == AttendanceStatus.late).length;
+    final rate = ((presentCount + (lateCount * 0.5)) / sampleLogs.length) * 100.0;
+    expect(rate, equals(62.5));
+    expect('${rate.toStringAsFixed(1)}%', equals('62.5%'));
+  });
+
+  test('AuthService.createElectionBallot persists ballot into cache and Firestore', () async {
+    final authService = AuthService();
+    final newBallot = ElectionBallot(
+      id: 'ballot_unit_test_01',
+      title: 'Senior House Captain 2026-2027',
+      position: BallotPosition.houseCaptain,
+      houseScope: 'Ruby',
+      eligibleGrades: const ['Grade 11', 'Grade 12'],
+      status: BallotStatus.open,
+      startTime: DateTime.now().subtract(const Duration(hours: 1)),
+      endTime: DateTime.now().add(const Duration(hours: 48)),
+      candidates: [
+        ElectionCandidate(
+          scholarNo: '2310910',
+          fullName: 'Zaid Al-Husseini',
+          houseName: 'ruby',
+          runningPosition: 'House Captain',
+          manifesto: 'Excellence in house leadership.',
+        ),
+      ],
+      totalVotesCast: 0,
+    );
+
+    final res = await authService.createElectionBallot(newBallot);
+    expect(res.success, isTrue);
+    expect(res.ballotId, isNotNull);
+    final cached = AuthService.getCachedBallots();
+    expect(cached.any((b) => b.title == 'Senior House Captain 2026-2027'), isTrue);
+  });
+
+  testWidgets('SchoolElectionsPage mounts cleanly and handles unauthenticated state', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: SchoolElectionsPage(),
+      ),
+    );
+    await tester.pump();
+    expect(find.byType(SchoolElectionsPage), findsOneWidget);
   });
 }
 

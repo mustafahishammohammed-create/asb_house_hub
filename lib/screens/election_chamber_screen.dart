@@ -4,6 +4,7 @@ import '../models/digital_ballot_cast.dart';
 import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
 import 'home_screen.dart';
+import 'school_elections_page.dart';
 
 /// Screen for exploring Student Council & House Captain elections, candidates, manifestos, and voting.
 class ElectionChamberScreen extends StatefulWidget {
@@ -47,6 +48,20 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
           'Election Chamber',
           style: TextStyle(fontWeight: FontWeight.w900),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.how_to_vote_rounded),
+            tooltip: 'Ballots & Roster Governance',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const SchoolElectionsPage(),
+                ),
+              );
+            },
+          ),
+        ],
         elevation: 0,
         backgroundColor: Colors.transparent,
       ),

@@ -22,6 +22,7 @@ import 'events_screen.dart';
 import 'election_chamber_screen.dart';
 import 'sports_tournament_screen.dart';
 import 'login_screen.dart';
+import '../models/attendance_record.dart';
 import '../widgets/confetti_overlay.dart';
 import '../widgets/account_switcher_modal.dart';
 import '../widgets/student_profile_modal.dart';
@@ -170,6 +171,30 @@ class _HomeScreenState extends State<HomeScreen>
       ValueNotifier<bool>(false);
   String? _previousLeader;
   Timer? _watchdogTimer;
+
+  final List<Map<String, dynamic>> _borrowedBooks = [
+    {
+      'title': 'Advanced IB Diploma Physics',
+      'author': 'K. A. Tsokos',
+      'dueDays': 5,
+      'due': 'Due in 5 days',
+      'renewalCount': 0,
+    },
+    {
+      'title': 'The Great Gatsby',
+      'author': 'F. Scott Fitzgerald',
+      'dueDays': 12,
+      'due': 'Due in 12 days',
+      'renewalCount': 0,
+    },
+    {
+      'title': 'Theory of Knowledge Guide',
+      'author': 'Oxford Press',
+      'dueDays': 18,
+      'due': 'Due in 18 days',
+      'renewalCount': 0,
+    },
+  ];
 
   @override
   void initState() {
@@ -5020,6 +5045,25 @@ class _HomeScreenState extends State<HomeScreen>
     String house,
     Color color,
   ) {
+    // Dynamically calculate attendance rate from cached attendance records
+    final records = AuthService.getCachedAttendanceRecords(scholarNo: scholarNo);
+    String attendanceDisplay;
+    if (records.isNotEmpty) {
+      final presentCount = records
+          .where((r) => r.status == AttendanceStatus.present || r.status == AttendanceStatus.excused)
+          .length;
+      final lateCount = records.where((r) => r.status == AttendanceStatus.late).length;
+      final rate = ((presentCount + (lateCount * 0.5)) / records.length) * 100.0;
+      attendanceDisplay = '${rate.toStringAsFixed(1)}%';
+    } else if (_profile?['attendance_rate'] != null) {
+      attendanceDisplay = '${_profile!['attendance_rate']}%';
+    } else {
+      attendanceDisplay = '100.0%';
+    }
+
+    final standingDisplay = _profile?['academic_standing']?.toString() ?? 'High Honors 🏆';
+    final gradeDisplay = _profile?['class_level']?.toString() ?? 'Senior Tier 1';
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -5088,9 +5132,9 @@ class _HomeScreenState extends State<HomeScreen>
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    _buildProfileStat('Academic Standing', 'High Honors 🏆'),
-                    _buildProfileStat('Grade / Class', 'Senior Tier 1'),
-                    _buildProfileStat('Attendance', '99.4%'),
+                    _buildProfileStat('Academic Standing', standingDisplay),
+                    _buildProfileStat('Grade / Class', gradeDisplay),
+                    _buildProfileStat('Attendance', attendanceDisplay),
                   ],
                 ),
               ),
@@ -5168,23 +5212,7 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   void _showLibraryPortalModal(Color color) {
-    final books = [
-      {
-        'title': 'Advanced IB Diploma Physics',
-        'author': 'K. A. Tsokos',
-        'due': 'Due in 5 days',
-      },
-      {
-        'title': 'The Great Gatsby',
-        'author': 'F. Scott Fitzgerald',
-        'due': 'Due in 12 days',
-      },
-      {
-        'title': 'Theory of Knowledge Guide',
-        'author': 'Oxford Press',
-        'due': 'Due in 18 days',
-      },
-    ];
+    final books = _borrowedBooks;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -5266,12 +5294,18 @@ class _HomeScreenState extends State<HomeScreen>
                             ),
                           ),
                           onPressed: () {
-                            final messenger = ScaffoldMessenger.of(context);
-                            Navigator.pop(context);
-                            messenger.showSnackBar(
+                            setModalState(() {
+                              final curDays = (b['dueDays'] as int?) ?? 5;
+                              final newDays = curDays + 14;
+                              final count = ((b['renewalCount'] as int?) ?? 0) + 1;
+                              b['dueDays'] = newDays;
+                              b['due'] = 'Due in $newDays days (Renewed)';
+                              b['renewalCount'] = count;
+                            });
+                            ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text(
-                                  'Renewed "${b['title']}" for an additional 14 days!',
+                                  'Renewed "${b['title']}" for an additional 14 days! (Due in ${b['dueDays']} days)',
                                 ),
                               ),
                             );

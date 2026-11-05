@@ -15,6 +15,10 @@ const vision = require("@google-cloud/vision");
 admin.initializeApp();
 const db = admin.firestore();
 
+// Export zero-trust server-authoritative modules
+exports.schoolElection = require("./elections-v2").schoolElection;
+exports.schoolLibrary = require("./library-v2").schoolLibrary;
+
 // Initialize Google Cloud Vision API Client
 const visionClient = new vision.ImageAnnotatorClient();
 
