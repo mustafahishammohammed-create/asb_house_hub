@@ -397,6 +397,7 @@ class _IdScannerScreenState extends State<IdScannerScreen>
                               if (billNo.isNotEmpty) {
                                 await GlobalWalletStore.markOrderClaimed(
                                   billNo,
+                                  scholarNo: voucher.scholarNo,
                                   claimedBy: widget.evaluatorName,
                                   claimedAt: result.claimedAt,
                                 );

@@ -38,8 +38,9 @@ exports.verifyCertificateSignature = onObjectFinalized(async (event) => {
     return null;
   }
 
-  const houseName = parts[1];
-  const fileName = parts[2]; // Expected format: scholarNo_claimId.jpg (e.g., 123456_abc123.jpg)
+  const houseName = parts[1].toLowerCase().trim();
+  const rawFileName = parts.slice(2).join("/"); // Expected format: scholarNo_claimId.jpg (e.g., 123456_abc123.jpg)
+  const fileName = rawFileName.split("/").pop() || rawFileName;
 
   // Ignore non-image uploads or temporary files
   if (!fileName.match(/\.(jpg|jpeg|png|webp|pdf)$/i)) {
@@ -135,7 +136,10 @@ exports.verifyCertificateSignature = onObjectFinalized(async (event) => {
       file_path: filePath,
       status: status,
       verificationLogs: admin.firestore.FieldValue.arrayUnion(logMsg),
-      verifiedAt: admin.firestore.FieldValue.serverTimestamp()
+      verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+      verified_at: admin.firestore.FieldValue.serverTimestamp(),
+      updated_at: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
     }, { merge: true });
 
     console.log(`[Success] Claim "${claimId}" synchronized. Status: ${status} | Audit Log: "${logMsg}"`);
@@ -153,7 +157,8 @@ exports.verifyCertificateSignature = onObjectFinalized(async (event) => {
       file_path: filePath,
       status: "manual_review_required",
       verificationLogs: admin.firestore.FieldValue.arrayUnion(errorLogMsg),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updated_at: admin.firestore.FieldValue.serverTimestamp()
     }, { merge: true });
 
     return null;

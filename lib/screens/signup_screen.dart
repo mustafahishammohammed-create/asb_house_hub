@@ -1293,15 +1293,20 @@ class _SignupScreenState extends State<SignupScreen> {
                   fontWeight: FontWeight.w600,
                   color: activeColor,
                 ),
-                suffixIcon: IconButton(
-                  icon: Icon(
-                    _obscurePassword
-                        ? Icons.visibility_off_rounded
-                        : Icons.visibility_rounded,
-                    color: activeColor.withValues(alpha: 0.8),
+                suffixIcon: Semantics(
+                  button: true,
+                  label: _obscurePassword ? 'Show password' : 'Hide password',
+                  child: IconButton(
+                    icon: Icon(
+                      _obscurePassword
+                          ? Icons.visibility_off_rounded
+                          : Icons.visibility_rounded,
+                      color: activeColor.withValues(alpha: 0.8),
+                    ),
+                    tooltip: _obscurePassword ? 'Show password' : 'Hide password',
+                    onPressed: () =>
+                        setState(() => _obscurePassword = !_obscurePassword),
                   ),
-                  onPressed: () =>
-                      setState(() => _obscurePassword = !_obscurePassword),
                 ),
               ),
             ),
@@ -1335,15 +1340,20 @@ class _SignupScreenState extends State<SignupScreen> {
                   fontWeight: FontWeight.w600,
                   color: activeColor,
                 ),
-                suffixIcon: IconButton(
-                  icon: Icon(
-                    _obscureConfirm
-                        ? Icons.visibility_off_rounded
-                        : Icons.visibility_rounded,
-                    color: activeColor.withValues(alpha: 0.8),
+                suffixIcon: Semantics(
+                  button: true,
+                  label: _obscureConfirm ? 'Show password' : 'Hide password',
+                  child: IconButton(
+                    icon: Icon(
+                      _obscureConfirm
+                          ? Icons.visibility_off_rounded
+                          : Icons.visibility_rounded,
+                      color: activeColor.withValues(alpha: 0.8),
+                    ),
+                    tooltip: _obscureConfirm ? 'Show password' : 'Hide password',
+                    onPressed: () =>
+                        setState(() => _obscureConfirm = !_obscureConfirm),
                   ),
-                  onPressed: () =>
-                      setState(() => _obscureConfirm = !_obscureConfirm),
                 ),
               ),
             ),

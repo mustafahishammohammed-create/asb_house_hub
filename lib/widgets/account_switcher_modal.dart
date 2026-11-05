@@ -129,9 +129,15 @@ class _AccountSwitcherModalState extends State<AccountSwitcherModal> {
                     ],
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.close_rounded),
-                  onPressed: () => Navigator.pop(context),
+                Semantics(
+                  button: true,
+                  label: 'Close dialog',
+                  child: IconButton(
+                    constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                    icon: const Icon(Icons.close_rounded),
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.pop(context),
+                  ),
                 ),
               ],
             ),
@@ -366,19 +372,22 @@ class _AccountSwitcherModalState extends State<AccountSwitcherModal> {
                             ),
                             const SizedBox(width: 4),
                           ],
-                          IconButton(
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(
-                              minWidth: 32,
-                              minHeight: 32,
-                            ),
-                            icon: const Icon(
-                              Icons.delete_outline_rounded,
-                              color: Colors.redAccent,
-                              size: 20,
-                            ),
-                            tooltip: 'Remove account from this device',
-                            onPressed: () async {
+                          Semantics(
+                            button: true,
+                            label: 'Remove account from this device',
+                            child: IconButton(
+                              padding: const EdgeInsets.all(8),
+                              constraints: const BoxConstraints(
+                                minWidth: 48,
+                                minHeight: 48,
+                              ),
+                              icon: const Icon(
+                                Icons.delete_outline_rounded,
+                                color: Colors.redAccent,
+                                size: 20,
+                              ),
+                              tooltip: 'Remove account from this device',
+                              onPressed: () async {
                               final confirm = await showDialog<bool>(
                                 context: context,
                                 builder: (dialogCtx) => AlertDialog(
@@ -437,6 +446,7 @@ class _AccountSwitcherModalState extends State<AccountSwitcherModal> {
                               }
                             },
                           ),
+                        ),
                         ],
                       ),
                     ),
@@ -844,18 +854,23 @@ class _AddSiblingModalState extends State<AddSiblingModal> {
                       Icons.lock_outline_rounded,
                       color: previewColor,
                     ),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscurePassword
-                            ? Icons.visibility_outlined
-                            : Icons.visibility_off_outlined,
-                        color: Colors.grey,
+                    suffixIcon: Semantics(
+                      button: true,
+                      label: _obscurePassword ? 'Show password' : 'Hide password',
+                      child: IconButton(
+                        icon: Icon(
+                          _obscurePassword
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                          color: Colors.grey,
+                        ),
+                        tooltip: _obscurePassword ? 'Show password' : 'Hide password',
+                        onPressed: () {
+                          setState(() {
+                            _obscurePassword = !_obscurePassword;
+                          });
+                        },
                       ),
-                      onPressed: () {
-                        setState(() {
-                          _obscurePassword = !_obscurePassword;
-                        });
-                      },
                     ),
                     filled: true,
                     fillColor: isDark

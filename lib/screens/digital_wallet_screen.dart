@@ -68,9 +68,19 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
       vsync: this,
       initialIndex: widget.initialIndex.clamp(0, 2),
     );
-    GlobalWalletStore.init().then((_) {
+    GlobalWalletStore.init(scholarNo: widget.scholarNo).then((_) {
       if (mounted) setState(() {});
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant DigitalWalletScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.scholarNo != widget.scholarNo) {
+      GlobalWalletStore.init(scholarNo: widget.scholarNo).then((_) {
+        if (mounted) setState(() {});
+      });
+    }
   }
 
   @override
@@ -153,7 +163,7 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
               ),
               tooltip: 'Clear All Store Bills',
               onPressed: () async {
-                await GlobalWalletStore.clearAllBills();
+                await GlobalWalletStore.clearAllBills(scholarNo: widget.scholarNo);
                 if (mounted) setState(() {});
               },
             ),
@@ -1605,11 +1615,15 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
                             ],
                           ),
                         ),
-                        IconButton(
-                          constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-                          icon: const Icon(Icons.close_rounded, color: Colors.grey),
-                          tooltip: 'Close receipt preview',
-                          onPressed: () => Navigator.pop(ctx),
+                        Semantics(
+                          button: true,
+                          label: 'Close dialog',
+                          child: IconButton(
+                            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                            icon: const Icon(Icons.close_rounded, color: Colors.grey),
+                            tooltip: 'Close receipt preview',
+                            onPressed: () => Navigator.pop(ctx),
+                          ),
                         ),
                       ],
                     ),

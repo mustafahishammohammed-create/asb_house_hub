@@ -8,6 +8,7 @@ import '../services/auth_service.dart';
 import '../services/hierarchy_service.dart';
 import '../services/sports_security_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/managed_modal_scope.dart';
 
 class LiveMatchHudScreen extends StatefulWidget {
   final SportsMatchFixture fixture;
@@ -121,7 +122,9 @@ class _LiveMatchHudScreenState extends State<LiveMatchHudScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) {
-        return Padding(
+        return ManagedModalScope(
+          controllers: [customCtrl],
+          child: Padding(
           padding: EdgeInsets.only(
             left: 20,
             right: 20,
@@ -226,10 +229,11 @@ class _LiveMatchHudScreenState extends State<LiveMatchHudScreen> {
               ],
             ),
           ),
-        );
-      },
-    );
-  }
+        ),
+      );
+    },
+  );
+}
 
   Color _getHouseColor(String house) {
     switch (house.toLowerCase()) {
@@ -301,14 +305,17 @@ class _LiveMatchHudScreenState extends State<LiveMatchHudScreen> {
     final refereeName = (profile?['full_name'] ?? 'Faculty Referee').toString();
     final refereeScholar = (profile?['scholar_no'] ?? '2310910').toString();
     final refereeRole = (profile?['role'] ?? 'captain').toString();
+    final parentMessenger = ScaffoldMessenger.of(context);
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
+        return ManagedModalScope(
+          controllers: [notesController],
+          child: StatefulBuilder(
+            builder: (modalCtx, setModalState) {
             return Container(
               padding: EdgeInsets.only(
                 top: 24,
@@ -459,6 +466,13 @@ class _LiveMatchHudScreenState extends State<LiveMatchHudScreen> {
                                 refereeNotes: notesController.text.trim(),
                               );
                             });
+                          } else if (mounted) {
+                            parentMessenger.showSnackBar(
+                              SnackBar(
+                                content: Text(res.error ?? 'Match certification failed. Please check connection.'),
+                                backgroundColor: const Color(0xFFEF4444),
+                              ),
+                            );
                           }
                         },
                       ),
@@ -468,10 +482,11 @@ class _LiveMatchHudScreenState extends State<LiveMatchHudScreen> {
               ),
             );
           },
-        );
-      },
-    );
-  }
+        ),
+      );
+    },
+  );
+}
 
   void _showMvpNominationModal() {
     final scholarController = TextEditingController();
@@ -483,8 +498,10 @@ class _LiveMatchHudScreenState extends State<LiveMatchHudScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
+        return ManagedModalScope(
+          controllers: [scholarController, nameController],
+          child: StatefulBuilder(
+            builder: (context, setModalState) {
             return Container(
               padding: EdgeInsets.only(
                 top: 24,
@@ -658,10 +675,11 @@ class _LiveMatchHudScreenState extends State<LiveMatchHudScreen> {
               ),
             );
           },
-        );
-      },
-    );
-  }
+        ),
+      );
+    },
+  );
+}
 
   Widget _buildMvpBanner() {
     return Container(

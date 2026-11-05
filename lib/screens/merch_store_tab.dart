@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../theme/app_theme.dart';
 import '../services/voucher_security_service.dart';
+import '../services/auth_service.dart';
 
 class MerchProduct {
   final String id;
@@ -180,52 +181,384 @@ class GlobalWalletStore {
   static final List<CartItem> cart = [];
   static final List<OrderRecord> orders = [];
   static final Set<String> favoriteIds = {'hero_champion', 'drop_varsity'};
+  static const Set<String> defaultFavoriteIds = {'hero_champion', 'drop_varsity'};
 
+  static String? _currentScholarNo;
   static bool _initialized = false;
 
-  static Future<void> init() async {
-    if (_initialized) return;
-    _initialized = true;
+  static bool get isInitialized => _initialized;
+  static String? get currentScholarNo => _currentScholarNo;
+
+  /// Resolves the effective scholar number for user data partitioning.
+  static String resolveScholarNo([String? scholarNo]) {
+    if (scholarNo != null) {
+      return scholarNo.trim();
+    }
+    if (_currentScholarNo != null) {
+      return _currentScholarNo!.trim();
+    }
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final ordersJsonList = prefs.getStringList('saved_wallet_orders');
-      if (ordersJsonList != null) {
-        orders.clear();
-        for (var str in ordersJsonList) {
-          try {
-            final order = OrderRecord.fromJson(
-              jsonDecode(str) as Map<String, dynamic>,
-            );
-            if (order.receiptId == 'ASB-984210' ||
-                order.receiptId == 'ASB-771923') {
-              continue;
-            }
-            orders.add(order);
-          } catch (_) {}
-        }
+      final cached = AuthService.getCachedScholarNo();
+      if (cached != null) {
+        return cached.trim();
       }
     } catch (_) {}
+    return '';
   }
 
-  static Future<void> saveOrders() async {
+  /// SharedPreferences key for student orders partition: saved_wallet_orders_${scholarNo}
+  static String ordersKey([String? scholarNo]) {
+    final s = resolveScholarNo(scholarNo);
+    return s.isNotEmpty ? 'saved_wallet_orders_$s' : 'saved_wallet_orders';
+  }
+
+  /// SharedPreferences key for student cart partition: saved_wallet_cart_${scholarNo}
+  static String cartKey([String? scholarNo]) {
+    final s = resolveScholarNo(scholarNo);
+    return s.isNotEmpty ? 'saved_wallet_cart_$s' : 'saved_wallet_cart';
+  }
+
+  /// SharedPreferences key for student favorites partition: saved_wallet_favorites_${scholarNo}
+  static String favoritesKey([String? scholarNo]) {
+    final s = resolveScholarNo(scholarNo);
+    return s.isNotEmpty ? 'saved_wallet_favorites_$s' : 'saved_wallet_favorites';
+  }
+
+  /// Purges in-memory cart, order history, and favorite items, and resets the initialized flag.
+  /// Prevents cross-student session contamination on shared/kiosk devices upon logout.
+  static void resetSession() {
+    cart.clear();
+    orders.clear();
+    favoriteIds.clear();
+    _currentScholarNo = null;
+    _initialized = false;
+  }
+
+  /// Initializes local wallet store from SharedPreferences offline cache partitioned by scholar number,
+  /// and automatically synchronizes with Cloud Firestore's 'orders' collection.
+  static Future<void> init({
+    String? scholarNo,
+    FirebaseFirestore? firestore,
+  }) async {
+    final cleanScholar = resolveScholarNo(scholarNo);
+    final isDifferentUser = _initialized && _currentScholarNo != cleanScholar;
+
+    if (!_initialized || isDifferentUser) {
+      _currentScholarNo = cleanScholar;
+      _initialized = true;
+
+      // When switching to a different user partition, clear in-memory state
+      if (isDifferentUser) {
+        orders.clear();
+        cart.clear();
+        favoriteIds.clear();
+      }
+
+      try {
+        final prefs = await SharedPreferences.getInstance();
+
+        // 1. Order History partitioned by scholar number
+        final oKey = ordersKey(cleanScholar);
+        final ordersJsonList = prefs.getStringList(oKey);
+        if (ordersJsonList != null && ordersJsonList.isNotEmpty) {
+          orders.clear();
+          for (var str in ordersJsonList) {
+            try {
+              final order = OrderRecord.fromJson(
+                jsonDecode(str) as Map<String, dynamic>,
+              );
+              if (order.receiptId == 'ASB-984210' ||
+                  order.receiptId == 'ASB-771923') {
+                continue;
+              }
+              orders.add(order);
+            } catch (_) {}
+          }
+        }
+
+        // 2. Cart items partitioned by scholar number
+        final cKey = cartKey(cleanScholar);
+        final cartJsonList = prefs.getStringList(cKey);
+        if (cartJsonList != null && cartJsonList.isNotEmpty) {
+          cart.clear();
+          for (var str in cartJsonList) {
+            try {
+              cart.add(CartItem.fromJson(jsonDecode(str) as Map<String, dynamic>));
+            } catch (_) {}
+          }
+        }
+
+        // 3. Favorite items partitioned by scholar number
+        final fKey = favoritesKey(cleanScholar);
+        final favList = prefs.getStringList(fKey);
+        if (favList != null && favList.isNotEmpty) {
+          favoriteIds.clear();
+          favoriteIds.addAll(favList);
+        } else if (isDifferentUser || favoriteIds.isEmpty) {
+          favoriteIds.clear();
+          favoriteIds.addAll(defaultFavoriteIds);
+        }
+      } catch (_) {
+        if (favoriteIds.isEmpty) {
+          favoriteIds.addAll(defaultFavoriteIds);
+        }
+      }
+    }
+
+    // Sync remote orders from Cloud Firestore in background/fallback-safe manner
+    await syncOrdersFromFirestore(scholarNo: cleanScholar, firestore: firestore);
+  }
+
+  /// Synchronizes student orders between Cloud Firestore and local offline store.
+  static Future<void> syncOrdersFromFirestore({
+    String? scholarNo,
+    FirebaseFirestore? firestore,
+  }) async {
+    try {
+      final cleanScholar = resolveScholarNo(scholarNo);
+      final currentUid = FirebaseAuth.instance.currentUser?.uid;
+
+      // Do not sync arbitrary student orders if neither scholarNo nor uid is available
+      if (cleanScholar.isEmpty && (currentUid == null || currentUid.isEmpty)) {
+        return;
+      }
+
+      final db = firestore ?? FirebaseFirestore.instance;
+      Query<Map<String, dynamic>> query = db.collection('orders');
+      if (cleanScholar.isNotEmpty) {
+        query = query.where('scholar_no', isEqualTo: cleanScholar);
+      } else {
+        query = query.where('user_id', isEqualTo: currentUid);
+      }
+
+      final snapshot = await query.get().timeout(const Duration(seconds: 4));
+      bool changed = false;
+
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        final rId = (data['receipt_id'] ?? data['receiptId'] ?? doc.id).toString().trim();
+        if (rId.isEmpty || rId == 'ASB-984210' || rId == 'ASB-771923') continue;
+
+        final remoteOrder = orderFromFirestore(rId, data);
+        final existingIndex = orders.indexWhere((o) => o.receiptId == rId);
+
+        if (existingIndex != -1) {
+          final local = orders[existingIndex];
+          if (local.status != remoteOrder.status ||
+              local.claimedBy != remoteOrder.claimedBy ||
+              local.claimedAt != remoteOrder.claimedAt) {
+            orders[existingIndex] = local.copyWith(
+              status: remoteOrder.status,
+              claimedBy: remoteOrder.claimedBy ?? local.claimedBy,
+              claimedAt: remoteOrder.claimedAt ?? local.claimedAt,
+            );
+            changed = true;
+          }
+        } else {
+          orders.add(remoteOrder);
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        orders.sort((a, b) => b.date.compareTo(a.date));
+        await saveOrders(scholarNo: cleanScholar);
+      }
+    } catch (_) {
+      // Offline fallback: keep existing locally loaded orders
+    }
+  }
+
+  /// Converts a Cloud Firestore 'orders' document into an OrderRecord.
+  static OrderRecord orderFromFirestore(String receiptId, Map<String, dynamic> data) {
+    final rawItems = data['items'];
+    final List<CartItem> parsedItems = [];
+    if (rawItems is List) {
+      for (final it in rawItems) {
+        if (it is Map<String, dynamic>) {
+          if (it.containsKey('product')) {
+            try {
+              parsedItems.add(CartItem.fromJson(it));
+              continue;
+            } catch (_) {}
+          }
+          final name = (it['name'] ?? 'Merch Item').toString();
+          final size = (it['size'] ?? 'M').toString();
+          final qty = (it['qty'] as num?)?.toInt() ?? 1;
+          final price = (it['price'] ?? 'BHD 0.000').toString();
+          final category = (it['category'] ?? 'Hoodies').toString();
+          parsedItems.add(CartItem(
+            product: MerchProduct(
+              id: (it['id'] ?? name.toLowerCase().replaceAll(' ', '_')).toString(),
+              name: name,
+              price: price,
+              rating: 5.0,
+              imageUrl: (it['imageUrl'] ?? '').toString(),
+              category: category,
+              house: (it['house'] ?? 'all').toString(),
+              description: '',
+            ),
+            size: size,
+            qty: qty,
+          ));
+        }
+      }
+    }
+
+    DateTime orderDate = DateTime.now();
+    final rawDate = data['created_at'] ?? data['date'];
+    if (rawDate is Timestamp) {
+      orderDate = rawDate.toDate();
+    } else if (rawDate is String) {
+      orderDate = DateTime.tryParse(rawDate) ?? DateTime.now();
+    }
+
+    DateTime? claimedAt;
+    final rawClaimedAt = data['claimed_at'] ?? data['claimedAt'];
+    if (rawClaimedAt is Timestamp) {
+      claimedAt = rawClaimedAt.toDate();
+    } else if (rawClaimedAt is String) {
+      claimedAt = DateTime.tryParse(rawClaimedAt);
+    }
+
+    final totalPts = (data['total_pts'] ?? data['totalPts'] as num?)?.toInt() ?? 0;
+    final qrData = (data['qr_data'] ?? data['qrData'] ?? '').toString();
+    final status = (data['status'] ?? 'ready').toString();
+    final claimedBy = (data['claimed_by'] ?? data['claimedBy'])?.toString();
+
+    return OrderRecord(
+      receiptId: receiptId,
+      items: parsedItems,
+      totalPts: totalPts,
+      date: orderDate,
+      qrData: qrData.isNotEmpty ? qrData : receiptId,
+      status: status,
+      claimedAt: claimedAt,
+      claimedBy: claimedBy,
+    );
+  }
+
+  /// Persists current orders to SharedPreferences partitioned by scholar number (saved_wallet_orders_${scholarNo}).
+  static Future<void> saveOrders({String? scholarNo}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final jsonList = orders.map((o) => jsonEncode(o.toJson())).toList();
-      await prefs.setStringList('saved_wallet_orders', jsonList);
+      final cleanScholar = resolveScholarNo(scholarNo);
+      final key = ordersKey(cleanScholar);
+      await prefs.setStringList(key, jsonList);
     } catch (_) {}
+  }
+
+  /// Persists current cart items to SharedPreferences partitioned by scholar number (saved_wallet_cart_${scholarNo}).
+  static Future<void> saveCart({String? scholarNo}) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonList = cart.map((c) => jsonEncode(c.toJson())).toList();
+      final cleanScholar = resolveScholarNo(scholarNo);
+      final key = cartKey(cleanScholar);
+      await prefs.setStringList(key, jsonList);
+    } catch (_) {}
+  }
+
+  /// Persists current favorite product IDs to SharedPreferences partitioned by scholar number (saved_wallet_favorites_${scholarNo}).
+  static Future<void> saveFavorites({String? scholarNo}) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cleanScholar = resolveScholarNo(scholarNo);
+      final key = favoritesKey(cleanScholar);
+      await prefs.setStringList(key, favoriteIds.toList());
+    } catch (_) {}
+  }
+
+  /// Adds an order to the wallet store and persists it to Cloud Firestore's 'orders' collection.
+  /// Automatically falls back to SharedPreferences offline storage if network fails.
+  static Future<void> addAndPersistOrder(
+    OrderRecord order, {
+    String? scholarNo,
+    String? studentName,
+    String? house,
+    double? totalBhd,
+    FirebaseFirestore? firestore,
+  }) async {
+    final cleanScholar = resolveScholarNo(scholarNo);
+    final index = orders.indexWhere((o) => o.receiptId == order.receiptId);
+    if (index != -1) {
+      orders[index] = order;
+    } else {
+      orders.add(order);
+    }
+
+    // 1. Immediately cache in SharedPreferences partitioned for offline resilience
+    await saveOrders(scholarNo: cleanScholar);
+
+    // 2. Persist to Cloud Firestore orders collection
+    try {
+      final db = firestore ?? FirebaseFirestore.instance;
+      final currentUid = FirebaseAuth.instance.currentUser?.uid;
+      final orderData = <String, dynamic>{
+        'receipt_id': order.receiptId,
+        'user_id': currentUid ?? 'anonymous',
+        'scholar_no': cleanScholar,
+        'student_name': studentName ?? '',
+        'house': (house ?? 'ruby').toLowerCase().trim(),
+        'total_pts': order.totalPts,
+        'currency': 'BHD',
+        'items': order.items
+            .map(
+              (i) => {
+                'id': i.product.id,
+                'name': i.product.name,
+                'size': i.size,
+                'qty': i.qty,
+                'price': i.product.price,
+                'category': i.product.category,
+                'imageUrl': i.product.imageUrl,
+                'house': i.product.house,
+              },
+            )
+            .toList(),
+        'status': order.status,
+        'created_at': FieldValue.serverTimestamp(),
+        'qr_data': order.qrData,
+      };
+
+      if (totalBhd != null) {
+        orderData['total_bhd'] = totalBhd;
+      }
+      if (order.claimedAt != null) {
+        orderData['claimed_at'] = Timestamp.fromDate(order.claimedAt!);
+      }
+      if (order.claimedBy != null && order.claimedBy!.isNotEmpty) {
+        orderData['claimed_by'] = order.claimedBy;
+      }
+
+      await db
+          .collection('orders')
+          .doc(order.receiptId)
+          .set(orderData, SetOptions(merge: true))
+          .timeout(const Duration(seconds: 4));
+    } catch (_) {
+      // Offline fallback: order safely retained in SharedPreferences
+    }
   }
 
   static Future<void> markOrderClaimed(
     String receiptId, {
+    String? scholarNo,
     String? claimedBy,
     DateTime? claimedAt,
+    FirebaseFirestore? firestore,
   }) async {
+    final effectiveClaimedAt = claimedAt ?? DateTime.now();
+    final effectiveClaimedBy = claimedBy ?? 'Staff';
+    final cleanScholar = resolveScholarNo(scholarNo);
+
     final index = orders.indexWhere((o) => o.receiptId == receiptId);
     if (index != -1) {
       orders[index] = orders[index].copyWith(
         status: 'claimed',
-        claimedAt: claimedAt ?? DateTime.now(),
-        claimedBy: claimedBy,
+        claimedAt: effectiveClaimedAt,
+        claimedBy: effectiveClaimedBy,
       );
     } else {
       orders.add(
@@ -234,21 +567,46 @@ class GlobalWalletStore {
           items: [],
           totalPts: 0,
           date: DateTime.now(),
-          qrData: '',
+          qrData: receiptId,
           status: 'claimed',
-          claimedAt: claimedAt ?? DateTime.now(),
-          claimedBy: claimedBy,
+          claimedAt: effectiveClaimedAt,
+          claimedBy: effectiveClaimedBy,
         ),
       );
     }
-    await saveOrders();
+    await saveOrders(scholarNo: cleanScholar);
+
+    // Sync claimed status to Cloud Firestore if firestore instance is provided
+    if (firestore != null) {
+      try {
+        await firestore.collection('orders').doc(receiptId).set({
+          'status': 'claimed',
+          'claimed_by': effectiveClaimedBy,
+          'claimed_at': Timestamp.fromDate(effectiveClaimedAt),
+        }, SetOptions(merge: true)).timeout(const Duration(seconds: 4));
+      } catch (_) {
+        // Offline fallback: status safely marked in local store
+      }
+    }
   }
 
-  static Future<void> clearAllBills() async {
+  /// Clears in-memory and local storage orders for the specified or active student.
+  static Future<void> clearAllBills({String? scholarNo}) async {
     orders.clear();
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('saved_wallet_orders');
+      final cleanScholar = resolveScholarNo(scholarNo);
+      await prefs.remove(ordersKey(cleanScholar));
+    } catch (_) {}
+  }
+
+  /// Clears in-memory and local storage cart for the specified or active student.
+  static Future<void> clearCart({String? scholarNo}) async {
+    cart.clear();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cleanScholar = resolveScholarNo(scholarNo);
+      await prefs.remove(cartKey(cleanScholar));
     } catch (_) {}
   }
 }
@@ -407,11 +765,21 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
   @override
   void initState() {
     super.initState();
-    GlobalWalletStore.init().then((_) {
+    GlobalWalletStore.init(scholarNo: widget.scholarNo).then((_) {
       if (mounted) setState(() {});
     });
     _selectedCategory =
         'For You (${widget.userHouse[0].toUpperCase()}${widget.userHouse.substring(1)})';
+  }
+
+  @override
+  void didUpdateWidget(covariant MerchStoreTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.scholarNo != widget.scholarNo) {
+      GlobalWalletStore.init(scholarNo: widget.scholarNo).then((_) {
+        if (mounted) setState(() {});
+      });
+    }
   }
 
   @override
@@ -429,6 +797,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
         GlobalWalletStore.favoriteIds.add(productId);
       }
     });
+    GlobalWalletStore.saveFavorites(scholarNo: widget.scholarNo);
   }
 
   void _addToCart(MerchProduct product, {String size = 'M', int qty = 1}) {
@@ -447,6 +816,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
         );
       }
     });
+    GlobalWalletStore.saveCart(scholarNo: widget.scholarNo);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
@@ -498,36 +868,19 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
       );
 
       setState(() {
-        GlobalWalletStore.orders.add(newOrder);
+        final existingIdx = GlobalWalletStore.orders.indexWhere((o) => o.receiptId == receiptId);
+        if (existingIdx != -1) {
+          GlobalWalletStore.orders[existingIdx] = newOrder;
+        } else {
+          GlobalWalletStore.orders.add(newOrder);
+        }
       });
-      GlobalWalletStore.saveOrders();
-
-      // Save order to Firestore database
-      FirebaseFirestore.instance
-          .collection('orders')
-          .doc(receiptId)
-          .set({
-            'receipt_id': receiptId,
-            'user_id': FirebaseAuth.instance.currentUser?.uid ?? 'anonymous',
-            'scholar_no': widget.scholarNo ?? '',
-            'student_name': widget.studentName ?? '',
-            'house': widget.userHouse.toLowerCase(),
-            'total_pts': 0,
-            'currency': 'BHD',
-            'items': itemsList
-                .map(
-                  (i) => {
-                    'name': i.product.name,
-                    'size': i.size,
-                    'qty': i.qty,
-                    'price': i.product.price,
-                  },
-                )
-                .toList(),
-            'created_at': FieldValue.serverTimestamp(),
-            'status': 'verified',
-          })
-          .catchError((_) {});
+      await GlobalWalletStore.addAndPersistOrder(
+        newOrder,
+        scholarNo: widget.scholarNo,
+        studentName: widget.studentName,
+        house: widget.userHouse,
+      );
 
       if (!mounted) return;
       _showDigitalWalletPass(newOrder);
@@ -1736,6 +2089,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                                             cart.removeAt(index);
                                           }
                                         });
+                                        GlobalWalletStore.saveCart(scholarNo: widget.scholarNo);
                                         setCartState(() {});
                                       },
                                     ),
@@ -1753,6 +2107,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                                       ),
                                       onPressed: () {
                                         setState(() => item.qty = (item.qty + 1).clamp(1, 99));
+                                        GlobalWalletStore.saveCart(scholarNo: widget.scholarNo);
                                         setCartState(() {});
                                       },
                                     ),
@@ -1855,43 +2210,22 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                                 qrData: qrData,
                               );
                               setState(() {
-                                GlobalWalletStore.orders.add(newOrder);
+                                final existingIdx = GlobalWalletStore.orders.indexWhere((o) => o.receiptId == receiptId);
+                                if (existingIdx != -1) {
+                                  GlobalWalletStore.orders[existingIdx] = newOrder;
+                                } else {
+                                  GlobalWalletStore.orders.add(newOrder);
+                                }
                                 GlobalWalletStore.cart.clear();
                               });
-                              GlobalWalletStore.saveOrders();
-
-                              // Save order to Firestore database
-                              FirebaseFirestore.instance
-                                  .collection('orders')
-                                  .doc(receiptId)
-                                  .set({
-                                    'receipt_id': receiptId,
-                                    'user_id':
-                                        FirebaseAuth
-                                            .instance
-                                            .currentUser
-                                            ?.uid ??
-                                        'anonymous',
-                                    'scholar_no': widget.scholarNo ?? '',
-                                    'student_name': widget.studentName ?? '',
-                                    'house': widget.userHouse.toLowerCase(),
-                                    'total_pts': 0,
-                                    'currency': 'BHD',
-                                    'total_bhd': totalBhd,
-                                    'items': itemsList
-                                        .map(
-                                          (i) => {
-                                            'name': i.product.name,
-                                            'size': i.size,
-                                            'qty': i.qty,
-                                            'price': i.product.price,
-                                          },
-                                        )
-                                        .toList(),
-                                    'created_at': FieldValue.serverTimestamp(),
-                                    'status': 'verified',
-                                  })
-                                  .catchError((_) {});
+                              await GlobalWalletStore.clearCart(scholarNo: widget.scholarNo);
+                              await GlobalWalletStore.addAndPersistOrder(
+                                newOrder,
+                                scholarNo: widget.scholarNo,
+                                studentName: widget.studentName,
+                                house: widget.userHouse,
+                                totalBhd: totalBhd,
+                              );
 
                               if (!context.mounted) return;
                               Navigator.pop(context);

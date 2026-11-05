@@ -4,6 +4,7 @@ import '../models/attendance_record.dart';
 import '../services/auth_service.dart';
 import '../services/gemini_ai_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/managed_modal_scope.dart';
 
 class ChatMessage {
   final String text;
@@ -249,7 +250,10 @@ class _HouseAiChatScreenState extends State<HouseAiChatScreen> {
     final currentKey = await GeminiAiService.getSavedApiKey() ?? '';
     final controller = TextEditingController(text: currentKey);
 
-    if (!mounted) return;
+    if (!mounted) {
+      controller.dispose();
+      return;
+    }
 
     showModalBottomSheet(
       context: context,
@@ -261,8 +265,10 @@ class _HouseAiChatScreenState extends State<HouseAiChatScreen> {
         String? statusMsg;
         bool isSuccess = false;
 
-        return StatefulBuilder(
-          builder: (modalContext, setModalState) {
+        return ManagedModalScope(
+          controllers: [controller],
+          child: StatefulBuilder(
+            builder: (modalContext, setModalState) {
             return Padding(
               padding: EdgeInsets.only(
                 bottom: MediaQuery.of(modalContext).viewInsets.bottom,
@@ -291,9 +297,15 @@ class _HouseAiChatScreenState extends State<HouseAiChatScreen> {
                               ),
                             ],
                           ),
-                          IconButton(
-                            icon: const Icon(Icons.close_rounded),
-                            onPressed: () => Navigator.pop(modalContext),
+                          Semantics(
+                            button: true,
+                            label: 'Close dialog',
+                            child: IconButton(
+                              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                              icon: const Icon(Icons.close_rounded),
+                              tooltip: 'Close',
+                              onPressed: () => Navigator.pop(modalContext),
+                            ),
                           ),
                         ],
                       ),
@@ -316,12 +328,17 @@ class _HouseAiChatScreenState extends State<HouseAiChatScreen> {
                           ),
                           prefixIcon: const Icon(Icons.key_rounded, size: 20),
                           suffixIcon: controller.text.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear, size: 18),
-                                  onPressed: () {
-                                    controller.clear();
-                                    setModalState(() {});
-                                  },
+                              ? Semantics(
+                                  button: true,
+                                  label: 'Clear API key',
+                                  child: IconButton(
+                                    icon: const Icon(Icons.clear, size: 18),
+                                    tooltip: 'Clear API key',
+                                    onPressed: () {
+                                      controller.clear();
+                                      setModalState(() {});
+                                    },
+                                  ),
                                 )
                               : null,
                         ),
@@ -458,16 +475,11 @@ class _HouseAiChatScreenState extends State<HouseAiChatScreen> {
               ),
             );
           },
-        );
-      },
-    ).whenComplete(() {
-      Future.delayed(const Duration(milliseconds: 500), () {
-        try {
-          controller.dispose();
-        } catch (_) {}
-      });
-    });
-  }
+        ),
+      );
+    },
+  );
+}
 
   Widget _buildMascotHeroHud(Color houseColor, bool isDark) {
     final mascot = _getMascotDetails(widget.userHouse);

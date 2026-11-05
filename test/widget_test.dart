@@ -12,6 +12,7 @@ import 'package:asb_house_hub/screens/house_arena_screen.dart';
 import 'package:asb_house_hub/widgets/battle_chant_synthesizer.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
+import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:asb_house_hub/services/auth_service.dart';
 import 'package:asb_house_hub/services/voucher_security_service.dart';
@@ -58,12 +59,16 @@ import 'package:asb_house_hub/models/match_telemetry.dart';
 import 'package:asb_house_hub/models/player_sports_stats.dart';
 import 'package:asb_house_hub/models/sports_trophy.dart';
 import 'package:asb_house_hub/services/sports_security_service.dart';
+import 'package:asb_house_hub/widgets/managed_modal_scope.dart';
 import 'package:asb_house_hub/screens/login_screen.dart';
 import 'package:asb_house_hub/screens/onboarding_screen.dart';
 import 'package:asb_house_hub/models/medical_leave_request.dart';
 import 'package:asb_house_hub/screens/chat_list_screen.dart';
 import 'package:asb_house_hub/services/chat_service.dart';
 import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:asb_house_hub/screens/admin_claims_screen.dart';
+import 'package:asb_house_hub/l10n/app_localizations.dart';
 
 void main() {
   setUp(() async {
@@ -8925,6 +8930,1724 @@ void main() {
     expect(find.text('⚠️ Select Infraction / Reason'), findsOneWidget);
     expect(find.text('⚠️ Incomplete Classwork / Homework'), findsOneWidget);
   });
+
+  test('Academics Test 3 (Test 224): Timetable Period CRUD & Auto-Load CBSE Weekly Timetable in AuthService', () async {
+    SharedPreferences.setMockInitialValues({});
+    final authService = AuthService();
+
+    // 1. Initial timetable is empty
+    expect(AuthService.getCachedTimetable(classLevel: 'Grade 10', dayOfWeek: 'Sunday'), isEmpty);
+
+    // 2. Save a period
+    const p1 = TimetablePeriod(
+      periodNumber: 1,
+      timeSlot: '07:45 - 08:30',
+      subject: 'Mathematics',
+      teacherName: 'Mr. Sharma',
+      room: 'Room 101',
+      dayOfWeek: 'Sunday',
+      classLevel: 'Grade 10',
+    );
+    final saved = await authService.saveTimetablePeriod(period: p1, classLevel: 'Grade 10');
+    expect(saved, isTrue);
+
+    final retrieved = AuthService.getCachedTimetable(classLevel: 'Grade 10', dayOfWeek: 'Sunday');
+    expect(retrieved.length, 1);
+    expect(retrieved.first.subject, 'Mathematics');
+    expect(retrieved.first.room, 'Room 101');
+
+    // 3. Update the period
+    final p1Updated = p1.copyWith(room: 'Room 102', teacherName: 'Mr. Rajesh');
+    await authService.saveTimetablePeriod(period: p1Updated, classLevel: 'Grade 10');
+    final retrievedUpdated = AuthService.getCachedTimetable(classLevel: 'Grade 10', dayOfWeek: 'Sunday');
+    expect(retrievedUpdated.length, 1);
+    expect(retrievedUpdated.first.room, 'Room 102');
+    expect(retrievedUpdated.first.teacherName, 'Mr. Rajesh');
+
+    // 4. Delete the period
+    final deleted = await authService.deleteTimetablePeriod(
+      dayOfWeek: 'Sunday',
+      periodNumber: 1,
+      classLevel: 'Grade 10',
+    );
+    expect(deleted, isTrue);
+    expect(AuthService.getCachedTimetable(classLevel: 'Grade 10', dayOfWeek: 'Sunday'), isEmpty);
+
+    // 5. Auto-Load full CBSE 8-period weekly schedule
+    final populated = await authService.populateDefaultCBSEWeeklyTimetable(classLevel: 'Grade 10');
+    expect(populated, isTrue);
+
+    for (final day in ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday']) {
+      final daySchedule = AuthService.getCachedTimetable(classLevel: 'Grade 10', dayOfWeek: day);
+      expect(daySchedule.length, 8, reason: 'Expected 8 periods on $day');
+      expect(daySchedule.any((p) => p.isBreak), isTrue, reason: 'Expected break period on $day');
+    }
+  });
+
+  test('Academics Test 4 (Test 225): Homework Assignment Creation, Deletion & Offline Caching in AuthService', () async {
+    SharedPreferences.setMockInitialValues({});
+    final authService = AuthService();
+
+    expect(AuthService.getCachedAssignments(classLevel: 'Grade 10', subject: 'All'), isEmpty);
+
+    // 1. Publish a new assignment
+    final hw1 = AcademicAssignment(
+      id: 'hw_test_01',
+      title: 'Trigonometry Problem Set 3',
+      subject: 'Mathematics',
+      teacherName: 'Mr. Sharma',
+      dueDateTime: DateTime.now().add(const Duration(days: 2)),
+      pointsReward: 30,
+      description: 'Solve questions 10 to 25.',
+      classLevel: 'Grade 10',
+    );
+
+    final published = await authService.publishAssignment(assignment: hw1, classLevel: 'Grade 10');
+    expect(published, isTrue);
+
+    final cachedAll = AuthService.getCachedAssignments(classLevel: 'Grade 10', subject: 'All');
+    expect(cachedAll.length, 1);
+    expect(cachedAll.first.title, 'Trigonometry Problem Set 3');
+    expect(cachedAll.first.pointsReward, 30);
+
+    // Filter by subject
+    final mathOnly = AuthService.getCachedAssignments(classLevel: 'Grade 10', subject: 'Mathematics');
+    expect(mathOnly.length, 1);
+
+    final physicsOnly = AuthService.getCachedAssignments(classLevel: 'Grade 10', subject: 'Physics');
+    expect(physicsOnly, isEmpty);
+
+    // 2. Delete the assignment
+    final deleted = await authService.deleteAssignment(
+      assignmentId: 'hw_test_01',
+      classLevel: 'Grade 10',
+      subject: 'Mathematics',
+    );
+    expect(deleted, isTrue);
+    expect(AuthService.getCachedAssignments(classLevel: 'Grade 10', subject: 'All'), isEmpty);
+  });
+
+  testWidgets('Academics Test 5 (Test 226): TimetableTab UI: Add Period Modal, Edit Period & Auto-Load CBSE Template Interaction', (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues({});
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.lightTheme,
+        home: const Scaffold(
+          body: AcademicsScreen(
+            initialTab: 'timetable',
+            initialDay: 'Sunday',
+            classLevel: 'Grade 10',
+            initialPeriods: [],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 1. Verify empty state controls are present
+    expect(find.text('No timetable scheduled for this day.'), findsOneWidget);
+    expect(find.byKey(const Key('empty_add_period_button')), findsOneWidget);
+    expect(find.byKey(const Key('empty_load_cbse_button')), findsOneWidget);
+
+    // 2. Tap Add Period button from empty state to open bottom sheet modal
+    await tester.tap(find.byKey(const Key('empty_add_period_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Add Timetable Period'), findsOneWidget);
+    expect(find.text('Period Number'), findsOneWidget);
+    expect(find.text('Subject'), findsOneWidget);
+    expect(find.text('Time Slot'), findsOneWidget);
+    expect(find.byKey(const Key('save_period_button')), findsOneWidget);
+
+    // Close bottom sheet
+    await tester.tap(find.byIcon(Icons.close_rounded));
+    await tester.pumpAndSettle();
+
+    // 3. Test Auto-Load CBSE Timetable dialog
+    await tester.tap(find.byKey(const Key('empty_load_cbse_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Auto-Load CBSE Timetable?'), findsOneWidget);
+    await tester.tap(find.text('Load Timetable'));
+    await tester.pumpAndSettle();
+
+    // Verify 8 periods loaded
+    expect(find.text('8 Periods'), findsOneWidget);
+    expect(find.text('P1'), findsWidgets);
+    expect(find.byKey(const Key('edit_period_1')), findsOneWidget);
+    expect(find.byKey(const Key('delete_period_1')), findsOneWidget);
+
+    // 4. Tap Edit Period 1
+    await tester.tap(find.byKey(const Key('edit_period_1')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Edit Period P1'), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.close_rounded));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('Academics Test 6 (Test 227): AssignmentsTab UI: Add Task Modal, Subject Filtering & Delete Task Interaction', (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues({});
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.lightTheme,
+        home: const Scaffold(
+          body: AcademicsScreen(
+            initialTab: 'homework',
+            classLevel: 'Grade 10',
+            initialAssignments: [],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 1. Verify empty state with add task button
+    expect(find.text('No homework assignments pending for this subject.'), findsOneWidget);
+    expect(find.byKey(const Key('empty_add_assignment_button')), findsOneWidget);
+    expect(find.byKey(const Key('add_assignment_button')), findsOneWidget);
+
+    // 2. Open Add Task modal
+    await tester.tap(find.byKey(const Key('add_assignment_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Add Homework / Task'), findsOneWidget);
+    expect(find.text('Task Title'), findsOneWidget);
+    expect(find.text('Teacher / Faculty'), findsOneWidget);
+    expect(find.byKey(const Key('publish_assignment_button')), findsOneWidget);
+
+    // Fill title
+    await tester.enterText(find.widgetWithText(TextFormField, 'Task Title'), 'Calculus Derivatives Sheet');
+    await tester.pumpAndSettle();
+
+    // Tap publish
+    await tester.tap(find.byKey(const Key('publish_assignment_button')));
+    await tester.pumpAndSettle();
+
+    // Verify task now appears in the list
+    expect(find.text('Calculus Derivatives Sheet'), findsOneWidget);
+    expect(find.text('+20 Pts'), findsOneWidget);
+
+    // 3. Delete task
+    final allDeleteKeys = find.byWidgetPredicate(
+      (w) => w.key is ValueKey<String> && (w.key as ValueKey<String>).value.startsWith('delete_assignment_hw_'),
+    );
+    expect(allDeleteKeys, findsOneWidget);
+
+    await tester.tap(allDeleteKeys);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Delete Assignment?'), findsOneWidget);
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+
+    // Verify task is removed
+    expect(find.text('No homework assignments pending for this subject.'), findsOneWidget);
+  });
+
+  // ===========================================================================
+  // Phase 2 Remediation Tests: Architectural Repair & Data Synchronization
+  // ===========================================================================
+
+  test('Phase 2 Test 1: VoucherSecurityService eliminates false positives on missing or unverified vouchers', () async {
+    GlobalWalletStore.orders.clear();
+
+    // 1. Empty or blank bill number must immediately return success: false
+    final emptyResult = await VoucherSecurityService.claimStoreVoucher(
+      billNo: '   ',
+      evaluatorName: 'Lead Evaluator',
+    );
+    expect(emptyResult.success, isFalse);
+    expect(emptyResult.message, contains('Invalid voucher'));
+
+    // 2. Missing voucher (neither in remote database nor in local store) must return success: false
+    final fakeResult = await VoucherSecurityService.claimStoreVoucher(
+      billNo: 'NON_EXISTENT_VOUCHER_99999',
+      evaluatorName: 'Lead Evaluator',
+    );
+    expect(fakeResult.success, isFalse);
+    expect(fakeResult.alreadyClaimed, isFalse);
+    expect(fakeResult.message, contains('could not be verified'));
+
+    // 3. Genuine voucher present in local store can be claimed successfully
+    final genuineOrder = OrderRecord(
+      receiptId: 'GENUINE-REC-101',
+      items: [
+        CartItem(
+          product: const MerchProduct(
+            id: 'hoodie_1',
+            name: 'Ruby Hoodie',
+            price: 'BHD 12.000',
+            rating: 5.0,
+            imageUrl: '',
+            category: 'Hoodies',
+            house: 'ruby',
+            description: '',
+          ),
+          size: 'L',
+          qty: 1,
+        ),
+      ],
+      totalPts: 100,
+      date: DateTime.now(),
+      qrData: 'mock_qr',
+      status: 'ready',
+    );
+    GlobalWalletStore.orders.add(genuineOrder);
+
+    final genuineResult = await VoucherSecurityService.claimStoreVoucher(
+      billNo: 'GENUINE-REC-101',
+      evaluatorName: 'Mr. Teacher',
+    );
+    expect(genuineResult.success, isTrue);
+    expect(genuineResult.claimedBy, 'Mr. Teacher');
+    expect(genuineResult.claimedAt, isNotNull);
+
+    // 4. Verification status lookup correctly identifies claimed status from local store
+    final statusCheck = await VoucherSecurityService.checkVoucherClaimStatus(
+      billNo: 'GENUINE-REC-101',
+    );
+    expect(statusCheck.isClaimed, isTrue);
+    expect(statusCheck.claimedBy, 'Mr. Teacher');
+
+    // 5. Verification status lookup correctly identifies unclaimed/non-existent vouchers
+    final nonExistentCheck = await VoucherSecurityService.checkVoucherClaimStatus(
+      billNo: 'NON_EXISTENT_VOUCHER_99999',
+    );
+    expect(nonExistentCheck.isClaimed, isFalse);
+  });
+
+  test('Phase 2 Test 2: GlobalWalletStore order persistence and offline caching fallback', () async {
+    GlobalWalletStore.orders.clear();
+    SharedPreferences.setMockInitialValues({});
+
+    final order = OrderRecord(
+      receiptId: 'PERSIST-ORD-202',
+      items: [
+        CartItem(
+          product: const MerchProduct(
+            id: 'varsity_jacket',
+            name: 'Varsity Jacket',
+            price: 'BHD 22.000',
+            rating: 5.0,
+            imageUrl: '',
+            category: 'Limited Edition 🔥',
+            house: 'all',
+            description: '',
+          ),
+          size: 'XL',
+          qty: 2,
+        ),
+      ],
+      totalPts: 0,
+      date: DateTime.now(),
+      qrData: 'persist_qr_payload',
+      status: 'ready',
+    );
+
+    // Add and persist order with offline fallback
+    await GlobalWalletStore.addAndPersistOrder(
+      order,
+      scholarNo: '2310910',
+      studentName: 'Mustafa Hisham',
+      house: 'ruby',
+      totalBhd: 44.0,
+    );
+
+    expect(GlobalWalletStore.orders.any((o) => o.receiptId == 'PERSIST-ORD-202'), isTrue);
+
+    // Verify SharedPreferences persistence in student partition
+    final prefs = await SharedPreferences.getInstance();
+    final cachedJsonList = prefs.getStringList(GlobalWalletStore.ordersKey('2310910')) ??
+        prefs.getStringList('saved_wallet_orders');
+    expect(cachedJsonList, isNotNull);
+    expect(cachedJsonList!.any((str) => str.contains('PERSIST-ORD-202')), isTrue);
+
+    // Verify markOrderClaimed persists locally
+    await GlobalWalletStore.markOrderClaimed(
+      'PERSIST-ORD-202',
+      scholarNo: '2310910',
+      claimedBy: 'Lead Evaluator',
+      claimedAt: DateTime(2026, 10, 21),
+    );
+    final updated = GlobalWalletStore.orders.firstWhere((o) => o.receiptId == 'PERSIST-ORD-202');
+    expect(updated.isClaimed, isTrue);
+    expect(updated.claimedBy, 'Lead Evaluator');
+  });
+
+  test('Phase 2 Test 3: GlobalWalletStore.orderFromFirestore safely reconstructs orders with fallback', () {
+    final firestoreData = {
+      'receipt_id': 'FS-ORD-303',
+      'scholar_no': '12345',
+      'student_name': 'Sarah Ahmed',
+      'house': 'sapphire',
+      'total_pts': 50,
+      'status': 'verified',
+      'created_at': Timestamp.fromDate(DateTime(2026, 9, 1)),
+      'qr_data': 'qr_303',
+      'items': [
+        {
+          'id': 'cap_1',
+          'name': 'Sapphire Cap',
+          'price': 'BHD 4.000',
+          'size': 'Standard',
+          'qty': 1,
+          'category': 'Accessories',
+          'house': 'sapphire',
+        },
+      ],
+    };
+
+    final order = GlobalWalletStore.orderFromFirestore('FS-ORD-303', firestoreData);
+    expect(order.receiptId, 'FS-ORD-303');
+    expect(order.totalPts, 50);
+    expect(order.status, 'verified');
+    expect(order.items.length, 1);
+    expect(order.items.first.product.name, 'Sapphire Cap');
+    expect(order.items.first.size, 'Standard');
+    expect(order.items.first.qty, 1);
+    expect(order.qrData, 'qr_303');
+  });
+
+  test('Phase 2 Test 4: AuthService certificate upload path and pre-allocated docRef binding', () async {
+    final authService = AuthService();
+    final dummyBytes = Uint8List.fromList([1, 2, 3, 4, 5]);
+
+    // 1. Verify formatCertificateStoragePath produces exact canonical Cloud Storage path
+    final canonicalPath = AuthService.formatCertificateStoragePath(
+      house: 'RUBY ',
+      scholarNo: ' 2310910 ',
+      claimId: 'claim_alpha_123',
+    );
+    expect(canonicalPath, 'house_claims/ruby/2310910_claim_alpha_123.jpg');
+
+    // 2. Verify uploadCertificateImage accepts house and claimId
+    final certUrl = await authService.uploadCertificateImage(
+      fileBytes: dummyBytes,
+      scholarNo: '2310910',
+      house: 'ruby',
+      claimId: 'claim_alpha_123',
+    );
+    expect(certUrl, isNotEmpty);
+
+    // 3. Pre-allocate docRef.id prior to submission
+    const preallocatedId = 'preallocated_claim_456';
+    final resultClaimId = await authService.submitHouseClaim(
+      scholarNo: '2310910',
+      studentName: 'Mustafa Hisham',
+      houseName: 'ruby',
+      activityTitle: 'Robotics Tournament Champion',
+      points: 50,
+      certUrl: certUrl,
+      claimId: preallocatedId,
+    );
+    expect(resultClaimId, preallocatedId);
+
+    // 4. Verify submitHouseClaim extracts claimId from certUrl when claimId parameter is omitted
+    const extractedCertUrl = 'https://storage.googleapis.com/bucket/house_claims/sapphire/12345_extracted_claim_789.jpg';
+    final autoExtractedId = await authService.submitHouseClaim(
+      scholarNo: '12345',
+      studentName: 'Test Student',
+      houseName: 'sapphire',
+      activityTitle: 'Math Olympiad',
+      points: 30,
+      certUrl: extractedCertUrl,
+    );
+    expect(autoExtractedId, 'extracted_claim_789');
+  });
+
+  // ===========================================================================
+  // Phase 3 Remediation Tests: Lifecycle Management & Database Write Reliability
+  // ===========================================================================
+
+  test('Phase 3 Test 1: saveTimetablePeriod & deleteTimetablePeriod fail safely on Firestore write failure without polluting local cache', () async {
+    SharedPreferences.setMockInitialValues({});
+    final authService = AuthService();
+    final period = TimetablePeriod(
+      periodNumber: 1,
+      timeSlot: '07:45 - 08:30',
+      subject: 'Mathematics',
+      teacherName: 'Mr. Sharma',
+      room: 'Room 101',
+      dayOfWeek: 'Sunday',
+      classLevel: 'Grade 10',
+    );
+
+    // Baseline: save in test fallback mode (isFirebaseLiveOverride = false)
+    AuthService.isFirebaseLiveOverride = false;
+    AuthService.firestoreFailureSimulated = null;
+    final initialSave = await authService.saveTimetablePeriod(period: period, classLevel: 'Grade 10');
+    expect(initialSave, isTrue);
+    expect(AuthService.getCachedTimetable(classLevel: 'Grade 10', dayOfWeek: 'Sunday').length, 1);
+
+    // Simulate live Firebase mode with remote Firestore write exception
+    AuthService.isFirebaseLiveOverride = true;
+    AuthService.firestoreFailureSimulated = Exception('Simulated permission-denied Firestore write failure');
+
+    final failingPeriod = period.copyWith(periodNumber: 2, subject: 'Advanced Physics');
+    final saveResult = await authService.saveTimetablePeriod(period: failingPeriod, classLevel: 'Grade 10');
+    expect(saveResult, isFalse, reason: 'saveTimetablePeriod must return false when Firestore write fails');
+
+    // Local cache must NOT contain failingPeriod
+    final cached = AuthService.getCachedTimetable(classLevel: 'Grade 10', dayOfWeek: 'Sunday');
+    expect(cached.any((p) => p.periodNumber == 2), isFalse, reason: 'Failed period must not pollute local cache');
+
+    // Test deleteTimetablePeriod failure
+    final deleteResult = await authService.deleteTimetablePeriod(
+      dayOfWeek: 'Sunday',
+      periodNumber: 1,
+      classLevel: 'Grade 10',
+    );
+    expect(deleteResult, isFalse, reason: 'deleteTimetablePeriod must return false when Firestore delete fails');
+    // Period 1 must still remain in local cache because delete failed remotely
+    final afterFailedDelete = AuthService.getCachedTimetable(classLevel: 'Grade 10', dayOfWeek: 'Sunday');
+    expect(afterFailedDelete.length, 1, reason: 'Cache must not delete item when remote delete fails');
+
+    // Reset simulation
+    AuthService.isFirebaseLiveOverride = null;
+    AuthService.firestoreFailureSimulated = null;
+  });
+
+  test('Phase 3 Test 2: publishExamScheduleRange & publishStudentReportCard propagate Firestore failure and prevent cache writes', () async {
+    SharedPreferences.setMockInitialValues({});
+    final authService = AuthService();
+
+    AuthService.isFirebaseLiveOverride = true;
+    AuthService.firestoreFailureSimulated = Exception('Simulated batch commit timeout');
+
+    // publishExamScheduleRange must rethrow
+    expect(
+      () => authService.publishExamScheduleRange(
+        fromGrade: 'Grade 8',
+        toGrade: 'Grade 10',
+        subject: 'Computer Science',
+        paperTitle: 'CS Assessment',
+        examDateTime: DateTime.now().add(const Duration(days: 5)),
+      ),
+      throwsA(isA<Exception>()),
+      reason: 'publishExamScheduleRange must rethrow on Firestore failure',
+    );
+    expect(AuthService.getCachedExamSchedule(classLevel: 'Grade 10'), isEmpty);
+
+    // publishStudentReportCard must rethrow
+    expect(
+      () => authService.publishStudentReportCard(
+        scholarNo: '2310910',
+        studentName: 'Mustafa Hisham',
+        classLevel: 'Grade 10',
+        termName: 'Term 1 Mid-Term',
+        overallGpa: 3.9,
+        overallPercentage: 94.0,
+      ),
+      throwsA(isA<Exception>()),
+      reason: 'publishStudentReportCard must rethrow on Firestore failure',
+    );
+    expect(AuthService.getCachedReportCards(classLevel: 'Grade 10', scholarNo: '2310910'), isEmpty);
+
+    // Reset simulation
+    AuthService.isFirebaseLiveOverride = null;
+    AuthService.firestoreFailureSimulated = null;
+  });
+
+  test('Phase 3 Test 3: castDigitalVote, certifyMatchResult & awardChampionshipTrophyAndPoints fail gracefully on live transaction errors', () async {
+    SharedPreferences.setMockInitialValues({});
+    final authService = AuthService();
+
+    AuthService.isFirebaseLiveOverride = true;
+    AuthService.firestoreFailureSimulated = Exception('Simulated transaction contention');
+
+    // castDigitalVote
+    final voteRes = await authService.castDigitalVote(
+      ballotId: 'ballot_2026_head_boy',
+      ballotTitle: 'Head Boy Election 2026',
+      candidate: ElectionCandidate(
+        scholarNo: '2310910',
+        fullName: 'Mustafa Hisham',
+        houseName: 'ruby',
+        runningPosition: 'Head Boy',
+        manifesto: 'Excellence in house leadership',
+      ),
+      scholarNo: '2310999',
+    );
+    expect(voteRes.success, isFalse);
+    expect(voteRes.receipt, isNull);
+    expect(voteRes.error, contains('Vote submission failed'));
+
+    // certifyMatchResult
+    final fixture = SportsMatchFixture(
+      fixtureId: 'fix_sim_100',
+      tournamentTitle: 'Inter-House Football',
+      sportType: SportType.football,
+      houseA: 'ruby',
+      houseB: 'emerald',
+      scoreA: 3,
+      scoreB: 1,
+      venue: 'Main Ground',
+      scheduledAt: DateTime.now(),
+    );
+    final certRes = await authService.certifyMatchResult(
+      fixture: fixture,
+      refereeScholarNo: '2310910',
+      refereeName: 'Referee Name',
+      refereeRole: 'captain',
+      finalScoreA: 3,
+      finalScoreB: 1,
+      fairPlayRating: 5,
+    );
+    expect(certRes.success, isFalse);
+    expect(certRes.token, isNull);
+    expect(certRes.error, contains('Database write failed'));
+
+    // awardChampionshipTrophyAndPoints
+    final trophyRes = await authService.awardChampionshipTrophyAndPoints(
+      tournamentTitle: 'Inter-House Football 2026',
+      sportType: SportType.football,
+      winningHouse: 'ruby',
+      runnerUpHouse: 'emerald',
+      pointsAwarded: 100,
+      runnerUpPoints: 50,
+      commissionerName: 'Sports Commissioner',
+      adminScholarNo: '2310910',
+      adminRole: 'captain',
+    );
+    expect(trophyRes.success, isFalse);
+    expect(trophyRes.record, isNull);
+    expect(trophyRes.error, contains('Database transaction failed'));
+
+    // Reset simulation
+    AuthService.isFirebaseLiveOverride = null;
+    AuthService.firestoreFailureSimulated = null;
+  });
+
+  testWidgets('Phase 3 Test 4: ManagedModalScope properly disposes controllers upon element unmount without premature disposal', (WidgetTester tester) async {
+    final controller1 = TextEditingController(text: 'Initial text 1');
+    final controller2 = TextEditingController(text: 'Initial text 2');
+
+    // Mount widget wrapped with ManagedModalScope inside showModalBottomSheet
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () {
+                showModalBottomSheet(
+                  context: context,
+                  builder: (ctx) => ManagedModalScope(
+                    controllers: [controller1, controller2],
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          TextField(controller: controller1),
+                          TextField(controller: controller2),
+                          ElevatedButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            child: const Text('Close Modal'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+              child: const Text('Open Modal'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // Open modal
+    await tester.tap(find.text('Open Modal'));
+    await tester.pumpAndSettle();
+
+    // Verify modal is displayed and controllers work
+    expect(find.text('Initial text 1'), findsOneWidget);
+    expect(find.text('Initial text 2'), findsOneWidget);
+
+    // Type text into controller 1
+    await tester.enterText(find.widgetWithText(TextField, 'Initial text 1'), 'Updated text 1');
+    expect(controller1.text, 'Updated text 1');
+
+    // Tap Close Modal button: this pops the route and triggers the unmount animation
+    await tester.tap(find.text('Close Modal'));
+    await tester.pumpAndSettle();
+
+    // After route dismissal completes, controllers must be disposed
+    // Calling addListener on a disposed controller throws FlutterError
+    expect(
+      () => controller1.addListener(() {}),
+      throwsA(isA<FlutterError>()),
+      reason: 'controller1 should be disposed after route dismissal finishes',
+    );
+    expect(
+      () => controller2.addListener(() {}),
+      throwsA(isA<FlutterError>()),
+      reason: 'controller2 should be disposed after route dismissal finishes',
+    );
+  });
+
+  test('Phase 4 Test 1: Gemini candidate models audit (no hallucinated models)', () {
+    final models = GeminiAiService.candidateModels;
+    expect(models, isNotEmpty);
+    expect(models, contains('gemini-2.0-flash'));
+    expect(models, contains('gemini-1.5-flash'));
+    expect(models, contains('gemini-1.5-pro'));
+    expect(models, isNot(contains('gemini-3.8-flash')));
+    expect(models, isNot(contains('gemini-2.5-flash')));
+    expect(models.first, equals('gemini-2.0-flash'));
+  });
+
+  test('Phase 4 Test 2: GeminiAiService.validateApiKey validates keys and executes model fallback', () async {
+    // 1. Empty key check
+    final emptyRes = await GeminiAiService.validateApiKey('   ');
+    expect(emptyRes.isValid, isFalse);
+    expect(emptyRes.message, contains('API key cannot be empty'));
+
+    // 2. Successful response on primary model
+    final requestedUrls = <String>[];
+    GeminiAiService.httpClientOverride = _Phase4MockHttpClient((req) async {
+      requestedUrls.add(req.url.toString());
+      if (req.url.toString().contains('gemini-2.0-flash')) {
+        return http.Response(jsonEncode({'candidates': [{'content': {'parts': [{'text': 'OK'}]}}]}), 200);
+      }
+      return http.Response('Not found', 404);
+    });
+
+    final validRes = await GeminiAiService.validateApiKey('valid_test_key_123');
+    expect(validRes.isValid, isTrue);
+    expect(validRes.message, contains('gemini-2.0-flash'));
+    expect(requestedUrls.length, 1);
+
+    // 3. Model fallback when gemini-2.0-flash returns 404
+    requestedUrls.clear();
+    GeminiAiService.httpClientOverride = _Phase4MockHttpClient((req) async {
+      requestedUrls.add(req.url.toString());
+      if (req.url.toString().contains('gemini-2.0-flash')) {
+        return http.Response('Model not found', 404);
+      }
+      if (req.url.toString().contains('gemini-1.5-flash')) {
+        return http.Response(jsonEncode({'candidates': [{'content': {'parts': [{'text': 'OK'}]}}]}), 200);
+      }
+      return http.Response('Not found', 404);
+    });
+
+    final fallbackRes = await GeminiAiService.validateApiKey('valid_test_key_456');
+    expect(fallbackRes.isValid, isTrue);
+    expect(fallbackRes.message, contains('gemini-1.5-flash'));
+    expect(requestedUrls.length, 2);
+
+    // 4. Unauthorized key (400 / 403) terminates immediately with server error message
+    GeminiAiService.httpClientOverride = _Phase4MockHttpClient((req) async {
+      return http.Response(
+        jsonEncode({
+          'error': {'message': 'API_KEY_INVALID: User key expired.'}
+        }),
+        400,
+      );
+    });
+
+    final invalidRes = await GeminiAiService.validateApiKey('invalid_key');
+    expect(invalidRes.isValid, isFalse);
+    expect(invalidRes.message, contains('API_KEY_INVALID'));
+
+    // 5. Total failure across all models
+    GeminiAiService.httpClientOverride = _Phase4MockHttpClient((req) async {
+      throw Exception('Connection refused');
+    });
+
+    final failRes = await GeminiAiService.validateApiKey('some_key');
+    expect(failRes.isValid, isFalse);
+    expect(failRes.message, contains('Could not connect to Gemini servers'));
+
+    GeminiAiService.httpClientOverride = null;
+  });
+
+  test('Phase 4 Test 3: GeminiAiService.generateResponse live generation, fallback, and offline recovery', () async {
+    SharedPreferences.setMockInitialValues({});
+    await GeminiAiService.saveApiKey('test_live_key');
+
+    // 1. Primary model returns valid content
+    GeminiAiService.httpClientOverride = _Phase4MockHttpClient((req) async {
+      expect(req.url.toString(), contains('gemini-2.0-flash'));
+      return http.Response.bytes(
+        utf8.encode(jsonEncode({
+          'candidates': [
+            {
+              'content': {
+                'parts': [
+                  {'text': 'Welcome Ruby house warrior! Keep striving.'}
+                ]
+              }
+            }
+          ]
+        })),
+        200,
+        headers: {'content-type': 'application/json; charset=utf-8'},
+      );
+    });
+
+    final liveRes = await GeminiAiService.generateResponse(
+      prompt: 'Motivate me',
+      house: 'ruby',
+      studentName: 'Mustafa',
+    );
+    expect(liveRes, contains('Ruby house warrior'));
+
+    // 2. Primary model 500 fails, falls back to gemini-1.5-flash
+    final calledModels = <String>[];
+    GeminiAiService.httpClientOverride = _Phase4MockHttpClient((req) async {
+      if (req.url.toString().contains('gemini-2.0-flash')) {
+        calledModels.add('gemini-2.0-flash');
+        return http.Response('Server Error', 500);
+      }
+      if (req.url.toString().contains('gemini-1.5-flash')) {
+        calledModels.add('gemini-1.5-flash');
+        return http.Response.bytes(
+          utf8.encode(jsonEncode({
+            'candidates': [
+              {
+                'content': {
+                  'parts': [
+                    {'text': 'Fallback response from 1.5-flash!'}
+                  ]
+                }
+              }
+            ]
+          })),
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      }
+      return http.Response('Not found', 404);
+    });
+
+    final fallbackRes = await GeminiAiService.generateResponse(
+      prompt: 'Tell me about points',
+      house: 'ruby',
+      studentName: 'Mustafa',
+    );
+    expect(fallbackRes, contains('Fallback response from 1.5-flash'));
+    expect(calledModels, contains('gemini-2.0-flash'));
+
+    // 3. All models fail (network outage): falls back to contextual local response cleanly
+    GeminiAiService.httpClientOverride = _Phase4MockHttpClient((req) async {
+      throw Exception('SocketException: Network unreachable');
+    });
+
+    final offlineFallback = await GeminiAiService.generateResponse(
+      prompt: 'What is my schedule?',
+      house: 'ruby',
+      studentName: 'Mustafa',
+    );
+    expect(offlineFallback, isNotEmpty);
+    expect(offlineFallback, contains('Timetable Schedule'));
+
+    GeminiAiService.httpClientOverride = null;
+    await GeminiAiService.saveApiKey('');
+  });
+
+  testWidgets('Phase 4 Test 4: DropdownButtonFormField initialValue state updates and super_admin roster slot immunity', (WidgetTester tester) async {
+    // 1. Verify dynamic initialValue reactivity on DropdownButtonFormField
+    String currentValue = 'Option A';
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              return Column(
+                children: [
+                  DropdownButtonFormField<String>(
+                    initialValue: currentValue,
+                    items: const [
+                      DropdownMenuItem(value: 'Option A', child: Text('Option A')),
+                      DropdownMenuItem(value: 'Option B', child: Text('Option B')),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) setState(() => currentValue = val);
+                    },
+                  ),
+                  ElevatedButton(
+                    onPressed: () => setState(() => currentValue = 'Option B'),
+                    child: const Text('Change to B'),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Option A'), findsOneWidget);
+
+    // Tap button to programmatically change value and trigger didUpdateWidget
+    await tester.tap(find.text('Change to B'));
+    await tester.pumpAndSettle();
+    expect(find.text('Option B'), findsOneWidget);
+
+    // 2. Verify EditRosterSlotDialog with role: 'super_admin' renders without assertion failure
+    final authService = AuthService();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (ctx) => EditRosterSlotDialog(
+                    docId: 'slot_super_admin_test',
+                    data: const {
+                      'name': 'System Administrator',
+                      'scholar_no': '999999',
+                      'title': 'Principal Super Admin',
+                      'role': 'super_admin',
+                      'house': 'All',
+                    },
+                    authService: authService,
+                  ),
+                );
+              },
+              child: const Text('Open Edit Slot'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open Edit Slot'));
+    await tester.pumpAndSettle();
+
+    // Dialog must be rendered with super_admin item matching initialValue
+    expect(find.text('👑 Super Admin'), findsOneWidget);
+    expect(find.text('Edit Principal Super Admin'), findsOneWidget);
+
+    // Close dialog
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+  });
+
+  test('Phase 4 Test 5: Pubspec dead dependencies and unused import hygiene audit', () {
+    final pubspecFile = File('pubspec.yaml');
+    expect(pubspecFile.existsSync(), isTrue);
+    final pubspecContent = pubspecFile.readAsStringSync();
+
+    // Must not contain google_generative_ai or cupertino_icons
+    expect(pubspecContent, isNot(contains('google_generative_ai:')));
+    expect(pubspecContent, isNot(contains('cupertino_icons:')));
+
+    // Home screen must not import dart:ui
+    final homeFile = File('lib/screens/home_screen.dart');
+    expect(homeFile.existsSync(), isTrue);
+    final homeContent = homeFile.readAsStringSync();
+    expect(homeContent, isNot(contains("import 'dart:ui';")));
+  });
+
+  testWidgets('Phase 5 Test 1: WCAG 2.1 AA min 48x48 dp touch target compliance on post deletion and account removal buttons', (tester) async {
+    // 1. Audit home_screen.dart file to ensure sub-48dp constraints are replaced and Semantics is present
+    final homeFile = File('lib/screens/home_screen.dart');
+    expect(homeFile.existsSync(), isTrue);
+    final homeContent = homeFile.readAsStringSync();
+    expect(homeContent, isNot(contains('constraints: const BoxConstraints(),\n                                padding: const EdgeInsets.symmetric(horizontal: 4)')));
+    expect(homeContent, contains('constraints: const BoxConstraints(minWidth: 48, minHeight: 48)'));
+    expect(homeContent, contains("label: 'Delete post'"));
+
+    // 2. Audit account_switcher_modal.dart to ensure sub-48dp constraints are eliminated
+    final switcherFile = File('lib/widgets/account_switcher_modal.dart');
+    expect(switcherFile.existsSync(), isTrue);
+    final switcherContent = switcherFile.readAsStringSync();
+    expect(switcherContent, isNot(contains('minWidth: 32')));
+    expect(switcherContent, isNot(contains('minHeight: 32')));
+    expect(switcherContent, contains('minWidth: 48'));
+    expect(switcherContent, contains('minHeight: 48'));
+    expect(switcherContent, contains("label: 'Remove account from this device'"));
+
+    // 3. Mount AccountSwitcherModal with a saved secondary account and verify live touch target meets >= 48x48 dp
+    SharedPreferences.setMockInitialValues({
+      'cached_scholar_no': '2310001',
+      'saved_accounts_list': jsonEncode([
+        {
+          'scholar_no': '2310999',
+          'full_name': 'Ahmad Test',
+          'house': 'sapphire',
+          'class_level': '10',
+          'division': 'A',
+        },
+      ]),
+    });
+    await AuthService.initPreferences();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.lightTheme,
+        home: Scaffold(
+          body: Builder(
+            builder: (ctx) => ElevatedButton(
+              onPressed: () {
+                AccountSwitcherModal.show(
+                  ctx,
+                  houseColor: HouseColors.emerald,
+                  currentHouse: 'emerald',
+                  onSwitchAccount: (_) async {},
+                  onSignOutCurrent: () async {},
+                  onSignOutAll: () async {},
+                );
+              },
+              child: const Text('Open Switcher'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Tap button to open modal
+    await tester.tap(find.text('Open Switcher'));
+    await tester.pumpAndSettle();
+
+    // Verify remove account button exists with compliant touch target >= 48x48
+    final removeBtnFinder = find.byTooltip('Remove account from this device');
+    expect(removeBtnFinder, findsOneWidget);
+    final removeSize = tester.getSize(removeBtnFinder);
+    expect(removeSize.width, greaterThanOrEqualTo(48.0));
+    expect(removeSize.height, greaterThanOrEqualTo(48.0));
+
+    // Verify modal close button also meets min 48x48
+    final closeBtnFinder = find.byTooltip('Close');
+    expect(closeBtnFinder, findsOneWidget);
+    final closeSize = tester.getSize(closeBtnFinder);
+    expect(closeSize.width, greaterThanOrEqualTo(48.0));
+    expect(closeSize.height, greaterThanOrEqualTo(48.0));
+
+    // Close the modal
+    await tester.tap(closeBtnFinder);
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('Phase 5 Test 2: Dynamic tooltip and Semantics on LoginScreen and AccountSwitcherModal password toggles', (tester) async {
+    final handle = tester.ensureSemantics();
+
+    try {
+      // 1. Test LoginScreen password visibility toggle
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: const LoginScreen(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Verify initial obscured state has "Show password" tooltip and Semantics label
+      final loginShowFinder = find.byTooltip('Show password');
+      expect(loginShowFinder, findsOneWidget);
+      expect(find.bySemanticsLabel('Show password'), findsOneWidget);
+
+      // Verify touch target size meets >= 48x48 dp
+      final showSize = tester.getSize(loginShowFinder);
+      expect(showSize.width, greaterThanOrEqualTo(48.0));
+      expect(showSize.height, greaterThanOrEqualTo(48.0));
+
+      // Tap to toggle visibility
+      await tester.tap(loginShowFinder);
+      await tester.pumpAndSettle();
+
+      // Verify toggled revealed state has "Hide password" tooltip and Semantics label
+      final loginHideFinder = find.byTooltip('Hide password');
+      expect(loginHideFinder, findsOneWidget);
+      expect(find.bySemanticsLabel('Hide password'), findsOneWidget);
+
+      // 2. Test AccountSwitcherModal sibling password toggle
+      SharedPreferences.setMockInitialValues({});
+      await AuthService.initPreferences();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: Scaffold(
+            body: Builder(
+              builder: (ctx) => ElevatedButton(
+                onPressed: () {
+                  AccountSwitcherModal.show(
+                    ctx,
+                    houseColor: HouseColors.ruby,
+                    currentHouse: 'ruby',
+                    onSwitchAccount: (_) async {},
+                    onSignOutCurrent: () async {},
+                    onSignOutAll: () async {},
+                  );
+                },
+                child: const Text('Open Modal'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Open Modal'));
+      await tester.pumpAndSettle();
+
+      // Tap to expand sibling link form
+      final addSiblingBtn = find.text('Add Sibling / Another Account');
+      expect(addSiblingBtn, findsOneWidget);
+      await tester.tap(addSiblingBtn);
+      await tester.pumpAndSettle();
+
+      // Verify sibling password field toggle
+      final siblingShowFinder = find.byTooltip('Show password');
+      expect(siblingShowFinder, findsOneWidget);
+      expect(find.bySemanticsLabel('Show password'), findsOneWidget);
+
+      await tester.tap(siblingShowFinder);
+      await tester.pumpAndSettle();
+
+      expect(find.byTooltip('Hide password'), findsOneWidget);
+      expect(find.bySemanticsLabel('Hide password'), findsOneWidget);
+
+      // 3. Audit SignupScreen file to verify both password and confirm password have dynamic tooltip and semantics
+      final signupFile = File('lib/screens/signup_screen.dart');
+      expect(signupFile.existsSync(), isTrue);
+      final signupContent = signupFile.readAsStringSync();
+      expect(signupContent, contains("label: _obscurePassword ? 'Show password' : 'Hide password'"));
+      expect(signupContent, contains("tooltip: _obscurePassword ? 'Show password' : 'Hide password'"));
+      expect(signupContent, contains("label: _obscureConfirm ? 'Show password' : 'Hide password'"));
+      expect(signupContent, contains("tooltip: _obscureConfirm ? 'Show password' : 'Hide password'"));
+    } finally {
+      handle.dispose();
+    }
+  });
+
+  testWidgets('Phase 5 Test 3: Screen reader Semantics and Close tooltip on modal dialog close buttons', (tester) async {
+    final handle = tester.ensureSemantics();
+
+    try {
+      // 1. Audit academics_screen.dart for tooltip: 'Close' and Semantics(button: true, label: 'Close dialog')
+      final academicsFile = File('lib/screens/academics_screen.dart');
+      expect(academicsFile.existsSync(), isTrue);
+      final academicsContent = academicsFile.readAsStringSync();
+      expect(academicsContent, contains("label: 'Close dialog'"));
+      expect(academicsContent, contains("tooltip: 'Close'"));
+      expect(academicsContent, contains("label: 'Remove attached photo'"));
+      expect(academicsContent, contains("tooltip: 'Remove photo'"));
+
+      // 2. Audit house_ai_chat_screen.dart for Gemini modal close button semantics and clear API key button
+      final chatFile = File('lib/screens/house_ai_chat_screen.dart');
+      expect(chatFile.existsSync(), isTrue);
+      final chatContent = chatFile.readAsStringSync();
+      expect(chatContent, contains("label: 'Close dialog'"));
+      expect(chatContent, contains("tooltip: 'Close'"));
+      expect(chatContent, contains("label: 'Clear API key'"));
+      expect(chatContent, contains("tooltip: 'Clear API key'"));
+
+      // 3. Mount HouseAiChatScreen and open Gemini key modal to verify live Semantics node and dismiss
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: HouseAiChatScreen(
+            userHouse: 'emerald',
+            studentName: 'Sarah',
+            scholarNo: '4042',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final geminiConfigBtn = find.byTooltip('Configure Gemini API Key');
+      expect(geminiConfigBtn, findsOneWidget);
+      await tester.tap(geminiConfigBtn);
+      await tester.pumpAndSettle();
+
+      // Verify close dialog button with tooltip and semantics is rendered
+      final closeBtnFinder = find.byTooltip('Close');
+      expect(closeBtnFinder, findsOneWidget);
+      expect(find.bySemanticsLabel('Close dialog'), findsOneWidget);
+
+      // Tap close and verify dialog dismisses
+      await tester.tap(closeBtnFinder);
+      await tester.pumpAndSettle();
+      expect(find.text('Google Gemini API Key'), findsNothing);
+    } finally {
+      handle.dispose();
+    }
+  });
+
+  test('Phase 5 Test 4: Localization Foundation (ARB Assets, l10n.yaml, and AppLocalizations class)', () {
+    // 1. Check l10n.yaml
+    final l10nFile = File('l10n.yaml');
+    expect(l10nFile.existsSync(), isTrue);
+    final l10nContent = l10nFile.readAsStringSync();
+    expect(l10nContent, contains('arb-dir: lib/l10n'));
+    expect(l10nContent, contains('template-arb-file: app_en.arb'));
+    expect(l10nContent, contains('output-localization-file: app_localizations.dart'));
+
+    // 2. Check pubspec.yaml
+    final pubspecFile = File('pubspec.yaml');
+    expect(pubspecFile.existsSync(), isTrue);
+    final pubspecContent = pubspecFile.readAsStringSync();
+    expect(pubspecContent, contains('flutter_localizations:'));
+    expect(pubspecContent, contains('intl:'));
+    expect(pubspecContent, contains('generate: true'));
+
+    // 3. Check ARB files exist
+    final enArbFile = File('lib/l10n/app_en.arb');
+    final arArbFile = File('lib/l10n/app_ar.arb');
+    expect(enArbFile.existsSync(), isTrue);
+    expect(arArbFile.existsSync(), isTrue);
+
+    final enJson = jsonDecode(enArbFile.readAsStringSync()) as Map<String, dynamic>;
+    final arJson = jsonDecode(arArbFile.readAsStringSync()) as Map<String, dynamic>;
+
+    // Core keys audit
+    final requiredKeys = [
+      'appTitle',
+      'houseEmerald',
+      'houseRuby',
+      'houseSapphire',
+      'houseTopaz',
+      'navHome',
+      'navArena',
+      'navLeaderboard',
+      'navWallet',
+      'navAcademics',
+      'navEvents',
+      'navElections',
+      'navSports',
+      'actionSave',
+      'actionCancel',
+      'actionDelete',
+      'actionClose',
+      'actionSubmit',
+      'actionConfirm',
+      'actionRetry',
+      'actionSearch',
+      'actionFilter',
+      'actionEdit',
+      'actionBack',
+      'actionNext',
+      'actionDone',
+      'closeDialog',
+      'login',
+      'signup',
+      'email',
+      'password',
+      'confirmPassword',
+      'scholarNumber',
+      'showPassword',
+      'hidePassword',
+      'forgotPassword',
+      'signIn',
+      'signOut',
+      'createAccount',
+      'alreadyHaveAccount',
+      'dontHaveAccount',
+    ];
+
+    for (final key in requiredKeys) {
+      expect(enJson.containsKey(key), isTrue, reason: 'app_en.arb missing key: $key');
+      expect(arJson.containsKey(key), isTrue, reason: 'app_ar.arb missing key: $key');
+    }
+
+    // 4. Test AppLocalizations supportedLocales
+    final supportedLocales = AppLocalizations.supportedLocales;
+    expect(supportedLocales.any((l) => l.languageCode == 'en'), isTrue);
+    expect(supportedLocales.any((l) => l.languageCode == 'ar'), isTrue);
+
+    // 5. Test AppLocalizations translations resolution
+    final enLoc = lookupAppLocalizations(const Locale('en'));
+    final arLoc = lookupAppLocalizations(const Locale('ar'));
+
+    expect(enLoc.appTitle, equals('ASB House Hub'));
+    expect(arLoc.appTitle, equals('مركز منازل ASB'));
+    expect(enLoc.houseEmerald, equals('Emerald'));
+    expect(arLoc.houseEmerald, equals('الزمرد'));
+    expect(enLoc.houseRuby, equals('Ruby'));
+    expect(arLoc.houseRuby, equals('الياقوت'));
+    expect(enLoc.houseSapphire, equals('Sapphire'));
+    expect(arLoc.houseSapphire, equals('الزفير'));
+    expect(enLoc.houseTopaz, equals('Topaz'));
+    expect(arLoc.houseTopaz, equals('التوباز'));
+    expect(enLoc.login, equals('Login'));
+    expect(arLoc.login, equals('تسجيل الدخول'));
+    expect(enLoc.signup, equals('Sign Up'));
+    expect(arLoc.signup, equals('إنشاء حساب'));
+    expect(enLoc.actionClose, equals('Close'));
+    expect(arLoc.actionClose, equals('إغلاق'));
+  });
+
+  testWidgets('Phase 5 Test 5: MaterialApp localization integration and localized widget tree resolution', (tester) async {
+    late BuildContext capturedContext;
+
+    // Pump widget tree with Arabic locale
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        locale: const Locale('ar'),
+        home: Builder(
+          builder: (ctx) {
+            capturedContext = ctx;
+            return Scaffold(
+              body: Text(AppLocalizations.of(ctx)!.appTitle),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('مركز منازل ASB'), findsOneWidget);
+    final l10n = AppLocalizations.of(capturedContext);
+    expect(l10n, isNotNull);
+    expect(l10n!.appTitle, equals('مركز منازل ASB'));
+    expect(l10n.navHome, equals('الرئيسية'));
+    expect(l10n.houseEmerald, equals('الزمرد'));
+  });
+
+  // =========================================================================
+  // Phase 1 Security & Database Unblockers Tests
+  // =========================================================================
+
+  test('Phase 1 Test 1: CredentialVaultService encrypts, decrypts, rejects tampering and handles legacy tokens', () {
+    const rawSecret = 'P@ssw0rd_Zaid_2026!';
+    final token1 = CredentialVaultService.encrypt(rawSecret);
+    final token2 = CredentialVaultService.encrypt(rawSecret);
+
+    expect(token1, isNotNull);
+    expect(token1!.startsWith('enc:v1:'), isTrue);
+    // Semantic security: fresh IV ensures two encryptions of the same plaintext yield distinct tokens
+    expect(token1, isNot(equals(token2)));
+
+    // Decryption round-trip
+    expect(CredentialVaultService.decrypt(token1), equals(rawSecret));
+    expect(CredentialVaultService.decrypt(token2), equals(rawSecret));
+
+    // Legacy unencrypted plaintext fallback
+    expect(CredentialVaultService.decrypt('plain_legacy_pass'), equals('plain_legacy_pass'));
+
+    // Tampered payload fails authentication tag verification
+    final tamperedToken = 'enc:v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+    expect(CredentialVaultService.decrypt(tamperedToken), isNull);
+
+    // Null and empty safety
+    expect(CredentialVaultService.encrypt(null), isNull);
+    expect(CredentialVaultService.encrypt(''), equals(''));
+    expect(CredentialVaultService.decrypt(null), isNull);
+    expect(CredentialVaultService.decrypt(''), equals(''));
+  });
+
+  test('Phase 1 Test 2: SharedPreferences saved_accounts_list never leaks plaintext passwords and decrypts transparently', () async {
+    SharedPreferences.setMockInitialValues({});
+    await AuthService.initPreferences();
+
+    const plainPassword = 'StudentSecretAuthToken999!';
+    final account = SavedAccount(
+      scholarNo: '2310910',
+      fullName: 'Zaid Al-Husseini',
+      houseName: 'ruby',
+      uid: 'uid_zaid_phase1',
+      role: 'student',
+      classLevel: 'Grade 10',
+      division: 'A',
+      password: plainPassword,
+      cachedProfile: {'scholar_no': '2310910', 'full_name': 'Zaid Al-Husseini'},
+    );
+
+    await AuthService.saveAccount(account);
+
+    // Verify raw SharedPreferences does NOT contain plaintext password
+    final prefs = await SharedPreferences.getInstance();
+    final rawStored = prefs.getString('saved_accounts_list');
+    expect(rawStored, isNotNull);
+    expect(rawStored!.contains(plainPassword), isFalse, reason: 'Plaintext password must NEVER be persisted in SharedPreferences');
+    expect(rawStored.contains('enc:v1:'), isTrue, reason: 'Stored account must contain encrypted credential token');
+
+    // Verify transparent in-memory decryption for runtime session switching
+    final accounts = AuthService.getSavedAccounts();
+    expect(accounts.length, equals(1));
+    expect(accounts.first.scholarNo, equals('2310910'));
+    expect(accounts.first.password, equals(plainPassword));
+
+    // Verify recordActiveAccount preserves credentials
+    await AuthService.recordActiveAccount(
+      profile: {'scholar_no': '2310910', 'full_name': 'Zaid Al-Husseini', 'house_name': 'ruby'},
+      password: plainPassword,
+    );
+    final updatedAccounts = AuthService.getSavedAccounts();
+    expect(updatedAccounts.first.password, equals(plainPassword));
+
+    await AuthService.clearAllSavedAccounts();
+    expect(AuthService.getSavedAccounts(), isEmpty);
+  });
+
+  test('Phase 1 Test 3: firestore.rules and storage.rules enforce Phase 1 security policies and collections', () {
+    final firestoreFile = File('firestore.rules');
+    expect(firestoreFile.existsSync(), isTrue);
+    final firestoreContent = firestoreFile.readAsStringSync();
+
+    // Verify 4 unmatched collections are explicitly defined
+    expect(firestoreContent.contains('system_config'), isTrue);
+    expect(firestoreContent.contains('house_spirit_reactor'), isTrue);
+    expect(firestoreContent.contains('settings'), isTrue);
+    expect(firestoreContent.contains('ticker'), isTrue);
+    expect(firestoreContent.contains('event_wall'), isTrue);
+    expect(firestoreContent.contains('player_sports_stats'), isTrue);
+
+    // Verify super admin bootstrap registration allowed
+    expect(firestoreContent.contains('admin@asianschool.bh'), isTrue);
+
+    // Verify elections voting update rule
+    expect(firestoreContent.contains('total_votes_cast'), isTrue);
+    expect(firestoreContent.contains('candidates'), isTrue);
+
+    // Verify storage.rules has NO wildcard write
+    final storageFile = File('storage.rules');
+    expect(storageFile.existsSync(), isTrue);
+    final storageContent = storageFile.readAsStringSync();
+    expect(storageContent.contains('match /{allPaths=**}'), isTrue);
+    expect(storageContent.contains('match /{allPaths=**} {\n      allow read: if isSignedIn();\n      allow write: if false;'), isTrue);
+    expect(storageContent.contains('house_claims'), isTrue);
+    expect(storageContent.contains('profile_pictures'), isTrue);
+    expect(storageContent.contains('exam_schedules'), isTrue);
+  });
+
+  test('Phase 1 Test 4: CredentialVaultService handles passwords starting with enc:v1: and unicode/emojis without data loss', () async {
+    SharedPreferences.setMockInitialValues({});
+    await AuthService.initPreferences();
+
+    // 1. Password that starts with 'enc:v1:' must not be corrupted
+    const trickyPassword = 'enc:v1:MyVerySecretSpecialPassphrase_2026!';
+    final encryptedTricky = CredentialVaultService.encrypt(trickyPassword);
+    expect(encryptedTricky, isNotNull);
+    expect(encryptedTricky, isNot(equals(trickyPassword)));
+    expect(CredentialVaultService.decrypt(encryptedTricky), equals(trickyPassword));
+
+    // 2. Unicode, arabic, emojis, and quotes
+    const unicodePassword = '🔐كلمة_السر_العربية_2026!"\'\\#\$%^&*()';
+    final encryptedUnicode = CredentialVaultService.encrypt(unicodePassword);
+    expect(encryptedUnicode, isNotNull);
+    expect(CredentialVaultService.decrypt(encryptedUnicode), equals(unicodePassword));
+
+    // 3. Idempotent encryption: encrypting an already encrypted token returns it unchanged
+    final doubleEncrypted = CredentialVaultService.encrypt(encryptedUnicode);
+    expect(doubleEncrypted, equals(encryptedUnicode));
+
+    // 4. Leak prevention: cached_profile with plaintext password is stripped in toMap
+    final accountWithLeakyProfile = SavedAccount(
+      scholarNo: '2310999',
+      fullName: 'Leaky Student',
+      houseName: 'sapphire',
+      uid: 'uid_leaky',
+      password: 'RealSecretPassword99!',
+      cachedProfile: {
+        'scholar_no': '2310999',
+        'password': 'LeakedPlaintextInsideProfile!',
+      },
+    );
+    final serialized = accountWithLeakyProfile.toMap();
+    expect((serialized['cached_profile'] as Map).containsKey('password'), isFalse);
+
+    // 5. Deserialization handles legacy account with password nested in profile
+    final legacyMap = {
+      'scholar_no': '2310888',
+      'full_name': 'Legacy Student',
+      'house_name': 'emerald',
+      'uid': 'uid_legacy',
+      'cached_profile': {
+        'scholar_no': '2310888',
+        'password': 'LegacyPassword123!',
+      },
+    };
+    final deserialized = SavedAccount.fromMap(legacyMap);
+    expect(deserialized.password, equals('LegacyPassword123!'));
+    expect(deserialized.cachedProfile.containsKey('password'), isFalse);
+  });
+
+  test('Phase 1 Test 5: firestore.rules and storage.rules enforce election unblockers, election_gazettes, and sports_fixtures events', () {
+    final firestoreFile = File('firestore.rules');
+    expect(firestoreFile.existsSync(), isTrue);
+    final firestoreContent = firestoreFile.readAsStringSync();
+
+    // Valid election allows house_scope, eligible_grades, status, is_certified
+    expect(firestoreContent.contains('house_scope'), isTrue);
+    expect(firestoreContent.contains('eligible_grades'), isTrue);
+    expect(firestoreContent.contains('is_certified'), isTrue);
+    expect(firestoreContent.contains('election_gazettes'), isTrue);
+
+    // Sports fixtures subcollection events allowed
+    expect(firestoreContent.contains('sports_fixtures'), isTrue);
+    expect(firestoreContent.contains('events'), isTrue);
+
+    // House points allows sports leads
+    expect(firestoreContent.contains('house_points'), isTrue);
+    expect(firestoreContent.contains('isSportsLead()'), isTrue);
+
+    // Verify storage.rules has wildcard recursion support
+    final storageFile = File('storage.rules');
+    expect(storageFile.existsSync(), isTrue);
+    final storageContent = storageFile.readAsStringSync();
+    expect(storageContent.contains('fileName=**'), isTrue);
+  });
+
+  test('Phase 2 Test 5: GlobalWalletStore partitions orders, cart, and favorites by scholar number in local storage', () async {
+    SharedPreferences.setMockInitialValues({});
+    GlobalWalletStore.resetSession();
+
+    // 1. Verify partition key resolvers
+    expect(GlobalWalletStore.ordersKey('1001'), 'saved_wallet_orders_1001');
+    expect(GlobalWalletStore.cartKey('1001'), 'saved_wallet_cart_1001');
+    expect(GlobalWalletStore.favoritesKey('1001'), 'saved_wallet_favorites_1001');
+
+    // 2. Student 1001 session setup & persistence
+    await GlobalWalletStore.init(scholarNo: '1001');
+    expect(GlobalWalletStore.isInitialized, isTrue);
+    expect(GlobalWalletStore.currentScholarNo, '1001');
+
+    final order1001 = OrderRecord(
+      receiptId: 'ORD-1001',
+      items: [
+        CartItem(
+          product: const MerchProduct(
+            id: 'ruby_hoodie',
+            name: 'Ruby Hoodie',
+            price: 'BHD 18.000',
+            rating: 5.0,
+            imageUrl: '',
+            category: 'Hoodies',
+            house: 'ruby',
+            description: '',
+          ),
+          size: 'L',
+          qty: 1,
+        ),
+      ],
+      totalPts: 0,
+      date: DateTime.now(),
+      qrData: 'qr_1001',
+      status: 'ready',
+    );
+    GlobalWalletStore.orders.add(order1001);
+    GlobalWalletStore.cart.add(
+      CartItem(
+        product: const MerchProduct(
+          id: 'ruby_cap',
+          name: 'Ruby Cap',
+          price: 'BHD 4.000',
+          rating: 4.8,
+          imageUrl: '',
+          category: 'Accessories',
+          house: 'ruby',
+          description: '',
+        ),
+        size: 'Standard',
+        qty: 2,
+      ),
+    );
+    GlobalWalletStore.favoriteIds.add('drop_varsity_ruby');
+
+    await GlobalWalletStore.saveOrders(scholarNo: '1001');
+    await GlobalWalletStore.saveCart(scholarNo: '1001');
+    await GlobalWalletStore.saveFavorites(scholarNo: '1001');
+
+    // Verify written to student 1001 partition in SharedPreferences
+    final prefs = await SharedPreferences.getInstance();
+    final orders1001List = prefs.getStringList('saved_wallet_orders_1001');
+    expect(orders1001List, isNotNull);
+    expect(orders1001List!.any((s) => s.contains('ORD-1001')), isTrue);
+
+    final cart1001List = prefs.getStringList('saved_wallet_cart_1001');
+    expect(cart1001List, isNotNull);
+    expect(cart1001List!.any((s) => s.contains('ruby_cap')), isTrue);
+
+    final favs1001List = prefs.getStringList('saved_wallet_favorites_1001');
+    expect(favs1001List, isNotNull);
+    expect(favs1001List!.contains('drop_varsity_ruby'), isTrue);
+
+    // Verify unpartitioned fallback keys are NOT contaminated with student 1001's private cart/orders/favorites
+    expect(prefs.getStringList('saved_wallet_orders'), isNull);
+    expect(prefs.getStringList('saved_wallet_cart'), isNull);
+    expect(prefs.getStringList('saved_wallet_favorites'), isNull);
+
+    // 3. Reset session (e.g. on logout)
+    GlobalWalletStore.resetSession();
+    expect(GlobalWalletStore.orders.isEmpty, isTrue);
+    expect(GlobalWalletStore.cart.isEmpty, isTrue);
+    expect(GlobalWalletStore.favoriteIds.isEmpty, isTrue);
+    expect(GlobalWalletStore.isInitialized, isFalse);
+    expect(GlobalWalletStore.currentScholarNo, isNull);
+
+    // 4. Student 2002 logs in on the same device — must NOT see Student 1001's data
+    await GlobalWalletStore.init(scholarNo: '2002');
+    expect(GlobalWalletStore.currentScholarNo, '2002');
+    expect(GlobalWalletStore.orders.isEmpty, isTrue);
+    expect(GlobalWalletStore.cart.isEmpty, isTrue);
+    // Student 2002 receives fresh default favorites without 1001's custom favorite
+    expect(GlobalWalletStore.favoriteIds.contains('drop_varsity_ruby'), isFalse);
+
+    // Add student 2002 data
+    final order2002 = OrderRecord(
+      receiptId: 'ORD-2002',
+      items: [],
+      totalPts: 10,
+      date: DateTime.now(),
+      qrData: 'qr_2002',
+      status: 'ready',
+    );
+    GlobalWalletStore.orders.add(order2002);
+    await GlobalWalletStore.saveOrders(scholarNo: '2002');
+
+    // 5. Switch back to student 1001 — student 1001's partition is isolated and intact
+    GlobalWalletStore.resetSession();
+    await GlobalWalletStore.init(scholarNo: '1001');
+    expect(GlobalWalletStore.orders.any((o) => o.receiptId == 'ORD-1001'), isTrue);
+    expect(GlobalWalletStore.orders.any((o) => o.receiptId == 'ORD-2002'), isFalse);
+    expect(GlobalWalletStore.cart.any((c) => c.product.id == 'ruby_cap'), isTrue);
+    expect(GlobalWalletStore.favoriteIds.contains('drop_varsity_ruby'), isTrue);
+
+    // 6. Transition seamlessly from guest session (empty scholarNo) to student 1001 without explicit resetSession()
+    await GlobalWalletStore.init(scholarNo: '');
+    expect(GlobalWalletStore.currentScholarNo, '');
+    expect(GlobalWalletStore.orders.isEmpty, isTrue);
+    expect(GlobalWalletStore.cart.isEmpty, isTrue);
+
+    await GlobalWalletStore.init(scholarNo: '1001');
+    expect(GlobalWalletStore.currentScholarNo, '1001');
+    expect(GlobalWalletStore.orders.any((o) => o.receiptId == 'ORD-1001'), isTrue);
+    expect(GlobalWalletStore.cart.any((c) => c.product.id == 'ruby_cap'), isTrue);
+  });
+
+  test('Phase 2 Test 6: AuthService.signOut() and switchAccount() invoke GlobalWalletStore.resetSession() to purge all in-memory wallet and cart state', () async {
+    SharedPreferences.setMockInitialValues({});
+    await AuthService.initPreferences();
+
+    // Populate wallet store with dummy active student state
+    GlobalWalletStore.orders.add(
+      OrderRecord(
+        receiptId: 'SIGNOUT-ORD-1',
+        items: [],
+        totalPts: 5,
+        date: DateTime.now(),
+        qrData: 'signout_qr',
+      ),
+    );
+    GlobalWalletStore.cart.add(
+      CartItem(
+        product: const MerchProduct(
+          id: 'test_item',
+          name: 'Test Item',
+          price: 'BHD 1.000',
+          rating: 5.0,
+          imageUrl: '',
+          category: 'Accessories',
+          house: 'ruby',
+          description: '',
+        ),
+        size: 'M',
+      ),
+    );
+    GlobalWalletStore.favoriteIds.add('some_favorite');
+
+    expect(GlobalWalletStore.orders.isNotEmpty, isTrue);
+    expect(GlobalWalletStore.cart.isNotEmpty, isTrue);
+    expect(GlobalWalletStore.favoriteIds.isNotEmpty, isTrue);
+
+    // Trigger sign out
+    final authService = AuthService();
+    await authService.signOut();
+
+    // Verify in-memory state is completely purged on signOut
+    expect(GlobalWalletStore.orders.isEmpty, isTrue);
+    expect(GlobalWalletStore.cart.isEmpty, isTrue);
+    expect(GlobalWalletStore.favoriteIds.isEmpty, isTrue);
+    expect(GlobalWalletStore.isInitialized, isFalse);
+    expect(GlobalWalletStore.currentScholarNo, isNull);
+
+    // Populate again to test switchAccount purge
+    GlobalWalletStore.cart.add(
+      CartItem(
+        product: const MerchProduct(
+          id: 'test_item_2',
+          name: 'Test Item 2',
+          price: 'BHD 2.000',
+          rating: 5.0,
+          imageUrl: '',
+          category: 'Accessories',
+          house: 'sapphire',
+          description: '',
+        ),
+        size: 'L',
+      ),
+    );
+    expect(GlobalWalletStore.cart.isNotEmpty, isTrue);
+
+    await authService.switchAccount(
+      SavedAccount(
+        scholarNo: '2002',
+        fullName: 'Ali Ahmed',
+        houseName: 'sapphire',
+        uid: 'uid_2002',
+        cachedProfile: {'scholar_no': '2002', 'full_name': 'Ali Ahmed', 'house': 'sapphire'},
+      ),
+    );
+
+    // Verify in-memory state is completely purged on switchAccount
+    expect(GlobalWalletStore.cart.isEmpty, isTrue);
+    expect(GlobalWalletStore.orders.isEmpty, isTrue);
+    expect(GlobalWalletStore.isInitialized, isFalse);
+    expect(GlobalWalletStore.currentScholarNo, isNull);
+  });
+
+  testWidgets('Phase 2 Test 7: BattleChantSynthesizer mounts and functions cleanly without dead SingleTickerProviderStateMixin', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: BattleChantSynthesizer(
+            userHouse: 'ruby',
+            initialMode: ChantMode.warCry,
+            initialTempo: ChantTempo.march,
+            autoPlay: false,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Verify synthesizer UI rendered
+    expect(find.byType(BattleChantSynthesizer), findsOneWidget);
+    expect(find.text('War Cry'), findsWidgets);
+    expect(find.text('March (95 BPM)'), findsOneWidget);
+
+    // Tap play / stop without any ticker or vsync exceptions
+    final playButton = find.byIcon(Icons.play_arrow_rounded);
+    expect(playButton, findsOneWidget);
+    await tester.tap(playButton);
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // Tap pause / stop
+    final stopButton = find.byIcon(Icons.stop_rounded);
+    expect(stopButton, findsOneWidget);
+    await tester.tap(stopButton);
+    await tester.pump(const Duration(milliseconds: 100));
+  });
+}
+
+class _Phase4MockHttpClient extends http.BaseClient {
+  final Future<http.Response> Function(http.BaseRequest request) _handler;
+  _Phase4MockHttpClient(this._handler);
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    final res = await _handler(request);
+    return http.StreamedResponse(
+      Stream.value(res.bodyBytes),
+      res.statusCode,
+      headers: res.headers,
+      reasonPhrase: res.reasonPhrase,
+    );
+  }
 }
 
 

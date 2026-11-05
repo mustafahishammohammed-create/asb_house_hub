@@ -5,6 +5,7 @@ import '../services/hierarchy_service.dart';
 import '../models/player_sports_stats.dart';
 import '../theme/app_theme.dart';
 import '../screens/chat_room_screen.dart';
+import 'managed_modal_scope.dart';
 
 /// Universal Student Profile & Conduct Inspection Modal
 ///
@@ -161,8 +162,10 @@ class _StudentProfileModalState extends State<StudentProfileModal>
 
     showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (dialogCtx, setDialogState) {
+      builder: (ctx) => ManagedModalScope(
+        controllers: [reasonController],
+        child: StatefulBuilder(
+          builder: (dialogCtx, setDialogState) {
           return AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
             title: Row(
@@ -310,8 +313,9 @@ class _StudentProfileModalState extends State<StudentProfileModal>
           );
         },
       ),
-    );
-  }
+    ),
+  );
+}
 
   void _showIssueDemeritDialog(BuildContext context) {
     final parentContext = context;
@@ -331,8 +335,10 @@ class _StudentProfileModalState extends State<StudentProfileModal>
 
     showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (dialogCtx, setDialogState) {
+      builder: (ctx) => ManagedModalScope(
+        controllers: [reasonController],
+        child: StatefulBuilder(
+          builder: (dialogCtx, setDialogState) {
           return AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
             title: Row(
@@ -480,8 +486,9 @@ class _StudentProfileModalState extends State<StudentProfileModal>
           );
         },
       ),
-    );
-  }
+    ),
+  );
+}
 
   void _openDirectChat(BuildContext context) async {
     final currentUid = AuthService.getCachedProfile()?['uid']?.toString() ?? '';
@@ -637,9 +644,15 @@ class _StudentProfileModalState extends State<StudentProfileModal>
                       ],
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded),
-                    onPressed: () => Navigator.pop(context),
+                  Semantics(
+                    button: true,
+                    label: 'Close dialog',
+                    child: IconButton(
+                      constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                      icon: const Icon(Icons.close_rounded),
+                      tooltip: 'Close',
+                      onPressed: () => Navigator.pop(context),
+                    ),
                   ),
                 ],
               ),
@@ -893,7 +906,7 @@ class _StudentProfileModalState extends State<StudentProfileModal>
         return ListView.separated(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
           itemCount: docs.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          separatorBuilder: (_, _) => const SizedBox(height: 8),
           itemBuilder: (context, idx) {
             final data = docs[idx].data() as Map<String, dynamic>? ?? {};
             final type = data['type']?.toString().toLowerCase() ?? 'merit';

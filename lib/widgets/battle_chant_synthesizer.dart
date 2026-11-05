@@ -122,8 +122,7 @@ class BattleChantSynthesizer extends StatefulWidget {
   State<BattleChantSynthesizer> createState() => _BattleChantSynthesizerState();
 }
 
-class _BattleChantSynthesizerState extends State<BattleChantSynthesizer>
-    with SingleTickerProviderStateMixin {
+class _BattleChantSynthesizerState extends State<BattleChantSynthesizer> {
   late ChantMode _selectedMode;
   late ChantTempo _selectedTempo;
   late HouseChantData _chantData;

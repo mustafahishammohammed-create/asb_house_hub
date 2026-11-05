@@ -247,12 +247,17 @@ class _ApprovedClaimsScreenState extends State<ApprovedClaimsScreen> {
                       color: Colors.grey,
                     ),
                     suffixIcon: _searchQuery.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear_rounded, size: 18),
-                            onPressed: () {
-                              _searchController.clear();
-                              setState(() => _searchQuery = '');
-                            },
+                        ? Semantics(
+                            button: true,
+                            label: 'Clear search',
+                            child: IconButton(
+                              icon: const Icon(Icons.clear_rounded, size: 18),
+                              tooltip: 'Clear search',
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() => _searchQuery = '');
+                              },
+                            ),
                           )
                         : null,
                     filled: true,

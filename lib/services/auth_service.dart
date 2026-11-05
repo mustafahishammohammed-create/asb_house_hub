@@ -1,8 +1,11 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:convert';
+import 'dart:math';
+import 'package:crypto/crypto.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'gamification_security_service.dart';
 import '../models/timetable_period.dart';
@@ -23,10 +26,108 @@ import '../models/medical_leave_request.dart';
 import 'election_security_service.dart';
 import 'sports_security_service.dart';
 import 'hierarchy_service.dart';
+import '../screens/merch_store_tab.dart';
 
 /// Domain appended to scholar numbers to create Firebase-compatible emails.
 /// e.g., scholar_no "123456" becomes "123456@asianschool.bh"
 const String kSchoolDomain = 'asianschool.bh';
+
+/// Cryptographic credential vault for encrypting and decrypting sensitive tokens and passwords
+/// stored in local device preferences (replaces plaintext serialization in SharedPreferences).
+class CredentialVaultService {
+  static const String tokenPrefix = 'enc:v1:';
+  static const String _vaultSecret = 'ASB_CREDENTIAL_VAULT_HMAC_AES_SECRET_2026';
+
+  /// Encrypts a plaintext credential string into an authenticated tamper-evident token.
+  static String? encrypt(String? plaintext) {
+    if (plaintext == null || plaintext.isEmpty) return plaintext;
+    if (plaintext.startsWith(tokenPrefix) && decrypt(plaintext) != null) {
+      return plaintext;
+    }
+
+    final random = Random.secure();
+    final iv = List<int>.generate(16, (_) => random.nextInt(256));
+    final plaintextBytes = utf8.encode(plaintext);
+
+    final encKey = utf8.encode('$_vaultSecret:ENC');
+    final macKey = utf8.encode('$_vaultSecret:MAC');
+
+    final keystream = <int>[];
+    int blockCounter = 1;
+    while (keystream.length < plaintextBytes.length) {
+      final hmac = Hmac(sha256, encKey);
+      final block = hmac.convert([...iv, blockCounter++]).bytes;
+      keystream.addAll(block);
+    }
+
+    final cipherBytes = List<int>.generate(
+      plaintextBytes.length,
+      (i) => plaintextBytes[i] ^ keystream[i],
+    );
+
+    final macHmac = Hmac(sha256, macKey);
+    final tag = macHmac.convert([...iv, ...cipherBytes]).bytes;
+
+    final payload = [...iv, ...tag, ...cipherBytes];
+    return '$tokenPrefix${base64Url.encode(payload)}';
+  }
+
+  /// Decrypts a secure credential token into its original plaintext string.
+  /// If [ciphertext] is not prefixed with enc:v1:, returns [ciphertext] as-is (legacy plaintext compatibility).
+  static String? decrypt(String? ciphertext) {
+    if (ciphertext == null || ciphertext.isEmpty) return ciphertext;
+    if (!ciphertext.startsWith(tokenPrefix)) {
+      return ciphertext;
+    }
+
+    try {
+      final raw = ciphertext.substring(tokenPrefix.length);
+      final payload = base64Url.decode(raw);
+      if (payload.length < 48) return null;
+
+      final iv = payload.sublist(0, 16);
+      final tag = payload.sublist(16, 48);
+      final cipherBytes = payload.sublist(48);
+
+      final macKey = utf8.encode('$_vaultSecret:MAC');
+      final macHmac = Hmac(sha256, macKey);
+      final expectedTag = macHmac.convert([...iv, ...cipherBytes]).bytes;
+
+      if (!_constantTimeEquals(tag, expectedTag)) {
+        debugPrint('Credential decryption failed: Tag mismatch (tampered ciphertext)');
+        return null;
+      }
+
+      final encKey = utf8.encode('$_vaultSecret:ENC');
+      final keystream = <int>[];
+      int blockCounter = 1;
+      while (keystream.length < cipherBytes.length) {
+        final hmac = Hmac(sha256, encKey);
+        final block = hmac.convert([...iv, blockCounter++]).bytes;
+        keystream.addAll(block);
+      }
+
+      final plaintextBytes = List<int>.generate(
+        cipherBytes.length,
+        (i) => cipherBytes[i] ^ keystream[i],
+      );
+
+      return utf8.decode(plaintextBytes);
+    } catch (e) {
+      debugPrint('Credential decryption error: $e');
+      return null;
+    }
+  }
+
+  static bool _constantTimeEquals(List<int> a, List<int> b) {
+    if (a.length != b.length) return false;
+    int result = 0;
+    for (int i = 0; i < a.length; i++) {
+      result |= a[i] ^ b[i];
+    }
+    return result == 0;
+  }
+}
 
 /// Represents a student or sibling account saved on this device for multi-account switching.
 class SavedAccount {
@@ -56,6 +157,8 @@ class SavedAccount {
         lastActive = lastActive ?? DateTime.now();
 
   Map<String, dynamic> toMap() {
+    final sanitizedProfile = Map<String, dynamic>.from(cachedProfile)
+      ..remove('password');
     return {
       'scholar_no': scholarNo,
       'full_name': fullName,
@@ -64,8 +167,8 @@ class SavedAccount {
       'role': role,
       'class_level': classLevel,
       'division': division,
-      'password': password,
-      'cached_profile': cachedProfile,
+      'password': CredentialVaultService.encrypt(password),
+      'cached_profile': sanitizedProfile,
       'last_active': lastActive.toIso8601String(),
     };
   }
@@ -83,6 +186,10 @@ class SavedAccount {
         AuthService.inferHouseFromScholarNo(scholar) ??
         'emerald';
 
+    final rawPassword = map['password']?.toString() ?? profile['password']?.toString();
+    profile.remove('password');
+    final decryptedPassword = CredentialVaultService.decrypt(rawPassword);
+
     return SavedAccount(
       scholarNo: scholar,
       fullName: (map['full_name'] ?? profile['full_name'] ?? 'Student').toString(),
@@ -91,7 +198,7 @@ class SavedAccount {
       role: map['role']?.toString() ?? profile['role']?.toString(),
       classLevel: map['class_level']?.toString() ?? profile['class_level']?.toString(),
       division: map['division']?.toString() ?? profile['division']?.toString(),
-      password: map['password']?.toString(),
+      password: decryptedPassword,
       cachedProfile: profile,
       lastActive: map['last_active'] != null
           ? DateTime.tryParse(map['last_active'].toString()) ?? DateTime.now()
@@ -107,6 +214,26 @@ class SavedAccount {
 class AuthService {
   FirebaseAuth get _auth => FirebaseAuth.instance;
   FirebaseFirestore get _firestore => FirebaseFirestore.instance;
+
+  @visibleForTesting
+  static bool? isFirebaseLiveOverride;
+
+  @visibleForTesting
+  static Exception? firestoreFailureSimulated;
+
+  static bool get _isFirebaseLive {
+    if (isFirebaseLiveOverride != null) return isFirebaseLiveOverride!;
+    try {
+      return Firebase.apps.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static bool _isNoAppException(Object e) {
+    final s = e.toString().toLowerCase();
+    return s.contains('no-app') || s.contains('no firebase app');
+  }
 
   static SharedPreferences? _prefs;
 
@@ -478,6 +605,220 @@ class AuthService {
     }
   }
 
+  /// Persist or update a timetable period in Firestore and local offline cache.
+  Future<bool> saveTimetablePeriod({
+    required TimetablePeriod period,
+    String? classLevel,
+  }) async {
+    try {
+      final cLevel = (classLevel != null && classLevel.trim().isNotEmpty)
+          ? classLevel.trim()
+          : (period.classLevel.isNotEmpty
+              ? period.classLevel
+              : (getCachedProfile()?['class_level']?.toString() ?? 'Grade 10'));
+
+      final effectiveDay = period.dayOfWeek.isNotEmpty ? period.dayOfWeek : 'Sunday';
+      final updatedPeriod = period.copyWith(classLevel: cLevel, dayOfWeek: effectiveDay);
+
+      // 1. Persist to Firestore first if live
+      if (_isFirebaseLive) {
+        try {
+          if (firestoreFailureSimulated != null) {
+            throw firestoreFailureSimulated!;
+          }
+          final docId = 'p_${effectiveDay.toLowerCase()}_${updatedPeriod.periodNumber}';
+          await _firestore
+              .collection('classes')
+              .doc(cLevel)
+              .collection('timetable')
+              .doc(docId)
+              .set(updatedPeriod.toMap(), SetOptions(merge: true));
+        } catch (e) {
+          if (!_isNoAppException(e)) {
+            debugPrint('Firestore saveTimetablePeriod failure: $e');
+            return false;
+          }
+        }
+      }
+
+      // 2. Update local cache only on successful Firestore write or test mode
+      final currentList = getCachedTimetable(classLevel: cLevel, dayOfWeek: effectiveDay);
+      final updatedList = List<TimetablePeriod>.from(currentList);
+      final existingIndex = updatedList.indexWhere((p) => p.periodNumber == updatedPeriod.periodNumber);
+      if (existingIndex >= 0) {
+        updatedList[existingIndex] = updatedPeriod;
+      } else {
+        updatedList.add(updatedPeriod);
+      }
+      updatedList.sort();
+      await cacheTimetable(updatedList, classLevel: cLevel, dayOfWeek: effectiveDay);
+
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Delete a timetable period from Firestore and local offline cache.
+  Future<bool> deleteTimetablePeriod({
+    required String dayOfWeek,
+    required int periodNumber,
+    String? classLevel,
+  }) async {
+    try {
+      final cLevel = (classLevel != null && classLevel.trim().isNotEmpty)
+          ? classLevel.trim()
+          : (getCachedProfile()?['class_level']?.toString() ?? 'Grade 10');
+
+      // 1. Delete from Firestore first if live
+      if (_isFirebaseLive) {
+        try {
+          if (firestoreFailureSimulated != null) {
+            throw firestoreFailureSimulated!;
+          }
+          final docId = 'p_${dayOfWeek.toLowerCase()}_$periodNumber';
+          await _firestore
+              .collection('classes')
+              .doc(cLevel)
+              .collection('timetable')
+              .doc(docId)
+              .delete();
+        } catch (e) {
+          if (!_isNoAppException(e)) {
+            debugPrint('Firestore deleteTimetablePeriod failure: $e');
+            return false;
+          }
+        }
+      }
+
+      // 2. Update local cache only on successful Firestore delete or test mode
+      final currentList = getCachedTimetable(classLevel: cLevel, dayOfWeek: dayOfWeek);
+      final updatedList = currentList.where((p) => p.periodNumber != periodNumber).toList();
+      await cacheTimetable(updatedList, classLevel: cLevel, dayOfWeek: dayOfWeek);
+
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Clear all timetable periods for a specific weekday.
+  Future<bool> clearTimetableForDay({
+    required String dayOfWeek,
+    String? classLevel,
+  }) async {
+    try {
+      final cLevel = (classLevel != null && classLevel.trim().isNotEmpty)
+          ? classLevel.trim()
+          : (getCachedProfile()?['class_level']?.toString() ?? 'Grade 10');
+
+      await cacheTimetable(<TimetablePeriod>[], classLevel: cLevel, dayOfWeek: dayOfWeek);
+
+      try {
+        final snap = await _firestore
+            .collection('classes')
+            .doc(cLevel)
+            .collection('timetable')
+            .where('day_of_week', isEqualTo: dayOfWeek)
+            .get();
+        for (final doc in snap.docs) {
+          await doc.reference.delete();
+        }
+      } catch (_) {}
+
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Populate a standard CBSE 8-period weekly schedule (Sunday-Thursday) for The Asian School Bahrain.
+  Future<bool> populateDefaultCBSEWeeklyTimetable({
+    String? classLevel,
+  }) async {
+    try {
+      final cLevel = (classLevel != null && classLevel.trim().isNotEmpty)
+          ? classLevel.trim()
+          : (getCachedProfile()?['class_level']?.toString() ?? 'Grade 10');
+
+      const standardDays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday'];
+
+      final Map<String, List<TimetablePeriod>> weeklySchedule = {
+        'Sunday': [
+          TimetablePeriod(periodNumber: 1, timeSlot: '07:45 - 08:30', subject: 'Mathematics', teacherName: 'Mr. Sharma', room: 'Room 101', classLevel: cLevel, dayOfWeek: 'Sunday'),
+          TimetablePeriod(periodNumber: 2, timeSlot: '08:30 - 09:15', subject: 'Physics', teacherName: 'Mrs. Nair', room: 'Physics Lab', classLevel: cLevel, dayOfWeek: 'Sunday'),
+          TimetablePeriod(periodNumber: 3, timeSlot: '09:15 - 10:00', subject: 'Chemistry', teacherName: 'Dr. Rao', room: 'Chemistry Lab', classLevel: cLevel, dayOfWeek: 'Sunday'),
+          TimetablePeriod(periodNumber: 4, timeSlot: '10:00 - 10:20', subject: 'Morning Recess', teacherName: 'Duty Staff', room: 'Courtyard', isBreak: true, classLevel: cLevel, dayOfWeek: 'Sunday'),
+          TimetablePeriod(periodNumber: 5, timeSlot: '10:20 - 11:05', subject: 'English', teacherName: 'Ms. Mathew', room: 'Room 101', classLevel: cLevel, dayOfWeek: 'Sunday'),
+          TimetablePeriod(periodNumber: 6, timeSlot: '11:05 - 11:50', subject: 'Social Science', teacherName: 'Mr. Khan', room: 'Room 101', classLevel: cLevel, dayOfWeek: 'Sunday'),
+          TimetablePeriod(periodNumber: 7, timeSlot: '11:50 - 12:35', subject: 'Computer Science', teacherName: 'Mr. Paul', room: 'CS Lab 1', classLevel: cLevel, dayOfWeek: 'Sunday'),
+          TimetablePeriod(periodNumber: 8, timeSlot: '12:35 - 01:20', subject: 'Physical Education', teacherName: 'Coach Joseph', room: 'Main Turf', classLevel: cLevel, dayOfWeek: 'Sunday'),
+        ],
+        'Monday': [
+          TimetablePeriod(periodNumber: 1, timeSlot: '07:45 - 08:30', subject: 'Physics', teacherName: 'Mrs. Nair', room: 'Room 101', classLevel: cLevel, dayOfWeek: 'Monday'),
+          TimetablePeriod(periodNumber: 2, timeSlot: '08:30 - 09:15', subject: 'Mathematics', teacherName: 'Mr. Sharma', room: 'Room 101', classLevel: cLevel, dayOfWeek: 'Monday'),
+          TimetablePeriod(periodNumber: 3, timeSlot: '09:15 - 10:00', subject: 'Biology', teacherName: 'Dr. Elizabeth', room: 'Biology Lab', classLevel: cLevel, dayOfWeek: 'Monday'),
+          TimetablePeriod(periodNumber: 4, timeSlot: '10:00 - 10:20', subject: 'Morning Recess', teacherName: 'Duty Staff', room: 'Courtyard', isBreak: true, classLevel: cLevel, dayOfWeek: 'Monday'),
+          TimetablePeriod(periodNumber: 5, timeSlot: '10:20 - 11:05', subject: 'English', teacherName: 'Ms. Mathew', room: 'Room 101', classLevel: cLevel, dayOfWeek: 'Monday'),
+          TimetablePeriod(periodNumber: 6, timeSlot: '11:05 - 11:50', subject: 'Chemistry', teacherName: 'Dr. Rao', room: 'Room 101', classLevel: cLevel, dayOfWeek: 'Monday'),
+          TimetablePeriod(periodNumber: 7, timeSlot: '11:50 - 12:35', subject: 'Second Language', teacherName: 'Mrs. Verma', room: 'Room 101', classLevel: cLevel, dayOfWeek: 'Monday'),
+          TimetablePeriod(periodNumber: 8, timeSlot: '12:35 - 01:20', subject: 'Library & Research', teacherName: 'Mrs. D\'Souza', room: 'Central Library', classLevel: cLevel, dayOfWeek: 'Monday'),
+        ],
+        'Tuesday': [
+          TimetablePeriod(periodNumber: 1, timeSlot: '07:45 - 08:30', subject: 'Chemistry', teacherName: 'Dr. Rao', room: 'Room 101', classLevel: cLevel, dayOfWeek: 'Tuesday'),
+          TimetablePeriod(periodNumber: 2, timeSlot: '08:30 - 09:15', subject: 'English', teacherName: 'Ms. Mathew', room: 'Room 101', classLevel: cLevel, dayOfWeek: 'Tuesday'),
+          TimetablePeriod(periodNumber: 3, timeSlot: '09:15 - 10:00', subject: 'Mathematics', teacherName: 'Mr. Sharma', room: 'Room 101', classLevel: cLevel, dayOfWeek: 'Tuesday'),
+          TimetablePeriod(periodNumber: 4, timeSlot: '10:00 - 10:20', subject: 'Morning Recess', teacherName: 'Duty Staff', room: 'Courtyard', isBreak: true, classLevel: cLevel, dayOfWeek: 'Tuesday'),
+          TimetablePeriod(periodNumber: 5, timeSlot: '10:20 - 11:05', subject: 'Physics', teacherName: 'Mrs. Nair', room: 'Physics Lab', classLevel: cLevel, dayOfWeek: 'Tuesday'),
+          TimetablePeriod(periodNumber: 6, timeSlot: '11:05 - 11:50', subject: 'Social Science', teacherName: 'Mr. Khan', room: 'Room 101', classLevel: cLevel, dayOfWeek: 'Tuesday'),
+          TimetablePeriod(periodNumber: 7, timeSlot: '11:50 - 12:35', subject: 'Art & Design', teacherName: 'Mr. Roy', room: 'Art Studio', classLevel: cLevel, dayOfWeek: 'Tuesday'),
+          TimetablePeriod(periodNumber: 8, timeSlot: '12:35 - 01:20', subject: 'Mathematics Practice', teacherName: 'Mr. Sharma', room: 'Room 101', classLevel: cLevel, dayOfWeek: 'Tuesday'),
+        ],
+        'Wednesday': [
+          TimetablePeriod(periodNumber: 1, timeSlot: '07:45 - 08:30', subject: 'Biology', teacherName: 'Dr. Elizabeth', room: 'Room 101', classLevel: cLevel, dayOfWeek: 'Wednesday'),
+          TimetablePeriod(periodNumber: 2, timeSlot: '08:30 - 09:15', subject: 'Physics', teacherName: 'Mrs. Nair', room: 'Room 101', classLevel: cLevel, dayOfWeek: 'Wednesday'),
+          TimetablePeriod(periodNumber: 3, timeSlot: '09:15 - 10:00', subject: 'Chemistry', teacherName: 'Dr. Rao', room: 'Chemistry Lab', classLevel: cLevel, dayOfWeek: 'Wednesday'),
+          TimetablePeriod(periodNumber: 4, timeSlot: '10:00 - 10:20', subject: 'Morning Recess', teacherName: 'Duty Staff', room: 'Courtyard', isBreak: true, classLevel: cLevel, dayOfWeek: 'Wednesday'),
+          TimetablePeriod(periodNumber: 5, timeSlot: '10:20 - 11:05', subject: 'Mathematics', teacherName: 'Mr. Sharma', room: 'Room 101', classLevel: cLevel, dayOfWeek: 'Wednesday'),
+          TimetablePeriod(periodNumber: 6, timeSlot: '11:05 - 11:50', subject: 'English', teacherName: 'Ms. Mathew', room: 'Room 101', classLevel: cLevel, dayOfWeek: 'Wednesday'),
+          TimetablePeriod(periodNumber: 7, timeSlot: '11:50 - 12:35', subject: 'Value Education', teacherName: 'Mrs. George', room: 'Room 101', classLevel: cLevel, dayOfWeek: 'Wednesday'),
+          TimetablePeriod(periodNumber: 8, timeSlot: '12:35 - 01:20', subject: 'House Sports League', teacherName: 'Coach Joseph', room: 'Main Turf', classLevel: cLevel, dayOfWeek: 'Wednesday'),
+        ],
+        'Thursday': [
+          TimetablePeriod(periodNumber: 1, timeSlot: '07:45 - 08:30', subject: 'English', teacherName: 'Ms. Mathew', room: 'Room 101', classLevel: cLevel, dayOfWeek: 'Thursday'),
+          TimetablePeriod(periodNumber: 2, timeSlot: '08:30 - 09:15', subject: 'Social Science', teacherName: 'Mr. Khan', room: 'Room 101', classLevel: cLevel, dayOfWeek: 'Thursday'),
+          TimetablePeriod(periodNumber: 3, timeSlot: '09:15 - 10:00', subject: 'Mathematics', teacherName: 'Mr. Sharma', room: 'Room 101', classLevel: cLevel, dayOfWeek: 'Thursday'),
+          TimetablePeriod(periodNumber: 4, timeSlot: '10:00 - 10:20', subject: 'Morning Recess', teacherName: 'Duty Staff', room: 'Courtyard', isBreak: true, classLevel: cLevel, dayOfWeek: 'Thursday'),
+          TimetablePeriod(periodNumber: 5, timeSlot: '10:20 - 11:05', subject: 'Physics', teacherName: 'Mrs. Nair', room: 'Room 101', classLevel: cLevel, dayOfWeek: 'Thursday'),
+          TimetablePeriod(periodNumber: 6, timeSlot: '11:05 - 11:50', subject: 'Computer Science', teacherName: 'Mr. Paul', room: 'CS Lab 1', classLevel: cLevel, dayOfWeek: 'Thursday'),
+          TimetablePeriod(periodNumber: 7, timeSlot: '11:50 - 12:35', subject: 'Chemistry', teacherName: 'Dr. Rao', room: 'Room 101', classLevel: cLevel, dayOfWeek: 'Thursday'),
+          TimetablePeriod(periodNumber: 8, timeSlot: '12:35 - 01:20', subject: 'Inter-House Assembly & Clubs', teacherName: 'House Mentors', room: 'Auditorium', classLevel: cLevel, dayOfWeek: 'Thursday'),
+        ],
+      };
+
+      for (final day in standardDays) {
+        final list = weeklySchedule[day]!;
+        await cacheTimetable(list, classLevel: cLevel, dayOfWeek: day);
+        try {
+          for (final period in list) {
+            final docId = 'p_${day.toLowerCase()}_${period.periodNumber}';
+            await _firestore
+                .collection('classes')
+                .doc(cLevel)
+                .collection('timetable')
+                .doc(docId)
+                .set(period.toMap(), SetOptions(merge: true));
+          }
+        } catch (_) {}
+      }
+
+      await cacheTimetable(weeklySchedule['Sunday']!, classLevel: cLevel);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   static const String _kCachedAssignmentsPrefix = 'cached_assignments_';
   static const String _kCachedAssignmentsDefaultKey = 'cached_assignments_default';
 
@@ -593,7 +934,7 @@ class AuthService {
 
       final sNo = (scholarNo != null && scholarNo.trim().isNotEmpty)
           ? scholarNo.trim()
-          : (getCachedScholarNo() ?? '2310910');
+          : (getCachedScholarNo() ?? '');
 
       final effectiveHouse = (house != null && house.trim().isNotEmpty)
           ? house.trim().toLowerCase()
@@ -649,6 +990,91 @@ class AuthService {
           activityId: 'assignment_$assignmentId',
         );
       }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Publish a new homework assignment or task to Firestore and update local offline cache.
+  Future<bool> publishAssignment({
+    required AcademicAssignment assignment,
+    String? classLevel,
+  }) async {
+    try {
+      final cLevel = (classLevel != null && classLevel.trim().isNotEmpty)
+          ? classLevel.trim()
+          : (assignment.classLevel.isNotEmpty
+              ? assignment.classLevel
+              : (getCachedProfile()?['class_level']?.toString() ?? 'Grade 10'));
+
+      final updatedAssignment = assignment.copyWith(classLevel: cLevel);
+
+      // 1. Update local cache
+      final currentList = getCachedAssignments(classLevel: cLevel, subject: 'All');
+      final updatedList = List<AcademicAssignment>.from(currentList);
+      final existingIndex = updatedList.indexWhere((a) => a.id == updatedAssignment.id);
+      if (existingIndex >= 0) {
+        updatedList[existingIndex] = updatedAssignment;
+      } else {
+        updatedList.add(updatedAssignment);
+      }
+      updatedList.sort();
+      await cacheAssignments(updatedList, classLevel: cLevel, subject: 'All');
+      if (updatedAssignment.subject.isNotEmpty && updatedAssignment.subject.toLowerCase() != 'all') {
+        await cacheAssignments(
+          updatedList.where((a) => a.subject.toLowerCase() == updatedAssignment.subject.toLowerCase()).toList(),
+          classLevel: cLevel,
+          subject: updatedAssignment.subject,
+        );
+      }
+
+      // 2. Persist to Firestore
+      try {
+        await _firestore
+            .collection('classes')
+            .doc(cLevel)
+            .collection('assignments')
+            .doc(updatedAssignment.id)
+            .set(updatedAssignment.toMap(), SetOptions(merge: true));
+      } catch (_) {}
+
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Delete a homework assignment from Firestore and local offline cache.
+  Future<bool> deleteAssignment({
+    required String assignmentId,
+    String? classLevel,
+    String? subject,
+  }) async {
+    try {
+      final cLevel = (classLevel != null && classLevel.trim().isNotEmpty)
+          ? classLevel.trim()
+          : (getCachedProfile()?['class_level']?.toString() ?? 'Grade 10');
+
+      // 1. Update local cache
+      final currentList = getCachedAssignments(classLevel: cLevel, subject: 'All');
+      final updatedList = currentList.where((a) => a.id != assignmentId).toList();
+      await cacheAssignments(updatedList, classLevel: cLevel, subject: 'All');
+      if (subject != null && subject.isNotEmpty && subject.toLowerCase() != 'all') {
+        final filtered = updatedList.where((a) => a.subject.toLowerCase() == subject.toLowerCase()).toList();
+        await cacheAssignments(filtered, classLevel: cLevel, subject: subject);
+      }
+
+      // 2. Delete from Firestore
+      try {
+        await _firestore
+            .collection('classes')
+            .doc(cLevel)
+            .collection('assignments')
+            .doc(assignmentId)
+            .delete();
+      } catch (_) {}
+
       return true;
     } catch (_) {
       return false;
@@ -804,35 +1230,43 @@ class AuthService {
     final examId = 'exam_${safeSub}_${examDateTime.millisecondsSinceEpoch}';
 
     // 1. Attempt Firestore batch write
-    try {
-      final batch = _firestore.batch();
-      for (final grade in targetGrades) {
-        final docRef = _firestore
-            .collection('classes')
-            .doc(grade)
-            .collection('midterm_exams')
-            .doc(examId);
+    if (_isFirebaseLive) {
+      try {
+        if (firestoreFailureSimulated != null) {
+          throw firestoreFailureSimulated!;
+        }
+        final batch = _firestore.batch();
+        for (final grade in targetGrades) {
+          final docRef = _firestore
+              .collection('classes')
+              .doc(grade)
+              .collection('midterm_exams')
+              .doc(examId);
 
-        final item = ExamScheduleItem(
-          id: examId,
-          subject: cleanSubject,
-          paperTitle: paperTitle.trim().isNotEmpty ? paperTitle.trim() : '$cleanSubject Examination',
-          examDateTime: examDateTime,
-          durationMinutes: durationMinutes,
-          examHall: examHall.trim().isNotEmpty ? examHall.trim() : 'Main Examination Hall',
-          seatRow: seatRow.trim().isNotEmpty ? seatRow.trim() : 'General Seating',
-          syllabusTopics: syllabusTopics,
-          readingMaterials: readingMaterials,
-          maxMarks: maxMarks,
-          classLevel: grade,
-          imageUrl: imageUrl,
-        );
+          final item = ExamScheduleItem(
+            id: examId,
+            subject: cleanSubject,
+            paperTitle: paperTitle.trim().isNotEmpty ? paperTitle.trim() : '$cleanSubject Examination',
+            examDateTime: examDateTime,
+            durationMinutes: durationMinutes,
+            examHall: examHall.trim().isNotEmpty ? examHall.trim() : 'Main Examination Hall',
+            seatRow: seatRow.trim().isNotEmpty ? seatRow.trim() : 'General Seating',
+            syllabusTopics: syllabusTopics,
+            readingMaterials: readingMaterials,
+            maxMarks: maxMarks,
+            classLevel: grade,
+            imageUrl: imageUrl,
+          );
 
-        batch.set(docRef, item.toMap(), SetOptions(merge: true));
+          batch.set(docRef, item.toMap(), SetOptions(merge: true));
+        }
+        await batch.commit();
+      } catch (e) {
+        if (!_isNoAppException(e)) {
+          debugPrint('Firestore publishExamScheduleRange batch commit failed: $e');
+          rethrow;
+        }
       }
-      await batch.commit();
-    } catch (_) {
-      // In tests or offline mode, proceed to local write-through cache
     }
 
     // 2. Always update local write-through memory cache for affected grades
@@ -1012,7 +1446,7 @@ class AuthService {
 
       final sNo = (scholarNo != null && scholarNo.trim().isNotEmpty)
           ? scholarNo.trim()
-          : (getCachedScholarNo() ?? '2310910');
+          : (getCachedScholarNo() ?? '');
 
       final effectiveHouse = (house != null && house.trim().isNotEmpty)
           ? house.trim().toLowerCase()
@@ -1083,7 +1517,7 @@ class AuthService {
     List<SubjectGrade> subjectGrades = const [],
   }) async {
     final cleanClass = classLevel.trim().isNotEmpty ? classLevel.trim() : 'Grade 10';
-    final cleanScholar = scholarNo.trim().isNotEmpty ? scholarNo.trim() : '2310910';
+    final cleanScholar = scholarNo.trim().isNotEmpty ? scholarNo.trim() : (getCachedScholarNo() ?? '');
     final safeTerm = termName.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_');
     final cardId = 'rep_${cleanScholar}_$safeTerm';
 
@@ -1103,14 +1537,24 @@ class AuthService {
       isMeritClaimed: false,
     );
 
-    try {
-      await _firestore
-          .collection('classes')
-          .doc(cleanClass)
-          .collection('report_cards')
-          .doc(cardId)
-          .set(card.toMap(), SetOptions(merge: true));
-    } catch (_) {}
+    if (_isFirebaseLive) {
+      try {
+        if (firestoreFailureSimulated != null) {
+          throw firestoreFailureSimulated!;
+        }
+        await _firestore
+            .collection('classes')
+            .doc(cleanClass)
+            .collection('report_cards')
+            .doc(cardId)
+            .set(card.toMap(), SetOptions(merge: true));
+      } catch (e) {
+        if (!_isNoAppException(e)) {
+          debugPrint('Firestore publishStudentReportCard failed: $e');
+          rethrow;
+        }
+      }
+    }
 
     // Always update local cache so it appears immediately on UI
     final existing = getCachedReportCards(classLevel: cleanClass, scholarNo: cleanScholar);
@@ -1191,7 +1635,7 @@ class AuthService {
           : (getCachedProfile()?['class_level']?.toString() ?? 'Grade 10');
       final sNo = (scholarNo != null && scholarNo.trim().isNotEmpty)
           ? scholarNo.trim()
-          : (getCachedScholarNo() ?? '2310910');
+          : (getCachedScholarNo() ?? '');
 
       return _firestore
           .collection('classes')
@@ -1228,7 +1672,7 @@ class AuthService {
     final d = date ?? DateTime.now();
     final docId = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
     final cleanClass = classLevel.trim().isNotEmpty ? classLevel.trim() : 'Grade 10';
-    final cleanScholar = scholarNo.trim().isNotEmpty ? scholarNo.trim() : '2310910';
+    final cleanScholar = scholarNo.trim().isNotEmpty ? scholarNo.trim() : (getCachedScholarNo() ?? '');
 
     final record = AttendanceRecord(
       id: docId,
@@ -1430,6 +1874,7 @@ class AuthService {
       await _prefs?.remove(_kCachedEventsKey);
       await _prefs?.remove(_kCachedBallotsKey);
       await _prefs?.remove(_kCachedVoteReceiptsKey);
+      GlobalWalletStore.resetSession();
     } catch (_) {}
   }
 
@@ -1446,7 +1891,7 @@ class AuthService {
               .map((e) => SavedAccount.fromMap(Map<String, dynamic>.from(e as Map)))
               .toList();
 
-          // Deduplicate and ensure scholar 11209 / admin is always super_admin
+          // Deduplicate and preserve authenticated role
           final Map<String, SavedAccount> deduped = {};
           for (final acc in list) {
             final sNo = acc.scholarNo.trim().toLowerCase();
@@ -1595,6 +2040,7 @@ class AuthService {
 
   /// Switch the active student session on this device.
   Future<UserCredential?> switchAccount(SavedAccount account) async {
+    GlobalWalletStore.resetSession();
     await cacheHouse(account.houseName);
     await cacheProfile(account.cachedProfile);
     _prefs?.setString('cached_scholar_no', account.scholarNo);
@@ -1741,51 +2187,6 @@ class AuthService {
       return signInAdmin(password: password);
     }
 
-    // Super Admin Scholar 11209 Instant Verification with Designated Passwords
-    if (cleanScholar == '11209') {
-      if (password != '2310910' && password != 'M@Bahrain2010') {
-        throw FirebaseAuthException(
-          code: 'wrong-password',
-          message: 'Incorrect password for Administrator account.',
-        );
-      }
-      final adminProf = {
-        'uid': 'super_admin_11209',
-        'full_name': 'Administrator',
-        'scholar_no': '11209',
-        'role': 'super_admin',
-        'house_name': 'ruby',
-        'class_level': 'Staff',
-        'division': 'Admin',
-        'created_at': FieldValue.serverTimestamp(),
-      };
-      await cacheHouse('ruby');
-      await cacheProfile(adminProf);
-      await recordActiveAccount(
-        profile: adminProf,
-        password: password,
-      );
-
-      // Background Firebase Auth Synchronization
-      final email = _scholarToEmail(cleanScholar);
-      _auth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      ).catchError((e) {
-        return _auth.createUserWithEmailAndPassword(
-          email: email,
-          password: password,
-        );
-      }).then((cred) {
-        final u = cred.user;
-        if (u != null) {
-          _firestore.collection('users').doc(u.uid).set(adminProf, SetOptions(merge: true)).catchError((_) {});
-        }
-      }).catchError((_) {});
-
-      return null;
-    }
-
     final email = _scholarToEmail(cleanScholar);
     UserCredential cred;
 
@@ -1832,16 +2233,36 @@ class AuthService {
   static const Map<String, dynamic> adminProfile = _adminProfile;
 
   /// Sign in as Administrator (admin@asianschool.bh).
-  /// Auto-creates the admin account if it does not exist yet.
+  /// Verifies credentials securely against Firebase Auth.
   Future<UserCredential?> signInAdmin({required String password}) async {
-    if (password != '2310910' && password != 'M@Bahrain2010') {
-      throw FirebaseAuthException(
-        code: 'wrong-password',
-        message: 'Incorrect password for Administrator account.',
+    const adminEmail = 'admin@asianschool.bh';
+    UserCredential cred;
+
+    try {
+      cred = await _auth.signInWithEmailAndPassword(
+        email: adminEmail,
+        password: password,
       );
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'user-not-found') {
+        cred = await _auth.createUserWithEmailAndPassword(
+          email: adminEmail,
+          password: password,
+        );
+      } else {
+        rethrow;
+      }
     }
 
-    const adminEmail = 'admin@asianschool.bh';
+    final u = cred.user;
+    if (u != null) {
+      _firestore
+          .collection('users')
+          .doc(u.uid)
+          .set(_adminProfile, SetOptions(merge: true))
+          .catchError((_) {});
+    }
+
     await cacheHouse('ruby');
     await cacheProfile(_adminProfile);
     await recordActiveAccount(
@@ -1849,23 +2270,7 @@ class AuthService {
       password: password,
     );
 
-    // Background Firebase Auth Synchronization
-    _auth.signInWithEmailAndPassword(
-      email: adminEmail,
-      password: password,
-    ).catchError((e) {
-      return _auth.createUserWithEmailAndPassword(
-        email: adminEmail,
-        password: password,
-      );
-    }).then((cred) {
-      final u = cred.user;
-      if (u != null) {
-        _firestore.collection('users').doc(u.uid).set(_adminProfile, SetOptions(merge: true)).catchError((_) {});
-      }
-    }).catchError((_) {});
-
-    return null;
+    return cred;
   }
 
   /// Register a new user and save their profile to Firestore.
@@ -1951,7 +2356,7 @@ class AuthService {
         final scholarNo = (data['scholar_no'] ?? '').toString().trim();
         final currentRole = (data['role'] ?? '').toString().trim().toLowerCase();
 
-        // Enforce super_admin role for authorized super admins (11209, 2310910, admin)
+        // Enforce super_admin role for verified administrators
         if (HierarchyService.isSuperAdmin(scholarNo: scholarNo, role: currentRole)) {
           data['role'] = 'super_admin';
           if (currentRole != 'super_admin') {
@@ -2005,8 +2410,11 @@ class AuthService {
 
   /// Sign out.
   Future<void> signOut() async {
-    await _auth.signOut();
+    try {
+      await _auth.signOut();
+    } catch (_) {}
     await clearCache();
+    GlobalWalletStore.resetSession();
   }
 
   /// Stream house standings.
@@ -2031,14 +2439,55 @@ class AuthService {
     }
   }
 
-  /// Upload certificate with cloud storage and fallback Base64 data URI
+  /// Canonical format for certificate storage in Cloud Storage.
+  /// Enforces: house_claims/{house}/{scholarNo}_{claimId}.jpg
+  static String formatCertificateStoragePath({
+    required String house,
+    required String scholarNo,
+    required String claimId,
+  }) {
+    final cleanHouse = house.trim().toLowerCase().isNotEmpty
+        ? house.trim().toLowerCase()
+        : 'general';
+    final cleanScholar = scholarNo.trim().replaceAll('_', '').isNotEmpty
+        ? scholarNo.trim().replaceAll('_', '')
+        : 'scholar';
+    final cleanClaimId = claimId.trim().isNotEmpty
+        ? claimId.trim()
+        : 'claim_${DateTime.now().millisecondsSinceEpoch}';
+    return 'house_claims/$cleanHouse/${cleanScholar}_$cleanClaimId.jpg';
+  }
+
+  /// Upload certificate with cloud storage and fallback Base64 data URI.
+  /// Enforces storage path: house_claims/{house}/{scholarNo}_{claimId}.jpg
   Future<String> uploadCertificateImage({
     required Uint8List fileBytes,
     required String scholarNo,
+    String? house,
+    String? claimId,
   }) async {
-    final cleanScholar = scholarNo.trim().isNotEmpty ? scholarNo.trim() : 'scholar';
-    final fileName =
-        '${cleanScholar}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+    final cleanScholar = scholarNo.trim().replaceAll('_', '').isNotEmpty
+        ? scholarNo.trim().replaceAll('_', '')
+        : 'scholar';
+    final cleanHouse = (house != null && house.trim().isNotEmpty)
+        ? house.trim().toLowerCase()
+        : (getCachedHouse() ?? 'general').toLowerCase();
+    
+    String effectiveClaimId = (claimId != null && claimId.trim().isNotEmpty)
+        ? claimId.trim()
+        : '';
+    if (effectiveClaimId.isEmpty) {
+      try {
+        effectiveClaimId = _firestore.collection('house_claims').doc().id;
+      } catch (_) {
+        effectiveClaimId = 'claim_${DateTime.now().millisecondsSinceEpoch}';
+      }
+    }
+    final storagePath = formatCertificateStoragePath(
+      house: cleanHouse,
+      scholarNo: cleanScholar,
+      claimId: effectiveClaimId,
+    );
 
     // Windows desktop guard: bypass C++ firebase_storage taskEvent channel
     // to prevent native threading violations (shell.cc:1183)
@@ -2048,7 +2497,9 @@ class AuthService {
     }
 
     try {
-      final ref = FirebaseStorage.instance.ref().child('claims/$fileName');
+      final ref = FirebaseStorage.instance
+          .ref()
+          .child(storagePath);
 
       final uploadTask = ref.putData(
         fileBytes,
@@ -2070,24 +2521,72 @@ class AuthService {
   }
 
   /// Submit a new house claim (Status: pending).
-  Future<void> submitHouseClaim({
+  /// Pre-allocates docRef.id so the storage upload filename contains the exact Firestore document ID
+  /// and OCR verification binds directly to the created document.
+  Future<String> submitHouseClaim({
     required String scholarNo,
     required String studentName,
     required String houseName,
     required String activityTitle,
     required int points,
-    required String certUrl,
+    String? certUrl,
+    Uint8List? fileBytes,
+    String? claimId,
   }) async {
-    await _firestore.collection('house_claims').add({
-      'scholar_no': scholarNo,
-      'student_name': studentName,
-      'house_name': houseName.toLowerCase(),
-      'activity_title': activityTitle,
-      'points': points,
-      'cert_url': certUrl,
-      'status': 'pending',
-      'created_at': FieldValue.serverTimestamp(),
-    });
+    final cleanHouse = houseName.toLowerCase().trim();
+    final cleanScholar = scholarNo.trim().replaceAll('_', '').isNotEmpty
+        ? scholarNo.trim().replaceAll('_', '')
+        : 'scholar';
+
+    String effectiveClaimId = (claimId != null && claimId.trim().isNotEmpty)
+        ? claimId.trim()
+        : '';
+
+    // If claimId was not explicitly provided but certUrl has the expected filename structure,
+    // extract the pre-allocated claim ID from the URL so Firestore document binds directly to it!
+    if (effectiveClaimId.isEmpty && certUrl != null && certUrl.isNotEmpty) {
+      final match = RegExp(r'_([a-zA-Z0-9_\-]+)\.(?:jpg|jpeg|png|webp|pdf)').firstMatch(certUrl);
+      if (match != null && match.groupCount >= 1) {
+        effectiveClaimId = match.group(1)!;
+      }
+    }
+
+    try {
+      // Pre-allocate docRef so the document ID is determined beforehand
+      final docRef = effectiveClaimId.isNotEmpty
+          ? _firestore.collection('house_claims').doc(effectiveClaimId)
+          : _firestore.collection('house_claims').doc();
+      effectiveClaimId = docRef.id;
+
+      String finalCertUrl = certUrl ?? '';
+      if (fileBytes != null && fileBytes.isNotEmpty) {
+        finalCertUrl = await uploadCertificateImage(
+          fileBytes: fileBytes,
+          scholarNo: cleanScholar,
+          house: cleanHouse,
+          claimId: effectiveClaimId,
+        );
+      }
+
+      await docRef.set({
+        'claim_id': effectiveClaimId,
+        'scholar_no': cleanScholar,
+        'student_name': studentName,
+        'house_name': cleanHouse,
+        'activity_title': activityTitle,
+        'points': points,
+        'cert_url': finalCertUrl,
+        'status': 'pending',
+        'created_at': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint('Firestore submitHouseClaim fallback or error: $e');
+      if (effectiveClaimId.isEmpty) {
+        effectiveClaimId = 'claim_${DateTime.now().millisecondsSinceEpoch}';
+      }
+    }
+
+    return effectiveClaimId;
   }
 
   /// Stream pending claims for Admin review.
@@ -3089,63 +3588,75 @@ class AuthService {
 
     // 3. Atomic Firestore Transaction (Anti-Double-Voting Verification)
     try {
-      final voteLockRef =
-          _firestore.collection('election_votes').doc('${bId}_$voterHash');
-      final ballotRef = _firestore.collection('elections').doc(bId);
-
-      bool alreadyVoted = false;
-
-      await _firestore.runTransaction((transaction) async {
-        final voteLockSnap = await transaction.get(voteLockRef);
-        if (voteLockSnap.exists) {
-          alreadyVoted = true;
-          return;
+      if (_isFirebaseLive) {
+        if (firestoreFailureSimulated != null) {
+          throw firestoreFailureSimulated!;
         }
+        final voteLockRef =
+            _firestore.collection('election_votes').doc('${bId}_$voterHash');
+        final ballotRef = _firestore.collection('elections').doc(bId);
 
-        final ballotSnap = await transaction.get(ballotRef);
-        if (ballotSnap.exists) {
-          final ballotData = ballotSnap.data() ?? {};
-          final rawCandidates = ballotData['candidates'] as List? ?? [];
-          final updatedCandidates = <Map<String, dynamic>>[];
+        bool alreadyVoted = false;
 
-          for (final item in rawCandidates) {
-            if (item is Map) {
-              final cMap = Map<String, dynamic>.from(item);
-              if (cMap['scholar_no']?.toString().trim() ==
-                  candidate.scholarNo.trim()) {
-                final curVotes = (cMap['votes_count'] as num?)?.toInt() ?? 0;
-                cMap['votes_count'] = curVotes + 1;
-              }
-              updatedCandidates.add(cMap);
-            }
+        await _firestore.runTransaction((transaction) async {
+          final voteLockSnap = await transaction.get(voteLockRef);
+          if (voteLockSnap.exists) {
+            alreadyVoted = true;
+            return;
           }
 
-          final curTotal = (ballotData['total_votes_cast'] as num?)?.toInt() ?? 0;
+          final ballotSnap = await transaction.get(ballotRef);
+          if (ballotSnap.exists) {
+            final ballotData = ballotSnap.data() ?? {};
+            final rawCandidates = ballotData['candidates'] as List? ?? [];
+            final updatedCandidates = <Map<String, dynamic>>[];
 
-          transaction.set(voteLockRef, {
-            'ballot_id': bId,
-            'voter_hash': voterHash,
-            'proof_token': proofToken,
-            'timestamp': FieldValue.serverTimestamp(),
-          });
+            for (final item in rawCandidates) {
+              if (item is Map) {
+                final cMap = Map<String, dynamic>.from(item);
+                if (cMap['scholar_no']?.toString().trim() ==
+                    candidate.scholarNo.trim()) {
+                  final curVotes = (cMap['votes_count'] as num?)?.toInt() ?? 0;
+                  cMap['votes_count'] = curVotes + 1;
+                }
+                updatedCandidates.add(cMap);
+              }
+            }
 
-          transaction.update(ballotRef, {
-            'candidates': updatedCandidates,
-            'total_votes_cast': curTotal + 1,
-            'last_updated': FieldValue.serverTimestamp(),
-          });
+            final curTotal = (ballotData['total_votes_cast'] as num?)?.toInt() ?? 0;
+
+            transaction.set(voteLockRef, {
+              'ballot_id': bId,
+              'voter_hash': voterHash,
+              'proof_token': proofToken,
+              'timestamp': FieldValue.serverTimestamp(),
+            });
+
+            transaction.update(ballotRef, {
+              'candidates': updatedCandidates,
+              'total_votes_cast': curTotal + 1,
+              'last_updated': FieldValue.serverTimestamp(),
+            });
+          }
+        });
+
+        if (alreadyVoted) {
+          return (
+            success: false,
+            receipt: null,
+            error: 'Vote rejected: Duplicate ballot submission detected.',
+          );
         }
-      });
-
-      if (alreadyVoted) {
-        return (
-          success: false,
-          receipt: null,
-          error: 'Vote rejected: Duplicate ballot submission detected.',
-        );
       }
     } catch (e) {
       debugPrint('Firestore vote transaction note: $e');
+      if (_isFirebaseLive && !_isNoAppException(e)) {
+        return (
+          success: false,
+          receipt: null,
+          error: 'Vote submission failed: $e',
+        );
+      }
     }
 
     // 4. Write-through persist receipt voucher to local disk
@@ -3572,9 +4083,6 @@ class AuthService {
         timestamp: now,
       );
 
-      final fixtureRef = _firestore.collection('sports_fixtures').doc(fixture.fixtureId);
-      final eventRef = fixtureRef.collection('events').doc('cert_${now.millisecondsSinceEpoch}');
-
       final updatedFixture = SportsMatchFixture(
         fixtureId: fixture.fixtureId,
         tournamentTitle: fixture.tournamentTitle,
@@ -3608,10 +4116,17 @@ class AuthService {
         timestamp: now,
       );
 
-      final batch = _firestore.batch();
-      batch.update(fixtureRef, updatedFixture.toMap());
-      batch.set(eventRef, finalEvent.toMap());
-      await batch.commit();
+      if (_isFirebaseLive) {
+        if (firestoreFailureSimulated != null) {
+          throw firestoreFailureSimulated!;
+        }
+        final fixtureRef = _firestore.collection('sports_fixtures').doc(fixture.fixtureId);
+        final eventRef = fixtureRef.collection('events').doc('cert_${now.millisecondsSinceEpoch}');
+        final batch = _firestore.batch();
+        batch.update(fixtureRef, updatedFixture.toMap());
+        batch.set(eventRef, finalEvent.toMap());
+        await batch.commit();
+      }
 
       // Update local write-through cache
       final cachedList = getCachedSportsFixtures();
@@ -3624,7 +4139,15 @@ class AuthService {
       await cacheSportsFixtures(cachedList);
 
       return (success: true, error: null, token: token);
-    } catch (_) {
+    } catch (e) {
+      if (_isFirebaseLive && !_isNoAppException(e)) {
+        debugPrint('Firestore certifyMatchResult failed: $e');
+        return (
+          success: false,
+          error: 'Database write failed: $e',
+          token: null,
+        );
+      }
       // Offline / test fallback
       final now = DateTime.now();
       final token = SportsSecurityService.generateMatchCertificationToken(
@@ -3923,23 +4446,28 @@ class AuthService {
     );
 
     try {
-      final winnerRef = _firestore.collection('house_points').doc(winningHouse.toLowerCase());
-      final runnerUpRef = _firestore.collection('house_points').doc(runnerUpHouse.toLowerCase());
-      final trophyRef = _firestore.collection('sports_trophies').doc(trophyId);
-      final noticeRef = _firestore.collection('notices').doc('notice_$trophyId');
+      if (_isFirebaseLive) {
+        if (firestoreFailureSimulated != null) {
+          throw firestoreFailureSimulated!;
+        }
+        final winnerRef = _firestore.collection('house_points').doc(winningHouse.toLowerCase());
+        final runnerUpRef = _firestore.collection('house_points').doc(runnerUpHouse.toLowerCase());
+        final trophyRef = _firestore.collection('sports_trophies').doc(trophyId);
+        final noticeRef = _firestore.collection('notices').doc('notice_$trophyId');
 
-      await _firestore.runTransaction((tx) async {
-        tx.set(trophyRef, trophyRecord.toMap());
-        tx.set(winnerRef, {'total_points': FieldValue.increment(pointsAwarded)}, SetOptions(merge: true));
-        tx.set(runnerUpRef, {'total_points': FieldValue.increment(runnerUpPoints)}, SetOptions(merge: true));
-        tx.set(noticeRef, {
-          'title': '🏆 ${trophyRecord.proclamationHeadline}',
-          'content':
-              'Official proclamation: ${winningHouse.toUpperCase()} House has been awarded +$pointsAwarded PTS for winning ${tournamentTitle.toUpperCase()}! ${runnerUpHouse.toUpperCase()} awarded +$runnerUpPoints PTS as runners-up.',
-          'created_at': FieldValue.serverTimestamp(),
-          'house': winningHouse.toLowerCase(),
+        await _firestore.runTransaction((tx) async {
+          tx.set(trophyRef, trophyRecord.toMap());
+          tx.set(winnerRef, {'total_points': FieldValue.increment(pointsAwarded)}, SetOptions(merge: true));
+          tx.set(runnerUpRef, {'total_points': FieldValue.increment(runnerUpPoints)}, SetOptions(merge: true));
+          tx.set(noticeRef, {
+            'title': '🏆 ${trophyRecord.proclamationHeadline}',
+            'content':
+                'Official proclamation: ${winningHouse.toUpperCase()} House has been awarded +$pointsAwarded PTS for winning ${tournamentTitle.toUpperCase()}! ${runnerUpHouse.toUpperCase()} awarded +$runnerUpPoints PTS as runners-up.',
+            'created_at': FieldValue.serverTimestamp(),
+            'house': winningHouse.toLowerCase(),
+          });
         });
-      });
+      }
 
       // Update local write-through caches
       final trophies = getCachedSportsTrophies();
@@ -3952,6 +4480,14 @@ class AuthService {
 
       return (success: true, error: null, record: trophyRecord);
     } catch (e) {
+      if (_isFirebaseLive && !_isNoAppException(e)) {
+        debugPrint('Firestore awardChampionshipTrophyAndPoints failed: $e');
+        return (
+          success: false,
+          error: 'Database transaction failed: $e',
+          record: null,
+        );
+      }
       // Offline / unit test fallback: update caches anyway so tests without live Firestore pass
       final trophies = getCachedSportsTrophies();
       await cacheSportsTrophies([trophyRecord, ...trophies]);

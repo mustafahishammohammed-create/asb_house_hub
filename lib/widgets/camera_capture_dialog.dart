@@ -224,11 +224,15 @@ class _CameraCaptureDialogState extends State<CameraCaptureDialog> {
                     ),
                   ],
                 ),
-                IconButton(
-                  constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-                  tooltip: 'Close camera dialog',
-                  onPressed: () => Navigator.pop(context, null),
-                  icon: const Icon(Icons.close_rounded),
+                Semantics(
+                  button: true,
+                  label: 'Close dialog',
+                  child: IconButton(
+                    constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.pop(context, null),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
                 ),
               ],
             ),

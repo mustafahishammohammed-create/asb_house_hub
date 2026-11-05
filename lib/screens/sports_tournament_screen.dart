@@ -6,6 +6,7 @@ import '../models/sports_trophy.dart';
 import '../services/auth_service.dart';
 import '../services/hierarchy_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/managed_modal_scope.dart';
 import 'live_match_hud_screen.dart';
 
 class SportsTournamentScreen extends StatefulWidget {
@@ -943,8 +944,10 @@ class _SportsTournamentScreenState extends State<SportsTournamentScreen>
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) {
-        return StatefulBuilder(
-          builder: (modalContext, setModalState) {
+        return ManagedModalScope(
+          controllers: [titleController, venueController],
+          child: StatefulBuilder(
+            builder: (modalContext, setModalState) {
             return Padding(
               padding: EdgeInsets.only(
                 left: 20,
@@ -982,7 +985,7 @@ class _SportsTournamentScreenState extends State<SportsTournamentScreen>
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<SportType>(
-                      value: selectedSport,
+                      initialValue: selectedSport,
                       decoration: InputDecoration(
                         labelText: 'Sport Type',
                         filled: true,
@@ -1001,7 +1004,7 @@ class _SportsTournamentScreenState extends State<SportsTournamentScreen>
                       children: [
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            value: houseA,
+                            initialValue: houseA,
                             decoration: InputDecoration(
                               labelText: 'House A (Home)',
                               filled: true,
@@ -1019,7 +1022,7 @@ class _SportsTournamentScreenState extends State<SportsTournamentScreen>
                         const SizedBox(width: 12),
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            value: houseB,
+                            initialValue: houseB,
                             decoration: InputDecoration(
                               labelText: 'House B (Away)',
                               filled: true,
@@ -1089,10 +1092,11 @@ class _SportsTournamentScreenState extends State<SportsTournamentScreen>
               ),
             );
           },
-        );
-      },
-    );
-  }
+        ),
+      );
+    },
+  );
+}
 
   void _showAwardAccoladeDialog() {
     final parentMessenger = ScaffoldMessenger.of(context);
@@ -1112,8 +1116,10 @@ class _SportsTournamentScreenState extends State<SportsTournamentScreen>
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) {
-        return StatefulBuilder(
-          builder: (modalContext, setModalState) {
+        return ManagedModalScope(
+          controllers: [scholarController, nameController, statCountController],
+          child: StatefulBuilder(
+            builder: (modalContext, setModalState) {
             return Padding(
               padding: EdgeInsets.only(
                 left: 20,
@@ -1164,7 +1170,7 @@ class _SportsTournamentScreenState extends State<SportsTournamentScreen>
                       children: [
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            value: selectedHouse,
+                            initialValue: selectedHouse,
                             decoration: InputDecoration(
                               labelText: 'House',
                               filled: true,
@@ -1182,7 +1188,7 @@ class _SportsTournamentScreenState extends State<SportsTournamentScreen>
                         const SizedBox(width: 12),
                         Expanded(
                           child: DropdownButtonFormField<SportType>(
-                            value: selectedSport,
+                            initialValue: selectedSport,
                             decoration: InputDecoration(
                               labelText: 'Sport',
                               filled: true,
@@ -1201,7 +1207,7 @@ class _SportsTournamentScreenState extends State<SportsTournamentScreen>
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<SportAccoladeType>(
-                      value: selectedAccolade,
+                      initialValue: selectedAccolade,
                       decoration: InputDecoration(
                         labelText: 'Accolade Title',
                         filled: true,
@@ -1268,10 +1274,11 @@ class _SportsTournamentScreenState extends State<SportsTournamentScreen>
               ),
             );
           },
-        );
-      },
-    );
-  }
+        ),
+      );
+    },
+  );
+}
 
   void _showAwardTrophyDialog() {
     final parentMessenger = ScaffoldMessenger.of(context);
@@ -1290,8 +1297,10 @@ class _SportsTournamentScreenState extends State<SportsTournamentScreen>
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) {
-        return StatefulBuilder(
-          builder: (modalContext, setModalState) {
+        return ManagedModalScope(
+          controllers: [titleController, mvpController],
+          child: StatefulBuilder(
+            builder: (modalContext, setModalState) {
             return Padding(
               padding: EdgeInsets.only(
                 left: 20,
@@ -1329,7 +1338,7 @@ class _SportsTournamentScreenState extends State<SportsTournamentScreen>
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<SportType>(
-                      value: selectedSport,
+                      initialValue: selectedSport,
                       decoration: InputDecoration(
                         labelText: 'Sport Type',
                         filled: true,
@@ -1348,7 +1357,7 @@ class _SportsTournamentScreenState extends State<SportsTournamentScreen>
                       children: [
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            value: winningHouse,
+                            initialValue: winningHouse,
                             decoration: InputDecoration(
                               labelText: '🏆 Champions (+100 PTS)',
                               filled: true,
@@ -1366,7 +1375,7 @@ class _SportsTournamentScreenState extends State<SportsTournamentScreen>
                         const SizedBox(width: 12),
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            value: runnerUpHouse,
+                            initialValue: runnerUpHouse,
                             decoration: InputDecoration(
                               labelText: '🥈 Runners-Up (+50 PTS)',
                               filled: true,
@@ -1411,7 +1420,7 @@ class _SportsTournamentScreenState extends State<SportsTournamentScreen>
                           final adminScholar = (profile?['scholar_no'] ?? '2310910').toString();
                           final adminRole = (profile?['role'] ?? 'captain').toString();
 
-                          await _authService.awardChampionshipTrophyAndPoints(
+                          final res = await _authService.awardChampionshipTrophyAndPoints(
                             tournamentTitle: titleController.text,
                             sportType: selectedSport,
                             winningHouse: winningHouse,
@@ -1424,13 +1433,22 @@ class _SportsTournamentScreenState extends State<SportsTournamentScreen>
                             adminRole: adminRole,
                           );
                           if (!mounted) return;
-                          setState(() {});
-                          parentMessenger.showSnackBar(
-                            SnackBar(
-                              content: Text('🏆 ${winningHouse.toUpperCase()} crowned ${titleController.text} Champions (+100 PTS)!'),
-                              backgroundColor: Colors.amber[800],
-                            ),
-                          );
+                          if (res.success) {
+                            setState(() {});
+                            parentMessenger.showSnackBar(
+                              SnackBar(
+                                content: Text('🏆 ${winningHouse.toUpperCase()} crowned ${titleController.text} Champions (+100 PTS)!'),
+                                backgroundColor: Colors.amber[800],
+                              ),
+                            );
+                          } else {
+                            parentMessenger.showSnackBar(
+                              SnackBar(
+                                content: Text(res.error ?? 'Failed to crown champions. Database transaction failed.'),
+                                backgroundColor: const Color(0xFFEF4444),
+                              ),
+                            );
+                          }
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF6366F1),
@@ -1445,9 +1463,10 @@ class _SportsTournamentScreenState extends State<SportsTournamentScreen>
               ),
             );
           },
-        );
-      },
-    );
-  }
+        ),
+      );
+    },
+  );
+}
 }
 

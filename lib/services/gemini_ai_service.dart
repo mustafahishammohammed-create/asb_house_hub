@@ -11,10 +11,29 @@ class GeminiAiService {
 
   /// Official Google Gemini production models in priority fallback order
   static const List<String> _candidateModels = [
-    'gemini-3.8-flash',
-    'gemini-2.5-flash',
     'gemini-2.0-flash',
+    'gemini-1.5-flash',
+    'gemini-1.5-pro',
   ];
+
+  /// Public read-only view of official candidate models in priority fallback order
+  static List<String> get candidateModels => List.unmodifiable(_candidateModels);
+
+  @visibleForTesting
+  static http.Client? httpClientOverride;
+
+  static Future<http.Response> _post({
+    required Uri url,
+    required Map<String, String> headers,
+    required Object body,
+    required Duration timeout,
+  }) {
+    final client = httpClientOverride;
+    if (client != null) {
+      return client.post(url, headers: headers, body: body).timeout(timeout);
+    }
+    return http.post(url, headers: headers, body: body).timeout(timeout);
+  }
 
   static Future<String?> getSavedApiKey() async {
     final prefs = await SharedPreferences.getInstance();
@@ -47,8 +66,8 @@ class GeminiAiService {
         final url = Uri.parse(
           'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$trimmed',
         );
-        final res = await http.post(
-          url,
+        final res = await _post(
+          url: url,
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({
             'contents': [
@@ -58,7 +77,8 @@ class GeminiAiService {
               }
             ],
           }),
-        ).timeout(const Duration(seconds: 10));
+          timeout: const Duration(seconds: 10),
+        );
 
         if (res.statusCode == 200) {
           return (isValid: true, message: 'Connected to Gemini Live ($model)!');
@@ -318,11 +338,12 @@ ${liveContext ?? ''}
           }
         };
 
-        final res = await http.post(
-          restUrl,
+        final res = await _post(
+          url: restUrl,
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode(payload),
-        ).timeout(const Duration(seconds: 15));
+          timeout: const Duration(seconds: 15),
+        );
 
         if (res.statusCode == 200) {
           final json = jsonDecode(res.body);
@@ -331,8 +352,14 @@ ${liveContext ?? ''}
             return sanitizeAiOutput(candidateText.toString().trim());
           }
         } else {
-          final errJson = jsonDecode(res.body);
-          lastError = errJson['error']?['message'] ?? 'HTTP ${res.statusCode}';
+          String errMsg = 'HTTP ${res.statusCode}';
+          try {
+            final errJson = jsonDecode(res.body);
+            if (errJson is Map && errJson['error']?['message'] != null) {
+              errMsg = errJson['error']['message'].toString();
+            }
+          } catch (_) {}
+          lastError = errMsg;
           debugPrint('Gemini model $modelName returned error: $lastError');
         }
       } catch (e) {

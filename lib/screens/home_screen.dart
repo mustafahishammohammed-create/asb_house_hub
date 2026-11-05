@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter/rendering.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:ui';
 import '../services/auth_service.dart';
 import '../services/hierarchy_service.dart';
 import '../theme/app_theme.dart';
@@ -26,6 +25,7 @@ import 'login_screen.dart';
 import '../widgets/confetti_overlay.dart';
 import '../widgets/account_switcher_modal.dart';
 import '../widgets/student_profile_modal.dart';
+import '../widgets/managed_modal_scope.dart';
 
 class HomeScreen extends StatefulWidget {
   final int initialIndex;
@@ -380,8 +380,10 @@ class _HomeScreenState extends State<HomeScreen>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) => Container(
+      builder: (context) => ManagedModalScope(
+        controllers: [titleController],
+        child: StatefulBuilder(
+          builder: (context, setModalState) => Container(
           padding: EdgeInsets.only(
             top: 32,
             left: 32,
@@ -729,10 +731,19 @@ class _HomeScreenState extends State<HomeScreen>
                             final navigator = Navigator.of(context);
 
                             try {
+                              String claimId;
+                              try {
+                                claimId = _firestore.collection('house_claims').doc().id;
+                              } catch (_) {
+                                claimId = 'claim_${DateTime.now().millisecondsSinceEpoch}';
+                              }
+
                               final certUrl = await _authService
                                   .uploadCertificateImage(
                                     fileBytes: selectedImageBytes!,
                                     scholarNo: scholarNo,
+                                    house: houseName,
+                                    claimId: claimId,
                                   );
                               await _authService.submitHouseClaim(
                                 scholarNo: scholarNo,
@@ -741,6 +752,7 @@ class _HomeScreenState extends State<HomeScreen>
                                 activityTitle: titleController.text.trim(),
                                 points: selectedPoints,
                                 certUrl: certUrl,
+                                claimId: claimId,
                               );
 
                               // Also post to Live Event Wall pending approval
@@ -809,14 +821,9 @@ class _HomeScreenState extends State<HomeScreen>
           ),
         ),
       ),
-    ).whenComplete(() {
-      Future.delayed(const Duration(milliseconds: 500), () {
-        try {
-          titleController.dispose();
-        } catch (_) {}
-      });
-    });
-  }
+    ),
+  );
+}
 
   void _showFeatureModal(
     String title,
@@ -3841,8 +3848,10 @@ class _HomeScreenState extends State<HomeScreen>
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
+        return ManagedModalScope(
+          controllers: [titleController, contentController],
+          child: StatefulBuilder(
+            builder: (modalCtx, setModalState) {
             return Padding(
               padding: EdgeInsets.only(
                 left: 20,
@@ -3884,7 +3893,7 @@ class _HomeScreenState extends State<HomeScreen>
                       children: [
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            value: category,
+                            initialValue: category,
                             decoration: InputDecoration(
                               labelText: 'Category',
                               filled: true,
@@ -3902,7 +3911,7 @@ class _HomeScreenState extends State<HomeScreen>
                         const SizedBox(width: 12),
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            value: targetAudience,
+                            initialValue: targetAudience,
                             decoration: InputDecoration(
                               labelText: 'Audience',
                               filled: true,
@@ -3937,24 +3946,27 @@ class _HomeScreenState extends State<HomeScreen>
                       height: 48,
                       child: ElevatedButton(
                         onPressed: () async {
-                          if (titleController.text.trim().isEmpty || contentController.text.trim().isEmpty) {
+                          final noticeTitle = titleController.text.trim();
+                          final noticeContent = contentController.text.trim();
+                          if (noticeTitle.isEmpty || noticeContent.isEmpty) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(content: Text('Please enter circular title and content.')),
                             );
                             return;
                           }
+                          final messenger = ScaffoldMessenger.of(context);
                           Navigator.of(ctx).pop();
                           await _authService.publishSchoolNotice(
-                            title: titleController.text,
-                            content: contentController.text,
+                            title: noticeTitle,
+                            content: noticeContent,
                             category: category,
                             targetAudience: targetAudience,
                           );
                           if (!mounted) return;
                           setState(() {});
-                          ScaffoldMessenger.of(context).showSnackBar(
+                          messenger.showSnackBar(
                             SnackBar(
-                              content: Text('Published circular: "${titleController.text}"!'),
+                              content: Text('Published circular: "$noticeTitle"!'),
                               backgroundColor: Colors.green[700],
                             ),
                           );
@@ -3972,10 +3984,11 @@ class _HomeScreenState extends State<HomeScreen>
               ),
             );
           },
-        );
-      },
-    );
-  }
+        ),
+      );
+    },
+  );
+}
 
   Widget _buildLiveTickerBanner(bool isSuperAdmin) {
     return StreamBuilder<DocumentSnapshot>(
@@ -4067,98 +4080,95 @@ class _HomeScreenState extends State<HomeScreen>
 
     showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) => AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
-          ),
-          title: const Row(
-            children: [
-              Icon(Icons.campaign_rounded, color: Colors.amber, size: 28),
-              SizedBox(width: 10),
-              Text(
-                'Live Broadcast Ticker',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              ),
-            ],
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+      builder: (context) => ManagedModalScope(
+        controllers: [txtController],
+        child: StatefulBuilder(
+          builder: (context, setModalState) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
+            title: const Row(
               children: [
-                const Text(
-                  'Broadcast instant updates across all school student screens.',
-                  style: TextStyle(fontSize: 13, color: Colors.grey),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: txtController,
-                  maxLines: 2,
-                  decoration: InputDecoration(
-                    labelText: 'Announcement Message',
-                    hintText: 'e.g. Ruby House takes the lead in Sports Day!',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                SwitchListTile(
-                  title: const Text(
-                    'Broadcast Active',
-                    style: TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                  value: activeState,
-                  activeThumbColor: Colors.redAccent,
-                  onChanged: (val) => setModalState(() => activeState = val),
+                Icon(Icons.campaign_rounded, color: Colors.amber, size: 28),
+                SizedBox(width: 10),
+                Text(
+                  'Live Broadcast Ticker',
+                  style: TextStyle(fontWeight: FontWeight.w900),
                 ),
               ],
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text(
-                'Cancel',
-                style: TextStyle(fontWeight: FontWeight.w700),
-              ),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.redAccent,
-                foregroundColor: Colors.white,
-                minimumSize: const Size(80, 36),
-              ),
-              onPressed: () async {
-                await _firestore.collection('settings').doc('ticker').set({
-                  'message': txtController.text.trim(),
-                  'active': activeState,
-                  'updated_at': FieldValue.serverTimestamp(),
-                });
-                if (!context.mounted) return;
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Live Ticker updated across school!'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Broadcast instant updates across all school student screens.',
+                    style: TextStyle(fontSize: 13, color: Colors.grey),
                   ),
-                );
-              },
-              child: const Text(
-                'Publish Broadcast',
-                style: TextStyle(fontWeight: FontWeight.w800),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: txtController,
+                    maxLines: 2,
+                    decoration: InputDecoration(
+                      labelText: 'Announcement Message',
+                      hintText: 'e.g. Ruby House takes the lead in Sports Day!',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SwitchListTile(
+                    title: const Text(
+                      'Broadcast Active',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    value: activeState,
+                    activeThumbColor: Colors.redAccent,
+                    onChanged: (val) => setModalState(() => activeState = val),
+                  ),
+                ],
               ),
             ),
-          ],
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text(
+                  'Cancel',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.redAccent,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(80, 36),
+                ),
+                onPressed: () async {
+                  await _firestore.collection('settings').doc('ticker').set({
+                    'message': txtController.text.trim(),
+                    'active': activeState,
+                    'updated_at': FieldValue.serverTimestamp(),
+                  });
+                  if (!context.mounted) return;
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Live Ticker updated across school!'),
+                    ),
+                  );
+                },
+                child: const Text(
+                  'Publish Broadcast',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
-    ).whenComplete(() {
-      Future.delayed(const Duration(milliseconds: 500), () {
-        try {
-          txtController.dispose();
-        } catch (_) {}
-      });
-    });
+    );
   }
 
   Widget _buildLiveEventWall(Color themeColor, bool isAdmin) {
@@ -4387,16 +4397,19 @@ class _HomeScreenState extends State<HomeScreen>
                               ),
                             ],
                             if (isAdmin || (scholarNo.isNotEmpty && scholarNo == (_profile?['scholar_no'] ?? AuthService.getCachedScholarNo() ?? '').toString().trim()))
-                              IconButton(
-                                constraints: const BoxConstraints(),
-                                padding: const EdgeInsets.symmetric(horizontal: 4),
-                                icon: const Icon(
-                                  Icons.delete_outline_rounded,
-                                  color: Colors.redAccent,
-                                  size: 20,
-                                ),
-                                tooltip: 'Delete Post',
-                                onPressed: () async {
+                              Semantics(
+                                button: true,
+                                label: 'Delete post',
+                                child: IconButton(
+                                  constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                                  padding: const EdgeInsets.all(8),
+                                  icon: const Icon(
+                                    Icons.delete_outline_rounded,
+                                    color: Colors.redAccent,
+                                    size: 20,
+                                  ),
+                                  tooltip: 'Delete Post',
+                                  onPressed: () async {
                                   final confirm = await showDialog<bool>(
                                     context: context,
                                     builder: (ctx) => AlertDialog(
@@ -4443,6 +4456,7 @@ class _HomeScreenState extends State<HomeScreen>
                                   }
                                 },
                               ),
+                            ),
                           ],
                         ),
                       ],

@@ -528,12 +528,17 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
               hintText: 'Search pending claims by student, house, title...',
               prefixIcon: const Icon(Icons.search_rounded),
               suffixIcon: _searchQuery.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear_rounded, size: 18),
-                      onPressed: () {
-                        _searchController.clear();
-                        setState(() => _searchQuery = '');
-                      },
+                  ? Semantics(
+                      button: true,
+                      label: 'Clear search',
+                      child: IconButton(
+                        icon: const Icon(Icons.clear_rounded, size: 18),
+                        tooltip: 'Clear search',
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _searchQuery = '');
+                        },
+                      ),
                     )
                   : null,
               filled: true,
@@ -969,12 +974,17 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
               hintText: 'Search medical leaves by student, doctor, diagnosis...',
               prefixIcon: const Icon(Icons.search_rounded),
               suffixIcon: _searchQuery.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear_rounded, size: 18),
-                      onPressed: () {
-                        _searchController.clear();
-                        setState(() => _searchQuery = '');
-                      },
+                  ? Semantics(
+                      button: true,
+                      label: 'Clear search',
+                      child: IconButton(
+                        icon: const Icon(Icons.clear_rounded, size: 18),
+                        tooltip: 'Clear search',
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _searchQuery = '');
+                        },
+                      ),
                     )
                   : null,
               filled: true,
@@ -1484,7 +1494,7 @@ class _CouncilRosterManagementDialogState
   ) {
     showDialog(
       context: context,
-      builder: (ctx) => _EditRosterSlotDialog(
+      builder: (ctx) => EditRosterSlotDialog(
         docId: docId,
         data: data,
         authService: widget.authService,
@@ -1548,9 +1558,15 @@ class _CouncilRosterManagementDialogState
                       ),
                     ],
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded),
-                    onPressed: () => Navigator.pop(context),
+                  Semantics(
+                    button: true,
+                    label: 'Close dialog',
+                    child: IconButton(
+                      constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                      icon: const Icon(Icons.close_rounded),
+                      tooltip: 'Close',
+                      onPressed: () => Navigator.pop(context),
+                    ),
                   ),
                 ],
               ),
@@ -1620,12 +1636,17 @@ class _CouncilRosterManagementDialogState
                   hintText: 'Search scholar no, name, or title...',
                   prefixIcon: const Icon(Icons.search_rounded, size: 20),
                   suffixIcon: _searchQuery.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.clear_rounded, size: 18),
-                          onPressed: () {
-                            _searchCtrl.clear();
-                            setState(() => _searchQuery = '');
-                          },
+                      ? Semantics(
+                          button: true,
+                          label: 'Clear search',
+                          child: IconButton(
+                            icon: const Icon(Icons.clear_rounded, size: 18),
+                            tooltip: 'Clear search',
+                            onPressed: () {
+                              _searchCtrl.clear();
+                              setState(() => _searchQuery = '');
+                            },
+                          ),
                         )
                       : null,
                   filled: true,
@@ -2115,7 +2136,7 @@ class _DirectRoleAssignDialogState extends State<_DirectRoleAssignDialog> {
 
               // Role Dropdown
               DropdownButtonFormField<String>(
-                value: _selectedRole,
+                initialValue: _selectedRole,
                 decoration: const InputDecoration(
                   labelText: 'Role Authority Level *',
                   prefixIcon: Icon(Icons.security_rounded, size: 20),
@@ -2175,7 +2196,7 @@ class _DirectRoleAssignDialogState extends State<_DirectRoleAssignDialog> {
 
               // House Dropdown
               DropdownButtonFormField<String>(
-                value: _selectedHouse,
+                initialValue: _selectedHouse,
                 decoration: const InputDecoration(
                   labelText: 'Assigned House',
                   prefixIcon: Icon(Icons.shield_outlined, size: 20),
@@ -2237,22 +2258,24 @@ class _DirectRoleAssignDialogState extends State<_DirectRoleAssignDialog> {
 }
 
 /// Edit Roster Slot Dialog: Allows updating an existing slot, changing role/position, or vacating.
-class _EditRosterSlotDialog extends StatefulWidget {
+@visibleForTesting
+class EditRosterSlotDialog extends StatefulWidget {
   final String docId;
   final Map<String, dynamic> data;
   final AuthService authService;
 
-  const _EditRosterSlotDialog({
+  const EditRosterSlotDialog({
+    super.key,
     required this.docId,
     required this.data,
     required this.authService,
   });
 
   @override
-  State<_EditRosterSlotDialog> createState() => _EditRosterSlotDialogState();
+  State<EditRosterSlotDialog> createState() => _EditRosterSlotDialogState();
 }
 
-class _EditRosterSlotDialogState extends State<_EditRosterSlotDialog> {
+class _EditRosterSlotDialogState extends State<EditRosterSlotDialog> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _scholarCtrl;
   late final TextEditingController _titleCtrl;
@@ -2379,7 +2402,7 @@ class _EditRosterSlotDialogState extends State<_EditRosterSlotDialog> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: ['teacher', 'council', 'captain', 'prefect', 'super_admin', 'student'].contains(_role)
+              initialValue: ['teacher', 'council', 'captain', 'prefect', 'super_admin', 'student'].contains(_role)
                   ? _role
                   : 'council',
               decoration: const InputDecoration(
@@ -2391,6 +2414,7 @@ class _EditRosterSlotDialogState extends State<_EditRosterSlotDialog> {
                 DropdownMenuItem(value: 'council', child: Text('🏛️ Executive Council')),
                 DropdownMenuItem(value: 'captain', child: Text('🏆 House Captain')),
                 DropdownMenuItem(value: 'prefect', child: Text('🎖️ Grade Prefect')),
+                DropdownMenuItem(value: 'super_admin', child: Text('👑 Super Admin')),
                 DropdownMenuItem(value: 'student', child: Text('🎓 Student Member')),
               ],
               onChanged: (val) {
