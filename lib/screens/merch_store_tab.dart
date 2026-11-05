@@ -6,6 +6,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../theme/app_theme.dart';
+import '../services/voucher_security_service.dart';
+import '../services/auth_service.dart';
 
 class MerchProduct {
   final String id;
@@ -59,21 +61,35 @@ class MerchProduct {
 class CartItem {
   final MerchProduct product;
   final String size;
-  int qty;
+  int _qty;
 
   CartItem({required this.product, required this.size, int qty = 1})
-      : qty = qty < 1 ? 1 : (qty > 99 ? 99 : qty);
+      : _qty = qty.clamp(1, 99);
+
+  int get qty => _qty;
+  set qty(int value) => _qty = value.clamp(1, 99);
 
   int get pointsPrice {
-    final parsed =
-        int.tryParse(product.price.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
-    return parsed * (qty < 1 ? 1 : qty);
+    if (product.price.contains('Pts')) {
+      final parsed =
+          int.tryParse(product.price.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      return parsed * _qty;
+    }
+    return 0;
+  }
+
+  double get bhdPrice {
+    final match = RegExp(r'([0-9]+\.?[0-9]*)').firstMatch(product.price);
+    if (match != null) {
+      return (double.tryParse(match.group(1)!) ?? 0.0) * _qty;
+    }
+    return 0.0;
   }
 
   Map<String, dynamic> toJson() => {
     'product': product.toJson(),
     'size': size,
-    'qty': qty < 1 ? 1 : qty,
+    'qty': _qty,
   };
 
   factory CartItem.fromJson(Map<String, dynamic> json) => CartItem(
@@ -89,6 +105,9 @@ class OrderRecord {
   final int totalPts;
   final DateTime date;
   final String qrData;
+  final String status;
+  final DateTime? claimedAt;
+  final String? claimedBy;
 
   OrderRecord({
     required this.receiptId,
@@ -96,25 +115,65 @@ class OrderRecord {
     required this.totalPts,
     required this.date,
     required this.qrData,
+    this.status = 'ready',
+    this.claimedAt,
+    this.claimedBy,
   });
 
-  Map<String, dynamic> toJson() => {
+  bool get isClaimed => status.toLowerCase() == 'claimed';
+
+  OrderRecord copyWith({
+    String? receiptId,
+    List<CartItem>? items,
+    int? totalPts,
+    DateTime? date,
+    String? qrData,
+    String? status,
+    DateTime? claimedAt,
+    String? claimedBy,
+  }) {
+    return OrderRecord(
+      receiptId: receiptId ?? this.receiptId,
+      items: items ?? this.items,
+      totalPts: totalPts ?? this.totalPts,
+      date: date ?? this.date,
+      qrData: qrData ?? this.qrData,
+      status: status ?? this.status,
+      claimedAt: claimedAt ?? this.claimedAt,
+      claimedBy: claimedBy ?? this.claimedBy,
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
     'receiptId': receiptId,
     'items': items.map((i) => i.toJson()).toList(),
     'totalPts': totalPts,
     'date': date.toIso8601String(),
     'qrData': qrData,
+    'status': status,
+    'claimedAt': claimedAt?.toIso8601String(),
+    'claimedBy': claimedBy,
   };
 
-  factory OrderRecord.fromJson(Map<String, dynamic> json) => OrderRecord(
-    receiptId: json['receiptId'] as String? ?? '',
-    items: (json['items'] as List<dynamic>? ?? [])
+  Map<String, dynamic> toJson() => toMap();
+
+  factory OrderRecord.fromMap(Map<String, dynamic> map) => OrderRecord(
+    receiptId: map['receiptId'] as String? ?? '',
+    items: (map['items'] as List<dynamic>? ?? [])
         .map((i) => CartItem.fromJson(i as Map<String, dynamic>))
         .toList(),
-    totalPts: json['totalPts'] as int? ?? 0,
-    date: DateTime.tryParse(json['date'] as String? ?? '') ?? DateTime.now(),
-    qrData: json['qrData'] as String? ?? '',
+    totalPts: map['totalPts'] as int? ?? 0,
+    date: DateTime.tryParse(map['date'] as String? ?? '') ?? DateTime.now(),
+    qrData: map['qrData'] as String? ?? '',
+    status: map['status'] as String? ?? 'ready',
+    claimedAt: map['claimedAt'] != null
+        ? DateTime.tryParse(map['claimedAt'] as String)
+        : null,
+    claimedBy: map['claimedBy'] as String?,
   );
+
+  factory OrderRecord.fromJson(Map<String, dynamic> json) =>
+      OrderRecord.fromMap(json);
 }
 
 // Global static storage so cart and wallet orders NEVER get lost when switching tabs
@@ -122,46 +181,432 @@ class GlobalWalletStore {
   static final List<CartItem> cart = [];
   static final List<OrderRecord> orders = [];
   static final Set<String> favoriteIds = {'hero_champion', 'drop_varsity'};
+  static const Set<String> defaultFavoriteIds = {'hero_champion', 'drop_varsity'};
 
+  static String? _currentScholarNo;
   static bool _initialized = false;
 
-  static Future<void> init() async {
-    if (_initialized) return;
-    _initialized = true;
+  static bool get isInitialized => _initialized;
+  static String? get currentScholarNo => _currentScholarNo;
+
+  /// Resolves the effective scholar number for user data partitioning.
+  static String resolveScholarNo([String? scholarNo]) {
+    if (scholarNo != null) {
+      return scholarNo.trim();
+    }
+    if (_currentScholarNo != null) {
+      return _currentScholarNo!.trim();
+    }
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final ordersJsonList = prefs.getStringList('saved_wallet_orders');
-      if (ordersJsonList != null) {
-        orders.clear();
-        for (var str in ordersJsonList) {
-          try {
-            final order = OrderRecord.fromJson(
-              jsonDecode(str) as Map<String, dynamic>,
-            );
-            if (order.receiptId == 'ASB-984210' ||
-                order.receiptId == 'ASB-771923') {
-              continue;
-            }
-            orders.add(order);
-          } catch (_) {}
-        }
+      final cached = AuthService.getCachedScholarNo();
+      if (cached != null) {
+        return cached.trim();
       }
     } catch (_) {}
+    return '';
   }
 
-  static Future<void> saveOrders() async {
+  /// SharedPreferences key for student orders partition: saved_wallet_orders_${scholarNo}
+  static String ordersKey([String? scholarNo]) {
+    final s = resolveScholarNo(scholarNo);
+    return s.isNotEmpty ? 'saved_wallet_orders_$s' : 'saved_wallet_orders';
+  }
+
+  /// SharedPreferences key for student cart partition: saved_wallet_cart_${scholarNo}
+  static String cartKey([String? scholarNo]) {
+    final s = resolveScholarNo(scholarNo);
+    return s.isNotEmpty ? 'saved_wallet_cart_$s' : 'saved_wallet_cart';
+  }
+
+  /// SharedPreferences key for student favorites partition: saved_wallet_favorites_${scholarNo}
+  static String favoritesKey([String? scholarNo]) {
+    final s = resolveScholarNo(scholarNo);
+    return s.isNotEmpty ? 'saved_wallet_favorites_$s' : 'saved_wallet_favorites';
+  }
+
+  /// Purges in-memory cart, order history, and favorite items, and resets the initialized flag.
+  /// Prevents cross-student session contamination on shared/kiosk devices upon logout.
+  static void resetSession() {
+    cart.clear();
+    orders.clear();
+    favoriteIds.clear();
+    _currentScholarNo = null;
+    _initialized = false;
+  }
+
+  /// Initializes local wallet store from SharedPreferences offline cache partitioned by scholar number,
+  /// and automatically synchronizes with Cloud Firestore's 'orders' collection.
+  static Future<void> init({
+    String? scholarNo,
+    FirebaseFirestore? firestore,
+  }) async {
+    final cleanScholar = resolveScholarNo(scholarNo);
+    final isDifferentUser = _initialized && _currentScholarNo != cleanScholar;
+
+    if (!_initialized || isDifferentUser) {
+      _currentScholarNo = cleanScholar;
+      _initialized = true;
+
+      // When switching to a different user partition, clear in-memory state
+      if (isDifferentUser) {
+        orders.clear();
+        cart.clear();
+        favoriteIds.clear();
+      }
+
+      try {
+        final prefs = await SharedPreferences.getInstance();
+
+        // 1. Order History partitioned by scholar number
+        final oKey = ordersKey(cleanScholar);
+        final ordersJsonList = prefs.getStringList(oKey);
+        if (ordersJsonList != null && ordersJsonList.isNotEmpty) {
+          orders.clear();
+          for (var str in ordersJsonList) {
+            try {
+              final order = OrderRecord.fromJson(
+                jsonDecode(str) as Map<String, dynamic>,
+              );
+              if (order.receiptId == 'ASB-984210' ||
+                  order.receiptId == 'ASB-771923') {
+                continue;
+              }
+              orders.add(order);
+            } catch (_) {}
+          }
+        }
+
+        // 2. Cart items partitioned by scholar number
+        final cKey = cartKey(cleanScholar);
+        final cartJsonList = prefs.getStringList(cKey);
+        if (cartJsonList != null && cartJsonList.isNotEmpty) {
+          cart.clear();
+          for (var str in cartJsonList) {
+            try {
+              cart.add(CartItem.fromJson(jsonDecode(str) as Map<String, dynamic>));
+            } catch (_) {}
+          }
+        }
+
+        // 3. Favorite items partitioned by scholar number
+        final fKey = favoritesKey(cleanScholar);
+        final favList = prefs.getStringList(fKey);
+        if (favList != null && favList.isNotEmpty) {
+          favoriteIds.clear();
+          favoriteIds.addAll(favList);
+        } else if (isDifferentUser || favoriteIds.isEmpty) {
+          favoriteIds.clear();
+          favoriteIds.addAll(defaultFavoriteIds);
+        }
+      } catch (_) {
+        if (favoriteIds.isEmpty) {
+          favoriteIds.addAll(defaultFavoriteIds);
+        }
+      }
+    }
+
+    // Sync remote orders from Cloud Firestore in background/fallback-safe manner
+    await syncOrdersFromFirestore(scholarNo: cleanScholar, firestore: firestore);
+  }
+
+  /// Synchronizes student orders between Cloud Firestore and local offline store.
+  static Future<void> syncOrdersFromFirestore({
+    String? scholarNo,
+    FirebaseFirestore? firestore,
+  }) async {
+    try {
+      final cleanScholar = resolveScholarNo(scholarNo);
+      final currentUid = FirebaseAuth.instance.currentUser?.uid;
+
+      // Do not sync arbitrary student orders if neither scholarNo nor uid is available
+      if (cleanScholar.isEmpty && (currentUid == null || currentUid.isEmpty)) {
+        return;
+      }
+
+      final db = firestore ?? FirebaseFirestore.instance;
+      Query<Map<String, dynamic>> query = db.collection('orders');
+      if (cleanScholar.isNotEmpty) {
+        query = query.where('scholar_no', isEqualTo: cleanScholar);
+      } else {
+        query = query.where('user_id', isEqualTo: currentUid);
+      }
+
+      final snapshot = await query.get().timeout(const Duration(seconds: 4));
+      bool changed = false;
+
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        final rId = (data['receipt_id'] ?? data['receiptId'] ?? doc.id).toString().trim();
+        if (rId.isEmpty || rId == 'ASB-984210' || rId == 'ASB-771923') continue;
+
+        final remoteOrder = orderFromFirestore(rId, data);
+        final existingIndex = orders.indexWhere((o) => o.receiptId == rId);
+
+        if (existingIndex != -1) {
+          final local = orders[existingIndex];
+          if (local.status != remoteOrder.status ||
+              local.claimedBy != remoteOrder.claimedBy ||
+              local.claimedAt != remoteOrder.claimedAt) {
+            orders[existingIndex] = local.copyWith(
+              status: remoteOrder.status,
+              claimedBy: remoteOrder.claimedBy ?? local.claimedBy,
+              claimedAt: remoteOrder.claimedAt ?? local.claimedAt,
+            );
+            changed = true;
+          }
+        } else {
+          orders.add(remoteOrder);
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        orders.sort((a, b) => b.date.compareTo(a.date));
+        await saveOrders(scholarNo: cleanScholar);
+      }
+    } catch (_) {
+      // Offline fallback: keep existing locally loaded orders
+    }
+  }
+
+  /// Converts a Cloud Firestore 'orders' document into an OrderRecord.
+  static OrderRecord orderFromFirestore(String receiptId, Map<String, dynamic> data) {
+    final rawItems = data['items'];
+    final List<CartItem> parsedItems = [];
+    if (rawItems is List) {
+      for (final it in rawItems) {
+        if (it is Map<String, dynamic>) {
+          if (it.containsKey('product')) {
+            try {
+              parsedItems.add(CartItem.fromJson(it));
+              continue;
+            } catch (_) {}
+          }
+          final name = (it['name'] ?? 'Merch Item').toString();
+          final size = (it['size'] ?? 'M').toString();
+          final qty = (it['qty'] as num?)?.toInt() ?? 1;
+          final price = (it['price'] ?? 'BHD 0.000').toString();
+          final category = (it['category'] ?? 'Hoodies').toString();
+          parsedItems.add(CartItem(
+            product: MerchProduct(
+              id: (it['id'] ?? name.toLowerCase().replaceAll(' ', '_')).toString(),
+              name: name,
+              price: price,
+              rating: 5.0,
+              imageUrl: (it['imageUrl'] ?? '').toString(),
+              category: category,
+              house: (it['house'] ?? 'all').toString(),
+              description: '',
+            ),
+            size: size,
+            qty: qty,
+          ));
+        }
+      }
+    }
+
+    DateTime orderDate = DateTime.now();
+    final rawDate = data['created_at'] ?? data['date'];
+    if (rawDate is Timestamp) {
+      orderDate = rawDate.toDate();
+    } else if (rawDate is String) {
+      orderDate = DateTime.tryParse(rawDate) ?? DateTime.now();
+    }
+
+    DateTime? claimedAt;
+    final rawClaimedAt = data['claimed_at'] ?? data['claimedAt'];
+    if (rawClaimedAt is Timestamp) {
+      claimedAt = rawClaimedAt.toDate();
+    } else if (rawClaimedAt is String) {
+      claimedAt = DateTime.tryParse(rawClaimedAt);
+    }
+
+    final totalPts = (data['total_pts'] ?? data['totalPts'] as num?)?.toInt() ?? 0;
+    final qrData = (data['qr_data'] ?? data['qrData'] ?? '').toString();
+    final status = (data['status'] ?? 'ready').toString();
+    final claimedBy = (data['claimed_by'] ?? data['claimedBy'])?.toString();
+
+    return OrderRecord(
+      receiptId: receiptId,
+      items: parsedItems,
+      totalPts: totalPts,
+      date: orderDate,
+      qrData: qrData.isNotEmpty ? qrData : receiptId,
+      status: status,
+      claimedAt: claimedAt,
+      claimedBy: claimedBy,
+    );
+  }
+
+  /// Persists current orders to SharedPreferences partitioned by scholar number (saved_wallet_orders_${scholarNo}).
+  static Future<void> saveOrders({String? scholarNo}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final jsonList = orders.map((o) => jsonEncode(o.toJson())).toList();
-      await prefs.setStringList('saved_wallet_orders', jsonList);
+      final cleanScholar = resolveScholarNo(scholarNo);
+      final key = ordersKey(cleanScholar);
+      await prefs.setStringList(key, jsonList);
     } catch (_) {}
   }
 
-  static Future<void> clearAllBills() async {
+  /// Persists current cart items to SharedPreferences partitioned by scholar number (saved_wallet_cart_${scholarNo}).
+  static Future<void> saveCart({String? scholarNo}) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonList = cart.map((c) => jsonEncode(c.toJson())).toList();
+      final cleanScholar = resolveScholarNo(scholarNo);
+      final key = cartKey(cleanScholar);
+      await prefs.setStringList(key, jsonList);
+    } catch (_) {}
+  }
+
+  /// Persists current favorite product IDs to SharedPreferences partitioned by scholar number (saved_wallet_favorites_${scholarNo}).
+  static Future<void> saveFavorites({String? scholarNo}) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cleanScholar = resolveScholarNo(scholarNo);
+      final key = favoritesKey(cleanScholar);
+      await prefs.setStringList(key, favoriteIds.toList());
+    } catch (_) {}
+  }
+
+  /// Adds an order to the wallet store and persists it to Cloud Firestore's 'orders' collection.
+  /// Automatically falls back to SharedPreferences offline storage if network fails.
+  static Future<void> addAndPersistOrder(
+    OrderRecord order, {
+    String? scholarNo,
+    String? studentName,
+    String? house,
+    double? totalBhd,
+    FirebaseFirestore? firestore,
+  }) async {
+    final cleanScholar = resolveScholarNo(scholarNo);
+    final index = orders.indexWhere((o) => o.receiptId == order.receiptId);
+    if (index != -1) {
+      orders[index] = order;
+    } else {
+      orders.add(order);
+    }
+
+    // 1. Immediately cache in SharedPreferences partitioned for offline resilience
+    await saveOrders(scholarNo: cleanScholar);
+
+    // 2. Persist to Cloud Firestore orders collection
+    try {
+      final db = firestore ?? FirebaseFirestore.instance;
+      final currentUid = FirebaseAuth.instance.currentUser?.uid;
+      final orderData = <String, dynamic>{
+        'receipt_id': order.receiptId,
+        'user_id': currentUid ?? 'anonymous',
+        'scholar_no': cleanScholar,
+        'student_name': studentName ?? '',
+        'house': (house ?? 'ruby').toLowerCase().trim(),
+        'total_pts': order.totalPts,
+        'currency': 'BHD',
+        'items': order.items
+            .map(
+              (i) => {
+                'id': i.product.id,
+                'name': i.product.name,
+                'size': i.size,
+                'qty': i.qty,
+                'price': i.product.price,
+                'category': i.product.category,
+                'imageUrl': i.product.imageUrl,
+                'house': i.product.house,
+              },
+            )
+            .toList(),
+        'status': order.status,
+        'created_at': FieldValue.serverTimestamp(),
+        'qr_data': order.qrData,
+      };
+
+      if (totalBhd != null) {
+        orderData['total_bhd'] = totalBhd;
+      }
+      if (order.claimedAt != null) {
+        orderData['claimed_at'] = Timestamp.fromDate(order.claimedAt!);
+      }
+      if (order.claimedBy != null && order.claimedBy!.isNotEmpty) {
+        orderData['claimed_by'] = order.claimedBy;
+      }
+
+      await db
+          .collection('orders')
+          .doc(order.receiptId)
+          .set(orderData, SetOptions(merge: true))
+          .timeout(const Duration(seconds: 4));
+    } catch (_) {
+      // Offline fallback: order safely retained in SharedPreferences
+    }
+  }
+
+  static Future<void> markOrderClaimed(
+    String receiptId, {
+    String? scholarNo,
+    String? claimedBy,
+    DateTime? claimedAt,
+    FirebaseFirestore? firestore,
+  }) async {
+    final effectiveClaimedAt = claimedAt ?? DateTime.now();
+    final effectiveClaimedBy = claimedBy ?? 'Staff';
+    final cleanScholar = resolveScholarNo(scholarNo);
+
+    final index = orders.indexWhere((o) => o.receiptId == receiptId);
+    if (index != -1) {
+      orders[index] = orders[index].copyWith(
+        status: 'claimed',
+        claimedAt: effectiveClaimedAt,
+        claimedBy: effectiveClaimedBy,
+      );
+    } else {
+      orders.add(
+        OrderRecord(
+          receiptId: receiptId,
+          items: [],
+          totalPts: 0,
+          date: DateTime.now(),
+          qrData: receiptId,
+          status: 'claimed',
+          claimedAt: effectiveClaimedAt,
+          claimedBy: effectiveClaimedBy,
+        ),
+      );
+    }
+    await saveOrders(scholarNo: cleanScholar);
+
+    // Sync claimed status to Cloud Firestore if firestore instance is provided
+    if (firestore != null) {
+      try {
+        await firestore.collection('orders').doc(receiptId).set({
+          'status': 'claimed',
+          'claimed_by': effectiveClaimedBy,
+          'claimed_at': Timestamp.fromDate(effectiveClaimedAt),
+        }, SetOptions(merge: true)).timeout(const Duration(seconds: 4));
+      } catch (_) {
+        // Offline fallback: status safely marked in local store
+      }
+    }
+  }
+
+  /// Clears in-memory and local storage orders for the specified or active student.
+  static Future<void> clearAllBills({String? scholarNo}) async {
     orders.clear();
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('saved_wallet_orders');
+      final cleanScholar = resolveScholarNo(scholarNo);
+      await prefs.remove(ordersKey(cleanScholar));
+    } catch (_) {}
+  }
+
+  /// Clears in-memory and local storage cart for the specified or active student.
+  static Future<void> clearCart({String? scholarNo}) async {
+    cart.clear();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cleanScholar = resolveScholarNo(scholarNo);
+      await prefs.remove(cartKey(cleanScholar));
     } catch (_) {}
   }
 }
@@ -195,7 +640,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     const MerchProduct(
       id: 'hero_champion',
       name: 'The Premium Champion Hoodie',
-      price: '450 Pts (BHD 14.500)',
+      price: 'BHD 14.500',
       rating: 4.9,
       imageUrl:
           'https://images.unsplash.com/photo-1556905055-8f358a7a47b2?auto=format&fit=crop&w=800&q=80',
@@ -208,7 +653,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     const MerchProduct(
       id: 'drop_varsity',
       name: 'Championship Gold Varsity Jacket',
-      price: '650 Pts (BHD 22.000)',
+      price: 'BHD 22.000',
       rating: 5.0,
       imageUrl:
           'https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=800&q=80',
@@ -220,7 +665,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     const MerchProduct(
       id: 'drop_earbuds',
       name: 'House Hub Pro Wireless Earbuds Case',
-      price: '250 Pts (BHD 7.500)',
+      price: 'BHD 7.500',
       rating: 4.9,
       imageUrl:
           'https://images.unsplash.com/photo-1590658268037-6bf12165a8df?auto=format&fit=crop&w=600&q=80',
@@ -232,7 +677,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     const MerchProduct(
       id: 'ruby_hoodie',
       name: 'Ruby House Elite Hoodie',
-      price: '380 Pts (BHD 12.000)',
+      price: 'BHD 12.000',
       rating: 4.8,
       imageUrl:
           'https://images.unsplash.com/photo-1509967419530-da38b4704bc6?auto=format&fit=crop&w=600&q=80',
@@ -244,7 +689,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     const MerchProduct(
       id: 'sapphire_hoodie',
       name: 'Sapphire Crest Pullover',
-      price: '380 Pts (BHD 12.000)',
+      price: 'BHD 12.000',
       rating: 4.8,
       imageUrl:
           'https://images.unsplash.com/photo-1578632767115-351597cf2477?auto=format&fit=crop&w=600&q=80',
@@ -256,7 +701,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     const MerchProduct(
       id: 'emerald_tee',
       name: 'Emerald Performance Tee',
-      price: '180 Pts (BHD 6.500)',
+      price: 'BHD 6.500',
       rating: 4.7,
       imageUrl:
           'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=600&q=80',
@@ -268,7 +713,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     const MerchProduct(
       id: 'topaz_tee',
       name: 'Topaz Solar Graphic Tee',
-      price: '180 Pts (BHD 6.500)',
+      price: 'BHD 6.500',
       rating: 4.9,
       imageUrl:
           'https://images.unsplash.com/photo-1583743814966-8936f5b7be1a?auto=format&fit=crop&w=600&q=80',
@@ -280,7 +725,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     const MerchProduct(
       id: 'asb_cap',
       name: 'Official ASB Varsity Cap',
-      price: '140 Pts (BHD 4.500)',
+      price: 'BHD 4.500',
       rating: 4.6,
       imageUrl:
           'https://images.unsplash.com/photo-1588850561407-ed78c282e89b?auto=format&fit=crop&w=600&q=80',
@@ -292,7 +737,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     const MerchProduct(
       id: 'hydro_bottle',
       name: 'Insulated Hydro Flask (1L)',
-      price: '160 Pts (BHD 5.500)',
+      price: 'BHD 5.500',
       rating: 4.9,
       imageUrl:
           'https://images.unsplash.com/photo-1602143407151-7111542de6e8?auto=format&fit=crop&w=600&q=80',
@@ -304,7 +749,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     const MerchProduct(
       id: 'duffel_bag',
       name: 'ASB Elite Gym Duffel Bag',
-      price: '320 Pts (BHD 15.000)',
+      price: 'BHD 15.000',
       rating: 4.9,
       imageUrl:
           'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=600&q=80',
@@ -315,205 +760,25 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     ),
   ];
 
-  int _userPoints = 120;
-  bool _pointsLoaded = false;
+  bool _isProcessingOrder = false;
 
   @override
   void initState() {
     super.initState();
-    GlobalWalletStore.init().then((_) {
+    GlobalWalletStore.init(scholarNo: widget.scholarNo).then((_) {
       if (mounted) setState(() {});
     });
     _selectedCategory =
         'For You (${widget.userHouse[0].toUpperCase()}${widget.userHouse.substring(1)})';
-    _loadUserPoints();
   }
 
-  Future<void> _loadUserPoints() async {
-    try {
-      final sNo = widget.scholarNo?.trim();
-      final uid = FirebaseAuth.instance.currentUser?.uid;
-
-      if (sNo != null && sNo.isNotEmpty && sNo != '---') {
-        final doc = await FirebaseFirestore.instance
-            .collection('house_contributors')
-            .doc(sNo)
-            .get();
-        if (doc.exists && doc.data() != null) {
-          final pts = (doc.data()?['total_contributed'] as num?)?.toInt() ?? 0;
-          if (mounted) {
-            setState(() {
-              _userPoints = pts < 0 ? 0 : pts;
-              _pointsLoaded = true;
-            });
-            return;
-          }
-        }
-      }
-
-      if (uid != null) {
-        final uDoc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(uid)
-            .get();
-        if (uDoc.exists && uDoc.data() != null) {
-          final pts =
-              (uDoc.data()?['points_contributed'] as num?)?.toInt() ?? 0;
-          if (mounted) {
-            setState(() {
-              _userPoints = pts < 0 ? 0 : pts;
-              _pointsLoaded = true;
-            });
-            return;
-          }
-        }
-      }
-    } catch (_) {}
-    if (mounted) {
-      setState(() => _pointsLoaded = true);
-    }
-  }
-
-  void _showInsufficientPointsDialog(int requiredPts) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: Row(
-          children: [
-            Icon(Icons.lock_clock_rounded, color: Colors.amber[800], size: 28),
-            const SizedBox(width: 10),
-            const Text(
-              'Points Required',
-              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'This purchase requires $requiredPts House Points.\nYour current balance is $_userPoints Pts (${requiredPts - _userPoints} points short).',
-              style: const TextStyle(fontSize: 14, height: 1.4),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: widget.houseColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: widget.houseColor.withValues(alpha: 0.3),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.workspace_premium_rounded,
-                    color: widget.houseColor,
-                    size: 22,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Earn points by submitting competition certificates, answering arena quizzes, or getting faculty merits!',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: widget.houseColor,
-                        fontWeight: FontWeight.w600,
-                        height: 1.3,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text(
-              'Back to Store',
-              style: TextStyle(fontWeight: FontWeight.w700),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<bool> _verifyAndDeductPoints(
-    int totalPts,
-    String receiptId,
-    String description,
-  ) async {
-    if (_userPoints < totalPts) {
-      AppHaptics.error();
-      _showInsufficientPointsDialog(totalPts);
-      return false;
-    }
-
-    final sNo = widget.scholarNo?.trim();
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-
-    setState(() {
-      _userPoints -= totalPts;
-    });
-
-    try {
-      // 1. Deduct from house_contributors
-      if (sNo != null && sNo.isNotEmpty && sNo != '---') {
-        final contribRef = FirebaseFirestore.instance
-            .collection('house_contributors')
-            .doc(sNo);
-        await FirebaseFirestore.instance.runTransaction((tx) async {
-          final snap = await tx.get(contribRef);
-          if (snap.exists) {
-            final cur =
-                (snap.data()?['total_contributed'] as num?)?.toInt() ?? 0;
-            if (cur < totalPts) {
-              throw Exception('Insufficient verified points ($cur < $totalPts)');
-            }
-            tx.update(contribRef, {
-              'total_contributed': (cur - totalPts) < 0 ? 0 : (cur - totalPts),
-              'last_updated': FieldValue.serverTimestamp(),
-            });
-          }
-        });
-      }
-
-      // 2. Deduct from users profile doc
-      if (uid != null) {
-        final uRef =
-            FirebaseFirestore.instance.collection('users').doc(uid);
-        await uRef.update({
-          'points_contributed': FieldValue.increment(-totalPts),
-        });
-        await uRef.collection('notifications').add({
-          'title': '🛍️ Merch Pass Redeemed (-$totalPts Pts)',
-          'body':
-              'Successfully ordered $description! Digital pass #$receiptId generated and saved to your Digital Wallet.',
-          'timestamp': FieldValue.serverTimestamp(),
-          'is_read': false,
-          'type': 'store_purchase',
-        });
-      }
-      return true;
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _userPoints += totalPts;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Points redemption transaction failed: $e'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      }
-      return false;
+  @override
+  void didUpdateWidget(covariant MerchStoreTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.scholarNo != widget.scholarNo) {
+      GlobalWalletStore.init(scholarNo: widget.scholarNo).then((_) {
+        if (mounted) setState(() {});
+      });
     }
   }
 
@@ -532,6 +797,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
         GlobalWalletStore.favoriteIds.add(productId);
       }
     });
+    GlobalWalletStore.saveFavorites(scholarNo: widget.scholarNo);
   }
 
   void _addToCart(MerchProduct product, {String size = 'M', int qty = 1}) {
@@ -550,6 +816,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
         );
       }
     });
+    GlobalWalletStore.saveCart(scholarNo: widget.scholarNo);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
@@ -574,71 +841,58 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
     String size = 'M',
     int qty = 1,
   }) async {
-    final safeQty = qty.clamp(1, 99);
-    final parsedPrice =
-        int.tryParse(product.price.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
-    final totalPts = parsedPrice * safeQty;
-    final receiptId =
-        'ASB-${DateTime.now().millisecondsSinceEpoch.toString().substring(6)}';
+    if (_isProcessingOrder) return;
+    _isProcessingOrder = true;
+    try {
+      final safeQty = qty.clamp(1, 99);
+      final receiptId =
+          'ASB-${DateTime.now().millisecondsSinceEpoch.toString().substring(6)}';
 
-    final allowed = await _verifyAndDeductPoints(
-      totalPts,
-      receiptId,
-      '${safeQty}x ${product.name} ($size)',
-    );
-    if (!allowed) return;
+      AppHaptics.success();
+      final itemsList = [CartItem(product: product, size: size, qty: safeQty)];
+      final qrData = VoucherSecurityService.generateVoucherPayload(
+        billNo: receiptId,
+        points: 0,
+        scholarNo: widget.scholarNo ?? '2310910',
+        items: itemsList
+            .map((i) => '${i.qty}x ${i.product.name} (${i.size})')
+            .toList(),
+      );
 
-    AppHaptics.success();
-    final itemsList = [CartItem(product: product, size: size, qty: safeQty)];
-    final qrData = jsonEncode({
-      'bill_no': receiptId,
-      'pts': totalPts,
-      'items': itemsList
-          .map((i) => '${i.qty}x ${i.product.name} (${i.size})')
-          .toList(),
-    });
+      final newOrder = OrderRecord(
+        receiptId: receiptId,
+        items: itemsList,
+        totalPts: 0,
+        date: DateTime.now(),
+        qrData: qrData,
+      );
 
-    final newOrder = OrderRecord(
-      receiptId: receiptId,
-      items: itemsList,
-      totalPts: totalPts,
-      date: DateTime.now(),
-      qrData: qrData,
-    );
+      setState(() {
+        final existingIdx = GlobalWalletStore.orders.indexWhere((o) => o.receiptId == receiptId);
+        if (existingIdx != -1) {
+          GlobalWalletStore.orders[existingIdx] = newOrder;
+        } else {
+          GlobalWalletStore.orders.add(newOrder);
+        }
+      });
+      await GlobalWalletStore.addAndPersistOrder(
+        newOrder,
+        scholarNo: widget.scholarNo,
+        studentName: widget.studentName,
+        house: widget.userHouse,
+      );
 
-    setState(() {
-      GlobalWalletStore.orders.add(newOrder);
-    });
-    GlobalWalletStore.saveOrders();
-
-    // Save order to Firestore database
-    FirebaseFirestore.instance
-        .collection('orders')
-        .doc(receiptId)
-        .set({
-          'receipt_id': receiptId,
-          'user_id': FirebaseAuth.instance.currentUser?.uid ?? 'anonymous',
-          'scholar_no': widget.scholarNo ?? '',
-          'student_name': widget.studentName ?? '',
-          'house': widget.userHouse.toLowerCase(),
-          'total_pts': totalPts,
-          'items': itemsList
-              .map(
-                (i) => {
-                  'name': i.product.name,
-                  'size': i.size,
-                  'qty': i.qty,
-                  'pts': i.pointsPrice,
-                },
-              )
-              .toList(),
-          'created_at': FieldValue.serverTimestamp(),
-          'status': 'verified',
-        })
-        .catchError((_) {});
-
-    if (!mounted) return;
-    _showDigitalWalletPass(newOrder);
+      if (!mounted) return;
+      _showDigitalWalletPass(newOrder);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isProcessingOrder = false;
+        });
+      } else {
+        _isProcessingOrder = false;
+      }
+    }
   }
 
   void _showDigitalWalletPass(OrderRecord order) {
@@ -845,7 +1099,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           const Text(
-                            'TOTAL POINTS',
+                            'PAYMENT STATUS',
                             style: TextStyle(
                               color: Colors.white54,
                               fontSize: 10,
@@ -854,7 +1108,9 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            '${order.totalPts} Pts',
+                            order.totalPts > 0
+                                ? '${order.totalPts} Pts'
+                                : 'PAID (BHD)',
                             style: TextStyle(
                               color: widget.houseColor,
                               fontWeight: FontWeight.w900,
@@ -1116,7 +1372,9 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                                     children: [
                                       Flexible(
                                         child: Text(
-                                          '${order.totalPts} Pts Paid',
+                                          order.totalPts > 0
+                                              ? '${order.totalPts} Pts Paid'
+                                              : 'Verified Store Order',
                                           overflow: TextOverflow.ellipsis,
                                           style: TextStyle(
                                             fontWeight: FontWeight.w900,
@@ -1688,9 +1946,9 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
       builder: (context) => StatefulBuilder(
         builder: (context, setCartState) {
           final cart = GlobalWalletStore.cart;
-          final totalPts = cart.fold<int>(
-            0,
-            (acc, item) => acc + item.pointsPrice,
+          final totalBhd = cart.fold<double>(
+            0.0,
+            (acc, item) => acc + item.bhdPrice,
           );
           final totalItems = cart.fold<int>(0, (acc, item) => acc + item.qty);
 
@@ -1826,11 +2084,12 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                                       onPressed: () {
                                         setState(() {
                                           if (item.qty > 1) {
-                                            item.qty--;
+                                            item.qty = (item.qty - 1).clamp(1, 99);
                                           } else {
                                             cart.removeAt(index);
                                           }
                                         });
+                                        GlobalWalletStore.saveCart(scholarNo: widget.scholarNo);
                                         setCartState(() {});
                                       },
                                     ),
@@ -1847,7 +2106,8 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                                         color: widget.houseColor,
                                       ),
                                       onPressed: () {
-                                        setState(() => item.qty++);
+                                        setState(() => item.qty = (item.qty + 1).clamp(1, 99));
+                                        GlobalWalletStore.saveCart(scholarNo: widget.scholarNo);
                                         setCartState(() {});
                                       },
                                     ),
@@ -1860,7 +2120,12 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                 ),
                 if (cart.isNotEmpty)
                   Container(
-                    padding: const EdgeInsets.all(24),
+                    padding: EdgeInsets.fromLTRB(
+                      24,
+                      16,
+                      24,
+                      24 + MediaQuery.of(context).viewInsets.bottom + MediaQuery.of(context).padding.bottom,
+                    ),
                     decoration: BoxDecoration(
                       color: Theme.of(context).colorScheme.surface,
                       boxShadow: [
@@ -1877,14 +2142,14 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             const Text(
-                              'Estimated Points Total',
+                              'Estimated Total',
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
                             Text(
-                              '$totalPts Pts',
+                              'BHD ${totalBhd.toStringAsFixed(3)}',
                               style: TextStyle(
                                 fontSize: 22,
                                 fontWeight: FontWeight.w900,
@@ -1895,37 +2160,21 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                         ),
                         const SizedBox(height: 10),
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
+                            Icon(
+                              Icons.verified_rounded,
+                              color: Colors.green[700],
+                              size: 16,
+                            ),
+                            const SizedBox(width: 6),
                             Text(
-                              'Available Balance: $_userPoints Pts',
+                              'Official Campus Store • Direct Fulfilment',
                               style: TextStyle(
                                 fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                color: _userPoints >= totalPts
-                                    ? Colors.green[700]
-                                    : Colors.redAccent,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.green[700],
                               ),
                             ),
-                            if (_userPoints < totalPts)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 3,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.red.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  '-${totalPts - _userPoints} Pts Needed',
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w800,
-                                    color: Colors.redAccent,
-                                  ),
-                                ),
-                              ),
                           ],
                         ),
                         const SizedBox(height: 14),
@@ -1933,71 +2182,50 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                           width: double.infinity,
                           height: 56,
                           child: ElevatedButton(
-                            onPressed: () async {
-                              final receiptId =
-                                  'ASB-${DateTime.now().millisecondsSinceEpoch.toString().substring(6)}';
-                              final itemsList = List<CartItem>.from(cart);
+                            onPressed: _isProcessingOrder ? null : () async {
+                              if (_isProcessingOrder) return;
+                              setState(() => _isProcessingOrder = true);
+                              setCartState(() {});
+                              try {
+                                final receiptId =
+                                    'ASB-${DateTime.now().millisecondsSinceEpoch.toString().substring(6)}';
+                                final itemsList = List<CartItem>.from(cart);
 
-                              final allowed = await _verifyAndDeductPoints(
-                                totalPts,
-                                receiptId,
-                                '${itemsList.length} Merch Bag Items',
-                              );
-                              if (!allowed) return;
-
-                              final qrData = jsonEncode({
-                                'bill_no': receiptId,
-                                'pts': totalPts,
-                                'items': itemsList
+                              final qrData = VoucherSecurityService.generateVoucherPayload(
+                                billNo: receiptId,
+                                points: 0,
+                                scholarNo: widget.scholarNo ?? '2310910',
+                                items: itemsList
                                     .map(
                                       (i) =>
                                           '${i.qty}x ${i.product.name} (${i.size})',
                                     )
                                     .toList(),
-                              });
+                              );
                               final newOrder = OrderRecord(
                                 receiptId: receiptId,
                                 items: itemsList,
-                                totalPts: totalPts,
+                                totalPts: 0,
                                 date: DateTime.now(),
                                 qrData: qrData,
                               );
                               setState(() {
-                                GlobalWalletStore.orders.add(newOrder);
+                                final existingIdx = GlobalWalletStore.orders.indexWhere((o) => o.receiptId == receiptId);
+                                if (existingIdx != -1) {
+                                  GlobalWalletStore.orders[existingIdx] = newOrder;
+                                } else {
+                                  GlobalWalletStore.orders.add(newOrder);
+                                }
                                 GlobalWalletStore.cart.clear();
                               });
-                              GlobalWalletStore.saveOrders();
-
-                              // Save order to Firestore database
-                              FirebaseFirestore.instance
-                                  .collection('orders')
-                                  .doc(receiptId)
-                                  .set({
-                                    'receipt_id': receiptId,
-                                    'user_id':
-                                        FirebaseAuth
-                                            .instance
-                                            .currentUser
-                                            ?.uid ??
-                                        'anonymous',
-                                    'scholar_no': widget.scholarNo ?? '',
-                                    'student_name': widget.studentName ?? '',
-                                    'house': widget.userHouse.toLowerCase(),
-                                    'total_pts': totalPts,
-                                    'items': itemsList
-                                        .map(
-                                          (i) => {
-                                            'name': i.product.name,
-                                            'size': i.size,
-                                            'qty': i.qty,
-                                            'pts': i.pointsPrice,
-                                          },
-                                        )
-                                        .toList(),
-                                    'created_at': FieldValue.serverTimestamp(),
-                                    'status': 'verified',
-                                  })
-                                  .catchError((_) {});
+                              await GlobalWalletStore.clearCart(scholarNo: widget.scholarNo);
+                              await GlobalWalletStore.addAndPersistOrder(
+                                newOrder,
+                                scholarNo: widget.scholarNo,
+                                studentName: widget.studentName,
+                                house: widget.userHouse,
+                                totalBhd: totalBhd,
+                              );
 
                               if (!context.mounted) return;
                               Navigator.pop(context);
@@ -2009,6 +2237,14 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                                   }
                                 },
                               );
+                              } finally {
+                                if (mounted) {
+                                  setState(() => _isProcessingOrder = false);
+                                  setCartState(() {});
+                                } else {
+                                  _isProcessingOrder = false;
+                                }
+                              }
                             },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: widget.houseColor,
@@ -2095,41 +2331,137 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      floatingActionButton: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          FloatingActionButton.extended(
-            heroTag: 'wallet_btn',
-            onPressed: _showOrdersLockerSheet,
-            backgroundColor: const Color(0xFF111827),
-            foregroundColor: Colors.white,
-            elevation: 8,
-            icon: const Icon(Icons.wallet_rounded, color: Colors.amber),
-            label: Text(
-              'My Wallet (${GlobalWalletStore.orders.length})',
-              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      floatingActionButton: Builder(
+        builder: (context) {
+          final isNarrow = MediaQuery.of(context).size.width < 380;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 84),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FloatingActionButton.extended(
+                  heroTag: 'wallet_btn',
+                  onPressed: _showOrdersLockerSheet,
+                  backgroundColor: const Color(0xFF111827),
+                  foregroundColor: Colors.white,
+                  elevation: 8,
+                  icon: const Icon(Icons.wallet_rounded, color: Colors.amber, size: 18),
+                  label: Text(
+                    isNarrow
+                        ? '(${GlobalWalletStore.orders.length})'
+                        : 'Wallet (${GlobalWalletStore.orders.length})',
+                    style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FloatingActionButton.extended(
+                  heroTag: 'bag_btn',
+                  onPressed: _showCartReviewSheet,
+                  backgroundColor: widget.houseColor,
+                  foregroundColor: Colors.white,
+                  elevation: 8,
+                  icon: const Icon(Icons.shopping_bag_rounded, size: 18),
+                  label: Text(
+                    '$totalCartItems Bag',
+                    style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
+                  ),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(width: 12),
-          FloatingActionButton.extended(
-            heroTag: 'bag_btn',
-            onPressed: _showCartReviewSheet,
-            backgroundColor: widget.houseColor,
-            foregroundColor: Colors.white,
-            elevation: 8,
-            icon: const Icon(Icons.shopping_bag_rounded),
-            label: Text(
-              '$totalCartItems Bag',
-              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
-            ),
-          ),
-        ],
+          );
+        },
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Top Quick Action Bar: Wallet & Bag Buttons
+            Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: _showOrdersLockerSheet,
+                    borderRadius: BorderRadius.circular(14),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF111827),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.1),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.wallet_rounded, color: Colors.amber, size: 18),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              'Passes (${GlobalWalletStore.orders.length}) ',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 12,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: InkWell(
+                    onTap: _showCartReviewSheet,
+                    borderRadius: BorderRadius.circular(14),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: widget.houseColor,
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: [
+                          BoxShadow(
+                            color: widget.houseColor.withValues(alpha: 0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.shopping_bag_rounded, color: Colors.white, size: 18),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              'Bag ($totalCartItems)',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 12,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+
             // Drop of the Week Banner
             Container(
               padding: const EdgeInsets.all(20),
@@ -2227,7 +2559,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      Icons.stars_rounded,
+                      Icons.storefront_rounded,
                       color: widget.houseColor,
                       size: 20,
                     ),
@@ -2238,7 +2570,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'YOUR HOUSE POINTS WALLET',
+                          'ASB OFFICIAL CAMPUS STORE & APPAREL COLLECTION',
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w900,
@@ -2247,13 +2579,11 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                           ),
                         ),
                         const SizedBox(height: 2),
-                        Text(
-                          _pointsLoaded
-                              ? '$_userPoints Pts Available to Redeem'
-                              : 'Syncing Points Balance...',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
+                        const Text(
+                          'Verified School Merchandise • Orders fulfilled directly to Digital Wallet',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ],

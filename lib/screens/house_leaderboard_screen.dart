@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/student_profile_modal.dart';
 
 class HouseLeaderboardScreen extends StatefulWidget {
   final String initialHouse;
@@ -28,22 +29,18 @@ class _HouseLeaderboardScreenState extends State<HouseLeaderboardScreen> {
   final Map<String, Map<String, String>> _houseDetails = {
     'Ruby': {
       'motto': 'Courage, Passion & Victory',
-      'captain': 'Mustafa Hisham',
       'icon': '🛡️',
     },
     'Emerald': {
       'motto': 'Wisdom, Growth & Honor',
-      'captain': 'Noaman Nizamuddin',
       'icon': '🌿',
     },
     'Sapphire': {
       'motto': 'Integrity, Loyalty & Truth',
-      'captain': 'Dr. Elizabeth Vance',
       'icon': '💎',
     },
     'Topaz': {
       'motto': 'Brilliance, Strength & Unity',
-      'captain': 'Tanish Mukherjee',
       'icon': '⚡',
     },
   };
@@ -54,7 +51,6 @@ class _HouseLeaderboardScreenState extends State<HouseLeaderboardScreen> {
     _selectedHouse = widget.initialHouse.isNotEmpty
         ? '${widget.initialHouse[0].toUpperCase()}${widget.initialHouse.substring(1).toLowerCase()}'
         : 'Ruby';
-    _authService.seedSampleContributors();
   }
 
   @override
@@ -64,159 +60,14 @@ class _HouseLeaderboardScreenState extends State<HouseLeaderboardScreen> {
   }
 
   void _showStudentContributionModal(Map<String, dynamic> contributor, Color houseColor) {
-    final name = contributor['student_name'] ?? 'Student';
-    final scholar = contributor['scholar_no'] ?? 'N/A';
-    final points = contributor['total_contributed'] ?? 0;
-    final merits = contributor['merits_count'] ?? 0;
-    final demerits = contributor['demerits_count'] ?? 0;
-    final cls = contributor['class_level'] ?? 'Senior Tier';
+    final name = contributor['student_name']?.toString() ?? 'Student';
+    final scholar = contributor['scholar_no']?.toString() ?? 'N/A';
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 48,
-              height: 5,
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(999),
-              ),
-            ),
-            const SizedBox(height: 20),
-            CircleAvatar(
-              radius: 32,
-              backgroundColor: houseColor.withValues(alpha: 0.15),
-              child: Text(
-                name.isNotEmpty ? name[0].toUpperCase() : 'S',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w900,
-                  color: houseColor,
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              name,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
-            ),
-            Text(
-              'Scholar #$scholar • $_selectedHouse House • $cls',
-              style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-            ),
-            const SizedBox(height: 20),
-
-            // Metrics row
-            Row(
-              children: [
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: houseColor.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Column(
-                      children: [
-                        Text(
-                          '+$points Pts',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w900,
-                            color: houseColor,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        const Text(
-                          'Total Contributed',
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: Colors.green.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Column(
-                      children: [
-                        Text(
-                          '$merits',
-                          style: const TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w900,
-                            color: Colors.green,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        const Text(
-                          'Merits / Rewards',
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: Colors.red.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Column(
-                      children: [
-                        Text(
-                          '$demerits',
-                          style: const TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w900,
-                            color: Colors.redAccent,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        const Text(
-                          'Demerit Penalties',
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: houseColor,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                ),
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Close Details', style: TextStyle(fontWeight: FontWeight.w800)),
-              ),
-            ),
-            const SizedBox(height: 12),
-          ],
-        ),
-      ),
+    StudentProfileModal.show(
+      context,
+      scholarNo: scholar,
+      studentName: name,
+      houseName: _selectedHouse,
     );
   }
 
@@ -249,36 +100,48 @@ class _HouseLeaderboardScreenState extends State<HouseLeaderboardScreen> {
                 return Expanded(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 3),
-                    child: InkWell(
-                      onTap: () => setState(() => _selectedHouse = h),
-                      borderRadius: BorderRadius.circular(16),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        decoration: BoxDecoration(
-                          color: isSel
-                              ? c
-                              : (isDark ? const Color(0xFF1E293B) : Colors.grey[200]),
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: isSel
-                              ? [
-                                  BoxShadow(
-                                    color: c.withValues(alpha: 0.35),
-                                    blurRadius: 8,
-                                    offset: const Offset(0, 3),
-                                  ),
-                                ]
-                              : [],
-                        ),
-                        child: Center(
-                          child: Text(
-                            h,
-                            style: TextStyle(
+                    child: Semantics(
+                      button: true,
+                      selected: isSel,
+                      excludeSemantics: true,
+                      label: '$h House Leaderboard',
+                      child: InkWell(
+                        onTap: () => setState(() => _selectedHouse = h),
+                        borderRadius: BorderRadius.circular(16),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(minHeight: 48, minWidth: 48),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            decoration: BoxDecoration(
                               color: isSel
-                                  ? Colors.white
-                                  : (isDark ? Colors.white70 : Colors.black87),
-                              fontWeight: FontWeight.w900,
-                              fontSize: 13,
+                                  ? c
+                                  : (isDark ? const Color(0xFF1E293B) : Colors.grey[200]),
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: isSel
+                                  ? [
+                                      BoxShadow(
+                                        color: c.withValues(alpha: 0.35),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 3),
+                                      ),
+                                    ]
+                                  : [],
+                            ),
+                            child: Center(
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  h,
+                                  style: TextStyle(
+                                    color: isSel
+                                        ? Colors.white
+                                        : (isDark ? Colors.white70 : Colors.black87),
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -319,8 +182,11 @@ class _HouseLeaderboardScreenState extends State<HouseLeaderboardScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        Wrap(
+                          alignment: WrapAlignment.spaceBetween,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 8,
+                          runSpacing: 8,
                           children: [
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -328,43 +194,71 @@ class _HouseLeaderboardScreenState extends State<HouseLeaderboardScreen> {
                                 color: Colors.white.withValues(alpha: 0.2),
                                 borderRadius: BorderRadius.circular(999),
                               ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(info['icon']!, style: const TextStyle(fontSize: 16)),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    '${_selectedHouse.toUpperCase()} HOUSE',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w900,
-                                      fontSize: 12,
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(info['icon']!, style: const TextStyle(fontSize: 16)),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      '${_selectedHouse.toUpperCase()} HOUSE',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 12,
+                                      ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
                             StreamBuilder<DocumentSnapshot>(
-                              stream: FirebaseFirestore.instance
-                                  .collection('house_points')
-                                  .doc(_selectedHouse.toLowerCase())
-                                  .snapshots(),
+                              stream: () {
+                                try {
+                                  return FirebaseFirestore.instance
+                                      .collection('house_points')
+                                      .doc(_selectedHouse.toLowerCase())
+                                      .snapshots();
+                                } catch (_) {
+                                  return null;
+                                }
+                              }(),
                               builder: (context, snap) {
-                                final pts = snap.hasData && snap.data!.exists
-                                    ? ((snap.data!.data() as Map<String, dynamic>?)?['total_points'] ?? widget.initialPoints)
-                                    : widget.initialPoints;
-                                return Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black.withValues(alpha: 0.3),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Text(
-                                    '$pts Pts Total',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w900,
-                                      fontSize: 14,
+                                final cachedPts = AuthService.getCachedPointsForHouse(_selectedHouse);
+                                final isLive = snap.hasData && snap.data!.exists;
+                                final pts = isLive
+                                    ? ((snap.data!.data() as Map<String, dynamic>?)?['total_points'] ?? cachedPts)
+                                    : (cachedPts > 0 ? cachedPts : widget.initialPoints);
+                                return Semantics(
+                                  container: true,
+                                  readOnly: true,
+                                  label: '$_selectedHouse house total points: $pts points. ${isLive ? "Live verified score" : "Viewing verified cached standings"}.',
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withValues(alpha: 0.3),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (!isLive) ...[
+                                            const Icon(Icons.offline_bolt_rounded, size: 13, color: Colors.amberAccent),
+                                            const SizedBox(width: 5),
+                                          ],
+                                          Text(
+                                            '$pts Pts Total',
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w900,
+                                              fontSize: 14,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
                                 );
@@ -392,18 +286,225 @@ class _HouseLeaderboardScreenState extends State<HouseLeaderboardScreen> {
                           ),
                         ),
                         const SizedBox(height: 4),
-                        Text(
-                          'House Captain: ${info['captain']}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                          ),
+                        StreamBuilder<DocumentSnapshot>(
+                          stream: _authService.getHouseCaptainStream(_selectedHouse),
+                          builder: (context, capSnap) {
+                            String captainName = 'Pending Appointment';
+                            if (capSnap.hasData && capSnap.data!.exists) {
+                              final capData = capSnap.data!.data();
+                              if (capData is Map<String, dynamic>) {
+                                final name = capData['name'] ?? capData['student_name'];
+                                if (name != null &&
+                                    name.toString().trim().isNotEmpty &&
+                                    name.toString().trim() != 'Vacant Slot') {
+                                  captainName = name.toString().trim();
+                                }
+                              }
+                            }
+                            return Semantics(
+                              label: 'House Captain: $captainName',
+                              child: Text(
+                                'House Captain: $captainName',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            );
+                          },
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 16),
+
+                  // Points Breakdown & Season Zero Banner
+                  StreamBuilder<DocumentSnapshot>(
+                    stream: () {
+                      try {
+                        return FirebaseFirestore.instance
+                            .collection('house_points')
+                            .doc(_selectedHouse.toLowerCase())
+                            .snapshots();
+                      } catch (_) {
+                        return null;
+                      }
+                    }(),
+                    builder: (context, snap) {
+                      final cachedPts = AuthService.getCachedPointsForHouse(_selectedHouse);
+                      final isLive = snap.hasData && snap.data!.exists;
+                      final data = isLive ? (snap.data!.data() as Map<String, dynamic>?) : null;
+                      final totalPts = isLive
+                          ? ((data?['total_points'] as num?)?.toInt() ?? cachedPts)
+                          : (cachedPts > 0 ? cachedPts : widget.initialPoints);
+                      final sportsPts = (data?['sports_points'] as num?)?.toInt() ??
+                          (data?['sports'] as num?)?.toInt() ??
+                          0;
+                      final academicsPts = (data?['academics_points'] as num?)?.toInt() ??
+                          (data?['academics'] as num?)?.toInt() ??
+                          0;
+                      final culturalPts = (data?['cultural_points'] as num?)?.toInt() ??
+                          (data?['cultural'] as num?)?.toInt() ??
+                          0;
+                      final conductPts = (data?['conduct_points'] as num?)?.toInt() ??
+                          (data?['conduct'] as num?)?.toInt() ??
+                          0;
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (totalPts == 0) ...[
+                            Container(
+                              width: double.infinity,
+                              margin: const EdgeInsets.only(bottom: 16),
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: isDark ? const Color(0xFF151D2E) : Colors.white,
+                                borderRadius: BorderRadius.circular(18),
+                                border: Border.all(
+                                  color: Colors.amber.withValues(alpha: 0.3),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.emoji_events_outlined, color: Colors.amber[600], size: 28),
+                                  const SizedBox(width: 14),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'No house points recorded yet for this season',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 13,
+                                            color: isDark ? Colors.white : const Color(0xFF1E293B),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          'Points will appear automatically once merit deeds or competitions are logged.',
+                                          style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                          Text(
+                            'Points Breakdown',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 14,
+                              color: isDark ? Colors.white70 : Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          LayoutBuilder(
+                            builder: (context, catConstraints) {
+                              final useGrid = catConstraints.maxWidth < 500;
+                              if (useGrid) {
+                                final itemW = (catConstraints.maxWidth - 8) / 2;
+                                return Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    SizedBox(
+                                      width: itemW,
+                                      child: _buildCategoryPill(
+                                        'Sports',
+                                        sportsPts,
+                                        Icons.sports_soccer_rounded,
+                                        houseColor,
+                                        isDark,
+                                      ),
+                                    ),
+                                    SizedBox(
+                                      width: itemW,
+                                      child: _buildCategoryPill(
+                                        'Academics',
+                                        academicsPts,
+                                        Icons.school_rounded,
+                                        houseColor,
+                                        isDark,
+                                      ),
+                                    ),
+                                    SizedBox(
+                                      width: itemW,
+                                      child: _buildCategoryPill(
+                                        'Cultural',
+                                        culturalPts,
+                                        Icons.palette_rounded,
+                                        houseColor,
+                                        isDark,
+                                      ),
+                                    ),
+                                    SizedBox(
+                                      width: itemW,
+                                      child: _buildCategoryPill(
+                                        'Conduct',
+                                        conductPts,
+                                        Icons.verified_user_rounded,
+                                        houseColor,
+                                        isDark,
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              }
+                              return Row(
+                                children: [
+                                  Expanded(
+                                    child: _buildCategoryPill(
+                                      'Sports',
+                                      sportsPts,
+                                      Icons.sports_soccer_rounded,
+                                      houseColor,
+                                      isDark,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: _buildCategoryPill(
+                                      'Academics',
+                                      academicsPts,
+                                      Icons.school_rounded,
+                                      houseColor,
+                                      isDark,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: _buildCategoryPill(
+                                      'Cultural',
+                                      culturalPts,
+                                      Icons.palette_rounded,
+                                      houseColor,
+                                      isDark,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: _buildCategoryPill(
+                                      'Conduct',
+                                      conductPts,
+                                      Icons.verified_user_rounded,
+                                      houseColor,
+                                      isDark,
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 20),
+                        ],
+                      );
+                    },
+                  ),
 
                   // Search Filter
                   TextField(
@@ -413,12 +514,17 @@ class _HouseLeaderboardScreenState extends State<HouseLeaderboardScreen> {
                       hintText: 'Search $_selectedHouse student name or scholar #...',
                       prefixIcon: const Icon(Icons.search_rounded, color: Colors.grey),
                       suffixIcon: _searchQuery.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear_rounded, size: 18),
-                              onPressed: () {
-                                _searchController.clear();
-                                setState(() => _searchQuery = '');
-                              },
+                          ? Semantics(
+                              button: true,
+                              label: 'Clear search',
+                              child: IconButton(
+                                icon: const Icon(Icons.clear_rounded, size: 18),
+                                tooltip: 'Clear search',
+                                onPressed: () {
+                                  _searchController.clear();
+                                  setState(() => _searchQuery = '');
+                                },
+                              ),
                             )
                           : null,
                       filled: true,
@@ -474,11 +580,14 @@ class _HouseLeaderboardScreenState extends State<HouseLeaderboardScreen> {
                             padding: const EdgeInsets.all(32),
                             child: Column(
                               children: [
-                                Icon(Icons.people_outline_rounded, size: 54, color: Colors.grey[400]),
+                                Icon(Icons.emoji_events_outlined, size: 54, color: Colors.grey[400]),
                                 const SizedBox(height: 12),
                                 Text(
-                                  'No contributors found for $_selectedHouse House.',
-                                  style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                                  _searchQuery.isNotEmpty
+                                      ? 'No contributors match "$_searchQuery" in $_selectedHouse House.'
+                                      : 'No student contributions recorded yet for $_selectedHouse House.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: Colors.grey[600], fontSize: 14, fontWeight: FontWeight.w600),
                                 ),
                               ],
                             ),
@@ -532,10 +641,16 @@ class _HouseLeaderboardScreenState extends State<HouseLeaderboardScreen> {
                               final points = (item['total_contributed'] as num?)?.toInt() ?? 0;
                               final cls = item['class_level'] ?? 'Senior';
 
-                              return InkWell(
-                                onTap: () => _showStudentContributionModal(item, houseColor),
-                                borderRadius: BorderRadius.circular(18),
-                                child: Container(
+                              return MergeSemantics(
+                                child: Semantics(
+                                  container: true,
+                                  button: true,
+                                  label:
+                                      '$name, $cls. $points Points. Rank #$rank. Tap to view contribution details.',
+                                  child: InkWell(
+                                    onTap: () => _showStudentContributionModal(item, houseColor),
+                                    borderRadius: BorderRadius.circular(18),
+                                    child: Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                                   decoration: BoxDecoration(
                                     color: isDark ? const Color(0xFF151D2E) : Colors.white,
@@ -634,7 +749,9 @@ class _HouseLeaderboardScreenState extends State<HouseLeaderboardScreen> {
                                     ],
                                   ),
                                 ),
-                              );
+                              ),
+                            ),
+                          );
                             },
                           ),
                           const SizedBox(height: 40),
@@ -749,6 +866,49 @@ class _HouseLeaderboardScreenState extends State<HouseLeaderboardScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildCategoryPill(String label, int pts, IconData icon, Color houseColor, bool isDark) {
+    return Semantics(
+      container: true,
+      readOnly: true,
+      label: '$label: $pts Points',
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF151D2E) : Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+          ),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, size: 18, color: houseColor),
+            const SizedBox(height: 4),
+            Text(
+              '$pts',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+                color: isDark ? Colors.white : Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey[500],
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

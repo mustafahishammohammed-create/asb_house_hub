@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/semantics.dart';
 import '../theme/app_theme.dart';
 
 // =============================================================================
@@ -1435,6 +1436,9 @@ class _Mascot3DStageState extends State<Mascot3DStage>
   MascotDiagramMode _diagramMode = MascotDiagramMode.solidRender;
   bool _showDiagramCallouts = true;
 
+  // Keyboard navigation focus node
+  final FocusNode _stageFocusNode = FocusNode();
+
   // Animation Controllers
   late final AnimationController _idleFloatController;
   late final AnimationController _altarSpinController;
@@ -1460,17 +1464,19 @@ class _Mascot3DStageState extends State<Mascot3DStage>
       duration: const Duration(milliseconds: 3200),
     )..repeat(reverse: true);
 
-    // Altar pedestal runic ring rotation
+    // Altar pedestal runic ring rotation & particle physics
     _altarSpinController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 14),
-    )..repeat();
+    )..addListener(_updateParticles)
+     ..repeat();
 
     // Turntable 360° auto-spin controller
     _turntableController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 10),
     )..addListener(() {
+        if (!mounted) return;
         if (_isAutoRotating) {
           setState(() {
             _rotY = _turntableController.value * math.pi * 2;
@@ -1489,6 +1495,7 @@ class _Mascot3DStageState extends State<Mascot3DStage>
       vsync: this,
       duration: const Duration(milliseconds: 450),
     )..addListener(() {
+        if (!mounted) return;
         setState(() {
           _rotX = _springAnimX.value;
           _rotY = _springAnimY.value;
@@ -1498,6 +1505,12 @@ class _Mascot3DStageState extends State<Mascot3DStage>
     _springAnimY = const AlwaysStoppedAnimation(0.0);
 
     _initParticles();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _stageFocusNode.requestFocus();
+      }
+    });
   }
 
   void _initParticles() {
@@ -1538,12 +1551,69 @@ class _Mascot3DStageState extends State<Mascot3DStage>
 
   @override
   void dispose() {
+    _stageFocusNode.dispose();
     _idleFloatController.dispose();
     _altarSpinController.dispose();
     _turntableController.dispose();
     _roarController.dispose();
     _springBackController.dispose();
     super.dispose();
+  }
+
+  void _zoomIn() {
+    HapticFeedback.lightImpact();
+    setState(() {
+      _zoomScale = (_zoomScale + 0.15).clamp(0.72, 1.95);
+    });
+  }
+
+  void _zoomOut() {
+    HapticFeedback.lightImpact();
+    setState(() {
+      _zoomScale = (_zoomScale - 0.15).clamp(0.72, 1.95);
+    });
+  }
+
+  KeyEventResult _handleStageKeyNavigation(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+
+    if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+      setState(() {
+        _rotY = (_rotY - 0.1) % (math.pi * 2);
+      });
+      return KeyEventResult.handled;
+    } else if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+      setState(() {
+        _rotY = (_rotY + 0.1) % (math.pi * 2);
+      });
+      return KeyEventResult.handled;
+    } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+      setState(() {
+        _rotX = (_rotX + 0.08).clamp(-0.85, 0.85);
+      });
+      return KeyEventResult.handled;
+    } else if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+      setState(() {
+        _rotX = (_rotX - 0.08).clamp(-0.85, 0.85);
+      });
+      return KeyEventResult.handled;
+    } else if (event.logicalKey == LogicalKeyboardKey.numpadAdd ||
+        event.logicalKey == LogicalKeyboardKey.equal) {
+      _zoomIn();
+      return KeyEventResult.handled;
+    } else if (event.logicalKey == LogicalKeyboardKey.numpadSubtract ||
+        event.logicalKey == LogicalKeyboardKey.minus) {
+      _zoomOut();
+      return KeyEventResult.handled;
+    } else if (event.logicalKey == LogicalKeyboardKey.space ||
+        event.logicalKey == LogicalKeyboardKey.enter) {
+      _triggerRoar();
+      return KeyEventResult.handled;
+    }
+
+    return KeyEventResult.ignored;
   }
 
   void _switchMascot(String house) {
@@ -1559,6 +1629,13 @@ class _Mascot3DStageState extends State<Mascot3DStage>
     });
     _turntableController.stop();
     _initParticles();
+    try {
+      SemanticsService.sendAnnouncement(
+        View.of(context),
+        'Active house mascot switched to ${_currentMascot.name}',
+        TextDirection.ltr,
+      );
+    } catch (_) {}
   }
 
   void _triggerRoar() {
@@ -1578,17 +1655,24 @@ class _Mascot3DStageState extends State<Mascot3DStage>
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Row(
-          children: [
-            Text(_currentMascot.primaryEmoji, style: const TextStyle(fontSize: 22)),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                _currentMascot.battleCry,
-                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
+        content: Semantics(
+          liveRegion: true,
+          excludeSemantics: true,
+          label: '${_currentMascot.name} unleashes battle cry: ${_currentMascot.battleCry}',
+          child: Row(
+            children: [
+              ExcludeSemantics(
+                child: Text(_currentMascot.primaryEmoji, style: const TextStyle(fontSize: 22)),
               ),
-            ),
-          ],
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  _currentMascot.battleCry,
+                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
+                ),
+              ),
+            ],
+          ),
         ),
         backgroundColor: _currentMascot.primaryColor,
         behavior: SnackBarBehavior.floating,
@@ -1604,14 +1688,28 @@ class _Mascot3DStageState extends State<Mascot3DStage>
       _isAutoRotating = !_isAutoRotating;
       if (_isAutoRotating) {
         _turntableController.repeat();
+        try {
+          SemanticsService.sendAnnouncement(
+            View.of(context),
+            '360 turntable spinning',
+            TextDirection.ltr,
+          );
+        } catch (_) {}
       } else {
         _turntableController.stop();
-        _snapToAngle(0.08, 0.0);
+        _snapToAngle(0.08, 0.0, angleName: 'Front');
+        try {
+          SemanticsService.sendAnnouncement(
+            View.of(context),
+            '360 turntable stopped',
+            TextDirection.ltr,
+          );
+        } catch (_) {}
       }
     });
   }
 
-  void _snapToAngle(double targetX, double targetY) {
+  void _snapToAngle(double targetX, double targetY, {String? angleName}) {
     _springAnimX = Tween<double>(begin: _rotX, end: targetX).animate(
       CurvedAnimation(parent: _springBackController, curve: Curves.easeOutBack),
     );
@@ -1619,6 +1717,15 @@ class _Mascot3DStageState extends State<Mascot3DStage>
       CurvedAnimation(parent: _springBackController, curve: Curves.easeOutBack),
     );
     _springBackController.forward(from: 0.0);
+    if (angleName != null) {
+      try {
+        SemanticsService.sendAnnouncement(
+          View.of(context),
+          '$angleName camera preset applied',
+          TextDirection.ltr,
+        );
+      } catch (_) {}
+    }
   }
 
   void _changeFinish(MascotMaterialFinish finish) {
@@ -1626,58 +1733,69 @@ class _Mascot3DStageState extends State<Mascot3DStage>
     setState(() {
       _currentFinish = finish;
     });
+    try {
+      SemanticsService.sendAnnouncement(
+        View.of(context),
+        'Material finish changed to ${finish.name}',
+        TextDirection.ltr,
+      );
+    } catch (_) {}
   }
 
   @override
   Widget build(BuildContext context) {
-    _updateParticles();
     final mascot = _currentMascot;
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 1. FOUR GREAT HOUSES SELECTOR
-          _buildHouseSelectorBar(),
-          const SizedBox(height: 14),
+    return SafeArea(
+      bottom: true,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 1. FOUR GREAT HOUSES SELECTOR
+            _buildHouseSelectorBar(),
+            const SizedBox(height: 14),
 
-          // 2. TRUE 3D VOLUMETRIC MASCOT STAGE
-          _buildTrue3DStage(mascot),
-          const SizedBox(height: 14),
+            // 2. TRUE 3D VOLUMETRIC MASCOT STAGE
+            _buildTrue3DStage(mascot),
+            const SizedBox(height: 14),
 
-          // 3. MATERIAL FINISH SELECTOR (House Chroma, Imperial Gold, Dark Obsidian, Astral Crystal)
-          _buildMaterialFinishSelector(mascot),
-          const SizedBox(height: 14),
+            // 3. MATERIAL FINISH SELECTOR (House Chroma, Imperial Gold, Dark Obsidian, Astral Crystal)
+            _buildMaterialFinishSelector(mascot),
+            const SizedBox(height: 14),
 
-          // 4. 3D CAMERA ANGLE PRESETS (Front, 3/4 Hero, Profile, Back, Top)
-          _buildCameraAnglePresets(),
-          const SizedBox(height: 14),
+            // 4. 3D CAMERA ANGLE PRESETS (Front, 3/4 Hero, Profile, Back, Top)
+            _buildCameraAnglePresets(),
+            const SizedBox(height: 14),
 
-          // 5. 3D CONTROL HUD (Turntable, Zoom, Reset, Roar)
-          _build3DControlHud(mascot),
-          const SizedBox(height: 18),
+            // 5. 3D CONTROL HUD (Turntable, Zoom, Reset, Roar)
+            _build3DControlHud(mascot),
+            const SizedBox(height: 18),
 
-          // 6. MASCOT IDENTITY & BEAST NOBILITY
-          _buildMascotHeaderCard(mascot),
-          const SizedBox(height: 18),
+            // 6. MASCOT IDENTITY & BEAST NOBILITY
+            _buildMascotHeaderCard(mascot),
+            const SizedBox(height: 18),
 
-          // 7. POWER ATTRIBUTES RADAR / BARS
-          _buildMascotPowerStats(mascot),
-          const SizedBox(height: 18),
+            // 7. POWER ATTRIBUTES RADAR / BARS
+            _buildMascotPowerStats(mascot),
+            const SizedBox(height: 18),
 
-          // 8. SACRED RELIC OF THE HOUSE ARCHIVES
-          _buildSacredRelicCard(mascot),
-          const SizedBox(height: 18),
+            // 8. SACRED RELIC OF THE HOUSE ARCHIVES
+            _buildSacredRelicCard(mascot),
+            const SizedBox(height: 18),
 
-          // 9. ANCIENT FOUNDING ERA CHRONICLES
-          _buildLoreChroniclesCard(mascot),
-          const SizedBox(height: 18),
+            // 9. ANCIENT FOUNDING ERA CHRONICLES
+            _buildLoreChroniclesCard(mascot),
+            const SizedBox(height: 18),
 
-          // 10. HOUSE VIRTUES & SACRED RITE
-          _buildVirtuesAndRiteCard(mascot),
-          const SizedBox(height: 36),
-        ],
+            // 10. HOUSE VIRTUES & SACRED RITE
+            _buildVirtuesAndRiteCard(mascot),
+
+            // Generous bottom clearance to prevent bottom-bar/dock overlap
+            const SizedBox(height: 110),
+          ],
+        ),
       ),
     );
   }
@@ -1694,7 +1812,7 @@ class _Mascot3DStageState extends State<Mascot3DStage>
     ];
 
     return SizedBox(
-      height: 42,
+      height: 48,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: houses.length,
@@ -1704,42 +1822,51 @@ class _Mascot3DStageState extends State<Mascot3DStage>
           final isSel = _activeHouse == h['id'];
           final color = h['color'] as Color;
 
-          return InkWell(
-            borderRadius: BorderRadius.circular(18),
-            onTap: () => _switchMascot(h['id'] as String),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 240),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: isSel ? color : const Color(0xFF101624),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(
-                  color: isSel ? Colors.white : Colors.white12,
-                  width: isSel ? 1.5 : 1.0,
-                ),
-                boxShadow: isSel
-                    ? [
-                        BoxShadow(
-                          color: color.withValues(alpha: 0.45),
-                          blurRadius: 12,
-                          offset: const Offset(0, 3),
-                        ),
-                      ]
-                    : null,
-              ),
-              child: Row(
-                children: [
-                  Text(h['emoji'] as String, style: const TextStyle(fontSize: 16)),
-                  const SizedBox(width: 8),
-                  Text(
-                    h['name'] as String,
-                    style: TextStyle(
-                      color: isSel ? Colors.white : Colors.white70,
-                      fontWeight: isSel ? FontWeight.w900 : FontWeight.w700,
-                      fontSize: 13,
-                    ),
+          return Semantics(
+            button: true,
+            selected: isSel,
+            excludeSemantics: true,
+            label: '${h["name"]} House Mascot',
+            child: InkWell(
+              borderRadius: BorderRadius.circular(18),
+              onTap: () => _switchMascot(h['id'] as String),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 240),
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: isSel ? color : const Color(0xFF101624),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: isSel ? Colors.white : Colors.white12,
+                    width: isSel ? 1.5 : 1.0,
                   ),
-                ],
+                  boxShadow: isSel
+                      ? [
+                          BoxShadow(
+                            color: color.withValues(alpha: 0.45),
+                            blurRadius: 12,
+                            offset: const Offset(0, 3),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Row(
+                  children: [
+                    ExcludeSemantics(
+                      child: Text(h['emoji'] as String, style: const TextStyle(fontSize: 16)),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      h['name'] as String,
+                      style: TextStyle(
+                        color: isSel ? Colors.white : Colors.white70,
+                        fontWeight: isSel ? FontWeight.w900 : FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           );
@@ -1754,253 +1881,301 @@ class _Mascot3DStageState extends State<Mascot3DStage>
   Widget _buildTrue3DStage(MascotLoreData mascot) {
     return Container(
       width: double.infinity,
-      height: 420,
+      height: 440,
       decoration: BoxDecoration(
-        color: const Color(0xFF03050A),
         borderRadius: BorderRadius.circular(32),
-        border: Border.all(
-          color: mascot.glowColor.withValues(alpha: 0.35),
-          width: 1.5,
-        ),
         gradient: RadialGradient(
-          center: const Alignment(0, -0.25),
-          radius: 1.4,
+          center: const Alignment(0, -0.2),
+          radius: 1.35,
           colors: [
-            mascot.glowColor.withValues(alpha: 0.30),
-            const Color(0xFF0C1322),
-            const Color(0xFF020408),
+            mascot.glowColor.withValues(alpha: 0.22),
+            const Color(0xFF0A0F1D),
+            const Color(0xFF030509),
           ],
-          stops: const [0.0, 0.55, 1.0],
+          stops: const [0.0, 0.58, 1.0],
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.9),
-            blurRadius: 30,
-            offset: const Offset(0, 14),
+            color: Colors.black.withValues(alpha: 0.85),
+            blurRadius: 32,
+            offset: const Offset(0, 16),
           ),
           BoxShadow(
-            color: mascot.glowColor.withValues(alpha: 0.22),
-            blurRadius: 40,
-            spreadRadius: 2,
+            color: mascot.glowColor.withValues(alpha: 0.18),
+            blurRadius: 44,
+            spreadRadius: 1,
           ),
         ],
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(32),
-        child: GestureDetector(
-          onScaleStart: (_) {
-            _baseZoom = _zoomScale;
-          },
-          onScaleUpdate: (details) {
-            if (_isAutoRotating) {
-              _isAutoRotating = false;
-              _turntableController.stop();
-            }
-            _springBackController.stop();
+        child: Column(
+          children: [
+            _buildStageTopBar(mascot),
+            Expanded(
+              child: Focus(
+                focusNode: _stageFocusNode,
+                autofocus: true,
+                onKeyEvent: _handleStageKeyNavigation,
+                child: Semantics(
+                  container: true,
+                  label: '${mascot.name} 3D Statue Stage',
+                  hint: 'Use arrow keys to rotate, plus or minus to zoom, space or enter to roar',
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTapDown: (_) => _stageFocusNode.requestFocus(),
+                    onTap: () => _stageFocusNode.requestFocus(),
+                    onScaleStart: (_) {
+                      _baseZoom = _zoomScale;
+                    },
+                    onScaleUpdate: (details) {
+                      if (_isAutoRotating) {
+                        _isAutoRotating = false;
+                        _turntableController.stop();
+                      }
+                      _springBackController.stop();
 
-            setState(() {
-              // Multi-touch pinch zoom
-              if (details.pointerCount > 1) {
-                _zoomScale = (_baseZoom * details.scale).clamp(0.72, 1.95);
-              } else {
-                // Single-touch 360 degree 3D rotation
-                _rotY = (_rotY + details.focalPointDelta.dx * 0.016) % (math.pi * 2);
-                _rotX -= details.focalPointDelta.dy * 0.016;
-                _rotX = _rotX.clamp(-0.85, 0.85);
-              }
-            });
-          },
-          onDoubleTap: _triggerRoar,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              // 1. Swirling 3D Elemental Particles (Projected with 3D camera)
-              Positioned.fill(
-                child: CustomPaint(
-                  painter: _Particles3DPainter(
-                    particles: _particles,
-                    glowColor: mascot.glowColor,
-                    rotX: _rotX,
-                    rotY: _rotY,
-                  ),
-                ),
-              ),
-
-              // 2. Sanctuary Floor Light & Ground Dais Aura
-              Positioned(
-                bottom: 22,
-                child: AnimatedBuilder(
-                  animation: _altarSpinController,
-                  builder: (context, _) {
-                    return Transform(
+                      setState(() {
+                        // Multi-touch pinch zoom
+                        if (details.pointerCount > 1) {
+                          _zoomScale = (_baseZoom * details.scale).clamp(0.72, 1.95);
+                        } else {
+                          // Single-touch 360 degree 3D rotation
+                          _rotY = (_rotY + details.focalPointDelta.dx * 0.016) % (math.pi * 2);
+                          _rotX -= details.focalPointDelta.dy * 0.016;
+                          _rotX = _rotX.clamp(-0.85, 0.85);
+                        }
+                      });
+                    },
+                    onDoubleTap: _triggerRoar,
+                    child: Stack(
                       alignment: Alignment.center,
-                      transform: Matrix4.identity()
-                        ..setEntry(3, 2, 0.002)
-                        ..rotateX(1.22)
-                        ..rotateZ(_altarSpinController.value * math.pi * 2),
-                      child: Container(
-                        width: 290,
-                        height: 290,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: RadialGradient(
-                            colors: [
-                              mascot.glowColor.withValues(alpha: 0.38),
-                              mascot.glowColor.withValues(alpha: 0.12),
-                              Colors.transparent,
-                            ],
-                            stops: const [0.0, 0.65, 1.0],
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: mascot.glowColor.withValues(alpha: 0.35),
-                              blurRadius: 28,
-                              spreadRadius: 4,
+                      children: [
+                        // 1. Swirling 3D Elemental Particles (Projected with 3D camera)
+                        Positioned.fill(
+                          child: ExcludeSemantics(
+                            child: CustomPaint(
+                              painter: _Particles3DPainter(
+                                particles: _particles,
+                                glowColor: mascot.glowColor,
+                                rotX: _rotX,
+                                rotY: _rotY,
+                              ),
                             ),
-                          ],
+                          ),
                         ),
-                        child: CustomPaint(
-                          painter: _AltarRunicPainter(color: mascot.glowColor.withValues(alpha: 0.5)),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
 
-              // 3. Dynamic 3D Ground Contact Shadow tracking mascot's disc
-              Positioned(
-                bottom: 26,
-                child: Transform(
-                  alignment: Alignment.center,
-                  transform: Matrix4.translationValues(
-                    math.sin(_rotY) * 24,
-                    -_rotX * 16,
-                    0.0,
-                  ),
-                  child: Container(
-                    width: 210,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.88),
-                      borderRadius: const BorderRadius.all(Radius.elliptical(210, 44)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.98),
-                          blurRadius: 26,
-                          spreadRadius: 6,
+                        // 2. Sanctuary Floor Light & Ground Dais Aura
+                        Positioned(
+                          bottom: 22,
+                          child: ExcludeSemantics(
+                            child: AnimatedBuilder(
+                              animation: _altarSpinController,
+                              builder: (context, _) {
+                                return Transform(
+                                  alignment: Alignment.center,
+                                  transform: Matrix4.identity()
+                                    ..setEntry(3, 2, 0.002)
+                                    ..rotateX(1.22)
+                                    ..rotateZ(_altarSpinController.value * math.pi * 2),
+                                  child: Container(
+                                    width: 290,
+                                    height: 290,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      gradient: RadialGradient(
+                                        colors: [
+                                          mascot.glowColor.withValues(alpha: 0.38),
+                                          mascot.glowColor.withValues(alpha: 0.12),
+                                          Colors.transparent,
+                                        ],
+                                        stops: const [0.0, 0.65, 1.0],
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: mascot.glowColor.withValues(alpha: 0.35),
+                                          blurRadius: 28,
+                                          spreadRadius: 4,
+                                        ),
+                                      ],
+                                    ),
+                                    child: CustomPaint(
+                                      painter: _AltarRunicPainter(color: mascot.glowColor.withValues(alpha: 0.5)),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
                         ),
+
+                        // 3. Dynamic 3D Ground Contact Shadow tracking mascot's disc
+                        Positioned(
+                          bottom: 26,
+                          child: ExcludeSemantics(
+                            child: Transform(
+                              alignment: Alignment.center,
+                              transform: Matrix4.translationValues(
+                                math.sin(_rotY) * 24,
+                                -_rotX * 16,
+                                0.0,
+                              ),
+                              child: Container(
+                                width: 210,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.88),
+                                  borderRadius: const BorderRadius.all(Radius.elliptical(210, 44)),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: 0.98),
+                                      blurRadius: 26,
+                                      spreadRadius: 6,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+
+                        // 4. REAL 3D POLYGONAL MESH STATUE & GRAND RUNIC DISC
+                        ExcludeSemantics(
+                          child: AnimatedBuilder(
+                            animation: Listenable.merge([
+                              _idleFloatController,
+                              _roarController,
+                            ]),
+                            builder: (context, _) {
+                              final floatVal = _idleFloatController.value;
+                              // Subtle living breath pulse
+                              final breatheScale = 1.0 + (math.sin(floatVal * math.pi * 2) * 0.012);
+
+                              // Roar scale & vibration pulse
+                              final roarVal = _roarController.value;
+                              final roarScale = 1.0 + (math.sin(roarVal * math.pi) * 0.18);
+                              final shakeX = (roarVal > 0.0 && roarVal < 0.7)
+                                  ? (math.sin(roarVal * math.pi * 12) * 4.0)
+                                  : 0.0;
+
+                              return Transform.translate(
+                                offset: Offset(shakeX, 2),
+                                child: Transform.scale(
+                                  scale: roarScale * _zoomScale * breatheScale,
+                                  child: SizedBox(
+                                    width: 360,
+                                    height: 360,
+                                    child: CustomPaint(
+                                      painter: _Mascot3DRendererPainter(
+                                        mesh: mascot.mesh,
+                                        rotX: _rotX,
+                                        rotY: _rotY,
+                                        glowColor: mascot.glowColor,
+                                        primaryColor: mascot.primaryColor,
+                                        finish: _currentFinish,
+                                        diagramMode: _diagramMode,
+                                        showCallouts: _showDiagramCallouts,
+                                        hotspots: mascot.hotspots,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+
+                        // 5. Kinetic Roar Shockwave Ring
+                        ExcludeSemantics(
+                          child: AnimatedBuilder(
+                            animation: _roarController,
+                            builder: (context, _) {
+                              final roarVal = _roarController.value;
+                              if (roarVal <= 0.0 || roarVal >= 1.0) return const SizedBox.shrink();
+
+                              final ringSize = 100.0 + (roarVal * 300.0);
+                              final ringOpacity = (1.0 - roarVal).clamp(0.0, 1.0);
+
+                              return Container(
+                                width: ringSize,
+                                height: ringSize,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: mascot.glowColor.withValues(alpha: ringOpacity * 0.95),
+                                    width: 4.0 * (1.0 - roarVal) + 1.2,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: mascot.glowColor.withValues(alpha: ringOpacity * 0.65),
+                                      blurRadius: 24,
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+
                       ],
                     ),
                   ),
                 ),
               ),
+            ),
+            _buildStageBottomBar(mascot),
+          ],
+        ),
+      ),
+    );
+  }
 
-              // 4. REAL 3D POLYGONAL MESH STATUE & GRAND RUNIC DISC
-              AnimatedBuilder(
-                animation: Listenable.merge([
-                  _idleFloatController,
-                  _roarController,
-                ]),
-                builder: (context, _) {
-                  final floatVal = _idleFloatController.value;
-                  // Subtle living breath pulse
-                  final breatheScale = 1.0 + (math.sin(floatVal * math.pi * 2) * 0.012);
+  Widget _buildStageTopBar(MascotLoreData mascot) {
+    final yawDeg = (((_rotY * 180 / math.pi) % 360).toInt() + 360) % 360;
+    final pitchDeg = (_rotX * 180 / math.pi).toInt();
+    final zoomPct = (_zoomScale * 100).toInt();
 
-                  // Roar scale & vibration pulse
-                  final roarVal = _roarController.value;
-                  final roarScale = 1.0 + (math.sin(roarVal * math.pi) * 0.18);
-                  final shakeX = (roarVal > 0.0 && roarVal < 0.7)
-                      ? (math.sin(roarVal * math.pi * 12) * 4.0)
-                      : 0.0;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 4),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isLargeText = MediaQuery.textScalerOf(context).scale(1) >= 1.3 || constraints.maxWidth < 460;
 
-                  return Transform.translate(
-                    offset: Offset(shakeX, 2),
-                    child: Transform.scale(
-                      scale: roarScale * _zoomScale * breatheScale,
-                      child: SizedBox(
-                        width: 360,
-                        height: 360,
-                        child: CustomPaint(
-                          painter: _Mascot3DRendererPainter(
-                            mesh: mascot.mesh,
-                            rotX: _rotX,
-                            rotY: _rotY,
-                            glowColor: mascot.glowColor,
-                            primaryColor: mascot.primaryColor,
-                            finish: _currentFinish,
-                            diagramMode: _diagramMode,
-                            showCallouts: _showDiagramCallouts,
-                            hotspots: mascot.hotspots,
+          final telemetryHud = Semantics(
+            container: true,
+            liveRegion: true,
+            label: 'CAD Telemetry: Heading $yawDeg degrees, Pitch $pitchDeg degrees, Zoom $zoomPct percent',
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.55),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: mascot.glowColor.withValues(alpha: 0.22), width: 1.0),
+              ),
+              child: ExcludeSemantics(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 7,
+                      height: 7,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: const Color(0xFF00E676),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF00E676).withValues(alpha: 0.6),
+                            blurRadius: 4,
                           ),
-                        ),
+                        ],
                       ),
                     ),
-                  );
-                },
-              ),
-
-              // 5. Kinetic Roar Shockwave Ring
-              AnimatedBuilder(
-                animation: _roarController,
-                builder: (context, _) {
-                  final roarVal = _roarController.value;
-                  if (roarVal <= 0.0 || roarVal >= 1.0) return const SizedBox.shrink();
-
-                  final ringSize = 100.0 + (roarVal * 300.0);
-                  final ringOpacity = (1.0 - roarVal).clamp(0.0, 1.0);
-
-                  return Container(
-                    width: ringSize,
-                    height: ringSize,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: mascot.glowColor.withValues(alpha: ringOpacity * 0.95),
-                        width: 4.0 * (1.0 - roarVal) + 1.2,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: mascot.glowColor.withValues(alpha: ringOpacity * 0.65),
-                          blurRadius: 24,
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-
-              // 6. Top-Left: Live 3D CAD Telemetry HUD
-              Positioned(
-                top: 12,
-                left: 12,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.72),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white12),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 7,
-                        height: 7,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: const Color(0xFF00E676),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFF00E676).withValues(alpha: 0.6),
-                              blurRadius: 4,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'CAD • YAW: ${(((_rotY * 180 / math.pi) % 360).toInt() + 360) % 360}°  PITCH: ${(_rotX * 180 / math.pi).toInt()}°  ZOOM: ${(_zoomScale * 100).toInt()}%',
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        'CAD • YAW: $yawDeg°  PITCH: $pitchDeg°  $zoomPct%',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: Colors.white70,
                           fontSize: 9.5,
@@ -2009,73 +2184,116 @@ class _Mascot3DStageState extends State<Mascot3DStage>
                           letterSpacing: 0.3,
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
+            ),
+          );
 
-              // 7. Top-Right: Technical Diagram Display Modes
-              Positioned(
-                top: 12,
-                right: 12,
-                child: Container(
-                  padding: const EdgeInsets.all(3),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.75),
-                    borderRadius: BorderRadius.circular(13),
-                    border: Border.all(color: Colors.white12),
+          final diagramModes = Container(
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.55),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: mascot.glowColor.withValues(alpha: 0.22), width: 1.0),
+            ),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildDiagramModeBtn(
+                    label: 'Solid',
+                    icon: Icons.view_in_ar_rounded,
+                    mode: MascotDiagramMode.solidRender,
+                    activeColor: mascot.accentColor,
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _buildDiagramModeBtn(
-                        label: 'Solid',
-                        icon: Icons.view_in_ar_rounded,
-                        mode: MascotDiagramMode.solidRender,
-                        activeColor: mascot.accentColor,
-                      ),
-                      const SizedBox(width: 3),
-                      _buildDiagramModeBtn(
-                        label: 'Blueprint',
-                        icon: Icons.grid_4x4_rounded,
-                        mode: MascotDiagramMode.holoBlueprint,
-                        activeColor: const Color(0xFF00E5FF),
-                      ),
-                      const SizedBox(width: 3),
-                      _buildDiagramModeBtn(
-                        label: 'X-Ray',
-                        icon: Icons.biotech_rounded,
-                        mode: MascotDiagramMode.tacticalXRay,
-                        activeColor: const Color(0xFFFF4081),
-                      ),
-                    ],
+                  const SizedBox(width: 2),
+                  _buildDiagramModeBtn(
+                    label: 'Blueprint',
+                    icon: Icons.grid_4x4_rounded,
+                    mode: MascotDiagramMode.holoBlueprint,
+                    activeColor: const Color(0xFF00E5FF),
                   ),
-                ),
+                  const SizedBox(width: 2),
+                  _buildDiagramModeBtn(
+                    label: 'X-Ray',
+                    icon: Icons.biotech_rounded,
+                    mode: MascotDiagramMode.tacticalXRay,
+                    activeColor: const Color(0xFFFF4081),
+                  ),
+                ],
               ),
+            ),
+          );
 
-              // 8. Bottom-Left: Interactive Anatomical Callout Pins Toggle
-              Positioned(
-                bottom: 12,
-                left: 12,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () {
-                    HapticFeedback.selectionClick();
-                    setState(() {
-                      _showDiagramCallouts = !_showDiagramCallouts;
-                    });
-                  },
+          if (isLargeText) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                telemetryHud,
+                const SizedBox(height: 6),
+                diagramModes,
+              ],
+            );
+          }
+
+          return Row(
+            children: [
+              Flexible(child: telemetryHud),
+              const SizedBox(width: 6),
+              diagramModes,
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildStageBottomBar(MascotLoreData mascot) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 4, 10, 10),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isLargeText = MediaQuery.textScalerOf(context).scale(1) >= 1.3 || constraints.maxWidth < 360;
+
+          final calloutsToggle = Semantics(
+            button: true,
+            toggled: _showDiagramCallouts,
+            excludeSemantics: true,
+            label: 'Technical Callouts: ${_showDiagramCallouts ? "Active" : "Hidden"}',
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 48),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  setState(() {
+                    _showDiagramCallouts = !_showDiagramCallouts;
+                  });
+                  try {
+                    SemanticsService.sendAnnouncement(
+                      View.of(context),
+                      _showDiagramCallouts ? 'Callouts activated' : 'Callouts hidden',
+                      TextDirection.ltr,
+                    );
+                  } catch (_) {}
+                },
+                child: Align(
+                  alignment: Alignment.centerLeft,
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                     decoration: BoxDecoration(
                       color: _showDiagramCallouts
                           ? mascot.glowColor.withValues(alpha: 0.28)
-                          : Colors.black.withValues(alpha: 0.72),
-                      borderRadius: BorderRadius.circular(12),
+                          : Colors.black.withValues(alpha: 0.55),
+                      borderRadius: BorderRadius.circular(14),
                       border: Border.all(
-                        color: _showDiagramCallouts ? mascot.accentColor : Colors.white12,
-                        width: 1.2,
+                        color: _showDiagramCallouts ? mascot.accentColor : mascot.glowColor.withValues(alpha: 0.20),
+                        width: 1.0,
                       ),
                     ),
                     child: Row(
@@ -2083,17 +2301,21 @@ class _Mascot3DStageState extends State<Mascot3DStage>
                       children: [
                         Icon(
                           _showDiagramCallouts ? Icons.push_pin_rounded : Icons.push_pin_outlined,
-                          size: 12,
+                          size: 13,
                           color: _showDiagramCallouts ? Colors.white : Colors.white60,
                         ),
-                        const SizedBox(width: 5),
-                        Text(
-                          _showDiagramCallouts ? 'Callouts: ACTIVE' : 'Callouts: HIDDEN',
-                          style: TextStyle(
-                            color: _showDiagramCallouts ? Colors.white : Colors.white60,
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.2,
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            _showDiagramCallouts ? 'Callouts: ACTIVE' : 'Callouts: HIDDEN',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: _showDiagramCallouts ? Colors.white : Colors.white60,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.2,
+                            ),
                           ),
                         ),
                       ],
@@ -2101,17 +2323,29 @@ class _Mascot3DStageState extends State<Mascot3DStage>
                   ),
                 ),
               ),
+            ),
+          );
 
-              // 9. Bottom-Right: Interactive Manipulation Tip Pill
-              Positioned(
-                bottom: 12,
-                right: 12,
+          if (isLargeText) {
+            return Row(
+              children: [
+                Expanded(child: calloutsToggle),
+              ],
+            );
+          }
+
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Flexible(child: calloutsToggle),
+              const SizedBox(width: 8),
+              ExcludeSemantics(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.72),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white12),
+                    color: Colors.black.withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: mascot.glowColor.withValues(alpha: 0.20), width: 1.0),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -2119,7 +2353,7 @@ class _Mascot3DStageState extends State<Mascot3DStage>
                       Icon(Icons.threed_rotation_rounded, size: 12, color: mascot.accentColor),
                       const SizedBox(width: 5),
                       const Text(
-                        '360° Drag • Pinch Zoom',
+                        '360° Drag • Pinch',
                         style: TextStyle(
                           color: Colors.white70,
                           fontSize: 9.5,
@@ -2131,8 +2365,8 @@ class _Mascot3DStageState extends State<Mascot3DStage>
                 ),
               ),
             ],
-          ),
-        ),
+          );
+        },
       ),
     );
   }
@@ -2144,40 +2378,58 @@ class _Mascot3DStageState extends State<Mascot3DStage>
     required Color activeColor,
   }) {
     final isSelected = _diagramMode == mode;
-    return InkWell(
-      borderRadius: BorderRadius.circular(10),
-      onTap: () {
-        HapticFeedback.selectionClick();
-        setState(() {
-          _diagramMode = mode;
-        });
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-        decoration: BoxDecoration(
-          color: isSelected ? activeColor.withValues(alpha: 0.32) : Colors.transparent,
+    return Semantics(
+      button: true,
+      selected: isSelected,
+      excludeSemantics: true,
+      label: '$label Diagram Mode',
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+        child: InkWell(
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: isSelected ? activeColor : Colors.transparent,
-            width: 1.0,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 11, color: isSelected ? Colors.white : Colors.white60),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                color: isSelected ? Colors.white : Colors.white60,
-                fontSize: 10,
-                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                letterSpacing: 0.2,
+          onTap: () {
+            HapticFeedback.selectionClick();
+            setState(() {
+              _diagramMode = mode;
+            });
+            try {
+              SemanticsService.sendAnnouncement(
+                View.of(context),
+                '$label diagram mode activated',
+                TextDirection.ltr,
+              );
+            } catch (_) {}
+          },
+          child: Center(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              decoration: BoxDecoration(
+                color: isSelected ? activeColor.withValues(alpha: 0.32) : Colors.transparent,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: isSelected ? activeColor : Colors.transparent,
+                  width: 1.0,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 11, color: isSelected ? Colors.white : Colors.white60),
+                  const SizedBox(width: 3),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: isSelected ? Colors.white : Colors.white60,
+                      fontSize: 9.5,
+                      fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                      letterSpacing: 0.1,
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -2197,9 +2449,9 @@ class _Mascot3DStageState extends State<Mascot3DStage>
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: const Color(0xFF0B101D),
+        color: const Color(0xFF0A0F1D),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white12),
+        border: Border.all(color: mascot.glowColor.withValues(alpha: 0.16), width: 1.0),
       ),
       child: Row(
         children: finishes.map((f) {
@@ -2207,42 +2459,57 @@ class _Mascot3DStageState extends State<Mascot3DStage>
           final finishEnum = f['finish'] as MascotMaterialFinish;
 
           return Expanded(
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () => _changeFinish(finishEnum),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                decoration: BoxDecoration(
-                  color: isSel ? mascot.primaryColor : Colors.transparent,
+            child: Semantics(
+              button: true,
+              selected: isSel,
+              excludeSemantics: true,
+              label: '${f['label']} Material Finish',
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 48),
+                child: InkWell(
                   borderRadius: BorderRadius.circular(12),
-                  boxShadow: isSel
-                      ? [
-                          BoxShadow(
-                            color: mascot.glowColor.withValues(alpha: 0.4),
-                            blurRadius: 8,
+                  onTap: () => _changeFinish(finishEnum),
+                  child: Center(
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isSel ? mascot.primaryColor : Colors.transparent,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: isSel
+                            ? [
+                                BoxShadow(
+                                  color: mascot.glowColor.withValues(alpha: 0.4),
+                                  blurRadius: 8,
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            f['icon'] as IconData,
+                            size: 13,
+                            color: isSel ? Colors.white : Colors.white60,
                           ),
-                        ]
-                      : null,
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      f['icon'] as IconData,
-                      size: 13,
-                      color: isSel ? Colors.white : Colors.white60,
-                    ),
-                    const SizedBox(width: 5),
-                    Text(
-                      f['label'] as String,
-                      style: TextStyle(
-                        color: isSel ? Colors.white : Colors.white70,
-                        fontWeight: isSel ? FontWeight.w900 : FontWeight.w600,
-                        fontSize: 11,
+                          const SizedBox(width: 5),
+                          Flexible(
+                            child: Text(
+                              f['label'] as String,
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                              style: TextStyle(
+                                color: isSel ? Colors.white : Colors.white70,
+                                fontWeight: isSel ? FontWeight.w900 : FontWeight.w600,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -2265,43 +2532,51 @@ class _Mascot3DStageState extends State<Mascot3DStage>
     ];
 
     return SizedBox(
-      height: 34,
+      height: 48,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: angles.length,
         separatorBuilder: (_, _) => const SizedBox(width: 8),
         itemBuilder: (context, index) {
           final a = angles[index];
-          return InkWell(
-            borderRadius: BorderRadius.circular(12),
-            onTap: () {
-              HapticFeedback.selectionClick();
-              if (_isAutoRotating) {
-                _isAutoRotating = false;
-                _turntableController.stop();
-              }
-              _snapToAngle(a['x'] as double, a['y'] as double);
-            },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: const Color(0xFF101624),
+          return Semantics(
+            button: true,
+            excludeSemantics: true,
+            label: '${a['label']} Camera Angle Preset',
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 48, minWidth: 48),
+              child: InkWell(
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white12),
-              ),
-              child: Row(
-                children: [
-                  Icon(a['icon'] as IconData, size: 13, color: Colors.white60),
-                  const SizedBox(width: 5),
-                  Text(
-                    a['label'] as String,
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 11,
-                    ),
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  if (_isAutoRotating) {
+                    _isAutoRotating = false;
+                    _turntableController.stop();
+                  }
+                  _snapToAngle(a['x'] as double, a['y'] as double, angleName: a['label'] as String);
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0D1424),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: _currentMascot.glowColor.withValues(alpha: 0.16), width: 1.0),
                   ),
-                ],
+                  child: Row(
+                    children: [
+                      Icon(a['icon'] as IconData, size: 14, color: Colors.white60),
+                      const SizedBox(width: 6),
+                      Text(
+                        a['label'] as String,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           );
@@ -2314,79 +2589,75 @@ class _Mascot3DStageState extends State<Mascot3DStage>
   // 5. 3D CONTROL HUD (Turntable, Zoom +/- , Reset, Roar)
   // ===========================================================================
   Widget _build3DControlHud(MascotLoreData mascot) {
-    return Row(
-      children: [
-        // 1. Turntable 360 Auto-Spin Toggle
-        Expanded(
-          flex: 4,
-          child: OutlinedButton.icon(
-            icon: Icon(
-              _isAutoRotating ? Icons.pause_circle_filled_rounded : Icons.rotate_right_rounded,
-              size: 18,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final textScale = MediaQuery.textScalerOf(context).scale(1);
+        final isLargeText = textScale >= 1.3 || constraints.maxWidth < 400;
+        final isNarrow = constraints.maxWidth < 360;
+
+        final spinBtn = OutlinedButton.icon(
+          icon: Icon(
+            _isAutoRotating ? Icons.pause_circle_filled_rounded : Icons.rotate_right_rounded,
+            size: 18,
+            color: _isAutoRotating ? Colors.amberAccent : Colors.white70,
+          ),
+          label: Text(
+            _isAutoRotating ? 'Spinning' : (isNarrow ? 'Spin' : '360° Spin'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
               color: _isAutoRotating ? Colors.amberAccent : Colors.white70,
+              fontSize: isNarrow ? 11 : 12,
+              fontWeight: FontWeight.w800,
             ),
-            label: Text(
-              _isAutoRotating ? 'Spinning' : '360° Spin',
-              style: TextStyle(
-                color: _isAutoRotating ? Colors.amberAccent : Colors.white70,
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            style: OutlinedButton.styleFrom(
-              backgroundColor: _isAutoRotating ? Colors.amber.withValues(alpha: 0.12) : const Color(0xFF101624),
-              side: BorderSide(
-                color: _isAutoRotating ? Colors.amberAccent : Colors.white12,
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            ),
-            onPressed: _toggleAutoRotate,
           ),
-        ),
-        const SizedBox(width: 8),
+          style: OutlinedButton.styleFrom(
+            backgroundColor: _isAutoRotating ? Colors.amber.withValues(alpha: 0.12) : const Color(0xFF0D1424),
+            side: BorderSide(
+              color: _isAutoRotating ? Colors.amberAccent : mascot.glowColor.withValues(alpha: 0.16),
+            ),
+            minimumSize: const Size.fromHeight(48),
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          ),
+          onPressed: _toggleAutoRotate,
+        );
 
-        // Zoom -
-        IconButton.outlined(
+        final zoomOutBtn = IconButton.outlined(
+          tooltip: 'Zoom Out',
           icon: const Icon(Icons.remove_rounded, size: 18, color: Colors.white70),
+          constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+          padding: EdgeInsets.zero,
           style: IconButton.styleFrom(
-            backgroundColor: const Color(0xFF101624),
-            side: const BorderSide(color: Colors.white12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            backgroundColor: const Color(0xFF0D1424),
+            side: BorderSide(color: mascot.glowColor.withValues(alpha: 0.16)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
-          onPressed: () {
-            HapticFeedback.lightImpact();
-            setState(() {
-              _zoomScale = (_zoomScale - 0.15).clamp(0.72, 1.95);
-            });
-          },
-        ),
-        const SizedBox(width: 4),
+          onPressed: _zoomOut,
+        );
 
-        // Zoom +
-        IconButton.outlined(
+        final zoomInBtn = IconButton.outlined(
+          tooltip: 'Zoom In',
           icon: const Icon(Icons.add_rounded, size: 18, color: Colors.white70),
+          constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+          padding: EdgeInsets.zero,
           style: IconButton.styleFrom(
-            backgroundColor: const Color(0xFF101624),
-            side: const BorderSide(color: Colors.white12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            backgroundColor: const Color(0xFF0D1424),
+            side: BorderSide(color: mascot.glowColor.withValues(alpha: 0.16)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
-          onPressed: () {
-            HapticFeedback.lightImpact();
-            setState(() {
-              _zoomScale = (_zoomScale + 0.15).clamp(0.72, 1.95);
-            });
-          },
-        ),
-        const SizedBox(width: 8),
+          onPressed: _zoomIn,
+        );
 
-        // 3. Reset View
-        IconButton.outlined(
+        final resetBtn = IconButton.outlined(
+          tooltip: 'Reset Camera View',
           icon: const Icon(Icons.center_focus_strong_rounded, size: 18, color: Colors.white70),
+          constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+          padding: EdgeInsets.zero,
           style: IconButton.styleFrom(
-            backgroundColor: const Color(0xFF101624),
-            side: const BorderSide(color: Colors.white12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            backgroundColor: const Color(0xFF0D1424),
+            side: BorderSide(color: mascot.glowColor.withValues(alpha: 0.16)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
           onPressed: () {
             HapticFeedback.lightImpact();
@@ -2395,31 +2666,107 @@ class _Mascot3DStageState extends State<Mascot3DStage>
               _turntableController.stop();
             }
             setState(() => _zoomScale = 1.0);
-            _snapToAngle(0.08, 0.0);
+            _snapToAngle(0.08, 0.0, angleName: 'Front');
           },
-        ),
-        const SizedBox(width: 8),
+        );
 
-        // 4. Unleash Roar Button
-        Expanded(
-          flex: 4,
-          child: ElevatedButton.icon(
-            icon: const Icon(Icons.volume_up_rounded, size: 18, color: Colors.white),
-            label: const Text(
-              'Roar!',
-              style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w900),
+        final roarBtn = ElevatedButton.icon(
+          icon: const Icon(Icons.volume_up_rounded, size: 18, color: Colors.white),
+          label: Text(
+            'Roar!',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: isNarrow ? 11 : 12,
+              fontWeight: FontWeight.w900,
             ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: mascot.primaryColor,
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              shadowColor: mascot.glowColor.withValues(alpha: 0.5),
-              elevation: 4,
-            ),
-            onPressed: _triggerRoar,
           ),
-        ),
-      ],
+          style: ElevatedButton.styleFrom(
+            backgroundColor: mascot.primaryColor,
+            minimumSize: const Size.fromHeight(48),
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            shadowColor: mascot.glowColor.withValues(alpha: 0.5),
+            elevation: 4,
+          ),
+          onPressed: _triggerRoar,
+        );
+
+        if (isLargeText) {
+          // Responsive 2-row layout under high font scaling (up to 200%) or narrow screen
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Semantics(
+                      button: true,
+                      toggled: _isAutoRotating,
+                      excludeSemantics: true,
+                      label: _isAutoRotating ? 'Stop 360 Turntable Spin' : 'Start 360 Turntable Spin',
+                      child: spinBtn,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Semantics(
+                      button: true,
+                      excludeSemantics: true,
+                      label: 'Unleash ${mascot.name} Roar',
+                      child: roarBtn,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  zoomOutBtn,
+                  const SizedBox(width: 12),
+                  zoomInBtn,
+                  const SizedBox(width: 12),
+                  resetBtn,
+                ],
+              ),
+            ],
+          );
+        }
+
+        // Standard single-row layout
+        return Row(
+          children: [
+            Expanded(
+              flex: 4,
+              child: Semantics(
+                button: true,
+                toggled: _isAutoRotating,
+                excludeSemantics: true,
+                label: _isAutoRotating ? 'Stop 360 Turntable Spin' : 'Start 360 Turntable Spin',
+                child: spinBtn,
+              ),
+            ),
+            const SizedBox(width: 6),
+            zoomOutBtn,
+            const SizedBox(width: 4),
+            zoomInBtn,
+            const SizedBox(width: 4),
+            resetBtn,
+            const SizedBox(width: 6),
+            Expanded(
+              flex: 4,
+              child: Semantics(
+                button: true,
+                excludeSemantics: true,
+                label: 'Unleash ${mascot.name} Roar',
+                child: roarBtn,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -2433,7 +2780,7 @@ class _Mascot3DStageState extends State<Mascot3DStage>
       decoration: BoxDecoration(
         color: const Color(0xFF0F1523),
         borderRadius: BorderRadius.circular(26),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        border: Border.all(color: mascot.glowColor.withValues(alpha: 0.22), width: 1.0),
         gradient: RadialGradient(
           center: const Alignment(0.8, -0.6),
           radius: 1.4,
@@ -2455,7 +2802,13 @@ class _Mascot3DStageState extends State<Mascot3DStage>
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: mascot.primaryColor.withValues(alpha: 0.25),
-                  border: Border.all(color: mascot.accentColor.withValues(alpha: 0.6), width: 1.5),
+                  border: Border.all(color: mascot.accentColor.withValues(alpha: 0.4), width: 1.2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: mascot.glowColor.withValues(alpha: 0.25),
+                      blurRadius: 10,
+                    ),
+                  ],
                 ),
                 alignment: Alignment.center,
                 child: Text(mascot.primaryEmoji, style: const TextStyle(fontSize: 26)),
@@ -2526,13 +2879,16 @@ class _Mascot3DStageState extends State<Mascot3DStage>
         children: [
           Icon(icon, size: 12, color: color),
           const SizedBox(width: 5),
-          Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontSize: 10,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0.3,
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: color,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.3,
+              ),
             ),
           ),
         ],
@@ -2550,7 +2906,7 @@ class _Mascot3DStageState extends State<Mascot3DStage>
       decoration: BoxDecoration(
         color: const Color(0xFF0F1523),
         borderRadius: BorderRadius.circular(26),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        border: Border.all(color: mascot.glowColor.withValues(alpha: 0.18), width: 1.0),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2559,13 +2915,16 @@ class _Mascot3DStageState extends State<Mascot3DStage>
             children: [
               Icon(Icons.query_stats_rounded, color: mascot.accentColor, size: 20),
               const SizedBox(width: 8),
-              const Text(
-                'Mascot Power Attributes',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 15,
-                  letterSpacing: -0.2,
+              const Expanded(
+                child: Text(
+                  'Mascot Power Attributes',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 15,
+                    letterSpacing: -0.2,
+                  ),
                 ),
               ),
             ],
@@ -2580,14 +2939,18 @@ class _Mascot3DStageState extends State<Mascot3DStage>
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        entry.key,
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
+                      Expanded(
+                        child: Text(
+                          entry.key,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
+                      const SizedBox(width: 8),
                       Text(
                         '$pct / 100',
                         style: TextStyle(
@@ -2704,7 +3067,7 @@ class _Mascot3DStageState extends State<Mascot3DStage>
       decoration: BoxDecoration(
         color: const Color(0xFF0F1523),
         borderRadius: BorderRadius.circular(26),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        border: Border.all(color: mascot.glowColor.withValues(alpha: 0.18), width: 1.0),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2713,12 +3076,15 @@ class _Mascot3DStageState extends State<Mascot3DStage>
             children: [
               Icon(Icons.auto_stories_rounded, color: Colors.amber, size: 20),
               SizedBox(width: 8),
-              Text(
-                'Founding Era Chronicles',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 15,
+              Expanded(
+                child: Text(
+                  'Founding Era Chronicles',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 15,
+                  ),
                 ),
               ),
             ],
@@ -2773,7 +3139,7 @@ class _Mascot3DStageState extends State<Mascot3DStage>
       decoration: BoxDecoration(
         color: const Color(0xFF0F1523),
         borderRadius: BorderRadius.circular(26),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        border: Border.all(color: mascot.glowColor.withValues(alpha: 0.18), width: 1.0),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2782,12 +3148,15 @@ class _Mascot3DStageState extends State<Mascot3DStage>
             children: [
               Icon(Icons.military_tech_rounded, color: mascot.accentColor, size: 20),
               const SizedBox(width: 8),
-              const Text(
-                'House Virtues & Sacred Rite',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 15,
+              const Expanded(
+                child: Text(
+                  'House Virtues & Sacred Rite',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 15,
+                  ),
                 ),
               ),
             ],
@@ -2799,12 +3168,14 @@ class _Mascot3DStageState extends State<Mascot3DStage>
                   children: [
                     Icon(Icons.check_circle_rounded, color: mascot.accentColor, size: 16),
                     const SizedBox(width: 8),
-                    Text(
-                      v,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
+                    Expanded(
+                      child: Text(
+                        v,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
                       ),
                     ),
                   ],
@@ -3033,8 +3404,8 @@ class _Mascot3DRendererPainter extends CustomPainter {
           edgePaint.color = Colors.white.withValues(alpha: 0.78);
           edgePaint.strokeWidth = 1.0;
         } else {
-          edgePaint.color = Colors.white.withValues(alpha: 0.18 + (face.specular * 0.4).clamp(0.0, 0.4));
-          edgePaint.strokeWidth = 0.8;
+          edgePaint.color = Colors.white.withValues(alpha: 0.08 + (face.specular * 0.28).clamp(0.0, 0.28));
+          edgePaint.strokeWidth = 0.6;
         }
         canvas.drawPath(path, edgePaint);
       }
@@ -3090,7 +3461,7 @@ class _Mascot3DRendererPainter extends CustomPainter {
         final isLeft = x1 < 0;
         final knee = Offset(anchor.dx + (isLeft ? -24 : 24), anchor.dy - 16);
         final tagX = knee.dx + (isLeft ? -45 : 45);
-        final tagY = knee.dy;
+        final tagY = knee.dy.clamp(16.0, size.height - 16.0);
 
         // Draw glowing anchor pin
         pinOuterPaint.color = glowColor.withValues(alpha: 0.35);
@@ -3144,6 +3515,25 @@ class _Mascot3DRendererPainter extends CustomPainter {
           isLeft ? (tagX - textPainter.width - 4) : (tagX + 4),
           tagY - (textPainter.height / 2),
         );
+
+        final badgeRect = RRect.fromRectAndRadius(
+          Rect.fromLTWH(
+            textOffset.dx - 4,
+            textOffset.dy - 2,
+            textPainter.width + 8,
+            textPainter.height + 4,
+          ),
+          const Radius.circular(6),
+        );
+        canvas.drawRRect(badgeRect, Paint()..color = Colors.black.withValues(alpha: 0.85));
+        canvas.drawRRect(
+          badgeRect,
+          Paint()
+            ..color = glowColor.withValues(alpha: 0.45)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 0.8,
+        );
+
         textPainter.paint(canvas, textOffset);
       }
     }

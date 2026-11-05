@@ -133,9 +133,11 @@ class _StudentBehaviorEvaluationScreenState
                 size: 28,
               ),
               const SizedBox(width: 10),
-              Text(
-                _isWellBehaved ? 'Merit Awarded!' : 'Demerit Recorded',
-                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+              Expanded(
+                child: Text(
+                  _isWellBehaved ? 'Merit Awarded!' : 'Demerit Recorded',
+                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+                ),
               ),
             ],
           ),

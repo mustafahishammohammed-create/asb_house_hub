@@ -1,0 +1,167 @@
+{
+  "@@locale": "en",
+  "appTitle": "ASB House Hub",
+  "@appTitle": {
+    "description": "Application title"
+  },
+  "houseEmerald": "Emerald",
+  "@houseEmerald": {
+    "description": "Emerald House name"
+  },
+  "houseRuby": "Ruby",
+  "@houseRuby": {
+    "description": "Ruby House name"
+  },
+  "houseSapphire": "Sapphire",
+  "@houseSapphire": {
+    "description": "Sapphire House name"
+  },
+  "houseTopaz": "Topaz",
+  "@houseTopaz": {
+    "description": "Topaz House name"
+  },
+  "navHome": "Home",
+  "@navHome": {
+    "description": "Bottom navigation label for Home"
+  },
+  "navArena": "Arena",
+  "@navArena": {
+    "description": "Bottom navigation label for Arena"
+  },
+  "navLeaderboard": "Leaderboard",
+  "@navLeaderboard": {
+    "description": "Bottom navigation label for Leaderboard"
+  },
+  "navWallet": "Wallet",
+  "@navWallet": {
+    "description": "Bottom navigation label for Wallet"
+  },
+  "navAcademics": "Academics",
+  "@navAcademics": {
+    "description": "Bottom navigation label for Academics"
+  },
+  "navEvents": "Events",
+  "@navEvents": {
+    "description": "Navigation label for Events"
+  },
+  "navElections": "Elections",
+  "@navElections": {
+    "description": "Navigation label for Elections"
+  },
+  "navSports": "Sports",
+  "@navSports": {
+    "description": "Navigation label for Sports"
+  },
+  "actionSave": "Save",
+  "@actionSave": {
+    "description": "Generic Save action"
+  },
+  "actionCancel": "Cancel",
+  "@actionCancel": {
+    "description": "Generic Cancel action"
+  },
+  "actionDelete": "Delete",
+  "@actionDelete": {
+    "description": "Generic Delete action"
+  },
+  "actionClose": "Close",
+  "@actionClose": {
+    "description": "Generic Close action"
+  },
+  "actionSubmit": "Submit",
+  "@actionSubmit": {
+    "description": "Generic Submit action"
+  },
+  "actionConfirm": "Confirm",
+  "@actionConfirm": {
+    "description": "Generic Confirm action"
+  },
+  "actionRetry": "Retry",
+  "@actionRetry": {
+    "description": "Generic Retry action"
+  },
+  "actionSearch": "Search",
+  "@actionSearch": {
+    "description": "Generic Search action"
+  },
+  "actionFilter": "Filter",
+  "@actionFilter": {
+    "description": "Generic Filter action"
+  },
+  "actionEdit": "Edit",
+  "@actionEdit": {
+    "description": "Generic Edit action"
+  },
+  "actionBack": "Back",
+  "@actionBack": {
+    "description": "Generic Back action"
+  },
+  "actionNext": "Next",
+  "@actionNext": {
+    "description": "Generic Next action"
+  },
+  "actionDone": "Done",
+  "@actionDone": {
+    "description": "Generic Done action"
+  },
+  "closeDialog": "Close dialog",
+  "@closeDialog": {
+    "description": "Accessibility label for closing dialogs"
+  },
+  "login": "Login",
+  "@login": {
+    "description": "Login button or header label"
+  },
+  "signup": "Sign Up",
+  "@signup": {
+    "description": "Sign Up button or header label"
+  },
+  "email": "Email",
+  "@email": {
+    "description": "Email input field label"
+  },
+  "password": "Password",
+  "@password": {
+    "description": "Password input field label"
+  },
+  "confirmPassword": "Confirm Password",
+  "@confirmPassword": {
+    "description": "Confirm Password input field label"
+  },
+  "scholarNumber": "Scholar Number",
+  "@scholarNumber": {
+    "description": "Scholar Number input field label"
+  },
+  "showPassword": "Show password",
+  "@showPassword": {
+    "description": "Accessibility label to reveal password text"
+  },
+  "hidePassword": "Hide password",
+  "@hidePassword": {
+    "description": "Accessibility label to conceal password text"
+  },
+  "forgotPassword": "Forgot Password?",
+  "@forgotPassword": {
+    "description": "Forgot password link label"
+  },
+  "signIn": "Sign In",
+  "@signIn": {
+    "description": "Sign In button label"
+  },
+  "signOut": "Sign Out",
+  "@signOut": {
+    "description": "Sign Out button label"
+  },
+  "createAccount": "Create Account",
+  "@createAccount": {
+    "description": "Create Account action label"
+  },
+  "alreadyHaveAccount": "Already have an account? Sign In",
+  "@alreadyHaveAccount": {
+    "description": "Prompt for existing account users"
+  },
+  "dontHaveAccount": "Don't have an account? Sign Up",
+  "@dontHaveAccount": {
+    "description": "Prompt for new users to register"
+  }
+}

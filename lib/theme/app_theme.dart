@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // House Colors
 class HouseColors {
@@ -22,7 +23,7 @@ class HouseColors {
   static const Color emeraldGlow = Color(0xFF00E676);
   static const Color emeraldAccent = Color(0xFF95DE64);
 
-  static const Color topaz = Color(0xFFD97706);
+  static const Color topaz = Color(0xFFB45309);
   static const Color topazDark = Color(0xFFB45309);
   static const Color topazLight = Color(0xFFFEF3C7);
   static const Color topazGlow = Color(0xFFFFC107);
@@ -389,3 +390,61 @@ class AppTheme {
     ),
   );
 }
+
+/// Global Reactive Theme Controller with disk persistence
+class AppThemeController {
+  static const String _kThemePrefKey = 'asb_app_theme_mode';
+  static String get themePrefKey => _kThemePrefKey;
+  static final ValueNotifier<ThemeMode> themeModeNotifier =
+      ValueNotifier<ThemeMode>(ThemeMode.system);
+
+  static ThemeMode get themeMode => themeModeNotifier.value;
+
+  /// Pre-hydrate theme mode on app initialization
+  static Future<void> init() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getString(_kThemePrefKey);
+      if (saved == 'dark') {
+        themeModeNotifier.value = ThemeMode.dark;
+      } else if (saved == 'light') {
+        themeModeNotifier.value = ThemeMode.light;
+      } else {
+        themeModeNotifier.value = ThemeMode.system;
+      }
+    } catch (_) {}
+  }
+
+  /// Toggle or set theme mode with immediate broadcast across all screens
+  static Future<void> setThemeMode(ThemeMode mode) async {
+    themeModeNotifier.value = mode;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (mode == ThemeMode.dark) {
+        await prefs.setString(_kThemePrefKey, 'dark');
+      } else if (mode == ThemeMode.light) {
+        await prefs.setString(_kThemePrefKey, 'light');
+      } else {
+        await prefs.setString(_kThemePrefKey, 'system');
+      }
+    } catch (_) {}
+  }
+
+  /// 1-Tap cycle between Light -> Dark -> System
+  static Future<void> cycleTheme() async {
+    if (themeModeNotifier.value == ThemeMode.light) {
+      await setThemeMode(ThemeMode.dark);
+    } else if (themeModeNotifier.value == ThemeMode.dark) {
+      await setThemeMode(ThemeMode.system);
+    } else {
+      await setThemeMode(ThemeMode.light);
+    }
+  }
+
+  static bool isDarkMode(BuildContext context) {
+    if (themeModeNotifier.value == ThemeMode.dark) return true;
+    if (themeModeNotifier.value == ThemeMode.light) return false;
+    return MediaQuery.of(context).platformBrightness == Brightness.dark;
+  }
+}
+

@@ -1,12 +1,31 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'auth_service.dart';
 import 'hierarchy_service.dart';
 
 class ChatService {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth? _customAuth;
+  final FirebaseFirestore? _customFirestore;
 
-  String get currentUserId => _auth.currentUser?.uid ?? '';
+  ChatService({FirebaseAuth? auth, FirebaseFirestore? firestore})
+      : _customAuth = auth,
+        _customFirestore = firestore;
+
+  FirebaseAuth get _auth => _customAuth ?? FirebaseAuth.instance;
+  FirebaseFirestore get _firestore => _customFirestore ?? FirebaseFirestore.instance;
+
+  String get currentUserId {
+    try {
+      final uid = _auth.currentUser?.uid ?? '';
+      if (uid.isNotEmpty) return uid;
+    } catch (_) {}
+    try {
+      final cached = AuthService.getCachedProfile();
+      final uid = cached?['uid']?.toString() ?? '';
+      if (uid.isNotEmpty) return uid;
+    } catch (_) {}
+    return '';
+  }
 
   static bool isCouncilOrAdminRole(String? role, String? name, [String? scholarNo]) {
     return HierarchyService.isCouncilOrTeacher(
@@ -20,16 +39,24 @@ class ChatService {
   /// Because we filter by `participants arrayContains currentUserId`,
   /// Council Member A will NEVER see Council Member B's chats!
   Stream<QuerySnapshot> getMyChatsStream() {
-    if (currentUserId.isEmpty) return const Stream.empty();
-    return _firestore
-        .collection('chats')
-        .where('participants', arrayContains: currentUserId)
-        .snapshots();
+    try {
+      if (currentUserId.isEmpty) return const Stream.empty();
+      return _firestore
+          .collection('chats')
+          .where('participants', arrayContains: currentUserId)
+          .snapshots();
+    } catch (_) {
+      return const Stream.empty();
+    }
   }
 
   /// Stream of all registered users in the app so Council can pick anyone to start chatting.
   Stream<QuerySnapshot> getAllUsersStream() {
-    return _firestore.collection('users').snapshots();
+    try {
+      return _firestore.collection('users').snapshots();
+    } catch (_) {
+      return const Stream.empty();
+    }
   }
 
   /// Generates a deterministic private room ID between two users and creates the room if needed.
@@ -37,24 +64,77 @@ class ChatService {
     required String otherUserId,
     required String otherUserName,
     required String otherUserRole,
+    String? otherUserHouse,
   }) async {
     final myUid = currentUserId;
     if (myUid.isEmpty) throw Exception('User not logged in');
 
-    // Fetch my profile name and role
+    // Fetch my profile name, role, and house
     String myName = 'Council / Admin';
     String myRole = 'admin';
+    String myHouse = AuthService.getCachedHouse() ?? 'ruby';
+    String? myScholar;
     try {
-      final myDoc = await _firestore.collection('users').doc(myUid).get();
+      final myDoc = await _firestore
+          .collection('users')
+          .doc(myUid)
+          .get()
+          .timeout(const Duration(seconds: 4));
       if (myDoc.exists) {
-        myName = myDoc.data()?['full_name'] ?? 'Council / Admin';
-        myRole = myDoc.data()?['role'] ?? 'admin';
+        final d = myDoc.data() ?? {};
+        myName = d['full_name']?.toString() ?? 'Council / Admin';
+        myRole = d['role']?.toString() ?? 'admin';
+        myScholar = d['scholar_no']?.toString();
+        final extracted = AuthService.extractHouse(d);
+        if (extracted != null && extracted.isNotEmpty) {
+          myHouse = extracted;
+        }
       }
     } catch (_) {}
 
+    // Fetch other user profile if possible
+    String resolvedOtherName = otherUserName;
+    String resolvedOtherRole = otherUserRole;
+    String resolvedOtherHouse = otherUserHouse ?? 'ruby';
+    try {
+      final otherDoc = await _firestore
+          .collection('users')
+          .doc(otherUserId)
+          .get()
+          .timeout(const Duration(seconds: 4));
+      if (otherDoc.exists) {
+        final od = otherDoc.data() ?? {};
+        resolvedOtherName = od['full_name']?.toString() ?? otherUserName;
+        final extracted = AuthService.extractHouse(od);
+        if (extracted != null && extracted.isNotEmpty) {
+          resolvedOtherHouse = extracted;
+        }
+        final odScholar = od['scholar_no']?.toString();
+        final odRole = od['role']?.toString();
+        resolvedOtherRole = HierarchyService.getRoleDisplayTitle(
+          scholarNo: odScholar,
+          role: odRole,
+          fullName: resolvedOtherName,
+        );
+      }
+    } catch (_) {}
+
+    if (resolvedOtherHouse.isEmpty || resolvedOtherHouse == 'ruby') {
+      final fromRole = AuthService.extractHouse({'house_name': otherUserRole});
+      if (fromRole != null && fromRole.isNotEmpty) {
+        resolvedOtherHouse = fromRole;
+      }
+    }
+
+    final myRoleTitle = HierarchyService.getRoleDisplayTitle(
+      scholarNo: myScholar,
+      role: myRole,
+      fullName: myName,
+    );
+
     // Security Rule: Students cannot chat with other students! At least one participant must be council/admin.
-    final amICouncil = isCouncilOrAdminRole(myRole, myName);
-    final isOtherCouncil = isCouncilOrAdminRole(otherUserRole, otherUserName);
+    final amICouncil = isCouncilOrAdminRole(myRole, myName, myScholar);
+    final isOtherCouncil = isCouncilOrAdminRole(resolvedOtherRole, resolvedOtherName);
     if (!amICouncil && !isOtherCouncil) {
       throw Exception(
         'Access Denied: Students are not allowed to chat with other students. You can only message Council Members or Teachers.',
@@ -71,16 +151,37 @@ class ChatService {
     if (!roomSnap.exists) {
       await roomRef.set({
         'participants': [myUid, otherUserId],
-        'participant_names': {myUid: myName, otherUserId: otherUserName},
+        'participant_names': {myUid: myName, otherUserId: resolvedOtherName},
         'participant_roles': {
-          myUid: amICouncil ? 'Council/Admin' : 'Student',
-          otherUserId: otherUserRole,
+          myUid: myRoleTitle,
+          otherUserId: resolvedOtherRole,
+        },
+        'participant_houses': {
+          myUid: myHouse,
+          otherUserId: resolvedOtherHouse,
         },
         'unread_$myUid': 0,
         'unread_$otherUserId': 0,
         'last_message': 'Chat started',
         'last_updated': FieldValue.serverTimestamp(),
       });
+    } else {
+      // Sync houses and participant metadata if missing or changed
+      final existingData = roomSnap.data() ?? {};
+      final existingHouses = Map<String, dynamic>.from(existingData['participant_houses'] ?? {});
+      if (!existingHouses.containsKey(myUid) ||
+          !existingHouses.containsKey(otherUserId) ||
+          existingHouses[otherUserId] != resolvedOtherHouse) {
+        existingHouses[myUid] = myHouse;
+        existingHouses[otherUserId] = resolvedOtherHouse;
+        await roomRef.update({
+          'participant_houses': existingHouses,
+          'participant_names.$myUid': myName,
+          'participant_names.$otherUserId': resolvedOtherName,
+          'participant_roles.$myUid': myRoleTitle,
+          'participant_roles.$otherUserId': resolvedOtherRole,
+        }).catchError((_) {});
+      }
     }
 
     return roomId;
@@ -88,12 +189,16 @@ class ChatService {
 
   /// Stream of messages in a specific chat room.
   Stream<QuerySnapshot> getMessagesStream(String roomId) {
-    return _firestore
-        .collection('chats')
-        .doc(roomId)
-        .collection('messages')
-        .orderBy('timestamp', descending: true)
-        .snapshots();
+    try {
+      return _firestore
+          .collection('chats')
+          .doc(roomId)
+          .collection('messages')
+          .orderBy('timestamp', descending: true)
+          .snapshots();
+    } catch (_) {
+      return const Stream.empty();
+    }
   }
 
   /// Marks unread messages in a room as read for the logged-in user.

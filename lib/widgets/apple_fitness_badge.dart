@@ -110,20 +110,22 @@ class AppleFitnessBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: size,
-      height: size,
-      child: CustomPaint(
-        size: Size(size, size),
-        painter: _AppleBadgePainter(
-          badge: badge,
-          gleamOffset: gleamOffset,
-          tiltX: tiltX,
-          tiltY: tiltY,
-          isBack: isBack,
-          recipientName: recipientName,
-          scholarNo: scholarNo,
-          houseName: houseName,
+    return ExcludeSemantics(
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: CustomPaint(
+          size: Size(size, size),
+          painter: _AppleBadgePainter(
+            badge: badge,
+            gleamOffset: gleamOffset,
+            tiltX: tiltX,
+            tiltY: tiltY,
+            isBack: isBack,
+            recipientName: recipientName,
+            scholarNo: scholarNo,
+            houseName: houseName,
+          ),
         ),
       ),
     );

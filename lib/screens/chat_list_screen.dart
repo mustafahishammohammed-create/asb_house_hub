@@ -1,6 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/chat_service.dart';
+import '../services/auth_service.dart';
+import '../services/hierarchy_service.dart';
 import '../theme/app_theme.dart';
 import 'chat_room_screen.dart';
 
@@ -17,33 +20,195 @@ class _ChatListScreenState extends State<ChatListScreen>
   final _chatService = ChatService();
   final _searchController = TextEditingController();
   String _searchQuery = '';
+  StreamSubscription<QuerySnapshot>? _usersSubscription;
+  Map<String, Map<String, dynamic>> _userProfiles = {};
+  final Set<String> _fetchingUids = {};
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _usersSubscription = _chatService.getAllUsersStream().listen((snapshot) {
+      if (mounted) {
+        setState(() {
+          _userProfiles = {
+            for (final doc in snapshot.docs)
+              doc.id: _safeData(doc),
+          };
+        });
+      }
+    }, onError: (_) {});
   }
 
   @override
   void dispose() {
+    _usersSubscription?.cancel();
     _tabController.dispose();
     _searchController.dispose();
     super.dispose();
   }
 
-  Color _getRoleOrHouseColor(String role, [String house = '']) {
-    final r = role.toLowerCase();
-    final h = house.toLowerCase();
-    if (r.contains('admin') || r.contains('principal') || r.contains('super')) {
-      return Colors.amber;
+  void _fetchUserIfNeeded(String uid) {
+    if (uid.isEmpty || uid == 'unknown' || _userProfiles.containsKey(uid) || _fetchingUids.contains(uid)) {
+      return;
     }
+    _fetchingUids.add(uid);
+    try {
+      FirebaseFirestore.instance.collection('users').doc(uid).get().then((doc) {
+        if (doc.exists && mounted) {
+          setState(() {
+            _userProfiles[uid] = _safeData(doc);
+          });
+        }
+      }).catchError((_) {});
+    } catch (_) {}
+  }
+
+  String _getMyHouse() {
+    final myUid = _chatService.currentUserId;
+    if (_userProfiles.containsKey(myUid)) {
+      final h = AuthService.extractHouse(_userProfiles[myUid]);
+      if (h != null && h.isNotEmpty) return h;
+    }
+    final cached = AuthService.getCachedHouse();
+    if (cached != null && cached.isNotEmpty) return cached;
+    final profile = AuthService.getCachedProfile();
+    final profileHouse = AuthService.extractHouse(profile);
+    if (profileHouse != null && profileHouse.isNotEmpty) return profileHouse;
+    return 'ruby';
+  }
+
+  String _resolveUserHouse({
+    required String uid,
+    Map<String, dynamic>? userDoc,
+    Map<String, dynamic>? housesMap,
+    Map<String, dynamic>? rolesMap,
+    Map<String, dynamic>? namesMap,
+  }) {
+    // 1. From Firestore users doc
+    if (userDoc != null) {
+      final h = AuthService.extractHouse(userDoc);
+      if (h != null && h.isNotEmpty) return h;
+      final scholarNo = userDoc['scholar_no']?.toString();
+      if (scholarNo != null && scholarNo.isNotEmpty) {
+        final inferred = AuthService.inferHouseFromScholarNo(scholarNo);
+        if (inferred != null && inferred.isNotEmpty) return inferred;
+      }
+    }
+
+    // 2. From participant_houses map in chat doc
+    if (housesMap != null && housesMap.containsKey(uid)) {
+      final h = AuthService.extractHouse({'house_name': housesMap[uid]});
+      if (h != null && h.isNotEmpty) return h;
+    }
+
+    // 3. From saved accounts on this device (sibling / family switch)
+    for (final acc in AuthService.getSavedAccounts()) {
+      if (acc.uid == uid || acc.scholarNo == uid) {
+        return acc.houseName.toLowerCase();
+      }
+    }
+
+    // 4. From participant_roles or participant_names text
+    if (rolesMap != null && rolesMap.containsKey(uid)) {
+      final h = AuthService.extractHouse({'house_name': rolesMap[uid]});
+      if (h != null && h.isNotEmpty) return h;
+    }
+    if (namesMap != null && namesMap.containsKey(uid)) {
+      final h = AuthService.extractHouse({'house_name': namesMap[uid]});
+      if (h != null && h.isNotEmpty) return h;
+    }
+
+    // 5. From known officer / student roster names
+    final nameStr = (namesMap?[uid] ?? userDoc?['full_name'] ?? '').toString().toLowerCase();
+    if (nameStr.contains('noaman') || nameStr.contains('saakshat') || nameStr.contains('ann binu')) {
+      return 'emerald';
+    }
+    if (nameStr.contains('vance') || nameStr.contains('elizabeth') || nameStr.contains('tanish')) {
+      return 'sapphire';
+    }
+    if (nameStr.contains('nayla') || nameStr.contains('galwin') || nameStr.contains('topaz')) {
+      return 'topaz';
+    }
+    if (nameStr.contains('mustafa') || nameStr.contains('hisham') || nameStr.contains('sarah paul')) {
+      return 'ruby';
+    }
+
+    // 6. Infer from UID if UID matches a scholar number
+    final inferred = AuthService.inferHouseFromScholarNo(uid);
+    if (inferred != null && inferred.isNotEmpty) return inferred;
+
+    return 'ruby';
+  }
+
+  String _resolveUserRole({
+    required String uid,
+    Map<String, dynamic>? userDoc,
+    Map<String, dynamic>? rolesMap,
+    required String name,
+    required String house,
+  }) {
+    if (userDoc != null) {
+      final scholarNo = userDoc['scholar_no']?.toString();
+      final rawRole = userDoc['role']?.toString();
+      return HierarchyService.getRoleDisplayTitle(
+        scholarNo: scholarNo,
+        role: rawRole,
+        fullName: name,
+      );
+    }
+    final rawRole = rolesMap?[uid]?.toString() ?? '';
+    final rawLower = rawRole.toLowerCase();
+    if (rawLower.contains('captain')) return 'House Captain';
+    if (rawLower.contains('council') || rawLower.contains('admin')) {
+      return HierarchyService.getRoleDisplayTitle(
+        fullName: name,
+        role: 'council',
+      );
+    }
+    if (rawLower.contains('prefect')) return 'Grade Prefect';
+    if (rawLower.contains('teacher') || rawLower.contains('faculty')) return 'Faculty Lead';
+    return HierarchyService.getRoleDisplayTitle(fullName: name);
+  }
+
+  Color _getRoleOrHouseColor(String role, [String house = '']) {
+    final h = house.toLowerCase().trim();
+    if (h == 'sapphire' || h.contains('sapphire')) return HouseColors.sapphire;
+    if (h == 'emerald' || h.contains('emerald')) return HouseColors.emerald;
+    if (h == 'topaz' || h.contains('topaz')) return HouseColors.topaz;
+    if (h == 'ruby' || h.contains('ruby')) return HouseColors.ruby;
+    final r = role.toLowerCase().trim();
+    if (r.contains('sapphire')) return HouseColors.sapphire;
+    if (r.contains('emerald')) return HouseColors.emerald;
+    if (r.contains('topaz')) return HouseColors.topaz;
+    if (r.contains('ruby')) return HouseColors.ruby;
     if (r.contains('teacher') || r.contains('faculty') || r.contains('advisor')) {
       return Colors.indigoAccent;
     }
-    if (h.contains('sapphire') || r.contains('sapphire')) return HouseColors.sapphire;
-    if (h.contains('emerald') || r.contains('emerald')) return HouseColors.emerald;
-    if (h.contains('topaz') || r.contains('topaz')) return HouseColors.topaz;
     return HouseColors.ruby;
+  }
+
+  String _formatRoleBadge(String house, String role) {
+    final h = house.trim().toUpperCase();
+    var r = role.trim();
+    if (r.contains('(')) {
+      r = r.split('(').first.trim();
+    }
+    final rLower = r.toLowerCase();
+    if (rLower == 'council/admin' || rLower == 'admin') {
+      r = 'Student Council';
+    }
+    final rUpper = r.toUpperCase();
+    if (rUpper == 'STUDENT MEMBER' || rUpper == 'STUDENT') {
+      return h.isNotEmpty ? '$h • STUDENT' : 'STUDENT';
+    }
+    if (h.isNotEmpty) {
+      if (rUpper.contains(h)) {
+        return rUpper;
+      }
+      return '$h • $rUpper';
+    }
+    return rUpper;
   }
 
   Map<String, dynamic> _safeData(DocumentSnapshot doc) {
@@ -59,6 +224,8 @@ class _ChatListScreenState extends State<ChatListScreen>
     required String otherUserId,
     required String otherUserName,
     required String otherUserRole,
+    String otherUserHouse = 'ruby',
+    String? myUserHouse,
   }) async {
     AppHaptics.light();
     try {
@@ -71,6 +238,7 @@ class _ChatListScreenState extends State<ChatListScreen>
         otherUserId: otherUserId,
         otherUserName: otherUserName,
         otherUserRole: otherUserRole,
+        otherUserHouse: otherUserHouse,
       );
       if (!mounted) return;
       Navigator.pop(context); // close loader
@@ -81,6 +249,9 @@ class _ChatListScreenState extends State<ChatListScreen>
             roomId: roomId,
             otherUserName: otherUserName,
             otherUserRole: otherUserRole,
+            otherUserId: otherUserId,
+            otherUserHouse: otherUserHouse,
+            myUserHouse: myUserHouse ?? _getMyHouse(),
           ),
         ),
       );
@@ -195,25 +366,78 @@ class _ChatListScreenState extends State<ChatListScreen>
                   final rolesMap = Map<String, dynamic>.from(
                     data['participant_roles'] ?? {},
                   );
+                  final housesMap = Map<String, dynamic>.from(
+                    data['participant_houses'] ?? {},
+                  );
 
                   // Find the other user's ID
                   final otherUid = participants.firstWhere(
-                    (id) => id != myUid,
+                    (id) => id != myUid && id.isNotEmpty,
                     orElse: () => 'unknown',
                   );
-                  final otherName = namesMap[otherUid]?.toString() ?? 'Student';
-                  final otherRole = rolesMap[otherUid]?.toString() ?? 'Student';
+
+                  if (otherUid != 'unknown') {
+                    _fetchUserIfNeeded(otherUid);
+                  }
+
+                  final otherUserDoc = _userProfiles[otherUid];
+                  final myUserDoc = _userProfiles[myUid];
+
+                  // Dynamically resolve other user's actual name
+                  final otherName = otherUserDoc?['full_name']?.toString() ??
+                      namesMap[otherUid]?.toString() ??
+                      'Student';
+
+                  // Dynamically resolve other user's actual house (Emerald, Sapphire, Ruby, Topaz)
+                  final otherHouse = _resolveUserHouse(
+                    uid: otherUid,
+                    userDoc: otherUserDoc,
+                    housesMap: housesMap,
+                    rolesMap: rolesMap,
+                    namesMap: namesMap,
+                  );
+
+                  // Dynamically resolve my own house
+                  final myHouse = AuthService.extractHouse(myUserDoc) ??
+                      AuthService.extractHouse({'house_name': housesMap[myUid]}) ??
+                      _getMyHouse();
+
+                  // Dynamically resolve other user's actual role title
+                  final otherRole = _resolveUserRole(
+                    uid: otherUid,
+                    userDoc: otherUserDoc,
+                    rolesMap: rolesMap,
+                    name: otherName,
+                    house: otherHouse,
+                  );
+
+                  // Self-heal participant_houses if missing in Firestore chat room doc
+                  if (!housesMap.containsKey(otherUid) || !housesMap.containsKey(myUid)) {
+                    try {
+                      docs[index].reference.update({
+                        'participant_houses.$myUid': myHouse,
+                        'participant_houses.$otherUid': otherHouse,
+                      }).catchError((_) {});
+                    } catch (_) {}
+                  }
+
                   final lastMsg =
                       data['last_message']?.toString() ?? 'Chat started';
                   final unreadCount =
                       (data['unread_$myUid'] as num?)?.toInt() ?? 0;
-                  final partnerColor = _getRoleOrHouseColor(otherRole);
+
+                  // Dynamic house colors for avatar, badge, border, and glow
+                  final partnerColor = _getRoleOrHouseColor(otherRole, otherHouse);
+                  final partnerDarkColor = HouseColors.getHouseDarkColor(otherHouse);
+                  final badgeText = _formatRoleBadge(otherHouse, otherRole);
 
                   return InkWell(
                     onTap: () => _openChatRoom(
                       otherUserId: otherUid,
                       otherUserName: otherName,
                       otherUserRole: otherRole,
+                      otherUserHouse: otherHouse,
+                      myUserHouse: myHouse,
                     ),
                     borderRadius: BorderRadius.circular(18),
                     child: Container(
@@ -251,8 +475,10 @@ class _ChatListScreenState extends State<ChatListScreen>
                                   gradient: LinearGradient(
                                     colors: [
                                       partnerColor,
-                                      partnerColor.withValues(alpha: 0.7),
+                                      partnerDarkColor,
                                     ],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
                                   ),
                                   shape: BoxShape.circle,
                                   boxShadow: [
@@ -335,9 +561,13 @@ class _ChatListScreenState extends State<ChatListScreen>
                                           alpha: 0.15,
                                         ),
                                         borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: partnerColor.withValues(alpha: 0.3),
+                                          width: 0.8,
+                                        ),
                                       ),
                                       child: Text(
-                                        otherRole.toUpperCase(),
+                                        badgeText,
                                         style: TextStyle(
                                           fontSize: 9.5,
                                           color: partnerColor,
@@ -436,8 +666,19 @@ class _ChatListScreenState extends State<ChatListScreen>
                 amICouncil = ChatService.isCouncilOrAdminRole(
                   myData['role'],
                   myData['full_name'],
+                  myData['scholar_no']?.toString(),
                 );
               } catch (_) {}
+              if (!amICouncil) {
+                final cachedProfile = AuthService.getCachedProfile();
+                if (cachedProfile != null) {
+                  amICouncil = ChatService.isCouncilOrAdminRole(
+                    cachedProfile['role']?.toString(),
+                    cachedProfile['full_name']?.toString(),
+                    cachedProfile['scholar_no']?.toString(),
+                  );
+                }
+              }
 
               final allUsers = snapshot.data!.docs.where((doc) {
                 if (doc.id == myUid) return false; // don't show self
@@ -479,12 +720,17 @@ class _ChatListScreenState extends State<ChatListScreen>
                           color: Colors.grey,
                         ),
                         suffixIcon: _searchQuery.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(Icons.clear_rounded, size: 20),
-                                onPressed: () {
-                                  _searchController.clear();
-                                  setState(() => _searchQuery = '');
-                                },
+                            ? Semantics(
+                                button: true,
+                                label: 'Clear search',
+                                child: IconButton(
+                                  icon: const Icon(Icons.clear_rounded, size: 20),
+                                  tooltip: 'Clear search',
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    setState(() => _searchQuery = '');
+                                  },
+                                ),
                               )
                             : null,
                         filled: true,
@@ -523,16 +769,26 @@ class _ChatListScreenState extends State<ChatListScreen>
                             itemBuilder: (context, index) {
                               final doc = allUsers[index];
                               final data = _safeData(doc);
-                              final name = data['full_name'] ?? 'Student';
-                              final role = data['role'] ?? 'student';
-                              final house = data['house_name'] ?? data['house'] ?? 'Ruby';
-                              final scholarNo = data['scholar_no'] ?? '';
+                              final name = data['full_name']?.toString() ?? 'Student';
+                              final rawRole = data['role']?.toString() ?? 'student';
+                              final scholarNo = data['scholar_no']?.toString() ?? '';
+                              final house = AuthService.extractHouse(data) ??
+                                  AuthService.inferHouseFromScholarNo(scholarNo) ??
+                                  'ruby';
+                              final roleTitle = HierarchyService.getRoleDisplayTitle(
+                                scholarNo: scholarNo,
+                                role: rawRole,
+                                fullName: name,
+                              );
+                              final houseColor = HouseColors.getHouseColor(house);
 
                               return InkWell(
                                 onTap: () => _openChatRoom(
                                   otherUserId: doc.id,
                                   otherUserName: name,
-                                  otherUserRole: '$role ($house)',
+                                  otherUserRole: roleTitle,
+                                  otherUserHouse: house,
+                                  myUserHouse: _getMyHouse(),
                                 ),
                                 borderRadius: BorderRadius.circular(14),
                                 child: Container(
@@ -554,17 +810,13 @@ class _ChatListScreenState extends State<ChatListScreen>
                                       CircleAvatar(
                                         radius: 22,
                                         backgroundColor:
-                                            HouseColors.getHouseColor(
-                                              house,
-                                            ).withValues(alpha: 0.2),
+                                            houseColor.withValues(alpha: 0.2),
                                         child: Text(
                                           name.isNotEmpty
                                               ? name[0].toUpperCase()
                                               : '?',
                                           style: TextStyle(
-                                            color: HouseColors.getHouseColor(
-                                              house,
-                                            ),
+                                            color: houseColor,
                                             fontWeight: FontWeight.w800,
                                           ),
                                         ),
@@ -584,7 +836,7 @@ class _ChatListScreenState extends State<ChatListScreen>
                                             ),
                                             const SizedBox(height: 2),
                                             Text(
-                                              'Scholar ID: $scholarNo • House: $house',
+                                              'Scholar ID: $scholarNo • House: ${house.toUpperCase()} • $roleTitle',
                                               style: TextStyle(
                                                 fontSize: 12,
                                                 color: Colors.grey[600],
@@ -599,12 +851,14 @@ class _ChatListScreenState extends State<ChatListScreen>
                                           _openChatRoom(
                                             otherUserId: doc.id,
                                             otherUserName: name,
-                                            otherUserRole: '$role ($house)',
+                                            otherUserRole: roleTitle,
+                                            otherUserHouse: house,
+                                            myUserHouse: _getMyHouse(),
                                           );
                                         },
                                         style: ElevatedButton.styleFrom(
                                           minimumSize: const Size(84, 38),
-                                          backgroundColor: _getRoleOrHouseColor(role, house),
+                                          backgroundColor: houseColor,
                                           foregroundColor: Colors.white,
                                           elevation: 2,
                                           shape: RoundedRectangleBorder(
