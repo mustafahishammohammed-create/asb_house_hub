@@ -54,6 +54,114 @@ class AccountSwitcherModal extends StatefulWidget {
 }
 
 class _AccountSwitcherModalState extends State<AccountSwitcherModal> {
+  Future<void> _handleSwitch(SavedAccount account) async {
+    if (account.password != null && account.password!.isNotEmpty) {
+      Navigator.pop(context);
+      await widget.onSwitchAccount(account);
+      return;
+    }
+
+    // If password was missing from device storage, prompt user once and save it
+    final passwordController = TextEditingController();
+    bool obscure = true;
+    String? errorMsg;
+
+    final enteredPassword = await showDialog<String>(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (dialogCtx, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              Icon(
+                Icons.lock_person_rounded,
+                color: HouseColors.getHouseColor(account.houseName),
+              ),
+              const SizedBox(width: 8),
+              const Text('Enter Password'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Please enter the password for ${account.fullName} (#${account.scholarNo}) to complete switching:',
+                style: const TextStyle(fontSize: 14),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: passwordController,
+                obscureText: obscure,
+                autofocus: true,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) {
+                  final pwd = passwordController.text.trim();
+                  if (pwd.isEmpty) {
+                    setDialogState(() => errorMsg = 'Password required');
+                    return;
+                  }
+                  Navigator.pop(dialogCtx, pwd);
+                },
+                decoration: InputDecoration(
+                  labelText: 'Password',
+                  errorText: errorMsg,
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                    ),
+                    onPressed: () => setDialogState(() => obscure = !obscure),
+                  ),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: HouseColors.getHouseColor(account.houseName),
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                final pwd = passwordController.text.trim();
+                if (pwd.isEmpty) {
+                  setDialogState(() => errorMsg = 'Password required');
+                  return;
+                }
+                Navigator.pop(dialogCtx, pwd);
+              },
+              child: const Text('Switch Account'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (enteredPassword != null && enteredPassword.isNotEmpty) {
+      final updatedAccount = SavedAccount(
+        scholarNo: account.scholarNo,
+        fullName: account.fullName,
+        houseName: account.houseName,
+        uid: account.uid,
+        role: account.role,
+        classLevel: account.classLevel,
+        division: account.division,
+        password: enteredPassword,
+        cachedProfile: account.cachedProfile,
+        lastActive: DateTime.now(),
+      );
+      await AuthService.saveAccount(updatedAccount);
+      if (!mounted) return;
+      Navigator.pop(context);
+      await widget.onSwitchAccount(updatedAccount);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -192,10 +300,7 @@ class _AccountSwitcherModalState extends State<AccountSwitcherModal> {
                     borderRadius: BorderRadius.circular(18),
                     onTap: isActive
                         ? null
-                        : () async {
-                            Navigator.pop(context);
-                            await widget.onSwitchAccount(account);
-                          },
+                        : () => _handleSwitch(account),
                     child: Padding(
                       padding: const EdgeInsets.all(14),
                       child: Row(
@@ -358,10 +463,7 @@ class _AccountSwitcherModalState extends State<AccountSwitcherModal> {
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                               ),
-                              onPressed: () async {
-                                Navigator.pop(context);
-                                await widget.onSwitchAccount(account);
-                              },
+                              onPressed: () => _handleSwitch(account),
                               child: const Text(
                                 'Switch',
                                 style: TextStyle(

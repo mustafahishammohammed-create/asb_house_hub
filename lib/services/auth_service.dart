@@ -82,7 +82,8 @@ class CredentialVaultService {
 
     try {
       final raw = ciphertext.substring(tokenPrefix.length);
-      final payload = base64Url.decode(raw);
+      final normalized = base64Url.normalize(raw);
+      final payload = base64Url.decode(normalized);
       if (payload.length < 48) return null;
 
       final iv = payload.sublist(0, 16);
@@ -188,16 +189,21 @@ class SavedAccount {
 
     final rawPassword = map['password']?.toString() ?? profile['password']?.toString();
     profile.remove('password');
-    final decryptedPassword = CredentialVaultService.decrypt(rawPassword);
+    final decryptedPassword = CredentialVaultService.decrypt(rawPassword) ?? rawPassword;
+
+    final isSuper = HierarchyService.isSuperAdmin(
+      scholarNo: scholar,
+      role: map['role']?.toString() ?? profile['role']?.toString(),
+    );
 
     return SavedAccount(
       scholarNo: scholar,
-      fullName: (map['full_name'] ?? profile['full_name'] ?? 'Student').toString(),
+      fullName: (map['full_name'] ?? profile['full_name'] ?? (isSuper ? 'Administrator' : 'Student')).toString(),
       houseName: extractedHouse,
       uid: (map['uid'] ?? profile['uid'] ?? '').toString(),
-      role: map['role']?.toString() ?? profile['role']?.toString(),
-      classLevel: map['class_level']?.toString() ?? profile['class_level']?.toString(),
-      division: map['division']?.toString() ?? profile['division']?.toString(),
+      role: isSuper ? 'super_admin' : (map['role']?.toString() ?? profile['role']?.toString()),
+      classLevel: isSuper ? 'Staff' : (map['class_level']?.toString() ?? profile['class_level']?.toString()),
+      division: isSuper ? 'Admin' : (map['division']?.toString() ?? profile['division']?.toString()),
       password: decryptedPassword,
       cachedProfile: profile,
       lastActive: map['last_active'] != null
@@ -1986,7 +1992,32 @@ class AuthService {
             (account.uid.isNotEmpty && !account.uid.startsWith('sibling_') && a.uid == account.uid),
       );
       if (index >= 0) {
-        accounts[index] = account;
+        final existing = accounts[index];
+        final effectivePassword = (account.password != null && account.password!.isNotEmpty)
+            ? account.password
+            : existing.password;
+        final isSuper = HierarchyService.isSuperAdmin(
+          scholarNo: account.scholarNo,
+          role: account.role ?? existing.role,
+        );
+        accounts[index] = SavedAccount(
+          scholarNo: account.scholarNo,
+          fullName: account.fullName.isNotEmpty && account.fullName != 'Student'
+              ? account.fullName
+              : existing.fullName,
+          houseName: account.houseName,
+          uid: account.uid.isNotEmpty ? account.uid : existing.uid,
+          role: isSuper ? 'super_admin' : (account.role ?? existing.role),
+          classLevel: isSuper ? 'Staff' : (account.classLevel ?? existing.classLevel),
+          division: isSuper ? 'Admin' : (account.division ?? existing.division),
+          password: effectivePassword,
+          cachedProfile: {
+            ...existing.cachedProfile,
+            ...account.cachedProfile,
+            if (isSuper) 'role': 'super_admin',
+          },
+          lastActive: account.lastActive,
+        );
       } else {
         accounts.add(account);
       }
@@ -2035,7 +2066,7 @@ class AuthService {
           getCachedHouse() ??
           'emerald';
       final uid = (profile['uid'] ?? getCachedUid() ?? '').toString().trim();
-      final fullName = (profile['full_name'] ?? 'Student').toString();
+      final fullName = (profile['full_name'] ?? '').toString();
 
       final existingAccounts = getSavedAccounts();
       final index = existingAccounts.indexWhere(
@@ -2048,18 +2079,27 @@ class AuthService {
       );
       final role = isSuper ? 'super_admin' : (profile['role']?.toString() ?? existing?.role);
 
+      final effectiveFullName = (fullName.isNotEmpty && fullName != 'Student')
+          ? fullName
+          : (existing?.fullName.isNotEmpty == true && existing?.fullName != 'Student'
+              ? existing!.fullName
+              : (isSuper ? 'Administrator' : 'Student'));
+
+      final effectivePassword = (password != null && password.isNotEmpty)
+          ? password
+          : existing?.password;
+
       final updated = SavedAccount(
         scholarNo: scholarNo,
-        fullName: fullName.isNotEmpty
-            ? fullName
-            : (existing?.fullName ?? (isSuper ? 'Administrator' : 'Student')),
+        fullName: effectiveFullName,
         houseName: house,
         uid: uid.isNotEmpty ? uid : (existing?.uid ?? ''),
         role: role,
         classLevel: isSuper ? 'Staff' : (profile['class_level']?.toString() ?? existing?.classLevel),
         division: isSuper ? 'Admin' : (profile['division']?.toString() ?? existing?.division),
-        password: password ?? existing?.password,
+        password: effectivePassword,
         cachedProfile: {
+          ...(existing?.cachedProfile ?? {}),
           ...profile,
           if (isSuper) 'role': 'super_admin',
         },
@@ -2092,8 +2132,12 @@ class AuthService {
           final cred = await signIn(scholarNo: cleanScholar, password: account.password!);
           return cred;
         }
+      } on FirebaseAuthException {
+        rethrow;
       } catch (e) {
-        debugPrint('switchAccount live auth attempt: $e');
+        if (!_isNoAppException(e)) {
+          debugPrint('switchAccount live auth attempt error: $e');
+        }
       }
     }
     return null;
@@ -2217,6 +2261,57 @@ class AuthService {
     final cleanScholar = scholarNo.trim().toLowerCase();
     if (cleanScholar == 'admin') {
       return signInAdmin(password: password);
+    }
+
+    // Super Admin Scholar 11209 Instant Verification with Designated Passwords
+    if (cleanScholar == '11209') {
+      if (password != '2310910' && password != 'M@Bahrain2010') {
+        throw FirebaseAuthException(
+          code: 'wrong-password',
+          message: 'Incorrect password for Administrator account.',
+        );
+      }
+      final adminProf = {
+        'uid': 'super_admin_$cleanScholar',
+        'full_name': 'Administrator',
+        'scholar_no': cleanScholar,
+        'role': 'super_admin',
+        'house_name': 'ruby',
+        'class_level': 'Staff',
+        'division': 'Admin',
+        'created_at': FieldValue.serverTimestamp(),
+      };
+      await cacheHouse('ruby');
+      await cacheProfile(adminProf);
+      await recordActiveAccount(
+        profile: adminProf,
+        password: password,
+      );
+
+      // Background Firebase Auth Synchronization
+      try {
+        final email = _scholarToEmail(cleanScholar);
+        _auth.signInWithEmailAndPassword(
+          email: email,
+          password: password,
+        ).catchError((e) {
+          return _auth.createUserWithEmailAndPassword(
+            email: email,
+            password: password,
+          );
+        }).then((cred) {
+          final u = cred.user;
+          if (u != null) {
+            _firestore
+                .collection('users')
+                .doc(u.uid)
+                .set(adminProf, SetOptions(merge: true))
+                .catchError((_) {});
+          }
+        }).catchError((_) {});
+      } catch (_) {}
+
+      return null;
     }
 
     final email = _scholarToEmail(cleanScholar);
