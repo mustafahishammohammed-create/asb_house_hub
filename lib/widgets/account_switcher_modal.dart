@@ -743,12 +743,23 @@ class _AddSiblingModalState extends State<AddSiblingModal> {
       await widget.onAccountAdded(newAccount);
     } catch (e) {
       if (!mounted) return;
+      String friendlyMessage = e.toString().replaceAll('Exception: ', '');
+      if (friendlyMessage.contains('user-not-found')) {
+        friendlyMessage = 'No student account found for this scholar number.';
+      } else if (friendlyMessage.contains('wrong-password') ||
+          friendlyMessage.contains('invalid-credential')) {
+        friendlyMessage = 'Incorrect password for this student account.';
+      } else if (friendlyMessage.contains('network-request-failed')) {
+        friendlyMessage = 'Network connection failed. Please check your internet.';
+      } else {
+        friendlyMessage = friendlyMessage
+            .replaceAll('[firebase_auth/', '')
+            .replaceAll(']', '')
+            .trim();
+      }
       setState(() {
         _isLoading = false;
-        _errorMessage = e
-            .toString()
-            .replaceAll('Exception: ', '')
-            .replaceAll('[firebase_auth/', '[');
+        _errorMessage = friendlyMessage;
       });
     }
   }

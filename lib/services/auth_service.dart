@@ -2124,13 +2124,16 @@ class AuthService {
     );
 
     if (account.password != null && account.password!.isNotEmpty) {
+      // Only perform live sign in if current Firebase Auth user does not already match
       try {
-        if (account.scholarNo.toLowerCase() == 'admin') {
-          return await signInAdmin(password: account.password!);
-        } else {
-          final cleanScholar = account.scholarNo.trim();
-          final cred = await signIn(scholarNo: cleanScholar, password: account.password!);
-          return cred;
+        if (currentUser?.uid != account.uid) {
+          if (account.scholarNo.toLowerCase() == 'admin') {
+            return await signInAdmin(password: account.password!);
+          } else {
+            final cleanScholar = account.scholarNo.trim();
+            final cred = await signIn(scholarNo: cleanScholar, password: account.password!);
+            return cred;
+          }
         }
       } on FirebaseAuthException {
         rethrow;
@@ -2144,12 +2147,13 @@ class AuthService {
   }
 
   /// Authenticate and add a sibling's account to this device.
+  /// Connects in real-time with Firebase Auth and loads their authoritative profile from Firestore.
   Future<SavedAccount> addSiblingAccount({
     required String scholarNo,
     required String password,
   }) async {
     String cleanScholar = scholarNo.trim().toLowerCase();
-    if (cleanScholar.contains('@')) {
+    if (cleanScholar.contains('@asianschool.bh')) {
       cleanScholar = cleanScholar.split('@').first;
     }
     if (cleanScholar.isEmpty) {
@@ -2176,7 +2180,7 @@ class AuthService {
         uid = user.uid;
         displayName = user.displayName;
         try {
-          profile = await getUserProfile(user.uid);
+          profile = await getUserProfile(user.uid, scholarNo: cleanScholar);
         } catch (_) {}
       }
     } on FirebaseAuthException {
@@ -2190,34 +2194,37 @@ class AuthService {
     final inferredHouse = inferHouseFromScholarNo(cleanScholar) ?? 'emerald';
     final house = extractHouse(profile) ?? inferredHouse;
 
+    final role = profile?['role']?.toString() ?? 'student';
     final isSuper = HierarchyService.isSuperAdmin(
       scholarNo: cleanScholar,
-      role: profile?['role'],
+      role: role,
     );
+
+    final fullName = profile?['full_name']?.toString() ??
+        displayName ??
+        (isSuper ? 'Administrator' : 'Scholar #$cleanScholar');
 
     final studentProfile = profile ?? {
       'uid': uid,
       'scholar_no': cleanScholar,
-      'full_name': displayName ??
-          (isSuper
-              ? 'Administrator'
-              : 'Scholar #$cleanScholar'),
+      'full_name': fullName,
       'house_name': house,
-      'role': isSuper ? 'super_admin' : 'student',
+      'role': isSuper ? 'super_admin' : role,
       'class_level': isSuper ? 'Staff' : 'Grade 10',
       'division': isSuper ? 'Admin' : 'A',
     };
 
     await cacheHouse(house);
     await cacheProfile(studentProfile);
+    _prefs?.setString('cached_scholar_no', cleanScholar);
+    _prefs?.setString('cached_uid', uid);
 
     final savedAccount = SavedAccount(
       scholarNo: cleanScholar,
-      fullName: studentProfile['full_name']?.toString() ??
-          (isSuper ? 'Administrator' : 'Scholar #$cleanScholar'),
+      fullName: fullName,
       houseName: house,
       uid: uid,
-      role: studentProfile['role']?.toString() ?? (isSuper ? 'super_admin' : 'student'),
+      role: studentProfile['role']?.toString() ?? (isSuper ? 'super_admin' : role),
       classLevel: studentProfile['class_level']?.toString(),
       division: studentProfile['division']?.toString(),
       password: password,
@@ -2249,11 +2256,13 @@ class AuthService {
 
   /// Convert a scholar number to a Firebase-compatible email.
   String _scholarToEmail(String scholarNo) {
-    return '${scholarNo.trim()}@$kSchoolDomain';
+    final s = scholarNo.trim();
+    if (s.contains('@')) return s;
+    return '$s@$kSchoolDomain';
   }
 
   /// Sign in with scholar number and password.
-  /// Strictly verifies credentials against Firebase Auth without inventing fake accounts.
+  /// Strictly verifies credentials in real time against Firebase Auth without inventing fake accounts.
   Future<UserCredential?> signIn({
     required String scholarNo,
     required String password,
@@ -2261,57 +2270,6 @@ class AuthService {
     final cleanScholar = scholarNo.trim().toLowerCase();
     if (cleanScholar == 'admin') {
       return signInAdmin(password: password);
-    }
-
-    // Super Admin Scholar 11209 Instant Verification with Designated Passwords
-    if (cleanScholar == '11209') {
-      if (password != '2310910' && password != 'M@Bahrain2010') {
-        throw FirebaseAuthException(
-          code: 'wrong-password',
-          message: 'Incorrect password for Administrator account.',
-        );
-      }
-      final adminProf = {
-        'uid': 'super_admin_$cleanScholar',
-        'full_name': 'Administrator',
-        'scholar_no': cleanScholar,
-        'role': 'super_admin',
-        'house_name': 'ruby',
-        'class_level': 'Staff',
-        'division': 'Admin',
-        'created_at': FieldValue.serverTimestamp(),
-      };
-      await cacheHouse('ruby');
-      await cacheProfile(adminProf);
-      await recordActiveAccount(
-        profile: adminProf,
-        password: password,
-      );
-
-      // Background Firebase Auth Synchronization
-      try {
-        final email = _scholarToEmail(cleanScholar);
-        _auth.signInWithEmailAndPassword(
-          email: email,
-          password: password,
-        ).catchError((e) {
-          return _auth.createUserWithEmailAndPassword(
-            email: email,
-            password: password,
-          );
-        }).then((cred) {
-          final u = cred.user;
-          if (u != null) {
-            _firestore
-                .collection('users')
-                .doc(u.uid)
-                .set(adminProf, SetOptions(merge: true))
-                .catchError((_) {});
-          }
-        }).catchError((_) {});
-      } catch (_) {}
-
-      return null;
     }
 
     final email = _scholarToEmail(cleanScholar);
@@ -2326,25 +2284,57 @@ class AuthService {
       rethrow;
     }
 
-    // Clear any previous stale cache from another account
-    final prevScholar = getCachedScholarNo();
-    if (prevScholar != null && prevScholar != cleanScholar) {
-      await clearCache();
-    }
-    // Infer house from scholar number and pre-cache immediately
-    final inferred = inferHouseFromScholarNo(cleanScholar);
-    if (inferred != null) {
-      await cacheHouse(inferred);
-    }
-    await recordActiveAccount(
-      profile: {
+    final user = cred.user;
+    if (user != null) {
+      // Clear stale cache of previous user if switching
+      final prevUid = getCachedUid();
+      if (prevUid != null && prevUid != user.uid) {
+        await clearCache();
+      }
+
+      // Fetch live authoritative profile from Firestore in real-time
+      Map<String, dynamic>? liveProfile;
+      try {
+        liveProfile = await getUserProfile(user.uid, scholarNo: cleanScholar);
+      } catch (e) {
+        debugPrint('Error retrieving live user profile on signIn: $e');
+      }
+
+      final inferred = inferHouseFromScholarNo(cleanScholar);
+      final house = extractHouse(liveProfile) ?? inferred ?? 'emerald';
+      final role = liveProfile?['role']?.toString() ?? 'student';
+      final isSuper = HierarchyService.isSuperAdmin(
+        scholarNo: cleanScholar,
+        role: role,
+      );
+      final fullName = liveProfile?['full_name']?.toString() ??
+          user.displayName ??
+          (isSuper ? 'Administrator' : 'Student');
+
+      final activeProfile = {
+        'uid': user.uid,
         'scholar_no': cleanScholar,
-        'uid': cred.user?.uid ?? '',
-        'full_name': cred.user?.displayName ?? 'Student',
-        'house_name': inferred ?? 'emerald',
-      },
-      password: password,
-    );
+        'full_name': fullName,
+        'house_name': house,
+        'role': isSuper ? 'super_admin' : role,
+        if (liveProfile?['class_level'] != null)
+          'class_level': liveProfile!['class_level'],
+        if (liveProfile?['division'] != null)
+          'division': liveProfile!['division'],
+        ...?liveProfile,
+      };
+
+      await cacheHouse(house);
+      await cacheProfile(activeProfile);
+      _prefs?.setString('cached_scholar_no', cleanScholar);
+      _prefs?.setString('cached_uid', user.uid);
+
+      await recordActiveAccount(
+        profile: activeProfile,
+        password: password,
+      );
+    }
+
     return cred;
   }
 
@@ -2454,10 +2444,19 @@ class AuthService {
   }
 
   /// Fetch user profile from Firestore by UID with dynamic roster role resolution.
-  Future<Map<String, dynamic>?> getUserProfile(String uid) async {
+  Future<Map<String, dynamic>?> getUserProfile(String uid, {String? scholarNo}) async {
     final cached = getCachedProfile();
+    final validCached = (cached != null &&
+            (cached['uid'] == uid ||
+                (scholarNo != null &&
+                    scholarNo.isNotEmpty &&
+                    cached['scholar_no']?.toString().toLowerCase() ==
+                        scholarNo.toLowerCase())))
+        ? cached
+        : null;
+
     try {
-      // 1. Try local Firestore cache or quick server read with 3s fallback
+      // 1. Try local Firestore cache or quick server read with 10s fallback
       DocumentSnapshot<Map<String, dynamic>>? doc;
       try {
         doc = await _firestore
@@ -2472,7 +2471,7 @@ class AuthService {
             .doc(uid)
             .get()
             .timeout(
-              const Duration(seconds: 3),
+              const Duration(seconds: 10),
               onTimeout: () => throw Exception('Firestore timeout'),
             );
       }
@@ -2480,25 +2479,25 @@ class AuthService {
       if (doc.exists && doc.data() != null) {
         final data = Map<String, dynamic>.from(doc.data()!);
         data['uid'] = uid;
-        final scholarNo = (data['scholar_no'] ?? '').toString().trim();
+        final docScholar = (data['scholar_no'] ?? scholarNo ?? '').toString().trim();
         final currentRole = (data['role'] ?? '').toString().trim().toLowerCase();
 
         // Enforce super_admin role for verified administrators
-        if (HierarchyService.isSuperAdmin(scholarNo: scholarNo, role: currentRole)) {
+        if (HierarchyService.isSuperAdmin(scholarNo: docScholar, role: currentRole)) {
           data['role'] = 'super_admin';
           if (currentRole != 'super_admin') {
             doc.reference.update({'role': 'super_admin'}).catchError((_) {});
           }
-        } else if (scholarNo.isNotEmpty &&
+        } else if (docScholar.isNotEmpty &&
             (currentRole.isEmpty || currentRole == 'student')) {
           try {
             final rosterSnap = await _firestore
                 .collection('admin_roster')
-                .where('scholar_no', isEqualTo: scholarNo)
+                .where('scholar_no', isEqualTo: docScholar)
                 .limit(1)
                 .get()
                 .timeout(
-                  const Duration(seconds: 2),
+                  const Duration(seconds: 4),
                   onTimeout: () => throw Exception('Roster timeout'),
                 );
             if (rosterSnap.docs.isNotEmpty) {
@@ -2523,10 +2522,32 @@ class AuthService {
         await cacheProfile(data);
         return data;
       }
+
+      // 2. If doc(uid) was missing, query users collection by scholar_no in real-time
+      if (scholarNo != null && scholarNo.isNotEmpty) {
+        try {
+          final querySnap = await _firestore
+              .collection('users')
+              .where('scholar_no', isEqualTo: scholarNo)
+              .limit(1)
+              .get()
+              .timeout(const Duration(seconds: 10));
+          if (querySnap.docs.isNotEmpty) {
+            final data = Map<String, dynamic>.from(querySnap.docs.first.data());
+            data['uid'] = uid;
+            final h = extractHouse(data);
+            if (h != null && h.isNotEmpty) {
+              await cacheHouse(h);
+            }
+            await cacheProfile(data);
+            return data;
+          }
+        } catch (_) {}
+      }
     } catch (_) {
-      return cached;
+      return validCached;
     }
-    return cached;
+    return validCached;
   }
 
   /// Send password reset email.
