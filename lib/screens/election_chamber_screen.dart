@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/election_ballot.dart';
 import '../models/digital_ballot_cast.dart';
 import '../services/auth_service.dart';
+import '../services/hierarchy_service.dart';
 import '../theme/app_theme.dart';
 import 'home_screen.dart';
 import 'election_gazette_screen.dart';
@@ -36,6 +37,28 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
     return AuthService.getCachedScholarNo() ?? '';
   }
 
+  bool get _canManageElections {
+    final cached = AuthService.getCachedProfile() ?? {};
+    final sNo = _effectiveScholarNo.toLowerCase();
+    final role = cached['role']?.toString().toLowerCase();
+    return sNo == 'admin' ||
+        sNo == '11209' ||
+        HierarchyService.isSuperAdmin(scholarNo: sNo, role: role) ||
+        HierarchyService.isTeacherOrFaculty(scholarNo: sNo, role: role) ||
+        HierarchyService.isCouncil(scholarNo: sNo, role: role) ||
+        role == 'admin' ||
+        role == 'super_admin' ||
+        role == 'teacher' ||
+        role == 'faculty' ||
+        role == 'principal' ||
+        role == 'staff' ||
+        role == 'captain' ||
+        role == 'vice_captain' ||
+        role == 'house_captain' ||
+        role == 'house_vice_captain' ||
+        role == 'council';
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -62,11 +85,12 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
               );
             },
           ),
-          IconButton(
-            icon: const Icon(Icons.add_circle_outline_rounded),
-            tooltip: 'Create Ballot & Candidates',
-            onPressed: () => _showCreateBallotModal(context, houseColor),
-          ),
+          if (_canManageElections)
+            IconButton(
+              icon: const Icon(Icons.add_circle_outline_rounded),
+              tooltip: 'Create Ballot & Candidates',
+              onPressed: () => _showCreateBallotModal(context, houseColor),
+            ),
           IconButton(
             icon: const Icon(Icons.how_to_vote_rounded),
             tooltip: 'Ballots & Roster Governance',
@@ -83,13 +107,15 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
         elevation: 0,
         backgroundColor: Colors.transparent,
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: houseColor,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.add_task_rounded),
-        label: const Text('Create Ballot', style: TextStyle(fontWeight: FontWeight.w900)),
-        onPressed: () => _showCreateBallotModal(context, houseColor),
-      ),
+      floatingActionButton: _canManageElections
+          ? FloatingActionButton.extended(
+              backgroundColor: houseColor,
+              foregroundColor: Colors.white,
+              icon: const Icon(Icons.add_task_rounded),
+              label: const Text('Create Ballot', style: TextStyle(fontWeight: FontWeight.w900)),
+              onPressed: () => _showCreateBallotModal(context, houseColor),
+            )
+          : null,
       body: StreamBuilder<List<ElectionBallot>>(
         initialData: cachedBallots,
         stream: _authService.getElectionsStream(),
@@ -552,12 +578,12 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
     bool isDark,
   ) {
     final candHouseColor = HouseColors.getHouseColor(candidate.houseName);
-    final receipt = AuthService.getReceiptForBallot(ballot.id);
+    final receipt = AuthService.getReceiptForBallot(ballot.id, scholarNo: _effectiveScholarNo);
     final isMyVote = receipt != null &&
         (receipt.candidateScholarNo.trim().toLowerCase() == candidate.scholarNo.trim().toLowerCase() ||
             (receipt.candidateScholarNo.isEmpty &&
                 receipt.candidateName.trim().toLowerCase() == candidate.fullName.trim().toLowerCase()));
-    final hasVotedAny = receipt != null || AuthService.hasVotedInBallotCached(ballot.id);
+    final hasVotedAny = receipt != null || AuthService.hasVotedInBallotCached(ballot.id, scholarNo: _effectiveScholarNo);
 
     return Padding(
       padding: const EdgeInsets.all(16),

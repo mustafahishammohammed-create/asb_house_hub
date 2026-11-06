@@ -6,9 +6,11 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import '../models/digital_ballot_cast.dart';
 import '../models/election_ballot.dart';
 import '../models/election_gazette.dart';
 import '../services/auth_service.dart';
+import '../services/election_security_service.dart';
 import '../services/hierarchy_service.dart';
 import '../theme/app_theme.dart';
 import 'election_chamber_screen.dart';
@@ -40,7 +42,11 @@ class SchoolElectionsPage extends StatelessWidget {
         if (user == null) {
           return const Scaffold(body: Center(child: Text('Sign in to view elections.')));
         }
-        return _ElectionDesk(key: ValueKey(user.uid), uid: user.uid);
+        final cachedScholar = AuthService.getCachedScholarNo() ?? 'guest';
+        return _ElectionDesk(
+          key: ValueKey('${cachedScholar}_${user.uid}'),
+          uid: user.uid,
+        );
       },
     );
   }
@@ -54,9 +60,11 @@ class _ElectionDesk extends StatefulWidget {
   State<_ElectionDesk> createState() => _ElectionDeskState();
 }
 
-class _ElectionDeskState extends State<_ElectionDesk> {
+class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderStateMixin {
   final db = FirebaseFirestore.instance;
   final _authService = AuthService();
+  TabController? _tabController;
+  bool _isManager = false;
   late Future<({
     Fields member,
     List<ElectionDoc> polls,
@@ -71,7 +79,30 @@ class _ElectionDeskState extends State<_ElectionDesk> {
   @override
   void initState() {
     super.initState();
+    final cached = AuthService.getCachedProfile() ?? {};
+    final scholarNo = AuthService.getCachedScholarNo() ?? 'admin';
+    final role = (cached['role'] ?? '').toString().trim().toLowerCase();
+    _isManager = scholarNo == 'admin' ||
+        scholarNo == '11209' ||
+        HierarchyService.isSuperAdmin(scholarNo: scholarNo, role: role) ||
+        HierarchyService.isCouncil(scholarNo: scholarNo, role: role) ||
+        HierarchyService.isTeacherOrFaculty(scholarNo: scholarNo, role: role) ||
+        role == 'admin' ||
+        role == 'super_admin' ||
+        role == 'principal' ||
+        role == 'faculty' ||
+        role == 'teacher' ||
+        role == 'staff' ||
+        role == 'council' ||
+        cached['capabilities']?['manage_elections'] == true;
+    _tabController = TabController(length: _isManager ? 3 : 2, vsync: this);
     feed = load();
+  }
+
+  @override
+  void dispose() {
+    _tabController?.dispose();
+    super.dispose();
   }
 
   Future<({
@@ -139,25 +170,43 @@ class _ElectionDeskState extends State<_ElectionDesk> {
     });
 
     // 3. Fetch drafts for authorized managers
-    final canManage = member['capabilities']?['manage_elections'] == true ||
-        member['role'] == 'admin' ||
-        member['role'] == 'super_admin' ||
-        member['scholar_no'] == 'admin' ||
-        member['scholar_no'] == '11209' ||
-        HierarchyService.isSuperAdmin(
-          scholarNo: member['scholar_no']?.toString(),
-          role: member['role']?.toString(),
-        );
+    final scholarNo = (member['scholar_no'] ?? AuthService.getCachedScholarNo() ?? '').toString().trim();
+    final role = (member['role'] ?? '').toString().trim().toLowerCase();
+    final canManage = scholarNo == 'admin' ||
+        scholarNo == '11209' ||
+        HierarchyService.isSuperAdmin(scholarNo: scholarNo, role: role) ||
+        HierarchyService.isCouncil(scholarNo: scholarNo, role: role) ||
+        HierarchyService.isTeacherOrFaculty(scholarNo: scholarNo, role: role) ||
+        role == 'admin' ||
+        role == 'super_admin' ||
+        role == 'principal' ||
+        role == 'faculty' ||
+        role == 'teacher' ||
+        role == 'staff' ||
+        role == 'council' ||
+        member['capabilities']?['manage_elections'] == true;
+
+    if (_isManager != canManage && mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() {
+            _isManager = canManage;
+            _tabController?.dispose();
+            _tabController = TabController(length: _isManager ? 3 : 2, vsync: this);
+          });
+        }
+      });
+    }
 
     List<ElectionDoc> drafts = [];
     if (canManage) {
       try {
         final snap = await db.collection('election_drafts_v2').get(opts);
-        drafts = snap.docs;
+        drafts = snap.docs.where((d) => (d.data()['status'] ?? 'draft') == 'draft').toList();
       } catch (_) {
         try {
           final snap = await db.collection('election_drafts_v2').get();
-          drafts = snap.docs;
+          drafts = snap.docs.where((d) => (d.data()['status'] ?? 'draft') == 'draft').toList();
         } catch (_) {}
       }
       drafts.sort((a, b) {
@@ -312,15 +361,21 @@ class _ElectionDeskState extends State<_ElectionDesk> {
       });
     }
 
-    final canManage = person['capabilities']?['manage_elections'] == true ||
-        person['role'] == 'admin' ||
-        person['role'] == 'super_admin' ||
-        person['scholar_no'] == 'admin' ||
-        person['scholar_no'] == '11209' ||
-        HierarchyService.isSuperAdmin(
-          scholarNo: person['scholar_no']?.toString(),
-          role: person['role']?.toString(),
-        );
+    final scholarNo = (person['scholar_no'] ?? AuthService.getCachedScholarNo() ?? '').toString().trim();
+    final role = (person['role'] ?? '').toString().trim().toLowerCase();
+    final canManage = scholarNo == 'admin' ||
+        scholarNo == '11209' ||
+        HierarchyService.isSuperAdmin(scholarNo: scholarNo, role: role) ||
+        HierarchyService.isCouncil(scholarNo: scholarNo, role: role) ||
+        HierarchyService.isTeacherOrFaculty(scholarNo: scholarNo, role: role) ||
+        role == 'admin' ||
+        role == 'super_admin' ||
+        role == 'principal' ||
+        role == 'faculty' ||
+        role == 'teacher' ||
+        role == 'staff' ||
+        role == 'council' ||
+        person['capabilities']?['manage_elections'] == true;
     if (!canManage) throw StateError('Election manager permission required.');
 
     if (action == 'create') {
@@ -439,8 +494,12 @@ class _ElectionDeskState extends State<_ElectionDesk> {
           'statement': c['statement'],
         }).toList();
 
-        final startMs = d['startMs'] as int;
-        final endMs = d['endMs'] as int;
+        final now = DateTime.now();
+        final nowMs = now.millisecondsSinceEpoch;
+        final originalDuration = (d['endMs'] as num? ?? (nowMs + 7 * 86400000)).toInt() - (d['startMs'] as num? ?? nowMs).toInt();
+        final durationMs = originalDuration > 0 ? originalDuration : (7 * 86400000);
+        final effectiveOpensAt = Timestamp.fromDate(now.subtract(const Duration(seconds: 2)));
+        final effectiveClosesAt = Timestamp.fromMillisecondsSinceEpoch(nowMs + durationMs);
 
         tx.set(pollRef, {
           'title': d['title'],
@@ -448,8 +507,8 @@ class _ElectionDeskState extends State<_ElectionDesk> {
           'minGrade': d['minGrade'],
           'maxGrade': d['maxGrade'],
           'house': d['house'],
-          'opensAt': Timestamp.fromMillisecondsSinceEpoch(startMs),
-          'closesAt': Timestamp.fromMillisecondsSinceEpoch(endMs),
+          'opensAt': effectiveOpensAt,
+          'closesAt': effectiveClosesAt,
           'candidates': pubCandidates,
           'status': 'published',
           'publishedAt': FieldValue.serverTimestamp(),
@@ -460,7 +519,10 @@ class _ElectionDeskState extends State<_ElectionDesk> {
     }
 
     if (action == 'certify') {
-      return await db.runTransaction<Fields>((tx) async {
+      CertifiedElectionResult? proclamationToPublish;
+      String? winningHouseToCredit;
+
+      final res = await db.runTransaction<Fields>((tx) async {
         final pollSnap = await tx.get(pollRef);
         if (!pollSnap.exists) throw StateError('Publish the ballot first.');
         final box = pollSnap.data()!;
@@ -477,7 +539,7 @@ class _ElectionDeskState extends State<_ElectionDesk> {
           rows.add({'id': cId, 'count': n});
         }
 
-        final total = rows.fold<int>(0, (sum, r) => sum + (r['count'] as int));
+        final total = rows.fold<int>(0, (acc, r) => acc + (r['count'] as int));
         int maxCount = 0;
         for (final r in rows) {
           if ((r['count'] as int) > maxCount) maxCount = r['count'] as int;
@@ -494,7 +556,7 @@ class _ElectionDeskState extends State<_ElectionDesk> {
           'result': result,
           'certifiedAt': FieldValue.serverTimestamp(),
         });
-        
+
         final draftSnap = await tx.get(draftRef);
         if (draftSnap.exists) {
           tx.update(draftRef, {
@@ -503,40 +565,47 @@ class _ElectionDeskState extends State<_ElectionDesk> {
           });
         }
 
-        // Publish statutory proclamation to Campus Election Gazette
-        try {
-          if (leaders.isNotEmpty) {
-            final winningCand = candidates.firstWhere(
-              (c) => c['id'] == leaders.first,
-              orElse: () => candidates.first,
-            );
-            final winnerName = (winningCand['name'] ?? 'Candidate').toString();
-            final house = (box['house'] ?? 'ruby').toString().toLowerCase();
-            final winnerHouse = ['ruby', 'sapphire', 'emerald', 'topaz'].contains(house) ? house : 'ruby';
+        if (leaders.isNotEmpty) {
+          final winningCand = candidates.firstWhere(
+            (c) => c['id'] == leaders.first,
+            orElse: () => candidates.first,
+          );
+          final winnerName = (winningCand['name'] ?? 'Candidate').toString();
+          final house = (box['house'] ?? 'ruby').toString().toLowerCase();
+          final winnerHouse = ['ruby', 'sapphire', 'emerald', 'topaz'].contains(house) ? house : 'ruby';
+          winningHouseToCredit = winnerHouse;
 
-            final proclamation = CertifiedElectionResult(
-              ballotId: pollId,
-              ballotTitle: (box['title'] ?? 'School Election').toString(),
-              runningPosition: (box['position'] ?? 'Council Representative').toString(),
-              winnerScholarNo: (winningCand['scholar_no'] ?? winningCand['id'] ?? 'SCH-001').toString(),
-              winnerName: winnerName,
-              winnerHouse: winnerHouse,
-              totalVotesReceived: maxCount,
-              victoryMarginVotes: maxCount - (rows.length > 1 ? rows[1]['count'] as int : 0),
-              housePointsAwarded: 100,
-              commissionerName: user.displayName ?? "Principal's Office",
-              commissionerRole: 'Chief Electoral Commissioner',
-              certifiedAt: DateTime.now(),
-              proclamationText:
-                  'By order of the Electoral Commission, $winnerName is duly elected and sworn as ${box['position']}, conferring +100 championship points to ${winnerHouse.toUpperCase()} House.',
-            );
-            await _authService.publishGazetteProclamation(proclamation);
-            await AuthService.incrementCachedHousePoints(winnerHouse, 100);
-          }
-        } catch (_) {}
+          proclamationToPublish = CertifiedElectionResult(
+            ballotId: pollId,
+            ballotTitle: (box['title'] ?? 'School Election').toString(),
+            runningPosition: (box['position'] ?? 'Council Representative').toString(),
+            winnerScholarNo: (winningCand['scholar_no'] ?? winningCand['id'] ?? 'SCH-001').toString(),
+            winnerName: winnerName,
+            winnerHouse: winnerHouse,
+            totalVotesReceived: maxCount,
+            victoryMarginVotes: maxCount - (rows.length > 1 ? rows[1]['count'] as int : 0),
+            housePointsAwarded: 100,
+            commissionerName: user.displayName ?? "Principal's Office",
+            commissionerRole: 'Chief Electoral Commissioner',
+            certifiedAt: DateTime.now(),
+            proclamationText:
+                'By order of the Electoral Commission, $winnerName is duly elected and sworn as ${box['position']}, conferring +100 championship points to ${winnerHouse.toUpperCase()} House.',
+          );
+        }
 
         return {'pollId': pollId, 'result': result};
       });
+
+      if (proclamationToPublish != null) {
+        try {
+          await _authService.publishGazetteProclamation(proclamationToPublish!);
+          if (winningHouseToCredit != null) {
+            await AuthService.incrementCachedHousePoints(winningHouseToCredit!, 100);
+          }
+        } catch (_) {}
+      }
+
+      return res;
     }
 
     throw StateError('Unknown election action: $action');
@@ -1029,7 +1098,30 @@ class _ElectionDeskState extends State<_ElectionDesk> {
     );
     if (!mounted) return;
     final receipt = result['receipt'] as String?;
-    if (receipt != null) receipts[id] = receipt;
+    if (receipt != null) {
+      receipts[id] = receipt;
+      final activeScholar = (AuthService.getCachedScholarNo() ?? '').toString().trim();
+      if (candidateId != null && activeScholar.isNotEmpty) {
+        final castReceipt = BallotCastReceipt(
+          receiptId: receipt,
+          ballotId: id,
+          ballotTitle: 'Campus Election',
+          candidateScholarNo: candidateId,
+          candidateName: 'Nominated Candidate',
+          candidateHouse: 'ruby',
+          runningPosition: 'Candidate',
+          anonymizedVoterHash: ElectionSecurityService.generateAnonymizedVoterHash(
+            scholarNo: activeScholar,
+            ballotId: id,
+          ),
+          signatureProofToken: receipt,
+          timestamp: DateTime.now(),
+        );
+        await AuthService.cacheVoteReceipt(castReceipt, scholarNo: activeScholar);
+      }
+      setState(() {});
+    }
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
@@ -1261,9 +1353,10 @@ class _ElectionDeskState extends State<_ElectionDesk> {
                                     mounted) {
                                   await run(() async => call('publish', doc.id));
                                   if (mounted) {
+                                    _tabController?.animateTo(0);
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
-                                        content: Text('✓ Ballot published! Voting is now scheduled.'),
+                                        content: Text('✓ Ballot published! Active voting is now live.'),
                                         backgroundColor: Colors.green,
                                       ),
                                     );
@@ -1296,7 +1389,9 @@ class _ElectionDeskState extends State<_ElectionDesk> {
         grade >= (p['minGrade'] as int? ?? 1) &&
         grade <= (p['maxGrade'] as int? ?? 12) &&
         (p['house'] == 'all' || p['house'] == member['house']);
-    final recorded = receipts[doc.id];
+    final activeScholar = (member['scholar_no'] ?? AuthService.getCachedScholarNo() ?? '').toString().trim();
+    final cachedRcpt = AuthService.getReceiptForBallot(doc.id, scholarNo: activeScholar);
+    final recorded = receipts[doc.id] ?? cachedRcpt?.receiptId;
     final candidates = (p['candidates'] as List? ?? []).cast<Map>();
     final result = p['result'] as Map?;
     final counts = <String, int>{
@@ -1528,7 +1623,26 @@ class _ElectionDeskState extends State<_ElectionDesk> {
                               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                             ),
                           )
-                        else if (eligible && published && inWindow && recorded == null)
+                        else if (recorded != null)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: Colors.green.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.verified, size: 14, color: Colors.green),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Balloted',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.green),
+                                ),
+                              ],
+                            ),
+                          )
+                        else if (eligible && published && inWindow)
                           FilledButton.icon(
                             style: FilledButton.styleFrom(
                               backgroundColor: Colors.green[700],
@@ -1545,6 +1659,18 @@ class _ElectionDeskState extends State<_ElectionDesk> {
                                 await checkReceipt(doc.id, candidateId: c['id'] as String);
                               }
                             },
+                          )
+                        else if (!eligible && published && inWindow && recorded == null)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              'Grades ${p['minGrade']}–${p['maxGrade']}',
+                              style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+                            ),
                           ),
                       ],
                     ),
@@ -1578,6 +1704,15 @@ class _ElectionDeskState extends State<_ElectionDesk> {
                           : 'The cryptographic election engine will tally the votes and proclaim the winner.';
                       if (await confirm(title, desc) && mounted) {
                         await run(() async => call('certify', doc.id));
+                        if (mounted) {
+                          _tabController?.animateTo(_isManager ? 2 : 1);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('✓ Election concluded & certified! Proclamation published to Gazette.'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        }
                       }
                     },
                   ),
@@ -1633,15 +1768,21 @@ class _ElectionDeskState extends State<_ElectionDesk> {
         }
 
         final data = snap.requireData;
-        final manage = data.member['capabilities']?['manage_elections'] == true ||
-            data.member['role'] == 'admin' ||
-            data.member['role'] == 'super_admin' ||
-            data.member['scholar_no'] == 'admin' ||
-            data.member['scholar_no'] == '11209' ||
-            HierarchyService.isSuperAdmin(
-              scholarNo: data.member['scholar_no']?.toString(),
-              role: data.member['role']?.toString(),
-            );
+        final scholarNo = (data.member['scholar_no'] ?? AuthService.getCachedScholarNo() ?? '').toString().trim();
+        final role = (data.member['role'] ?? '').toString().trim().toLowerCase();
+        final manage = scholarNo == 'admin' ||
+            scholarNo == '11209' ||
+            HierarchyService.isSuperAdmin(scholarNo: scholarNo, role: role) ||
+            HierarchyService.isCouncil(scholarNo: scholarNo, role: role) ||
+            HierarchyService.isTeacherOrFaculty(scholarNo: scholarNo, role: role) ||
+            role == 'admin' ||
+            role == 'super_admin' ||
+            role == 'principal' ||
+            role == 'faculty' ||
+            role == 'teacher' ||
+            role == 'staff' ||
+            role == 'council' ||
+            data.member['capabilities']?['manage_elections'] == true;
 
         final activePolls = data.polls.where((p) => p.data()['status'] != 'certified').toList();
         final certifiedPolls = data.polls.where((p) => p.data()['status'] == 'certified').toList();
@@ -1650,59 +1791,58 @@ class _ElectionDeskState extends State<_ElectionDesk> {
             .toList();
         final totalCertified = certifiedPolls.length + uniqueProclamations.length;
 
-        return DefaultTabController(
-          length: manage ? 3 : 2,
-          child: Scaffold(
-            appBar: AppBar(
-              title: const Text('Institutional Elections (v2)', style: TextStyle(fontWeight: FontWeight.w900)),
-              elevation: 0,
-              actions: [
-                IconButton(
-                  tooltip: 'Election Gazette & Proclamations',
-                  icon: const Icon(Icons.newspaper_rounded),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const ElectionGazetteScreen()),
-                    );
-                  },
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('Institutional Elections (v2)', style: TextStyle(fontWeight: FontWeight.w900)),
+            elevation: 0,
+            actions: [
+              IconButton(
+                tooltip: 'Election Gazette & Proclamations',
+                icon: const Icon(Icons.newspaper_rounded),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ElectionGazetteScreen()),
+                  );
+                },
+              ),
+              IconButton(
+                tooltip: 'Candidate Chambers',
+                icon: const Icon(Icons.people_alt_rounded),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ElectionChamberScreen()),
+                  );
+                },
+              ),
+              IconButton(
+                tooltip: 'Refresh elections',
+                onPressed: busy ? null : refresh,
+                icon: const Icon(Icons.refresh_rounded),
+              ),
+            ],
+            bottom: TabBar(
+              controller: _tabController,
+              isScrollable: false,
+              indicatorWeight: 3,
+              tabs: [
+                Tab(
+                  icon: const Icon(Icons.how_to_vote_rounded),
+                  text: 'Active (${activePolls.length})',
                 ),
-                IconButton(
-                  tooltip: 'Candidate Chambers',
-                  icon: const Icon(Icons.people_alt_rounded),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const ElectionChamberScreen()),
-                    );
-                  },
-                ),
-                IconButton(
-                  tooltip: 'Refresh elections',
-                  onPressed: busy ? null : refresh,
-                  icon: const Icon(Icons.refresh_rounded),
+                if (manage)
+                  Tab(
+                    icon: const Icon(Icons.edit_document),
+                    text: 'Drafts (${data.drafts.length})',
+                  ),
+                Tab(
+                  icon: const Icon(Icons.emoji_events_rounded),
+                  text: 'Certified ($totalCertified)',
                 ),
               ],
-              bottom: TabBar(
-                isScrollable: false,
-                indicatorWeight: 3,
-                tabs: [
-                  Tab(
-                    icon: const Icon(Icons.how_to_vote_rounded),
-                    text: 'Active (${activePolls.length})',
-                  ),
-                  if (manage)
-                    Tab(
-                      icon: const Icon(Icons.edit_document),
-                      text: 'Drafts (${data.drafts.length})',
-                    ),
-                  Tab(
-                    icon: const Icon(Icons.emoji_events_rounded),
-                    text: 'Certified ($totalCertified)',
-                  ),
-                ],
-              ),
             ),
+          ),
             body: Column(
               children: [
                 if (busy) const LinearProgressIndicator(),
@@ -1747,6 +1887,7 @@ class _ElectionDeskState extends State<_ElectionDesk> {
                 ),
                 Expanded(
                   child: TabBarView(
+                    controller: _tabController,
                     children: [
                       // TAB 1: Active Elections
                       ListView(
@@ -1843,10 +1984,9 @@ class _ElectionDeskState extends State<_ElectionDesk> {
                 ),
               ],
             ),
-          ),
-        );
-      },
-    );
+          );
+        },
+      );
   }
 
   Widget _buildProclamationCard(CertifiedElectionResult item) {
@@ -1938,8 +2078,8 @@ class _ElectionDeskState extends State<_ElectionDesk> {
                     CircleAvatar(
                       radius: 24,
                       backgroundColor: houseColor.withValues(alpha: 0.2),
-                      backgroundImage: item.winnerAvatarUrl != null ? NetworkImage(item.winnerAvatarUrl!) : null,
-                      child: item.winnerAvatarUrl == null
+                      backgroundImage: item.winnerAvatarUrl.isNotEmpty ? NetworkImage(item.winnerAvatarUrl) : null,
+                      child: item.winnerAvatarUrl.isEmpty
                           ? Text(
                               item.winnerName.isNotEmpty ? item.winnerName[0].toUpperCase() : 'W',
                               style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: houseColor),

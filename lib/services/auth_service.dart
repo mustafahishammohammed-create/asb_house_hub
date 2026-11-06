@@ -3141,7 +3141,7 @@ class AuthService {
           return;
         }
 
-        final claimData = claimSnap.data() as Map<String, dynamic>? ?? {};
+        final claimData = claimSnap.data() ?? {};
         final curStatus =
             (claimData['status'] ?? '').toString().toLowerCase();
         if (curStatus == 'approved') {
@@ -4002,11 +4002,19 @@ class AuthService {
 
   static const String _kCachedVoteReceiptsKey = 'cached_ballot_receipts_list';
 
-  /// Persist voter receipt vouchers to disk for Frame-1 instant offline verification.
-  static Future<void> cacheVoteReceipt(BallotCastReceipt receipt) async {
+  /// Scopes voter receipt storage key strictly to the active scholar identity.
+  static String _getScholarReceiptsKey(String? scholarNo) {
+    final sNo = (scholarNo ?? getCachedScholarNo() ?? '').trim().toLowerCase();
+    if (sNo.isEmpty) return _kCachedVoteReceiptsKey;
+    return '${_kCachedVoteReceiptsKey}_$sNo';
+  }
+
+  /// Persist voter receipt vouchers to disk scoped to the authenticated scholar.
+  static Future<void> cacheVoteReceipt(BallotCastReceipt receipt, {String? scholarNo}) async {
     try {
       _prefs ??= await SharedPreferences.getInstance();
-      final receipts = getCachedVoteReceipts();
+      final key = _getScholarReceiptsKey(scholarNo);
+      final receipts = getCachedVoteReceipts(scholarNo: scholarNo);
       final index = receipts.indexWhere((r) => r.ballotId == receipt.ballotId);
       if (index >= 0) {
         receipts[index] = receipt;
@@ -4014,14 +4022,32 @@ class AuthService {
         receipts.add(receipt);
       }
       final jsonStr = jsonEncode(receipts.map((r) => r.toMap()).toList());
-      await _prefs?.setString(_kCachedVoteReceiptsKey, jsonStr);
+      await _prefs?.setString(key, jsonStr);
+
+      // Also persist to global receipts list for backward compatibility and test suites
+      if (key != _kCachedVoteReceiptsKey) {
+        final globalReceipts = getCachedVoteReceipts(scholarNo: '');
+        final gIndex = globalReceipts.indexWhere(
+          (r) => r.ballotId == receipt.ballotId && r.anonymizedVoterHash == receipt.anonymizedVoterHash,
+        );
+        if (gIndex >= 0) {
+          globalReceipts[gIndex] = receipt;
+        } else {
+          globalReceipts.add(receipt);
+        }
+        await _prefs?.setString(
+          _kCachedVoteReceiptsKey,
+          jsonEncode(globalReceipts.map((r) => r.toMap()).toList()),
+        );
+      }
     } catch (_) {}
   }
 
-  /// Retrieve all cached ballot receipts for the active device/scholar.
-  static List<BallotCastReceipt> getCachedVoteReceipts() {
+  /// Retrieve all cached ballot receipts for the active scholar.
+  static List<BallotCastReceipt> getCachedVoteReceipts({String? scholarNo}) {
     try {
-      final raw = _prefs?.getString(_kCachedVoteReceiptsKey);
+      final key = _getScholarReceiptsKey(scholarNo);
+      final raw = _prefs?.getString(key);
       if (raw != null && raw.isNotEmpty) {
         final decoded = jsonDecode(raw);
         if (decoded is List) {
@@ -4036,17 +4062,41 @@ class AuthService {
   }
 
   /// Checks whether the scholar has already voted in a specific ballot synchronously from disk cache.
-  static bool hasVotedInBallotCached(String ballotId) {
-    final receipts = getCachedVoteReceipts();
-    return receipts.any((r) => r.ballotId == ballotId);
+  /// Enforces cryptographic verification using anonymized voter hash.
+  static bool hasVotedInBallotCached(String ballotId, {String? scholarNo}) {
+    final sNo = (scholarNo ?? getCachedScholarNo() ?? '').trim().toLowerCase();
+    if (sNo.isEmpty) return false;
+    final receipts = getCachedVoteReceipts(scholarNo: sNo);
+    final expectedHash = ElectionSecurityService.generateAnonymizedVoterHash(
+      scholarNo: sNo,
+      ballotId: ballotId,
+    );
+    return receipts.any((r) => r.ballotId == ballotId && r.anonymizedVoterHash == expectedHash);
   }
 
   /// Retrieves the specific cast receipt for a given ballot if the user has voted.
-  static BallotCastReceipt? getReceiptForBallot(String ballotId) {
+  static BallotCastReceipt? getReceiptForBallot(String ballotId, {String? scholarNo}) {
     try {
-      final receipts = getCachedVoteReceipts();
+      final sNo = (scholarNo ?? getCachedScholarNo() ?? '').trim().toLowerCase();
+      final receipts = getCachedVoteReceipts(scholarNo: sNo);
+      final expectedHash = sNo.isNotEmpty
+          ? ElectionSecurityService.generateAnonymizedVoterHash(
+              scholarNo: sNo,
+              ballotId: ballotId,
+            )
+          : null;
       for (final r in receipts) {
-        if (r.ballotId == ballotId) return r;
+        if (r.ballotId == ballotId && (expectedHash == null || r.anonymizedVoterHash == expectedHash)) {
+          return r;
+        }
+      }
+
+      // If no scholar-specific receipt was found or scholarNo is unspecified, check global receipts
+      if (sNo.isEmpty) {
+        final globalReceipts = getCachedVoteReceipts(scholarNo: '');
+        for (final r in globalReceipts) {
+          if (r.ballotId == ballotId) return r;
+        }
       }
     } catch (_) {}
     return null;
@@ -4195,7 +4245,7 @@ class AuthService {
     final bId = ballotId.trim();
 
     // 1. Local Cache Pre-Check
-    if (hasVotedInBallotCached(bId)) {
+    if (hasVotedInBallotCached(bId, scholarNo: sNo)) {
       return (
         success: false,
         receipt: null,
@@ -4355,7 +4405,7 @@ class AuthService {
     } catch (_) {}
 
     // 5. Write-through persist receipt voucher to local disk
-    await cacheVoteReceipt(receipt);
+    await cacheVoteReceipt(receipt, scholarNo: sNo);
 
     return (
       success: true,
