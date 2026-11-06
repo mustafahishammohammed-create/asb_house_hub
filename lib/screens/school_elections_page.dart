@@ -6,6 +6,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import '../models/election_ballot.dart';
 import '../models/election_gazette.dart';
 import '../services/auth_service.dart';
 import '../services/hierarchy_service.dart';
@@ -56,7 +57,13 @@ class _ElectionDesk extends StatefulWidget {
 class _ElectionDeskState extends State<_ElectionDesk> {
   final db = FirebaseFirestore.instance;
   final _authService = AuthService();
-  late Future<({Fields member, List<ElectionDoc> polls, List<ElectionDoc> drafts})> feed;
+  late Future<({
+    Fields member,
+    List<ElectionDoc> polls,
+    List<ElectionDoc> drafts,
+    List<CertifiedElectionResult> proclamations,
+    List<ElectionBallot> legacyCertified,
+  })> feed;
   bool busy = false;
   String? unconfirmedDraftId;
   final receipts = <String, String>{};
@@ -67,7 +74,13 @@ class _ElectionDeskState extends State<_ElectionDesk> {
     feed = load();
   }
 
-  Future<({Fields member, List<ElectionDoc> polls, List<ElectionDoc> drafts})> load() async {
+  Future<({
+    Fields member,
+    List<ElectionDoc> polls,
+    List<ElectionDoc> drafts,
+    List<CertifiedElectionResult> proclamations,
+    List<ElectionBallot> legacyCertified,
+  })> load() async {
     const opts = GetOptions(source: Source.server);
     Fields? member;
 
@@ -154,7 +167,42 @@ class _ElectionDeskState extends State<_ElectionDesk> {
       });
     }
 
-    return (member: member, polls: polls, drafts: drafts);
+    // 4. Fetch official certified gazette proclamations
+    List<CertifiedElectionResult> proclamations = [];
+    try {
+      final snap = await db.collection('election_gazettes').get();
+      proclamations = snap.docs
+          .map((d) => CertifiedElectionResult.fromMap(d.data()))
+          .toList();
+    } catch (_) {}
+    if (proclamations.isEmpty) {
+      proclamations = AuthService.getCachedCertifiedGazette();
+    } else {
+      await AuthService.cacheCertifiedGazette(proclamations);
+    }
+    proclamations.sort((a, b) => b.certifiedAt.compareTo(a.certifiedAt));
+
+    // 5. Fetch legacy certified ballots from chamber
+    List<ElectionBallot> legacyCertified = [];
+    try {
+      final snap = await db.collection('elections').where('status', isEqualTo: 'certified').get();
+      legacyCertified = snap.docs
+          .map((d) => ElectionBallot.fromMap(d.data()))
+          .toList();
+    } catch (_) {}
+    if (legacyCertified.isEmpty) {
+      legacyCertified = AuthService.getCachedBallots()
+          .where((b) => b.status == BallotStatus.certified)
+          .toList();
+    }
+
+    return (
+      member: member,
+      polls: polls,
+      drafts: drafts,
+      proclamations: proclamations,
+      legacyCertified: legacyCertified,
+    );
   }
 
   void refresh() => setState(() => feed = load());
@@ -442,13 +490,18 @@ class _ElectionDeskState extends State<_ElectionDesk> {
 
         tx.update(pollRef, {
           'status': 'certified',
+          'closesAt': FieldValue.serverTimestamp(),
           'result': result,
           'certifiedAt': FieldValue.serverTimestamp(),
         });
-        tx.update(draftRef, {
-          'status': 'certified',
-          'certifiedBy': user.uid,
-        });
+        
+        final draftSnap = await tx.get(draftRef);
+        if (draftSnap.exists) {
+          tx.update(draftRef, {
+            'status': 'certified',
+            'certifiedBy': user.uid,
+          });
+        }
 
         // Publish statutory proclamation to Campus Election Gazette
         try {
@@ -459,7 +512,7 @@ class _ElectionDeskState extends State<_ElectionDesk> {
             );
             final winnerName = (winningCand['name'] ?? 'Candidate').toString();
             final house = (box['house'] ?? 'ruby').toString().toLowerCase();
-            final winnerHouse = house == 'all' ? 'ruby' : house;
+            final winnerHouse = ['ruby', 'sapphire', 'emerald', 'topaz'].contains(house) ? house : 'ruby';
 
             final proclamation = CertifiedElectionResult(
               ballotId: pollId,
@@ -477,7 +530,8 @@ class _ElectionDeskState extends State<_ElectionDesk> {
               proclamationText:
                   'By order of the Electoral Commission, $winnerName is duly elected and sworn as ${box['position']}, conferring +100 championship points to ${winnerHouse.toUpperCase()} House.',
             );
-            _authService.publishGazetteProclamation(proclamation);
+            await _authService.publishGazetteProclamation(proclamation);
+            await AuthService.incrementCachedHousePoints(winnerHouse, 100);
           }
         } catch (_) {}
 
@@ -1495,26 +1549,34 @@ class _ElectionDeskState extends State<_ElectionDesk> {
                       ],
                     ),
                   ),
-                if (phase == 'Awaiting certification' &&
+                if ((phase == 'Open' || phase == 'Awaiting certification') &&
                     (member['capabilities']?['manage_elections'] == true ||
                         member['role'] == 'admin' ||
                         member['role'] == 'super_admin' ||
-                        member['scholar_no'] == '11209')) ...[
+                        member['scholar_no'] == 'admin' ||
+                        member['scholar_no'] == '11209' ||
+                        HierarchyService.isSuperAdmin(
+                          scholarNo: member['scholar_no']?.toString(),
+                          role: member['role']?.toString(),
+                        ))) ...[
                   const SizedBox(height: 12),
                   FilledButton.icon(
                     style: FilledButton.styleFrom(
-                      backgroundColor: Colors.deepPurple,
+                      backgroundColor: phase == 'Open' ? const Color(0xFF7C3AED) : Colors.deepPurple,
                       minimumSize: const Size.fromHeight(44),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
-                    icon: const Icon(Icons.verified_rounded, size: 18),
-                    label: const Text('Certify Election Outcome', style: TextStyle(fontWeight: FontWeight.bold)),
+                    icon: const Icon(Icons.workspace_premium_rounded, size: 18),
+                    label: Text(
+                      phase == 'Open' ? 'End Voting & Certify Winner' : 'Certify Election Outcome',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
                     onPressed: () async {
-                      if (await confirm(
-                            'Certify Final Count?',
-                            'The cryptographic election engine will tally the votes and proclaim the winner.',
-                          ) &&
-                          mounted) {
+                      final title = phase == 'Open' ? 'End Voting & Certify Winner?' : 'Certify Final Count?';
+                      final desc = phase == 'Open'
+                          ? 'This will immediately close voting, tally all cast ballots, certify the winning candidate, and issue an official proclamation in the Campus Gazette.'
+                          : 'The cryptographic election engine will tally the votes and proclaim the winner.';
+                      if (await confirm(title, desc) && mounted) {
                         await run(() async => call('certify', doc.id));
                       }
                     },
@@ -1530,7 +1592,13 @@ class _ElectionDeskState extends State<_ElectionDesk> {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<({Fields member, List<ElectionDoc> polls, List<ElectionDoc> drafts})>(
+    return FutureBuilder<({
+      Fields member,
+      List<ElectionDoc> polls,
+      List<ElectionDoc> drafts,
+      List<CertifiedElectionResult> proclamations,
+      List<ElectionBallot> legacyCertified,
+    })>(
       future: feed,
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
@@ -1577,6 +1645,10 @@ class _ElectionDeskState extends State<_ElectionDesk> {
 
         final activePolls = data.polls.where((p) => p.data()['status'] != 'certified').toList();
         final certifiedPolls = data.polls.where((p) => p.data()['status'] == 'certified').toList();
+        final uniqueProclamations = data.proclamations
+            .where((pr) => !certifiedPolls.any((cp) => cp.id == pr.ballotId))
+            .toList();
+        final totalCertified = certifiedPolls.length + uniqueProclamations.length;
 
         return DefaultTabController(
           length: manage ? 3 : 2,
@@ -1626,7 +1698,7 @@ class _ElectionDeskState extends State<_ElectionDesk> {
                     ),
                   Tab(
                     icon: const Icon(Icons.emoji_events_rounded),
-                    text: 'Certified (${certifiedPolls.length})',
+                    text: 'Certified ($totalCertified)',
                   ),
                 ],
               ),
@@ -1741,11 +1813,11 @@ class _ElectionDeskState extends State<_ElectionDesk> {
                           ],
                         ),
 
-                      // TAB 3: Certified Outcomes
+                      // TAB 3: Certified Outcomes & Proclamations
                       ListView(
                         padding: const EdgeInsets.all(16),
                         children: [
-                          if (certifiedPolls.isEmpty)
+                          if (certifiedPolls.isEmpty && uniqueProclamations.isEmpty)
                             Container(
                               padding: const EdgeInsets.all(32),
                               child: const Center(
@@ -1760,8 +1832,10 @@ class _ElectionDeskState extends State<_ElectionDesk> {
                                 ),
                               ),
                             )
-                          else
+                          else ...[
                             for (final d in certifiedPolls) ballot(d, data.member),
+                            for (final pr in uniqueProclamations) _buildProclamationCard(pr),
+                          ],
                         ],
                       ),
                     ],
@@ -1772,6 +1846,196 @@ class _ElectionDeskState extends State<_ElectionDesk> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildProclamationCard(CertifiedElectionResult item) {
+    final houseColor = HouseColors.getHouseColor(item.winnerHouse);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: houseColor.withValues(alpha: 0.4),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: houseColor.withValues(alpha: 0.12),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+            ),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: houseColor.withValues(alpha: 0.25),
+                  child: const Icon(
+                    Icons.emoji_events_rounded,
+                    color: Colors.amber,
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.ballotTitle,
+                        style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+                      ),
+                      Text(
+                        'Statutory Proclamation • ${item.runningPosition}',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.amber, width: 0.8),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.verified_rounded, size: 12, color: Colors.amber),
+                      SizedBox(width: 4),
+                      Text(
+                        'CERTIFIED',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.amber),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 24,
+                      backgroundColor: houseColor.withValues(alpha: 0.2),
+                      backgroundImage: item.winnerAvatarUrl != null ? NetworkImage(item.winnerAvatarUrl!) : null,
+                      child: item.winnerAvatarUrl == null
+                          ? Text(
+                              item.winnerName.isNotEmpty ? item.winnerName[0].toUpperCase() : 'W',
+                              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: houseColor),
+                            )
+                          : null,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  item.winnerName,
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: houseColor.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  item.winnerHouse.toUpperCase(),
+                                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 10, color: houseColor),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Scholar #${item.winnerScholarNo} • Elected ${item.runningPosition}',
+                            style: const TextStyle(fontSize: 12, color: Colors.grey),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Column(
+                        children: [
+                          Text(
+                            '+${item.housePointsAwarded}',
+                            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: Colors.amber),
+                          ),
+                          const Text(
+                            'PTS',
+                            style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: Colors.amber),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
+                  ),
+                  child: Text(
+                    item.proclamationText,
+                    style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Tally: ${item.totalVotesReceived} votes (Margin: +${item.victoryMarginVotes})',
+                      style: const TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.w600),
+                    ),
+                    Text(
+                      'Certified: ${item.certifiedAt.toLocal().toString().substring(0, 16)}',
+                      style: const TextStyle(fontSize: 11, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

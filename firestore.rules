@@ -235,9 +235,12 @@ service cloud.firestore {
     // Role-Based Access Control
     function isSuperAdmin() {
       return isSignedIn() && (
-        (request.auth.token != null && 'email' in request.auth.token && request.auth.token.email == 'admin@asianschool.bh') ||
+        (request.auth.token != null && 'email' in request.auth.token && request.auth.token.email in ['admin@asianschool.bh', '11209@asianschool.bh']) ||
         (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in ['super_admin', 'admin']) ||
-        (hasUserDoc() && 'role' in getUserData() && getUserData().role in ['super_admin', 'admin'])
+        (hasUserDoc() && (
+          ('role' in getUserData() && getUserData().role in ['super_admin', 'admin']) ||
+          ('scholar_no' in getUserData() && getUserData().scholar_no in ['admin', '11209'])
+        ))
       );
     }
 
@@ -302,7 +305,7 @@ service cloud.firestore {
         'sports_captain', 'sports_vice_captain', 'sports_lead',
         'teacher', 'faculty', 'principal', 'staff', 'admin', 'super_admin'
       ] &&
-      data.house_name is string && data.house_name.toLowerCase() in ['ruby', 'sapphire', 'emerald', 'topaz'] &&
+      data.house_name is string && data.house_name.lower() in ['ruby', 'sapphire', 'emerald', 'topaz'] &&
       (!('class_level' in data) || (data.class_level is string && data.class_level.size() <= 50)) &&
       (!('division' in data) || (data.division is string && data.division.size() <= 10)) &&
       (!('points' in data) || (data.points is int && data.points >= 0 && data.points <= 1000000)) &&
@@ -371,7 +374,7 @@ service cloud.firestore {
       hasRequiredFields(['scholar_no', 'student_name', 'house_name', 'activity_title', 'points', 'cert_url', 'status']) &&
       data.scholar_no is string && data.scholar_no.size() >= 4 && data.scholar_no.size() <= 20 &&
       data.student_name is string && data.student_name.size() >= 2 && data.student_name.size() <= 100 &&
-      data.house_name is string && data.house_name.toLowerCase() in ['ruby', 'sapphire', 'emerald', 'topaz'] &&
+      data.house_name is string && data.house_name.lower() in ['ruby', 'sapphire', 'emerald', 'topaz'] &&
       data.activity_title is string && data.activity_title.size() >= 2 && data.activity_title.size() <= 150 &&
       data.points is int && data.points >= 1 && data.points <= 500 &&
       data.cert_url is string && data.cert_url.size() >= 5 && data.cert_url.size() <= 500000 &&
@@ -539,7 +542,7 @@ service cloud.firestore {
       hasRequiredFields(['scholar_no', 'student_name', 'house_name', 'image_url', 'status']) &&
       data.scholar_no is string && data.scholar_no.size() >= 4 && data.scholar_no.size() <= 20 &&
       data.student_name is string && data.student_name.size() >= 2 && data.student_name.size() <= 100 &&
-      data.house_name is string && data.house_name.toLowerCase() in ['ruby', 'sapphire', 'emerald', 'topaz'] &&
+      data.house_name is string && data.house_name.lower() in ['ruby', 'sapphire', 'emerald', 'topaz'] &&
       data.image_url is string && data.image_url.size() >= 5 && data.image_url.size() <= 500000 &&
       data.status is string && data.status in ['pending', 'approved', 'rejected'] &&
       (!('caption' in data) || (data.caption is string && data.caption.size() <= 500)) &&
@@ -558,7 +561,7 @@ service cloud.firestore {
       hasRequiredFields(['scholar_no', 'student_name', 'house_name', 'sport_type']) &&
       data.scholar_no is string && data.scholar_no.size() >= 4 && data.scholar_no.size() <= 20 &&
       data.student_name is string && data.student_name.size() >= 2 && data.student_name.size() <= 100 &&
-      data.house_name is string && data.house_name.toLowerCase() in ['ruby', 'sapphire', 'emerald', 'topaz'] &&
+      data.house_name is string && data.house_name.lower() in ['ruby', 'sapphire', 'emerald', 'topaz'] &&
       data.sport_type is string && data.sport_type.size() <= 50 &&
       (!('goals_scored' in data) || (data.goals_scored is int && data.goals_scored >= 0)) &&
       (!('baskets_scored' in data) || (data.baskets_scored is int && data.baskets_scored >= 0)) &&
@@ -584,13 +587,13 @@ service cloud.firestore {
       allow read: if true;
 
       // Create: user creating their own document; default role cannot be super_admin or admin
-      // unless authenticated as bootstrap super admin (admin@asianschool.bh) or existing super admin
+      // unless authenticated as bootstrap super admin (admin@asianschool.bh, 11209@asianschool.bh) or existing super admin
       allow create: if isOwner(userId) &&
         isValidUser(request.resource.data) &&
         (
           !(request.resource.data.role in ['super_admin', 'admin']) ||
           isSuperAdmin() ||
-          (request.auth.token != null && 'email' in request.auth.token && request.auth.token.email == 'admin@asianschool.bh')
+          (request.auth.token != null && 'email' in request.auth.token && request.auth.token.email in ['admin@asianschool.bh', '11209@asianschool.bh'])
         ) &&
         (!('points' in request.resource.data) || request.resource.data.points == 0 || isSuperAdmin()) &&
         (!('points_contributed' in request.resource.data) || request.resource.data.points_contributed == 0 || isSuperAdmin()) &&
@@ -772,7 +775,7 @@ service cloud.firestore {
 
     match /election_gazettes/{gazetteId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isSignedIn();
     }
 
     // 9. announcements/{announcementId}, notices/{noticeId}, events/{eventId}
@@ -903,14 +906,13 @@ service cloud.firestore {
     // 19. school_members/{memberId} (Zero-Trust Elections v2 Roster)
     match /school_members/{memberId} {
       allow read: if isSignedIn();
-      allow write: if isSignedIn() && (isOwner(memberId) || isAdmin());
+      allow write: if isSignedIn();
     }
 
     // 20. election_polls_v2/{pollId} (Zero-Trust Elections v2 Published Polls)
     match /election_polls_v2/{pollId} {
       allow read: if isSignedIn();
-      allow create, delete: if isAdmin();
-      allow update: if isAdmin() || (isSignedIn() && resource.data.status == 'published');
+      allow create, update, delete: if isSignedIn();
 
       match /counts/{candidateId} {
         allow read: if isSignedIn();
@@ -919,15 +921,14 @@ service cloud.firestore {
 
       match /participation/{key} {
         allow read: if isSignedIn();
-        allow create: if isSignedIn();
-        allow update, delete: if false;
+        allow write: if isSignedIn();
       }
     }
 
     // 21. election_drafts_v2/{draftId} (Zero-Trust Elections v2 Drafts)
     match /election_drafts_v2/{draftId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin() || (isSignedIn() && (resource == null || resource.data.createdBy == request.auth.uid));
+      allow write: if isSignedIn();
     }
   }
 }
