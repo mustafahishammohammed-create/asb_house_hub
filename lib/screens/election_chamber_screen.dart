@@ -121,6 +121,74 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                     ),
                   ),
 
+                // Institutional Elections v2 Banner
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            houseColor.withValues(alpha: 0.15),
+                            Colors.deepPurple.withValues(alpha: 0.1),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: houseColor.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: houseColor.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(Icons.how_to_vote_rounded, color: houseColor, size: 24),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Zero-Trust Official Ballots (v2)',
+                                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Cast secret ballots, verify cryptographic receipts, and view certified results.',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: isDark ? Colors.grey[400] : Colors.grey[600],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          FilledButton.tonal(
+                            style: FilledButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            ),
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const SchoolElectionsPage(),
+                                ),
+                              );
+                            },
+                            child: const Text('Open v2', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
                 // Position Selector Pills
                 SliverToBoxAdapter(
                   child: Padding(

@@ -10743,6 +10743,47 @@ void main() {
     await tester.pump();
     expect(find.byType(SchoolElectionsPage), findsOneWidget);
   });
+
+  test('ensureSchoolMemberRecord provisions student roster entry with parsed grade, house, and active status', () async {
+    final authService = AuthService();
+    final studentRecord = await authService.ensureSchoolMemberRecord(
+      uid: 'test_student_uid_123',
+      profile: {
+        'scholar_no': 'SCH-042',
+        'full_name': 'Mustafa Ahmed',
+        'house_name': 'emerald',
+        'class_level': 'Grade 11-A',
+        'role': 'student',
+      },
+    );
+
+    expect(studentRecord['active'], isTrue);
+    expect(studentRecord['role'], equals('student'));
+    expect(studentRecord['scholar_no'], equals('SCH-042'));
+    expect(studentRecord['display_name'], equals('Mustafa Ahmed'));
+    expect(studentRecord['house'], equals('emerald'));
+    expect(studentRecord['grade'], equals(11));
+    expect(studentRecord['capabilities']['manage_elections'], isFalse);
+  });
+
+  test('ensureSchoolMemberRecord provisions staff/admin with manage_elections capability', () async {
+    final authService = AuthService();
+    final adminRecord = await authService.ensureSchoolMemberRecord(
+      uid: 'test_admin_uid_999',
+      profile: {
+        'scholar_no': 'admin',
+        'full_name': 'Principal Administrator',
+        'house_name': 'ruby',
+        'role': 'super_admin',
+      },
+    );
+
+    expect(adminRecord['active'], isTrue);
+    expect(adminRecord['role'], equals('admin'));
+    expect(adminRecord['scholar_no'], equals('admin'));
+    expect(adminRecord['display_name'], equals('Principal Administrator'));
+    expect(adminRecord['capabilities']['manage_elections'], isTrue);
+  });
 }
 
 class _Phase4MockHttpClient extends http.BaseClient {

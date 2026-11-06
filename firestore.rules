@@ -168,6 +168,45 @@ rules_version = '2';
 //     - mvp_awards_count / matches_played: int (optional, >= 0)
 //     - updated_at: timestamp (optional)
 //
+// 19. school_members/{memberId}
+//     - scholar_no: string (4-64 chars) - verified school roster identifier
+//     - display_name: string (<= 120 chars)
+//     - role: string ('student', 'teacher', 'admin', etc.)
+//     - grade: int (optional, 1-12)
+//     - house: string ('ruby', 'sapphire', 'emerald', 'topaz')
+//     - active: bool
+//     - capabilities: map (optional, e.g. manage_elections: bool)
+//
+// 20. election_polls_v2/{pollId}
+//     - title: string (<= 120 chars)
+//     - position: string
+//     - minGrade: int (1-12)
+//     - maxGrade: int (1-12)
+//     - house: string ('all', 'ruby', 'sapphire', 'emerald', 'topaz')
+//     - opensAt: timestamp
+//     - closesAt: timestamp
+//     - candidates: list of candidate maps [{id, name, statement}]
+//     - status: string ('published', 'certified')
+//     - publishedAt: timestamp (optional)
+//     - result: map (optional, rows, total, leaders, outcome)
+//     - certifiedAt: timestamp (optional)
+//     - Subcollection counts/{candidateId}: count: int
+//     - Subcollection participation/{key}: receipt: string
+//
+// 21. election_drafts_v2/{draftId}
+//     - title: string (<= 120 chars)
+//     - position: string
+//     - minGrade: int (1-12)
+//     - maxGrade: int (1-12)
+//     - house: string ('all', 'ruby', 'sapphire', 'emerald', 'topaz')
+//     - startMs: int
+//     - endMs: int
+//     - candidates: list of candidate maps [{id, uid, name, statement}]
+//     - status: string ('draft', 'published', 'certified')
+//     - createdBy: string (uid)
+//     - publishedBy: string (optional, uid)
+//     - certifiedBy: string (optional, uid)
+//
 // ===============================================================
 
 service cloud.firestore {
@@ -859,6 +898,36 @@ service cloud.firestore {
     match /player_sports_stats/{statsId} {
       allow read: if isSignedIn();
       allow write: if isSportsLead() && isValidPlayerSportsStats(request.resource.data);
+    }
+
+    // 19. school_members/{memberId} (Zero-Trust Elections v2 Roster)
+    match /school_members/{memberId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (isOwner(memberId) || isAdmin());
+    }
+
+    // 20. election_polls_v2/{pollId} (Zero-Trust Elections v2 Published Polls)
+    match /election_polls_v2/{pollId} {
+      allow read: if isSignedIn();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (isSignedIn() && resource.data.status == 'published');
+
+      match /counts/{candidateId} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn();
+      }
+
+      match /participation/{key} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn();
+        allow update, delete: if false;
+      }
+    }
+
+    // 21. election_drafts_v2/{draftId} (Zero-Trust Elections v2 Drafts)
+    match /election_drafts_v2/{draftId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() || (isSignedIn() && (resource == null || resource.data.createdBy == request.auth.uid));
     }
   }
 }

@@ -2138,6 +2138,10 @@ class AuthService {
       );
 
       await saveAccount(updated);
+      AuthService().ensureSchoolMemberRecord(
+        uid: updated.uid,
+        profile: updated.cachedProfile,
+      ).catchError((_) => <String, dynamic>{});
     } catch (e) {
       debugPrint('Error recording active account: $e');
     }
@@ -2657,7 +2661,97 @@ class AuthService {
     // Update display name
     await user.updateDisplayName(fullName);
 
+    await ensureSchoolMemberRecord(
+      uid: uid,
+      profile: profileData,
+    ).catchError((_) => <String, dynamic>{});
+
     return credential;
+  }
+
+  /// Ensures the authenticated user or specified user has a valid, active entry in
+  /// the authoritative `school_members/{uid}` roster collection.
+  ///
+  /// This prevents roster lookup failures in elections, voting, and candidate nominations.
+  Future<Map<String, dynamic>> ensureSchoolMemberRecord({
+    String? uid,
+    Map<String, dynamic>? profile,
+  }) async {
+    final effectiveUid = uid?.trim().isNotEmpty == true
+        ? uid!.trim()
+        : (currentUser?.uid ?? getCachedUid() ?? '');
+
+    Map<String, dynamic> prof = profile != null
+        ? Map<String, dynamic>.from(profile)
+        : (getCachedProfile() ?? {});
+
+    if (prof.isEmpty && effectiveUid.isNotEmpty && _isFirebaseLive) {
+      try {
+        final uDoc = await _firestore.collection('users').doc(effectiveUid).get();
+        if (uDoc.exists && uDoc.data() != null) {
+          prof = Map<String, dynamic>.from(uDoc.data()!);
+        }
+      } catch (_) {}
+    }
+
+    final scholarNo = (prof['scholar_no'] ?? prof['scholarNo'] ?? getCachedScholarNo() ?? '').toString().trim();
+    final displayName = (prof['full_name'] ?? prof['name'] ?? currentUser?.displayName ?? 'Student Scholar').toString().trim();
+    final houseRaw = (prof['house_name'] ?? prof['house'] ?? getCachedHouse() ?? 'ruby').toString().trim().toLowerCase();
+    final house = ['ruby', 'sapphire', 'emerald', 'topaz'].contains(houseRaw) ? houseRaw : 'ruby';
+    final roleRaw = (prof['role'] ?? 'student').toString().trim().toLowerCase();
+
+    final isStaffOrAdmin = roleRaw == 'admin' ||
+        roleRaw == 'super_admin' ||
+        roleRaw == 'teacher' ||
+        roleRaw == 'faculty' ||
+        roleRaw == 'principal' ||
+        roleRaw == 'staff' ||
+        scholarNo.toLowerCase() == 'admin';
+
+    // Parse grade (1 to 12) from class_level or grade
+    int grade = 10;
+    final rawGrade = prof['grade'] ?? prof['class_level'] ?? prof['class'];
+    if (rawGrade is int) {
+      grade = rawGrade.clamp(1, 12);
+    } else if (rawGrade is num) {
+      grade = rawGrade.toInt().clamp(1, 12);
+    } else if (rawGrade is String) {
+      final match = RegExp(r'\d+').firstMatch(rawGrade);
+      if (match != null) {
+        final parsed = int.tryParse(match.group(0)!);
+        if (parsed != null && parsed >= 1 && parsed <= 12) {
+          grade = parsed;
+        }
+      }
+    }
+
+    final memberRecord = <String, dynamic>{
+      'active': true,
+      'role': isStaffOrAdmin ? 'admin' : 'student',
+      'scholar_no': scholarNo.isNotEmpty
+          ? scholarNo
+          : (isStaffOrAdmin
+              ? 'admin'
+              : 'SCH-${effectiveUid.length >= 6 ? effectiveUid.substring(0, 6).toUpperCase() : "001"}'),
+      'display_name': displayName.isNotEmpty ? displayName : 'Student Scholar',
+      'house': house,
+      'grade': grade,
+      'capabilities': {
+        'manage_elections': isStaffOrAdmin,
+      },
+      'last_verified': FieldValue.serverTimestamp(),
+    };
+
+    if (effectiveUid.isNotEmpty && _isFirebaseLive) {
+      try {
+        final docRef = _firestore.collection('school_members').doc(effectiveUid);
+        await docRef.set(memberRecord, SetOptions(merge: true));
+      } catch (e) {
+        debugPrint('ensureSchoolMemberRecord sync note: $e');
+      }
+    }
+
+    return memberRecord;
   }
 
   /// Fetch user profile from Firestore by UID with dynamic roster role resolution.
