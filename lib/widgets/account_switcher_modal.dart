@@ -626,10 +626,10 @@ class _AddSiblingModalState extends State<AddSiblingModal> {
       _errorMessage = null;
     });
 
-    try {
-      final scholarText = _scholarController.text.trim();
-      final passwordText = _passwordController.text;
+    final scholarText = _scholarController.text.trim();
+    final passwordText = _passwordController.text;
 
+    try {
       final newAccount = await _authService.addSiblingAccount(
         scholarNo: scholarText,
         password: passwordText,
@@ -641,16 +641,21 @@ class _AddSiblingModalState extends State<AddSiblingModal> {
       await widget.onAccountAdded(newAccount);
     } catch (e) {
       if (!mounted) return;
-      String friendlyMessage = e.toString().replaceAll('Exception: ', '');
-      if (friendlyMessage.contains('user-not-found')) {
-        friendlyMessage = 'No student account found for this scholar number.';
-      } else if (friendlyMessage.contains('wrong-password') ||
-          friendlyMessage.contains('invalid-credential')) {
-        friendlyMessage = 'Incorrect password for this student account.';
-      } else if (friendlyMessage.contains('network-request-failed')) {
-        friendlyMessage = 'Network connection failed. Please check your internet.';
+      final rawMsg = e.toString().replaceAll('Exception: ', '');
+      String friendlyMessage;
+      if (rawMsg.toLowerCase().contains('user-not-found') ||
+          rawMsg.toLowerCase().contains('account not found') ||
+          rawMsg.toLowerCase().contains('no student account found')) {
+        friendlyMessage = 'Account not found for scholar #$scholarText.';
+      } else if (rawMsg.toLowerCase().contains('wrong-password') ||
+          rawMsg.toLowerCase().contains('password wrong') ||
+          rawMsg.toLowerCase().contains('incorrect password')) {
+        friendlyMessage = 'Password wrong for scholar #$scholarText.';
+      } else if (rawMsg.toLowerCase().contains('timeout') ||
+          rawMsg.toLowerCase().contains('network')) {
+        friendlyMessage = 'Network connection timed out. Please check your internet connection.';
       } else {
-        friendlyMessage = friendlyMessage
+        friendlyMessage = rawMsg
             .replaceAll('[firebase_auth/', '')
             .replaceAll(']', '')
             .trim();

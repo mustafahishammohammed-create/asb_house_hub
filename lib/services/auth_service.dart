@@ -2184,8 +2184,12 @@ class AuthService {
       // In live environment, rethrow real auth failures
       rethrow;
     } catch (e) {
-      // In test harness or pure offline mock mode (no Firebase App initialized), proceed locally
-      debugPrint('addSiblingAccount offline/test fallback: $e');
+      if (_isNoAppException(e)) {
+        // In test harness (no Firebase App initialized), proceed locally
+        debugPrint('addSiblingAccount test harness fallback: $e');
+      } else {
+        rethrow;
+      }
     }
 
     final inferredHouse = inferHouseFromScholarNo(cleanScholar) ?? 'emerald';
@@ -2273,11 +2277,62 @@ class AuthService {
     UserCredential cred;
 
     try {
-      cred = await _auth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-    } on FirebaseAuthException {
+      cred = await _auth
+          .signInWithEmailAndPassword(
+            email: email,
+            password: password,
+          )
+          .timeout(
+            const Duration(seconds: 6),
+            onTimeout: () => throw Exception('Firebase authentication connection timed out.'),
+          );
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'user-not-found') {
+        throw FirebaseAuthException(
+          code: 'user-not-found',
+          message: 'Account not found for scholar #$cleanScholar.',
+        );
+      }
+      if (e.code == 'wrong-password') {
+        throw FirebaseAuthException(
+          code: 'wrong-password',
+          message: 'Password wrong for scholar #$cleanScholar.',
+        );
+      }
+      if (e.code == 'invalid-credential' || e.code == 'invalid-login-credentials') {
+        // Distinguish between account not found vs wrong password using Firestore
+        bool exists = false;
+        try {
+          final querySnap = await _firestore
+              .collection('users')
+              .where('scholar_no', isEqualTo: cleanScholar)
+              .limit(1)
+              .get()
+              .timeout(const Duration(seconds: 2));
+          if (querySnap.docs.isNotEmpty) {
+            exists = true;
+          } else {
+            final docSnap = await _firestore
+                .collection('users')
+                .doc(cleanScholar)
+                .get()
+                .timeout(const Duration(seconds: 2));
+            if (docSnap.exists) exists = true;
+          }
+        } catch (_) {}
+
+        if (!exists) {
+          throw FirebaseAuthException(
+            code: 'user-not-found',
+            message: 'Account not found for scholar #$cleanScholar.',
+          );
+        } else {
+          throw FirebaseAuthException(
+            code: 'wrong-password',
+            message: 'Password wrong for scholar #$cleanScholar.',
+          );
+        }
+      }
       rethrow;
     }
 

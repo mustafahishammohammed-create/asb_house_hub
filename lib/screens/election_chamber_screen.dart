@@ -4,6 +4,7 @@ import '../models/digital_ballot_cast.dart';
 import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
 import 'home_screen.dart';
+import 'election_gazette_screen.dart';
 import 'school_elections_page.dart';
 
 /// Screen for exploring Student Council & House Captain elections, candidates, manifestos, and voting.
@@ -50,6 +51,23 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.newspaper_rounded),
+            tooltip: 'Campus Election Gazette & Proclamations',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const ElectionGazetteScreen(),
+                ),
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.add_circle_outline_rounded),
+            tooltip: 'Create Ballot & Candidates',
+            onPressed: () => _showCreateBallotModal(context, houseColor),
+          ),
+          IconButton(
             icon: const Icon(Icons.how_to_vote_rounded),
             tooltip: 'Ballots & Roster Governance',
             onPressed: () {
@@ -64,6 +82,13 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
         ],
         elevation: 0,
         backgroundColor: Colors.transparent,
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: houseColor,
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.add_task_rounded),
+        label: const Text('Create Ballot', style: TextStyle(fontWeight: FontWeight.w900)),
+        onPressed: () => _showCreateBallotModal(context, houseColor),
       ),
       body: StreamBuilder<List<ElectionBallot>>(
         initialData: cachedBallots,
@@ -132,7 +157,7 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                 if (filteredBallots.isEmpty)
                   SliverFillRemaining(
                     hasScrollBody: false,
-                    child: _buildEmptyState(isDark),
+                    child: _buildEmptyState(isDark, houseColor),
                   )
                 else
                   SliverPadding(
@@ -603,6 +628,25 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                     ),
             ),
           ],
+          if (ballot.isOpen && ballot.candidates.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.amber.shade800,
+                  side: BorderSide(color: Colors.amber.shade800.withValues(alpha: 0.5)),
+                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                icon: const Icon(Icons.workspace_premium_rounded, size: 18),
+                label: const Text(
+                  'Close & Certify Election Proclamation',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                ),
+                onPressed: () => _certifyBallotWinner(ballot, houseColor),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -880,7 +924,7 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
     );
   }
 
-  Widget _buildEmptyState(bool isDark) {
+  Widget _buildEmptyState(bool isDark, Color houseColor) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -909,9 +953,524 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                 color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
               ),
             ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: houseColor,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                elevation: 3,
+              ),
+              icon: const Icon(Icons.add_task_rounded, size: 20),
+              label: const Text(
+                'Create Ballot & Add Candidates',
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
+              ),
+              onPressed: () => _showCreateBallotModal(context, houseColor),
+            ),
           ],
         ),
       ),
     );
+  }
+
+  void _showCreateBallotModal(BuildContext context, Color houseColor) {
+    final titleController = TextEditingController(text: 'Student Council Election 2026');
+    final scholarController = TextEditingController();
+    final nameController = TextEditingController();
+    final manifestoController = TextEditingController();
+
+    BallotPosition selectedPosition = BallotPosition.headBoy;
+    String selectedHouse = 'ruby';
+    String selectedScope = 'all';
+    final candidatesDraft = <ElectionCandidate>[];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (modalCtx) => StatefulBuilder(
+        builder: (modalCtx, setModalState) {
+          final isDark = Theme.of(modalCtx).brightness == Brightness.dark;
+          final candColor = HouseColors.getHouseColor(selectedHouse);
+
+          return Container(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(modalCtx).size.height * 0.9,
+            ),
+            padding: EdgeInsets.only(
+              left: 24,
+              right: 24,
+              top: 20,
+              bottom: MediaQuery.of(modalCtx).viewInsets.bottom + 24,
+            ),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E293B) : Colors.white,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 44,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: houseColor.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Icon(Icons.how_to_vote_rounded, color: houseColor, size: 24),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Create Election Ballot',
+                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                            ),
+                            Text(
+                              'Add candidates by scholar number & publish to school',
+                              style: TextStyle(fontSize: 12, color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () => Navigator.pop(modalCtx),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  // Ballot Title
+                  TextField(
+                    controller: titleController,
+                    decoration: InputDecoration(
+                      labelText: 'Ballot Title',
+                      hintText: 'e.g. 2026 Student Council Election',
+                      filled: true,
+                      fillColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Position & House Scope
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<BallotPosition>(
+                          initialValue: selectedPosition,
+                          decoration: InputDecoration(
+                            labelText: 'Position',
+                            filled: true,
+                            fillColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                          ),
+                          items: BallotPosition.values
+                              .where((p) => p != BallotPosition.all)
+                              .map((p) => DropdownMenuItem(
+                                    value: p,
+                                    child: Text(p.displayName, style: const TextStyle(fontSize: 13)),
+                                  ))
+                              .toList(),
+                          onChanged: (val) {
+                            if (val != null) setModalState(() => selectedPosition = val);
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          initialValue: selectedScope,
+                          decoration: InputDecoration(
+                            labelText: 'House Scope',
+                            filled: true,
+                            fillColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                          ),
+                          items: const [
+                            DropdownMenuItem(value: 'all', child: Text('All Houses', style: TextStyle(fontSize: 13))),
+                            DropdownMenuItem(value: 'ruby', child: Text('Ruby Only', style: TextStyle(fontSize: 13))),
+                            DropdownMenuItem(value: 'emerald', child: Text('Emerald Only', style: TextStyle(fontSize: 13))),
+                            DropdownMenuItem(value: 'sapphire', child: Text('Sapphire Only', style: TextStyle(fontSize: 13))),
+                            DropdownMenuItem(value: 'topaz', child: Text('Topaz Only', style: TextStyle(fontSize: 13))),
+                          ],
+                          onChanged: (val) {
+                            if (val != null) setModalState(() => selectedScope = val);
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  const Divider(),
+                  const SizedBox(height: 10),
+                  // Candidates Section Header
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Candidates (${candidatesDraft.length})',
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+                      ),
+                      if (candidatesDraft.isNotEmpty)
+                        Text(
+                          '${candidatesDraft.length} added',
+                          style: TextStyle(color: houseColor, fontWeight: FontWeight.w700, fontSize: 12),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  // Display Candidates in Draft
+                  if (candidatesDraft.isEmpty)
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
+                      ),
+                      child: const Center(
+                        child: Text(
+                          'No candidates added to this ballot yet. Fill in below to add.',
+                          style: TextStyle(color: Colors.grey, fontSize: 13),
+                        ),
+                      ),
+                    )
+                  else
+                    ...candidatesDraft.asMap().entries.map((entry) {
+                      final idx = entry.key;
+                      final cand = entry.value;
+                      final hColor = HouseColors.getHouseColor(cand.houseName);
+
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: hColor.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: hColor.withValues(alpha: 0.3)),
+                        ),
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 16,
+                              backgroundColor: hColor.withValues(alpha: 0.2),
+                              child: Text(
+                                HouseColors.getHouseEmoji(cand.houseName),
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    cand.fullName,
+                                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                                  ),
+                                  Text(
+                                    '#${cand.scholarNo} • ${cand.houseName.toUpperCase()} House',
+                                    style: TextStyle(fontSize: 11, color: hColor, fontWeight: FontWeight.w600),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
+                              onPressed: () {
+                                setModalState(() => candidatesDraft.removeAt(idx));
+                              },
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  const SizedBox(height: 14),
+                  // Add Candidate Card
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.grey.withValues(alpha: 0.25)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '+ Add Candidate by Scholar Number',
+                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              flex: 3,
+                              child: TextField(
+                                controller: scholarController,
+                                decoration: InputDecoration(
+                                  labelText: 'Scholar #',
+                                  hintText: 'e.g. 2310001',
+                                  filled: true,
+                                  fillColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                                onChanged: (val) {
+                                  final inferred = AuthService.inferHouseFromScholarNo(val.trim());
+                                  if (inferred != null) {
+                                    setModalState(() => selectedHouse = inferred);
+                                  }
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              flex: 4,
+                              child: TextField(
+                                controller: nameController,
+                                decoration: InputDecoration(
+                                  labelText: 'Candidate Name',
+                                  hintText: 'Full Name',
+                                  filled: true,
+                                  fillColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: DropdownButtonFormField<String>(
+                                initialValue: selectedHouse,
+                                decoration: InputDecoration(
+                                  labelText: 'House',
+                                  filled: true,
+                                  fillColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                                items: const [
+                                  DropdownMenuItem(value: 'ruby', child: Text('Ruby 🔴', style: TextStyle(fontSize: 13))),
+                                  DropdownMenuItem(value: 'emerald', child: Text('Emerald 🟢', style: TextStyle(fontSize: 13))),
+                                  DropdownMenuItem(value: 'sapphire', child: Text('Sapphire 🔵', style: TextStyle(fontSize: 13))),
+                                  DropdownMenuItem(value: 'topaz', child: Text('Topaz 🟡', style: TextStyle(fontSize: 13))),
+                                ],
+                                onChanged: (val) {
+                                  if (val != null) setModalState(() => selectedHouse = val);
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        TextField(
+                          controller: manifestoController,
+                          maxLines: 2,
+                          decoration: InputDecoration(
+                            labelText: 'Campaign Manifesto & Pledges',
+                            hintText: 'Key initiatives, motto or pledges for the student body...',
+                            filled: true,
+                            fillColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: candColor,
+                            foregroundColor: Colors.white,
+                            minimumSize: const Size.fromHeight(44),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),
+                          label: const Text('Add Candidate to List', style: TextStyle(fontWeight: FontWeight.w800)),
+                          onPressed: () {
+                            final sNo = scholarController.text.trim();
+                            final name = nameController.text.trim();
+                            if (sNo.isEmpty) {
+                              ScaffoldMessenger.of(modalCtx).showSnackBar(
+                                const SnackBar(content: Text('Please enter candidate scholar number.')),
+                              );
+                              return;
+                            }
+                            final effectiveName = name.isNotEmpty ? name : 'Scholar #$sNo';
+                            final manifesto = manifestoController.text.trim();
+
+                            setModalState(() {
+                              candidatesDraft.add(ElectionCandidate(
+                                scholarNo: sNo,
+                                fullName: effectiveName,
+                                houseName: selectedHouse,
+                                runningPosition: selectedPosition.displayName,
+                                manifesto: manifesto,
+                                votesCount: 0,
+                              ));
+                              scholarController.clear();
+                              nameController.clear();
+                              manifestoController.clear();
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  // Publish Official Ballot Button
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: houseColor,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      elevation: 3,
+                    ),
+                    icon: const Icon(Icons.rocket_launch_rounded, size: 20),
+                    label: const Text(
+                      'Publish Official Ballot',
+                      style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+                    ),
+                    onPressed: () async {
+                      final title = titleController.text.trim();
+                      if (title.isEmpty) {
+                        ScaffoldMessenger.of(modalCtx).showSnackBar(
+                          const SnackBar(content: Text('Please enter a ballot title.')),
+                        );
+                        return;
+                      }
+                      if (candidatesDraft.isEmpty) {
+                        ScaffoldMessenger.of(modalCtx).showSnackBar(
+                          const SnackBar(content: Text('Please add at least one candidate before publishing.')),
+                        );
+                        return;
+                      }
+
+                      final newBallot = ElectionBallot(
+                        id: 'ballot_${DateTime.now().millisecondsSinceEpoch}',
+                        title: title,
+                        position: selectedPosition,
+                        houseScope: selectedScope,
+                        eligibleGrades: const ['Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'],
+                        status: BallotStatus.open,
+                        startTime: DateTime.now(),
+                        endTime: DateTime.now().add(const Duration(days: 7)),
+                        candidates: candidatesDraft,
+                        totalVotesCast: 0,
+                      );
+
+                      Navigator.pop(modalCtx);
+                      final res = await AuthService().createElectionBallot(newBallot);
+                      if (mounted) {
+                        if (res.success) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('🎉 Official election ballot published! Voting is now open.'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(res.error ?? 'Failed to publish ballot.'),
+                              backgroundColor: Colors.redAccent,
+                            ),
+                          );
+                        }
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _certifyBallotWinner(ElectionBallot ballot, Color houseColor) async {
+    if (ballot.candidates.isEmpty) return;
+
+    final sortedCandidates = List<ElectionCandidate>.from(ballot.candidates)
+      ..sort((a, b) => b.votesCount.compareTo(a.votesCount));
+    final winner = sortedCandidates.first;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.workspace_premium_rounded, color: Colors.amber, size: 28),
+            SizedBox(width: 8),
+            Expanded(child: Text('Certify Election Result?')),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to officially certify ${winner.fullName} (#${winner.scholarNo}) as the winning ${winner.runningPosition} with ${winner.votesCount} votes?\n\nThis will proclaim the results in the Campus Gazette and award +100 merit points to ${winner.houseName.toUpperCase()} House.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.amber.shade700,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(dialogCtx, true),
+            child: const Text('Certify & Award Points'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      final res = await _authService.certifyElectionAndAwardPoints(
+        ballotId: ballot.id,
+        ballotTitle: ballot.title,
+        winner: winner,
+        victoryMargin: (winner.votesCount - (sortedCandidates.length > 1 ? sortedCandidates[1].votesCount : 0)),
+        commissionerName: _effectiveScholarNo.isNotEmpty ? 'Scholar #$_effectiveScholarNo' : 'Returning Officer',
+      );
+
+      if (mounted) {
+        if (res.success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('🏆 ${winner.fullName} officially certified! +100 House Points awarded.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(res.error ?? 'Certification failed.'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      }
+    }
   }
 }

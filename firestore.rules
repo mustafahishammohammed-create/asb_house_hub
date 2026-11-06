@@ -716,7 +716,7 @@ service cloud.firestore {
     }
 
     match /election_votes/{voteId} {
-      allow read: if isAdmin();
+      allow read: if isSignedIn();
       allow create: if isSignedIn() &&
         hasRequiredFields(['ballot_id', 'voter_hash', 'proof_token', 'timestamp']) &&
         request.resource.data.ballot_id is string && request.resource.data.ballot_id.size() <= 64 &&
