@@ -76,6 +76,14 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
   String? unconfirmedDraftId;
   final receipts = <String, String>{};
 
+  static DateTime _parseSafeDate(dynamic v) {
+    if (v is Timestamp) return v.toDate();
+    if (v is DateTime) return v;
+    if (v is int) return DateTime.fromMillisecondsSinceEpoch(v);
+    if (v is String) return DateTime.tryParse(v) ?? DateTime.now();
+    return DateTime.now();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -449,9 +457,11 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
         if (dData['status'] != 'draft') throw StateError('Published candidates are frozen.');
 
         final curList = (dData['candidates'] as List? ?? []).cast<Map>();
-        final existing = curList.firstWhere((c) => c['uid'] == candUid, orElse: () => {});
-        final candId = existing['id'] ?? 'cnd_${DateTime.now().millisecondsSinceEpoch}_${curList.length + 1}';
-        final filtered = curList.where((c) => c['uid'] != candUid).map((c) => Map<String, dynamic>.from(c)).toList();
+        if (curList.any((c) => c['scholar_no']?.toString().trim() == scholar || c['uid'] == candUid)) {
+          throw StateError('Scholar #$scholar is already configured on this candidate slate.');
+        }
+        final candId = 'cnd_${DateTime.now().millisecondsSinceEpoch}_${curList.length + 1}';
+        final filtered = curList.where((c) => c['uid'] != candUid && c['scholar_no']?.toString().trim() != scholar).map((c) => Map<String, dynamic>.from(c)).toList();
         filtered.add({
           'id': candId,
           'uid': candUid,
@@ -463,6 +473,11 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
         tx.update(draftRef, {'candidates': filtered});
         return {'pollId': pollId, 'candidateId': candId};
       });
+    }
+
+    if (action == 'deleteDraft' || action == 'discard') {
+      await draftRef.delete();
+      return {'pollId': pollId, 'status': 'deleted'};
     }
 
     if (action == 'remove') {
@@ -514,6 +529,31 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
           'publishedAt': FieldValue.serverTimestamp(),
         });
         tx.update(draftRef, {'status': 'published', 'publishedBy': user.uid});
+
+        // Synchronize with Chamber v1 collection
+        final legacyCandidates = pubCandidates.map((c) => {
+          'scholar_no': c['scholar_no'] ?? c['id'],
+          'full_name': c['name'],
+          'house_name': (d['house'] == 'all' ? 'ruby' : d['house']).toString().toLowerCase(),
+          'running_position': d['position'],
+          'manifesto': c['statement'] ?? '',
+          'votes_count': 0,
+          'is_verified': true,
+        }).toList();
+
+        final legacyElectionRef = db.collection('elections').doc(pollId);
+        tx.set(legacyElectionRef, {
+          'id': pollId,
+          'title': d['title'],
+          'position': d['position'],
+          'house_scope': d['house'],
+          'status': 'open',
+          'start_time': now.toIso8601String(),
+          'end_time': DateTime.fromMillisecondsSinceEpoch(nowMs + durationMs).toIso8601String(),
+          'candidates': legacyCandidates,
+          'total_votes_cast': 0,
+        }, SetOptions(merge: true));
+
         return {'pollId': pollId, 'status': 'published'};
       });
     }
@@ -555,6 +595,13 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
           'closesAt': FieldValue.serverTimestamp(),
           'result': result,
           'certifiedAt': FieldValue.serverTimestamp(),
+        });
+
+        final legacyElectionRef = db.collection('elections').doc(pollId);
+        tx.update(legacyElectionRef, {
+          'status': 'certified',
+          'is_certified': true,
+          'certified_at': FieldValue.serverTimestamp(),
         });
 
         final draftSnap = await tx.get(draftRef);
@@ -851,7 +898,6 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
     String detectedHouse = 'ruby';
     String detectedClass = 'Grade 10';
     bool isLookingUp = false;
-    bool isAutoFilled = false;
     bool isRosterMatch = false;
     String? rosterMatchInfo;
 
@@ -863,26 +909,9 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
 
           Future<void> doLookup(String raw) async {
             final clean = raw.trim();
-            if (clean.isEmpty) {
-              if (isAutoFilled) {
-                nameCtrl.clear();
-                statementCtrl.clear();
-                isAutoFilled = false;
-              }
-              setDlgState(() {
-                isRosterMatch = false;
-                rosterMatchInfo = null;
-                isLookingUp = false;
-              });
-              return;
-            }
-
-            if (clean.length < 3) {
-              if (isAutoFilled) {
-                nameCtrl.clear();
-                statementCtrl.clear();
-                isAutoFilled = false;
-              }
+            if (clean.isEmpty || (clean.length < 4 && clean.toLowerCase() != 'admin')) {
+              nameCtrl.clear();
+              statementCtrl.clear();
               setDlgState(() {
                 isRosterMatch = false;
                 rosterMatchInfo = null;
@@ -898,7 +927,7 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
               final details = await AuthService.lookupScholarDetails(clean);
               if (!ctx.mounted) return;
               final isFound = details['isFound'] == true;
-              final fullName = details['fullName'] as String? ?? '';
+              final fullName = (details['fullName'] as String? ?? '').trim();
               final house = details['houseName'] as String? ?? 'ruby';
               final manifesto = details['manifesto'] as String? ?? '';
               final grade = details['classLevel'] as String? ?? 'Grade 10';
@@ -908,18 +937,14 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
                 statementCtrl.text = manifesto;
                 detectedHouse = house;
                 detectedClass = grade;
-                isAutoFilled = true;
                 setDlgState(() {
                   isRosterMatch = true;
                   rosterMatchInfo = '$fullName ($grade • ${house.toUpperCase()})';
                   isLookingUp = false;
                 });
               } else {
-                if (isAutoFilled) {
-                  nameCtrl.clear();
-                  statementCtrl.clear();
-                  isAutoFilled = false;
-                }
+                nameCtrl.clear();
+                statementCtrl.clear();
                 setDlgState(() {
                   isRosterMatch = false;
                   rosterMatchInfo = null;
@@ -1013,7 +1038,6 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
                   const SizedBox(height: 12),
                   TextField(
                     controller: nameCtrl,
-                    onChanged: (_) => isAutoFilled = false,
                     decoration: InputDecoration(
                       labelText: 'Candidate Full Name (Editable)',
                       filled: true,
@@ -1025,7 +1049,6 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
                   TextField(
                     controller: statementCtrl,
                     maxLines: 3,
-                    onChanged: (_) => isAutoFilled = false,
                     decoration: InputDecoration(
                       labelText: 'Manifesto Pledge (Editable)',
                       filled: true,
@@ -1099,8 +1122,8 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
     if (!mounted) return;
     final receipt = result['receipt'] as String?;
     if (receipt != null) {
-      receipts[id] = receipt;
       final activeScholar = (AuthService.getCachedScholarNo() ?? '').toString().trim();
+      receipts['${activeScholar}_$id'] = receipt;
       if (candidateId != null && activeScholar.isNotEmpty) {
         final castReceipt = BallotCastReceipt(
           receiptId: receipt,
@@ -1210,13 +1233,40 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: Colors.orange.withValues(alpha: 0.2),
+                    color: candidates.length >= 2
+                        ? Colors.green.withValues(alpha: 0.15)
+                        : Colors.orange.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: candidates.length >= 2 ? Colors.green : Colors.orange,
+                      width: 0.8,
+                    ),
                   ),
-                  child: const Text(
-                    '📝 DRAFT',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.orange),
+                  child: Text(
+                    candidates.length >= 2 ? 'READY TO PUBLISH (${candidates.length})' : 'NEEDS CANDIDATES (${candidates.length}/2)',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      color: candidates.length >= 2 ? Colors.green[700] : Colors.orange[800],
+                    ),
                   ),
+                ),
+                const SizedBox(width: 4),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
+                  tooltip: 'Discard Draft',
+                  onPressed: busy
+                      ? null
+                      : () async {
+                          if (await confirm('Discard Draft?', 'Are you sure you want to permanently delete "${p['title']}"?') && mounted) {
+                            await run(() async => call('deleteDraft', doc.id));
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Draft ballot discarded.')),
+                              );
+                            }
+                          }
+                        },
                 ),
               ],
             ),
@@ -1377,8 +1427,8 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
 
   Widget ballot(ElectionDoc doc, Fields member) {
     final p = doc.data();
-    final opens = (p['opensAt'] as Timestamp).toDate();
-    final closes = (p['closesAt'] as Timestamp).toDate();
+    final opens = _parseSafeDate(p['opensAt'] ?? p['start_time']);
+    final closes = _parseSafeDate(p['closesAt'] ?? p['end_time']);
     final now = DateTime.now();
     final published = p['status'] == 'published';
     final inWindow = !now.isBefore(opens) && now.isBefore(closes);
@@ -1389,9 +1439,9 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
         grade >= (p['minGrade'] as int? ?? 1) &&
         grade <= (p['maxGrade'] as int? ?? 12) &&
         (p['house'] == 'all' || p['house'] == member['house']);
-    final activeScholar = (member['scholar_no'] ?? AuthService.getCachedScholarNo() ?? '').toString().trim();
+    final activeScholar = (AuthService.getCachedScholarNo() ?? member['scholar_no'] ?? '').toString().trim();
     final cachedRcpt = AuthService.getReceiptForBallot(doc.id, scholarNo: activeScholar);
-    final recorded = receipts[doc.id] ?? cachedRcpt?.receiptId;
+    final recorded = receipts['${activeScholar}_${doc.id}'] ?? cachedRcpt?.receiptId;
     final candidates = (p['candidates'] as List? ?? []).cast<Map>();
     final result = p['result'] as Map?;
     final counts = <String, int>{
@@ -1790,6 +1840,7 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
             .where((pr) => !certifiedPolls.any((cp) => cp.id == pr.ballotId))
             .toList();
         final totalCertified = certifiedPolls.length + uniqueProclamations.length;
+        final isDark = Theme.of(context).brightness == Brightness.dark;
 
         return Scaffold(
           appBar: AppBar(
@@ -1846,39 +1897,103 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
             body: Column(
               children: [
                 if (busy) const LinearProgressIndicator(),
-                // Voter Identity Hero Strip
+                // Prestigious Commission Hero Card
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  color: Colors.blue.withValues(alpha: 0.08),
+                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: isDark
+                          ? [const Color(0xFF1E293B), const Color(0xFF0F172A)]
+                          : [const Color(0xFF1E3A8A), const Color(0xFF172554)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.15),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
                   child: Row(
                     children: [
-                      CircleAvatar(
-                        radius: 14,
-                        backgroundColor: HouseColors.getHouseColor(data.member['house'] ?? 'ruby'),
-                        child: Text(
-                          HouseColors.getHouseEmoji(data.member['house'] ?? 'ruby'),
-                          style: const TextStyle(fontSize: 11),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.12),
+                          shape: BoxShape.circle,
                         ),
+                        child: const Icon(Icons.shield_outlined, color: Colors.amber, size: 24),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 12),
                       Expanded(
-                        child: Text(
-                          '${data.member['display_name']} • #${data.member['scholar_no']} • ${(data.member['house'] ?? 'ruby').toString().toUpperCase()}',
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    data.member['display_name'] ?? 'Scholar',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 15,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: HouseColors.getHouseColor(data.member['house'] ?? 'ruby'),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    (data.member['house'] ?? 'ruby').toString().toUpperCase(),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Scholar #${data.member['scholar_no']} • ${manage ? "Chief Returning Officer" : "Registered Elector"}',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.75),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: manage ? Colors.deepPurple.withValues(alpha: 0.2) : Colors.green.withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(6),
+                          color: manage
+                              ? Colors.amber.withValues(alpha: 0.2)
+                              : Colors.green.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: manage ? Colors.amber : Colors.greenAccent,
+                            width: 0.8,
+                          ),
                         ),
                         child: Text(
-                          manage ? '🛡️ COMMISSION ADMIN' : '🟢 ACTIVE VOTER',
+                          manage ? '👑 COMMISSION' : '🗳️ ELECTOR',
                           style: TextStyle(
                             fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: manage ? Colors.deepPurple : Colors.green[800],
+                            fontWeight: FontWeight.w900,
+                            color: manage ? Colors.amber : Colors.greenAccent,
                           ),
                         ),
                       ),

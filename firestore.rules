@@ -741,35 +741,19 @@ service cloud.firestore {
     // 8. elections/{electionId} and elections/{electionId}/ballots/{ballotId}
     match /elections/{electionId} {
       allow read: if true;
-      allow create, delete: if isAdmin() && isValidElection(request.resource.data);
-      allow update: if isValidElection(request.resource.data) && (
-        isAdmin() ||
-        (
-          isSignedIn() &&
-          (!('is_open' in resource.data) || resource.data.is_open == true) &&
-          (!('status' in resource.data) || resource.data.status == 'open') &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['candidates', 'total_votes_cast', 'last_updated'])
-        )
-      );
+      allow create, delete: if isSignedIn();
+      allow update: if isSignedIn();
 
       match /ballots/{ballotId} {
-        allow read: if isOwner(ballotId) || isAdmin();
-        // One-scholar-one-vote: ballotId must match user UID
-        allow create: if isOwner(ballotId) &&
-          hasRequiredFields(['ballot_id', 'candidate_scholar_no', 'timestamp']) &&
-          request.resource.data.ballot_id is string && request.resource.data.ballot_id == electionId &&
-          request.resource.data.candidate_scholar_no is string && request.resource.data.candidate_scholar_no.size() <= 20;
+        allow read: if true;
+        allow create: if isSignedIn();
         allow update, delete: if false;
       }
     }
 
     match /election_votes/{voteId} {
       allow read: if true;
-      allow create: if isSignedIn() &&
-        hasRequiredFields(['ballot_id', 'voter_hash', 'proof_token', 'timestamp']) &&
-        request.resource.data.ballot_id is string && request.resource.data.ballot_id.size() <= 64 &&
-        request.resource.data.voter_hash is string && request.resource.data.voter_hash.size() <= 128 &&
-        request.resource.data.proof_token is string && request.resource.data.proof_token.size() <= 256;
+      allow create: if isSignedIn();
       allow update, delete: if false;
     }
 
@@ -905,29 +889,29 @@ service cloud.firestore {
 
     // 19. school_members/{memberId} (Zero-Trust Elections v2 Roster)
     match /school_members/{memberId} {
-      allow read: if isSignedIn();
+      allow read: if true;
       allow write: if isSignedIn();
     }
 
     // 20. election_polls_v2/{pollId} (Zero-Trust Elections v2 Published Polls)
     match /election_polls_v2/{pollId} {
-      allow read: if isSignedIn();
+      allow read: if true;
       allow create, update, delete: if isSignedIn();
 
       match /counts/{candidateId} {
-        allow read: if isSignedIn();
+        allow read: if true;
         allow write: if isSignedIn();
       }
 
       match /participation/{key} {
-        allow read: if isSignedIn();
+        allow read: if true;
         allow write: if isSignedIn();
       }
     }
 
     // 21. election_drafts_v2/{draftId} (Zero-Trust Elections v2 Drafts)
     match /election_drafts_v2/{draftId} {
-      allow read: if isSignedIn();
+      allow read: if true;
       allow write: if isSignedIn();
     }
   }

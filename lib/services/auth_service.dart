@@ -1885,6 +1885,24 @@ class AuthService {
 
       try {
         await _firestore.collection('elections').doc(docId).set(finalBallot.toMap(), SetOptions(merge: true));
+        final v2Candidates = finalBallot.candidates.map((c) => {
+          'id': c.scholarNo.isNotEmpty ? c.scholarNo : 'cand_${c.fullName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_')}',
+          'name': c.fullName,
+          'scholar_no': c.scholarNo,
+          'statement': c.manifesto,
+        }).toList();
+        await _firestore.collection('election_polls_v2').doc(docId).set({
+          'title': finalBallot.title,
+          'position': finalBallot.position.name,
+          'minGrade': 9,
+          'maxGrade': 12,
+          'house': finalBallot.houseScope.toLowerCase(),
+          'opensAt': Timestamp.fromDate(finalBallot.startTime),
+          'closesAt': Timestamp.fromDate(finalBallot.endTime),
+          'candidates': v2Candidates,
+          'status': finalBallot.status == BallotStatus.open ? 'published' : finalBallot.status.name,
+          'publishedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
       } catch (_) {
         // Allow uninitialized Firebase / offline cache write-through in testing
       }
@@ -2203,7 +2221,7 @@ class AuthService {
             .catchError((_) => null as dynamic),
       ]);
       for (final snap in results) {
-        if (snap != null && snap.docs.isNotEmpty) return true;
+        if (snap.docs.isNotEmpty) return true;
       }
     } catch (_) {}
 
@@ -4105,9 +4123,9 @@ class AuthService {
   /// Look up verified student scholar details from roster, users, or saved accounts.
   static Future<Map<String, dynamic>> lookupScholarDetails(String rawScholarNo, {String? runningPosition}) async {
     final clean = rawScholarNo.trim();
-    if (clean.isEmpty) {
+    if (clean.isEmpty || (clean.length < 4 && clean.toLowerCase() != 'admin')) {
       return {
-        'scholarNo': '',
+        'scholarNo': clean,
         'fullName': '',
         'houseName': 'ruby',
         'classLevel': 'Grade 10',
@@ -4116,80 +4134,19 @@ class AuthService {
       };
     }
 
-    // 1. Check local saved accounts
-    try {
-      final accounts = getSavedAccounts();
-      for (final a in accounts) {
-        if (a.scholarNo.trim().toLowerCase() == clean.toLowerCase()) {
-          final isSuper = HierarchyService.isSuperAdmin(scholarNo: a.scholarNo, role: a.role);
-          final name = isSuper && (a.fullName.isEmpty || a.fullName == 'Student')
-              ? 'Administrator'
-              : a.fullName;
-          return {
-            'scholarNo': a.scholarNo,
-            'fullName': name,
-            'houseName': a.houseName.toLowerCase(),
-            'classLevel': a.classLevel ?? 'Grade 11',
-            'manifesto': generateDefaultManifesto(
-              position: runningPosition ?? 'Council Representative',
-              candidateName: name,
-            ),
-            'isFound': true,
-          };
-        }
-      }
-    } catch (_) {}
+    bool isPlaceholderName(String? n) {
+      if (n == null) return true;
+      final s = n.trim().toLowerCase();
+      return s.isEmpty ||
+          s == 'student' ||
+          s == 'scholar' ||
+          s.startsWith('scholar #') ||
+          s.startsWith('scholar#') ||
+          s.startsWith('student scholar') ||
+          RegExp(r'^scholar\s*\d+$').hasMatch(s);
+    }
 
-    // 2. Check school_members or users collections in Firestore
-    try {
-      final snap = await FirebaseFirestore.instance
-          .collection('school_members')
-          .where('scholar_no', isEqualTo: clean)
-          .limit(1)
-          .get();
-      if (snap.docs.isNotEmpty) {
-        final d = snap.docs.first.data();
-        final name = (d['display_name'] ?? '').toString();
-        final house = (d['house'] ?? 'ruby').toString().toLowerCase();
-        final grade = d['grade'] != null ? 'Grade ${d['grade']}' : 'Grade 11';
-        return {
-          'scholarNo': clean,
-          'fullName': name,
-          'houseName': house,
-          'classLevel': grade,
-          'manifesto': generateDefaultManifesto(
-            position: runningPosition ?? 'Council Representative',
-            candidateName: name,
-          ),
-          'isFound': true,
-        };
-      }
-
-      final uSnap = await FirebaseFirestore.instance
-          .collection('users')
-          .where('scholar_no', isEqualTo: clean)
-          .limit(1)
-          .get();
-      if (uSnap.docs.isNotEmpty) {
-        final d = uSnap.docs.first.data();
-        final name = (d['full_name'] ?? '').toString();
-        final house = (d['house_name'] ?? 'ruby').toString().toLowerCase();
-        final grade = (d['class_level'] ?? 'Grade 11').toString();
-        return {
-          'scholarNo': clean,
-          'fullName': name,
-          'houseName': house,
-          'classLevel': grade,
-          'manifesto': generateDefaultManifesto(
-            position: runningPosition ?? 'Council Representative',
-            candidateName: name,
-          ),
-          'isFound': true,
-        };
-      }
-    } catch (_) {}
-
-    // Special case for administrative scholar logins
+    // 1. Special case for administrative scholar logins
     if (clean.toLowerCase() == 'admin' || clean == '11209') {
       return {
         'scholarNo': clean,
@@ -4204,8 +4161,90 @@ class AuthService {
       };
     }
 
-    // 3. Fallback: Scholar not found in records.
-    // Return empty fullName and manifesto so the user can enter their genuine details without fake placeholder names.
+    // 2. Authoritative check in school_members or users collections in Firestore
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('school_members')
+          .where('scholar_no', isEqualTo: clean)
+          .limit(1)
+          .get();
+      if (snap.docs.isNotEmpty) {
+        final d = snap.docs.first.data();
+        final rawName = (d['display_name'] ?? d['full_name'] ?? '').toString().trim();
+        final name = isPlaceholderName(rawName) ? '' : rawName;
+        final house = (d['house'] ?? 'ruby').toString().toLowerCase();
+        final grade = d['grade'] != null ? 'Grade ${d['grade']}' : 'Grade 11';
+        if (name.isNotEmpty) {
+          return {
+            'scholarNo': clean,
+            'fullName': name,
+            'houseName': house,
+            'classLevel': grade,
+            'manifesto': generateDefaultManifesto(
+              position: runningPosition ?? 'Council Representative',
+              candidateName: name,
+            ),
+            'isFound': true,
+          };
+        }
+      }
+
+      final uSnap = await FirebaseFirestore.instance
+          .collection('users')
+          .where('scholar_no', isEqualTo: clean)
+          .limit(1)
+          .get();
+      if (uSnap.docs.isNotEmpty) {
+        final d = uSnap.docs.first.data();
+        final rawName = (d['full_name'] ?? d['name'] ?? '').toString().trim();
+        final name = isPlaceholderName(rawName) ? '' : rawName;
+        final house = (d['house_name'] ?? 'ruby').toString().toLowerCase();
+        final grade = (d['class_level'] ?? 'Grade 11').toString();
+        if (name.isNotEmpty) {
+          return {
+            'scholarNo': clean,
+            'fullName': name,
+            'houseName': house,
+            'classLevel': grade,
+            'manifesto': generateDefaultManifesto(
+              position: runningPosition ?? 'Council Representative',
+              candidateName: name,
+            ),
+            'isFound': true,
+          };
+        }
+      }
+    } catch (_) {}
+
+    // 3. Check local saved accounts (only if genuine human name is recorded)
+    try {
+      final accounts = getSavedAccounts();
+      for (final a in accounts) {
+        if (a.scholarNo.trim().toLowerCase() == clean.toLowerCase()) {
+          final isSuper = HierarchyService.isSuperAdmin(scholarNo: a.scholarNo, role: a.role);
+          final rawName = a.fullName.trim();
+          final name = isSuper
+              ? 'Administrator'
+              : (isPlaceholderName(rawName) ? '' : rawName);
+          if (name.isNotEmpty) {
+            return {
+              'scholarNo': a.scholarNo,
+              'fullName': name,
+              'houseName': a.houseName.toLowerCase(),
+              'classLevel': a.classLevel ?? 'Grade 11',
+              'manifesto': generateDefaultManifesto(
+                position: runningPosition ?? 'Council Representative',
+                candidateName: name,
+              ),
+              'isFound': true,
+            };
+          }
+        }
+      }
+    } catch (_) {}
+
+    // 4. Fallback: Scholar not found in records or only has synthetic ID.
+    // Return empty fullName and manifesto so the user can enter genuine details manually.
     final inferredHouse = inferHouseFromScholarNo(clean) ?? 'ruby';
     return {
       'scholarNo': clean,
@@ -4659,6 +4698,14 @@ class AuthService {
         await cacheBallots(updatedBallots);
       } catch (_) {}
 
+      try {
+        _firestore.collection('election_polls_v2').doc(ballotId).update({
+          'status': 'certified',
+          'closesAt': FieldValue.serverTimestamp(),
+          'certifiedAt': FieldValue.serverTimestamp(),
+        }).catchError((_) => null);
+      } catch (_) {}
+
       return (
         success: true,
         result: certifiedResult,
@@ -4692,6 +4739,14 @@ class AuthService {
           return b;
         }).toList();
         await cacheBallots(updatedBallots);
+      } catch (_) {}
+
+      try {
+        _firestore.collection('election_polls_v2').doc(ballotId).update({
+          'status': 'certified',
+          'closesAt': FieldValue.serverTimestamp(),
+          'certifiedAt': FieldValue.serverTimestamp(),
+        }).catchError((_) => null);
       } catch (_) {}
 
       return (

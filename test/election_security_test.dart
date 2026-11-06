@@ -118,4 +118,26 @@ void main() {
       expect(HierarchyService.isCaptain(scholarNo: 'SCH-304', role: 'house_captain'), isTrue);
     });
   });
+
+  group('Candidate Slate Lookup and Deduplication Logic', () {
+    test('Admin/11209 lookup returns Administrator profile', () async {
+      final res = await AuthService.lookupScholarDetails('11209');
+      expect(res['isFound'], isTrue);
+      expect(res['fullName'], equals('Administrator'));
+    });
+
+    test('Incomplete scholar number (e.g. 112) returns not found and empty fields', () async {
+      final res = await AuthService.lookupScholarDetails('112');
+      expect(res['isFound'], isFalse);
+      expect(res['fullName'], isEmpty);
+      expect(res['manifesto'], isEmpty);
+    });
+
+    test('Synthetic names like "Scholar #12428" are filtered out from auto-fill', () async {
+      final res = await AuthService.lookupScholarDetails('12428');
+      // Synthetic name must NOT be populated as the candidate full name
+      expect(res['fullName'], isNot(equals('Scholar #12428')));
+      expect(res['fullName'], isNot(startsWith('Scholar #')));
+    });
+  });
 }

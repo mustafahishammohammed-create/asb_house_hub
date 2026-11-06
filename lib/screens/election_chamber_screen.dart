@@ -1466,11 +1466,9 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                                       isLookingUp = false;
                                     });
                                   } else {
-                                    if (isAutoFilled) {
-                                      nameController.clear();
-                                      manifestoController.clear();
-                                      isAutoFilled = false;
-                                    }
+                                    nameController.clear();
+                                    manifestoController.clear();
+                                    isAutoFilled = false;
                                     setModalState(() {
                                       isRosterMatch = false;
                                       rosterMatchInfo = null;
@@ -1607,6 +1605,12 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                               );
                               return;
                             }
+                            if (candidatesDraft.any((c) => c.scholarNo.trim().toLowerCase() == sNo.toLowerCase())) {
+                              ScaffoldMessenger.of(modalCtx).showSnackBar(
+                                SnackBar(content: Text('Scholar # is already added as a candidate on this ballot.')),
+                              );
+                              return;
+                            }
                             final manifesto = manifestoController.text.trim();
 
                             setModalState(() {
@@ -1653,9 +1657,9 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                         );
                         return;
                       }
-                      if (candidatesDraft.isEmpty) {
+                      if (candidatesDraft.length < 2) {
                         ScaffoldMessenger.of(modalCtx).showSnackBar(
-                          const SnackBar(content: Text('Please add at least one candidate before publishing.')),
+                          const SnackBar(content: Text('Please configure at least 2 eligible candidates before publishing.')),
                         );
                         return;
                       }

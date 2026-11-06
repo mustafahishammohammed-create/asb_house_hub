@@ -3420,6 +3420,8 @@ class _HomeScreenState extends State<HomeScreen>
                 MaterialPageRoute(
                   builder: (_) => ElectionChamberScreen(
                     userHouse: houseName,
+                    scholarNo: scholarNo,
+                    studentName: studentName,
                   ),
                 ),
               );
