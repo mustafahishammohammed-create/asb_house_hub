@@ -1086,6 +1086,10 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
     String selectedHouse = 'ruby';
     String selectedScope = 'all';
     final candidatesDraft = <ElectionCandidate>[];
+    bool isAutoFilled = false;
+    bool isRosterMatch = false;
+    String? rosterMatchInfo;
+    bool isLookingUp = false;
 
     showModalBottomSheet(
       context: context,
@@ -1329,47 +1333,125 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                                 controller: scholarController,
                                 decoration: InputDecoration(
                                   labelText: 'Scholar #',
-                                  hintText: 'e.g. SCH-042',
+                                  hintText: 'e.g. 11209',
                                   filled: true,
                                   fillColor: isDark ? const Color(0xFF1E293B) : Colors.white,
                                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                                   suffixIcon: IconButton(
                                     tooltip: 'Auto-fill details from roster',
-                                    icon: const Icon(Icons.auto_awesome, color: Colors.amber, size: 20),
+                                    icon: isLookingUp
+                                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                                        : const Icon(Icons.auto_awesome, color: Colors.amber, size: 20),
                                     onPressed: () async {
                                       final clean = scholarController.text.trim();
                                       if (clean.isEmpty) return;
+                                      setModalState(() => isLookingUp = true);
                                       final details = await AuthService.lookupScholarDetails(
                                         clean,
                                         runningPosition: selectedPosition.displayName,
                                       );
-                                      nameController.text = details['fullName'] as String? ?? '';
-                                      manifestoController.text = details['manifesto'] as String? ?? '';
-                                      setModalState(() => selectedHouse = details['houseName'] as String? ?? 'ruby');
+                                      if (!modalCtx.mounted) return;
+                                      final isFound = details['isFound'] == true;
+                                      final fullName = details['fullName'] as String? ?? '';
+                                      final house = details['houseName'] as String? ?? 'ruby';
+                                      final manifesto = details['manifesto'] as String? ?? '';
+                                      final grade = details['classLevel'] as String? ?? 'Grade 11';
+
+                                      if (isFound && fullName.isNotEmpty) {
+                                        nameController.text = fullName;
+                                        manifestoController.text = manifesto;
+                                        isAutoFilled = true;
+                                        setModalState(() {
+                                          selectedHouse = house;
+                                          isRosterMatch = true;
+                                          rosterMatchInfo = '$fullName ($grade • ${house.toUpperCase()})';
+                                          isLookingUp = false;
+                                        });
+                                      } else {
+                                        if (isAutoFilled) {
+                                          nameController.clear();
+                                          manifestoController.clear();
+                                          isAutoFilled = false;
+                                        }
+                                        setModalState(() {
+                                          isRosterMatch = false;
+                                          rosterMatchInfo = null;
+                                          isLookingUp = false;
+                                          final inferred = AuthService.inferHouseFromScholarNo(clean);
+                                          if (inferred != null) selectedHouse = inferred;
+                                        });
+                                      }
                                     },
                                   ),
                                 ),
                                 onChanged: (val) async {
                                   final clean = val.trim();
-                                  final inferred = AuthService.inferHouseFromScholarNo(clean);
-                                  if (inferred != null) {
-                                    setModalState(() => selectedHouse = inferred);
+                                  if (clean.isEmpty) {
+                                    if (isAutoFilled) {
+                                      nameController.clear();
+                                      manifestoController.clear();
+                                      isAutoFilled = false;
+                                    }
+                                    setModalState(() {
+                                      isRosterMatch = false;
+                                      rosterMatchInfo = null;
+                                      isLookingUp = false;
+                                    });
+                                    return;
                                   }
-                                  if (clean.length >= 2) {
-                                    final details = await AuthService.lookupScholarDetails(
-                                      clean,
-                                      runningPosition: selectedPosition.displayName,
-                                    );
-                                    final fullName = details['fullName'] as String? ?? '';
-                                    final house = details['houseName'] as String? ?? 'ruby';
-                                    final manifesto = details['manifesto'] as String? ?? '';
-                                    if (nameController.text.trim().isEmpty || nameController.text.startsWith('Scholar #')) {
-                                      nameController.text = fullName;
+
+                                  if (clean.length < 3) {
+                                    if (isAutoFilled) {
+                                      nameController.clear();
+                                      manifestoController.clear();
+                                      isAutoFilled = false;
                                     }
-                                    if (manifestoController.text.trim().isEmpty) {
-                                      manifestoController.text = manifesto;
+                                    setModalState(() {
+                                      isRosterMatch = false;
+                                      rosterMatchInfo = null;
+                                      isLookingUp = false;
+                                      final inferred = AuthService.inferHouseFromScholarNo(clean);
+                                      if (inferred != null) selectedHouse = inferred;
+                                    });
+                                    return;
+                                  }
+
+                                  setModalState(() => isLookingUp = true);
+                                  final details = await AuthService.lookupScholarDetails(
+                                    clean,
+                                    runningPosition: selectedPosition.displayName,
+                                  );
+                                  if (!modalCtx.mounted) return;
+
+                                  final isFound = details['isFound'] == true;
+                                  final fullName = details['fullName'] as String? ?? '';
+                                  final house = details['houseName'] as String? ?? 'ruby';
+                                  final manifesto = details['manifesto'] as String? ?? '';
+                                  final grade = details['classLevel'] as String? ?? 'Grade 11';
+
+                                  if (isFound && fullName.isNotEmpty) {
+                                    nameController.text = fullName;
+                                    manifestoController.text = manifesto;
+                                    isAutoFilled = true;
+                                    setModalState(() {
+                                      selectedHouse = house;
+                                      isRosterMatch = true;
+                                      rosterMatchInfo = '$fullName ($grade • ${house.toUpperCase()})';
+                                      isLookingUp = false;
+                                    });
+                                  } else {
+                                    if (isAutoFilled) {
+                                      nameController.clear();
+                                      manifestoController.clear();
+                                      isAutoFilled = false;
                                     }
-                                    setModalState(() => selectedHouse = house);
+                                    setModalState(() {
+                                      isRosterMatch = false;
+                                      rosterMatchInfo = null;
+                                      isLookingUp = false;
+                                      final inferred = AuthService.inferHouseFromScholarNo(clean);
+                                      if (inferred != null) selectedHouse = inferred;
+                                    });
                                   }
                                 },
                               ),
@@ -1379,6 +1461,7 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                               flex: 4,
                               child: TextField(
                                 controller: nameController,
+                                onChanged: (_) => isAutoFilled = false,
                                 decoration: InputDecoration(
                                   labelText: 'Candidate Name',
                                   hintText: 'Full Name',
@@ -1390,6 +1473,51 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                             ),
                           ],
                         ),
+                        if (isRosterMatch && rosterMatchInfo != null) ...[
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.green.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.check_circle_rounded, color: Colors.green, size: 16),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    'Verified Roster Match: $rosterMatchInfo',
+                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ] else if (!isRosterMatch && scholarController.text.trim().length >= 3) ...[
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.amber.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.info_outline_rounded, color: Colors.amber, size: 16),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    'Scholar #${scholarController.text.trim()} not found in records — enter name and manifesto manually.',
+                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.amber),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 10),
                         Row(
                           children: [
@@ -1419,6 +1547,7 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                         TextField(
                           controller: manifestoController,
                           maxLines: 2,
+                          onChanged: (_) => isAutoFilled = false,
                           decoration: InputDecoration(
                             labelText: 'Campaign Manifesto & Pledges',
                             hintText: 'Key initiatives, motto or pledges for the student body...',
@@ -1446,13 +1575,18 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                               );
                               return;
                             }
-                            final effectiveName = name.isNotEmpty ? name : 'Scholar #$sNo';
+                            if (name.isEmpty) {
+                              ScaffoldMessenger.of(modalCtx).showSnackBar(
+                                const SnackBar(content: Text('Please enter candidate full name.')),
+                              );
+                              return;
+                            }
                             final manifesto = manifestoController.text.trim();
 
                             setModalState(() {
                               candidatesDraft.add(ElectionCandidate(
                                 scholarNo: sNo,
-                                fullName: effectiveName,
+                                fullName: name,
                                 houseName: selectedHouse,
                                 runningPosition: selectedPosition.displayName,
                                 manifesto: manifesto,
@@ -1461,6 +1595,9 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                               scholarController.clear();
                               nameController.clear();
                               manifestoController.clear();
+                              isAutoFilled = false;
+                              isRosterMatch = false;
+                              rosterMatchInfo = null;
                             });
                           },
                         ),

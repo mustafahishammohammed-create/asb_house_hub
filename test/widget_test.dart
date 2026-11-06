@@ -10787,16 +10787,40 @@ void main() {
 
   test('lookupScholarDetails auto-fills scholar details and position-tailored manifesto', () async {
     SharedPreferences.setMockInitialValues({});
+    await AuthService.saveAccount(
+      SavedAccount(
+        scholarNo: 'SCH-042',
+        fullName: 'Mustafa Ahmed',
+        houseName: 'emerald',
+        uid: 'uid_mustafa_042',
+        classLevel: 'Grade 11-A',
+        role: 'super_admin',
+        lastActive: DateTime.now(),
+      ),
+    );
+
     final details = await AuthService.lookupScholarDetails('SCH-042', runningPosition: 'Senior House Captain');
     expect(details['scholarNo'], equals('SCH-042'));
+    expect(details['fullName'], equals('Mustafa Ahmed'));
+    expect(details['isFound'], isTrue);
     expect(details['manifesto'], contains('championship participation'));
 
-    final sportsDetails = await AuthService.lookupScholarDetails('SCH-099', runningPosition: 'Sports Secretary');
-    expect(sportsDetails['scholarNo'], equals('SCH-099'));
-    expect(sportsDetails['manifesto'], contains('athletic programs'));
+    final adminDetails = await AuthService.lookupScholarDetails('11209', runningPosition: 'Staff Advisor');
+    expect(adminDetails['scholarNo'], equals('11209'));
+    expect(adminDetails['fullName'], equals('Administrator'));
+    expect(adminDetails['isFound'], isTrue);
+
+    // Unregistered scholar number leaves name and manifesto empty (no fake "Scholar #..." strings)
+    final unregistered = await AuthService.lookupScholarDetails('12428');
+    expect(unregistered['scholarNo'], equals('12428'));
+    expect(unregistered['fullName'], isEmpty);
+    expect(unregistered['manifesto'], isEmpty);
+    expect(unregistered['isFound'], isFalse);
 
     final defaultDetails = await AuthService.lookupScholarDetails('');
     expect(defaultDetails['scholarNo'], isEmpty);
+    expect(defaultDetails['fullName'], isEmpty);
+    expect(defaultDetails['isFound'], isFalse);
   });
 
   test('AuthService.getFoundationalGazettes returns statutory proclamations and cacheCertifiedGazette stores them', () async {

@@ -6,8 +6,9 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
-import '../services/auth_service.dart';
 import '../models/election_gazette.dart';
+import '../services/auth_service.dart';
+import '../services/hierarchy_service.dart';
 import '../theme/app_theme.dart';
 import 'election_chamber_screen.dart';
 import 'election_gazette_screen.dart';
@@ -91,6 +92,8 @@ class _ElectionDeskState extends State<_ElectionDesk> {
       final cached = AuthService.getCachedProfile() ?? {};
       final scholarNo = AuthService.getCachedScholarNo() ?? 'admin';
       final isStaff = scholarNo == 'admin' ||
+          scholarNo == '11209' ||
+          HierarchyService.isSuperAdmin(scholarNo: scholarNo, role: cached['role']?.toString()) ||
           cached['role'] == 'admin' ||
           cached['role'] == 'super_admin' ||
           cached['role'] == 'staff';
@@ -105,33 +108,50 @@ class _ElectionDeskState extends State<_ElectionDesk> {
       };
     }
 
-    // 2. Fetch published polls
+    // 2. Fetch published polls (with resilient fallback)
     List<ElectionDoc> polls = [];
     try {
-      final snap = await db.collection('election_polls_v2').orderBy('opensAt', descending: true).get(opts);
+      final snap = await db.collection('election_polls_v2').get(opts);
       polls = snap.docs;
     } catch (_) {
       try {
-        final snap = await db.collection('election_polls_v2').orderBy('opensAt', descending: true).get();
+        final snap = await db.collection('election_polls_v2').get();
         polls = snap.docs;
       } catch (_) {}
     }
+    polls.sort((a, b) {
+      final aOpens = (a.data()['opensAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0;
+      final bOpens = (b.data()['opensAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0;
+      return bOpens.compareTo(aOpens);
+    });
 
     // 3. Fetch drafts for authorized managers
     final canManage = member['capabilities']?['manage_elections'] == true ||
         member['role'] == 'admin' ||
-        member['role'] == 'super_admin';
+        member['role'] == 'super_admin' ||
+        member['scholar_no'] == 'admin' ||
+        member['scholar_no'] == '11209' ||
+        HierarchyService.isSuperAdmin(
+          scholarNo: member['scholar_no']?.toString(),
+          role: member['role']?.toString(),
+        );
+
     List<ElectionDoc> drafts = [];
     if (canManage) {
       try {
-        final snap = await db.collection('election_drafts_v2').orderBy('startMs', descending: true).get(opts);
+        final snap = await db.collection('election_drafts_v2').get(opts);
         drafts = snap.docs;
       } catch (_) {
         try {
-          final snap = await db.collection('election_drafts_v2').orderBy('startMs', descending: true).get();
+          final snap = await db.collection('election_drafts_v2').get();
           drafts = snap.docs;
         } catch (_) {}
       }
+      drafts.sort((a, b) {
+        final aStart = (a.data()['startMs'] as num?)?.toInt() ?? 0;
+        final bStart = (b.data()['startMs'] as num?)?.toInt() ?? 0;
+        return bStart.compareTo(aStart);
+      });
     }
 
     return (member: member, polls: polls, drafts: drafts);
@@ -143,7 +163,7 @@ class _ElectionDeskState extends State<_ElectionDesk> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || user.uid != widget.uid) throw StateError('Sign in again.');
 
-    // Step A: Attempt server-authoritative Cloud Function invocation
+    // Step A: Attempt server-authoritative Cloud Function invocation with short timeout
     try {
       final token = await user.getIdToken();
       if (token != null) {
@@ -153,7 +173,7 @@ class _ElectionDeskState extends State<_ElectionDesk> {
           url,
           headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
           body: jsonEncode({'data': {...args, 'action': action, 'pollId': id}}),
-        ).timeout(const Duration(seconds: 8));
+        ).timeout(const Duration(milliseconds: 1500));
 
         if (reply.statusCode == 200) {
           final envelope = jsonDecode(reply.body);
@@ -246,7 +266,13 @@ class _ElectionDeskState extends State<_ElectionDesk> {
 
     final canManage = person['capabilities']?['manage_elections'] == true ||
         person['role'] == 'admin' ||
-        person['role'] == 'super_admin';
+        person['role'] == 'super_admin' ||
+        person['scholar_no'] == 'admin' ||
+        person['scholar_no'] == '11209' ||
+        HierarchyService.isSuperAdmin(
+          scholarNo: person['scholar_no']?.toString(),
+          role: person['role']?.toString(),
+        );
     if (!canManage) throw StateError('Election manager permission required.');
 
     if (action == 'create') {
@@ -277,8 +303,12 @@ class _ElectionDeskState extends State<_ElectionDesk> {
     if (action == 'add') {
       final scholar = (args['scholarNo'] ?? '').toString().trim();
       final statement = (args['statement'] ?? '').toString().trim();
+      var inputName = (args['name'] ?? '').toString().trim();
       if (scholar.isEmpty) throw StateError('Enter registered scholar number.');
-      if (statement.isEmpty) throw StateError('Enter approved candidate statement.');
+      if (statement.isEmpty) throw StateError('Enter candidate manifesto pledge.');
+
+      String candUid = 'cand_${scholar.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_')}';
+      String candName = inputName;
 
       var matches = await db.collection('school_members').where('scholar_no', isEqualTo: scholar).limit(2).get();
       if (matches.docs.isEmpty) {
@@ -290,12 +320,24 @@ class _ElectionDeskState extends State<_ElectionDesk> {
         }
       }
 
-      if (matches.docs.isEmpty) {
-        throw StateError('Scholar #$scholar was not found on the roster.');
+      if (matches.docs.isNotEmpty) {
+        final candDoc = matches.docs.first;
+        candUid = candDoc.id;
+        final dName = (candDoc.data()['display_name'] ?? '').toString().trim();
+        if (candName.isEmpty && dName.isNotEmpty) candName = dName;
+      } else {
+        final saved = AuthService.getSavedAccounts();
+        for (final a in saved) {
+          if (a.scholarNo.trim().toLowerCase() == scholar.toLowerCase()) {
+            if (candName.isEmpty) candName = a.fullName;
+            break;
+          }
+        }
       }
-      final candDoc = matches.docs.first;
-      final candData = candDoc.data();
-      final candName = (candData['display_name'] ?? 'Scholar $scholar').toString();
+
+      if (candName.isEmpty) {
+        throw StateError('Please provide candidate full name.');
+      }
 
       return await db.runTransaction<Fields>((tx) async {
         final dSnap = await tx.get(draftRef);
@@ -304,13 +346,14 @@ class _ElectionDeskState extends State<_ElectionDesk> {
         if (dData['status'] != 'draft') throw StateError('Published candidates are frozen.');
 
         final curList = (dData['candidates'] as List? ?? []).cast<Map>();
-        final existing = curList.firstWhere((c) => c['uid'] == candDoc.id, orElse: () => {});
+        final existing = curList.firstWhere((c) => c['uid'] == candUid, orElse: () => {});
         final candId = existing['id'] ?? 'cnd_${DateTime.now().millisecondsSinceEpoch}_${curList.length + 1}';
-        final filtered = curList.where((c) => c['uid'] != candDoc.id).map((c) => Map<String, dynamic>.from(c)).toList();
+        final filtered = curList.where((c) => c['uid'] != candUid).map((c) => Map<String, dynamic>.from(c)).toList();
         filtered.add({
           'id': candId,
-          'uid': candDoc.id,
+          'uid': candUid,
           'name': candName,
+          'scholar_no': scholar,
           'statement': statement,
         });
 
@@ -344,6 +387,7 @@ class _ElectionDeskState extends State<_ElectionDesk> {
         final pubCandidates = candidates.map((c) => {
           'id': c['id'],
           'name': c['name'],
+          'scholar_no': c['scholar_no'] ?? '',
           'statement': c['statement'],
         }).toList();
 
@@ -464,57 +508,20 @@ class _ElectionDeskState extends State<_ElectionDesk> {
     }
   }
 
-  Future<Fields?> form(String title, Map<String, String> labels) {
-    final values = <String, dynamic>{};
-    final key = GlobalKey<FormState>();
-    return showDialog<Fields>(
-      context: context,
-      builder: (dialog) => AlertDialog(
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-        content: SingleChildScrollView(
-          child: Form(
-            key: key,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final field in labels.entries)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: TextFormField(
-                      decoration: InputDecoration(
-                        labelText: field.value,
-                        border: const OutlineInputBorder(),
-                      ),
-                      onChanged: (value) => values[field.key] = value.trim(),
-                      validator: (value) => value == null || value.trim().isEmpty ? 'Required' : null,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialog), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () {
-              if (key.currentState!.validate()) Navigator.pop(dialog, values);
-            },
-            child: const Text('Continue'),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<bool> confirm(String title, String detail) async {
     return await showDialog<bool>(
           context: context,
           builder: (dialog) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
             content: Text(detail),
             actions: [
               TextButton(onPressed: () => Navigator.pop(dialog, false), child: const Text('Cancel')),
-              FilledButton(onPressed: () => Navigator.pop(dialog, true), child: const Text('Confirm')),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: const Color(0xFF1E3A8A)),
+                onPressed: () => Navigator.pop(dialog, true),
+                child: const Text('Confirm'),
+              ),
             ],
           ),
         ) ??
@@ -522,49 +529,196 @@ class _ElectionDeskState extends State<_ElectionDesk> {
   }
 
   Future<void> createDraft() async {
-    final values = await form('Create an Institutional Ballot Draft', {
-      'title': 'Election title (e.g. Senior House Captain 2026-2027)',
-      'position': 'Position (houseCaptain, headBoy, headGirl, prefect, sportsCaptain)',
-      'house': 'House (ruby, sapphire, emerald, topaz, or all)',
-      'minGrade': 'Lowest eligible grade (1–12)',
-      'maxGrade': 'Highest eligible grade (1–12)',
-      'start': 'Opening time (UTC YYYY-MM-DDTHH:MMZ, or type "now")',
-      'end': 'Closing time (UTC YYYY-MM-DDTHH:MMZ, or type "7d")',
-    });
-    if (values == null || !mounted) return;
+    final titleCtrl = TextEditingController(text: 'Senior House Captain 2026-2027');
+    String selectedPos = 'houseCaptain';
+    String selectedHouse = 'all';
+    int minGrade = 9;
+    int maxGrade = 12;
+    int durationDays = 7;
 
-    int parseInstant(String key, {bool isEnd = false}) {
-      final raw = (values.remove(key) as String? ?? '').trim();
-      DateTime dt;
-      if (raw.isEmpty || raw.toLowerCase() == 'now') {
-        dt = DateTime.now().toUtc();
-        if (isEnd) dt = dt.add(const Duration(days: 7));
-      } else if (raw.toLowerCase() == '7d') {
-        dt = DateTime.now().toUtc().add(const Duration(days: 7));
-      } else if (raw.toLowerCase() == '24h') {
-        dt = DateTime.now().toUtc().add(const Duration(hours: 24));
-      } else {
-        try {
-          dt = DateTime.parse(raw.endsWith('Z') ? raw : '${raw}Z').toUtc();
-        } catch (_) {
-          try {
-            dt = DateTime.parse(raw).toUtc();
-          } catch (_) {
-            dt = DateTime.now().toUtc().add(isEnd ? const Duration(days: 7) : Duration.zero);
-          }
-        }
+    final created = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (ctx, setDlgState) {
+          final isDark = Theme.of(ctx).brightness == Brightness.dark;
+          return AlertDialog(
+            backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Row(
+              children: [
+                Icon(Icons.how_to_vote_rounded, color: Color(0xFF1E3A8A)),
+                SizedBox(width: 10),
+                Text('Create Ballot Draft', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  TextField(
+                    controller: titleCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Ballot Title',
+                      hintText: 'e.g. Senior House Captain 2026-2027',
+                      filled: true,
+                      fillColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: selectedPos,
+                    decoration: InputDecoration(
+                      labelText: 'Running Position',
+                      filled: true,
+                      fillColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'houseCaptain', child: Text('🛡️ House Captain')),
+                      DropdownMenuItem(value: 'headBoy', child: Text('👑 School Head Boy')),
+                      DropdownMenuItem(value: 'headGirl', child: Text('👑 School Head Girl')),
+                      DropdownMenuItem(value: 'prefect', child: Text('🎖️ Class Prefect')),
+                      DropdownMenuItem(value: 'sportsCaptain', child: Text('⚽ Sports Captain')),
+                      DropdownMenuItem(value: 'culturalSecretary', child: Text('🎭 Cultural Secretary')),
+                    ],
+                    onChanged: (v) {
+                      if (v != null) setDlgState(() => selectedPos = v);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: selectedHouse,
+                    decoration: InputDecoration(
+                      labelText: 'House Jurisdiction',
+                      filled: true,
+                      fillColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'all', child: Text('🌐 All Houses (Universal)')),
+                      DropdownMenuItem(value: 'ruby', child: Text('🔴 Ruby House Only')),
+                      DropdownMenuItem(value: 'sapphire', child: Text('🔵 Sapphire House Only')),
+                      DropdownMenuItem(value: 'emerald', child: Text('🟢 Emerald House Only')),
+                      DropdownMenuItem(value: 'topaz', child: Text('🟡 Topaz House Only')),
+                    ],
+                    onChanged: (v) {
+                      if (v != null) setDlgState(() => selectedHouse = v);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          value: minGrade,
+                          decoration: InputDecoration(
+                            labelText: 'Min Grade',
+                            filled: true,
+                            fillColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          items: List.generate(12, (i) => i + 1)
+                              .map((g) => DropdownMenuItem(value: g, child: Text('Grade $g')))
+                              .toList(),
+                          onChanged: (v) {
+                            if (v != null) setDlgState(() => minGrade = v);
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          value: maxGrade,
+                          decoration: InputDecoration(
+                            labelText: 'Max Grade',
+                            filled: true,
+                            fillColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          items: List.generate(12, (i) => i + 1)
+                              .map((g) => DropdownMenuItem(value: g, child: Text('Grade $g')))
+                              .toList(),
+                          onChanged: (v) {
+                            if (v != null) setDlgState(() => maxGrade = v);
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<int>(
+                    value: durationDays,
+                    decoration: InputDecoration(
+                      labelText: 'Voting Window',
+                      filled: true,
+                      fillColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 1, child: Text('⏱️ 24 Hours (Fast Poll)')),
+                      DropdownMenuItem(value: 3, child: Text('📅 3 Days (Weekend)')),
+                      DropdownMenuItem(value: 7, child: Text('🗓️ 7 Days (Standard Week)')),
+                      DropdownMenuItem(value: 14, child: Text('📆 14 Days (Two Weeks)')),
+                    ],
+                    onChanged: (v) {
+                      if (v != null) setDlgState(() => durationDays = v);
+                    },
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogCtx, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF1E3A8A),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                icon: const Icon(Icons.check, size: 18),
+                label: const Text('Create Draft'),
+                onPressed: () {
+                  if (titleCtrl.text.trim().isEmpty) return;
+                  Navigator.pop(dialogCtx, true);
+                },
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (created != true || !mounted) return;
+
+    await run(() async {
+      final now = DateTime.now().toUtc();
+      final end = now.add(Duration(days: durationDays));
+      final id = unconfirmedDraftId ??= db.collection('election_drafts_v2').doc().id;
+
+      await call('create', id, {
+        'title': titleCtrl.text.trim(),
+        'position': selectedPos,
+        'house': selectedHouse,
+        'minGrade': minGrade,
+        'maxGrade': maxGrade,
+        'startMs': now.millisecondsSinceEpoch,
+        'endMs': end.millisecondsSinceEpoch,
+      });
+
+      unconfirmedDraftId = null;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✓ Ballot draft created successfully! You can now add candidates.'),
+            backgroundColor: Colors.green,
+          ),
+        );
       }
-      return dt.millisecondsSinceEpoch;
-    }
-
-    values['startMs'] = parseInstant('start');
-    values['endMs'] = parseInstant('end', isEnd: true);
-    values['minGrade'] = int.tryParse(values['minGrade'] as String? ?? '1') ?? 1;
-    values['maxGrade'] = int.tryParse(values['maxGrade'] as String? ?? '12') ?? 12;
-    values['house'] = (values['house'] as String? ?? 'all').toLowerCase();
-    final id = unconfirmedDraftId ??= db.collection('election_drafts_v2').doc().id;
-    await call('create', id, values);
-    unconfirmedDraftId = null;
+    });
   }
 
   Future<void> add(String id) async {
@@ -574,32 +728,96 @@ class _ElectionDeskState extends State<_ElectionDesk> {
     String detectedHouse = 'ruby';
     String detectedClass = 'Grade 10';
     bool isLookingUp = false;
+    bool isAutoFilled = false;
+    bool isRosterMatch = false;
+    String? rosterMatchInfo;
 
     final input = await showDialog<Fields>(
       context: context,
       builder: (dialogCtx) => StatefulBuilder(
         builder: (ctx, setDlgState) {
+          final isDark = Theme.of(ctx).brightness == Brightness.dark;
+
           Future<void> doLookup(String raw) async {
             final clean = raw.trim();
-            if (clean.length < 2) return;
+            if (clean.isEmpty) {
+              if (isAutoFilled) {
+                nameCtrl.clear();
+                statementCtrl.clear();
+                isAutoFilled = false;
+              }
+              setDlgState(() {
+                isRosterMatch = false;
+                rosterMatchInfo = null;
+                isLookingUp = false;
+              });
+              return;
+            }
+
+            if (clean.length < 3) {
+              if (isAutoFilled) {
+                nameCtrl.clear();
+                statementCtrl.clear();
+                isAutoFilled = false;
+              }
+              setDlgState(() {
+                isRosterMatch = false;
+                rosterMatchInfo = null;
+                isLookingUp = false;
+                final inferred = AuthService.inferHouseFromScholarNo(clean);
+                if (inferred != null) detectedHouse = inferred;
+              });
+              return;
+            }
+
             setDlgState(() => isLookingUp = true);
             try {
               final details = await AuthService.lookupScholarDetails(clean);
-              nameCtrl.text = details['fullName'] as String? ?? '';
-              statementCtrl.text = details['manifesto'] as String? ?? '';
-              detectedHouse = details['houseName'] as String? ?? 'ruby';
-              detectedClass = details['classLevel'] as String? ?? 'Grade 10';
-            } catch (_) {} finally {
+              if (!ctx.mounted) return;
+              final isFound = details['isFound'] == true;
+              final fullName = details['fullName'] as String? ?? '';
+              final house = details['houseName'] as String? ?? 'ruby';
+              final manifesto = details['manifesto'] as String? ?? '';
+              final grade = details['classLevel'] as String? ?? 'Grade 10';
+
+              if (isFound && fullName.isNotEmpty) {
+                nameCtrl.text = fullName;
+                statementCtrl.text = manifesto;
+                detectedHouse = house;
+                detectedClass = grade;
+                isAutoFilled = true;
+                setDlgState(() {
+                  isRosterMatch = true;
+                  rosterMatchInfo = '$fullName ($grade • ${house.toUpperCase()})';
+                  isLookingUp = false;
+                });
+              } else {
+                if (isAutoFilled) {
+                  nameCtrl.clear();
+                  statementCtrl.clear();
+                  isAutoFilled = false;
+                }
+                setDlgState(() {
+                  isRosterMatch = false;
+                  rosterMatchInfo = null;
+                  isLookingUp = false;
+                  final inferred = AuthService.inferHouseFromScholarNo(clean);
+                  if (inferred != null) detectedHouse = inferred;
+                });
+              }
+            } catch (_) {
               setDlgState(() => isLookingUp = false);
             }
           }
 
           return AlertDialog(
+            backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             title: const Row(
               children: [
-                Icon(Icons.person_add_alt_1_rounded, color: Colors.blueAccent),
+                Icon(Icons.person_add_alt_1_rounded, color: Color(0xFF1E3A8A)),
                 SizedBox(width: 8),
-                Text('Add Candidate (Auto-Filled)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                Text('Add Candidate to Draft', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               ],
             ),
             content: SingleChildScrollView(
@@ -610,23 +828,21 @@ class _ElectionDeskState extends State<_ElectionDesk> {
                   TextField(
                     controller: scholarCtrl,
                     decoration: InputDecoration(
-                      labelText: 'Scholar Number (e.g. SCH-042)',
-                      border: const OutlineInputBorder(),
+                      labelText: 'Scholar # (e.g. 11209)',
+                      filled: true,
+                      fillColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                       suffixIcon: IconButton(
-                        tooltip: 'Auto-fill from roster',
+                        tooltip: 'Look up student',
                         icon: isLookingUp
                             ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
                             : const Icon(Icons.auto_awesome, color: Colors.amber),
                         onPressed: () => doLookup(scholarCtrl.text),
                       ),
                     ),
-                    onChanged: (val) {
-                      if (val.trim().length >= 3) {
-                        doLookup(val);
-                      }
-                    },
+                    onChanged: (val) => doLookup(val),
                   ),
-                  if (nameCtrl.text.isNotEmpty) ...[
+                  if (isRosterMatch && rosterMatchInfo != null) ...[
                     const SizedBox(height: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -641,8 +857,30 @@ class _ElectionDeskState extends State<_ElectionDesk> {
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
-                              'Roster Match: ${nameCtrl.text} (${detectedHouse.toUpperCase()} • $detectedClass)',
+                              'Verified Roster Match: $rosterMatchInfo',
                               style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ] else if (!isRosterMatch && scholarCtrl.text.trim().length >= 3) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.info_outline_rounded, color: Colors.amber, size: 16),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Scholar #${scholarCtrl.text.trim()} not found in roster — please enter candidate name and manifesto manually.',
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.amber),
                             ),
                           ),
                         ],
@@ -652,18 +890,24 @@ class _ElectionDeskState extends State<_ElectionDesk> {
                   const SizedBox(height: 12),
                   TextField(
                     controller: nameCtrl,
-                    decoration: const InputDecoration(
+                    onChanged: (_) => isAutoFilled = false,
+                    decoration: InputDecoration(
                       labelText: 'Candidate Full Name (Editable)',
-                      border: OutlineInputBorder(),
+                      filled: true,
+                      fillColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: statementCtrl,
                     maxLines: 3,
-                    decoration: const InputDecoration(
-                      labelText: 'Approved Candidate Statement / Pledge (Editable)',
-                      border: OutlineInputBorder(),
+                    onChanged: (_) => isAutoFilled = false,
+                    decoration: InputDecoration(
+                      labelText: 'Manifesto Pledge (Editable)',
+                      filled: true,
+                      fillColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                   ),
                 ],
@@ -672,8 +916,13 @@ class _ElectionDeskState extends State<_ElectionDesk> {
             actions: [
               TextButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('Cancel')),
               FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF1E3A8A),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
                 onPressed: () {
                   final sNo = scholarCtrl.text.trim();
+                  final name = nameCtrl.text.trim();
                   final stmt = statementCtrl.text.trim();
                   if (sNo.isEmpty) {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -681,10 +930,18 @@ class _ElectionDeskState extends State<_ElectionDesk> {
                     );
                     return;
                   }
+                  if (name.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Please enter candidate full name.')),
+                    );
+                    return;
+                  }
                   Navigator.pop(dialogCtx, {
                     'scholarNo': sNo,
+                    'name': name,
                     'statement': stmt.isNotEmpty ? stmt : 'Dedicated to active service and leadership.',
-                    'name': nameCtrl.text.trim(),
+                    'house': detectedHouse,
+                    'classLevel': detectedClass,
                   });
                 },
                 child: const Text('Add Candidate'),
@@ -695,14 +952,26 @@ class _ElectionDeskState extends State<_ElectionDesk> {
       ),
     );
 
-    if (input != null && mounted) await call('add', id, input);
+    if (input != null && mounted) {
+      await run(() async {
+        await call('add', id, input);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✓ Candidate "${input['name']}" added to draft.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      });
+    }
   }
 
   Future<void> checkReceipt(String id, {String? candidateId}) async {
     final result = await call(
       candidateId == null ? 'receipt' : 'vote',
       id,
-      ifCandidate(candidateId),
+      candidateId == null ? {} : {'candidateId': candidateId},
     );
     if (!mounted) return;
     final receipt = result['receipt'] as String?;
@@ -738,121 +1007,221 @@ class _ElectionDeskState extends State<_ElectionDesk> {
     );
   }
 
-  Fields ifCandidate(String? id) => id == null ? {} : {'candidateId': id};
-
-  Widget action(String label, Future<void> Function() work, {Color? color}) => TextButton(
-        onPressed: busy ? null : () => run(work),
-        style: color != null ? TextButton.styleFrom(foregroundColor: color) : null,
-        child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
-      );
-
   Widget managerCard(ElectionDoc doc) {
     final p = doc.data();
     final candidates = (p['candidates'] as List? ?? []).cast<Map>();
     final house = (p['house'] ?? 'all').toString();
-    final houseColor = house == 'ruby'
-        ? HouseColors.ruby
-        : house == 'sapphire'
-            ? const Color(0xFF2563EB)
-            : house == 'emerald'
-                ? const Color(0xFF059669)
-                : house == 'topaz'
-                    ? const Color(0xFFD97706)
-                    : Colors.deepPurple;
+    final houseColor = HouseColors.getHouseColor(house);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Card(
-      elevation: 2,
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: houseColor.withValues(alpha: 0.3)),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: houseColor.withValues(alpha: 0.35), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
-      child: ExpansionTile(
-        leading: CircleAvatar(
-          backgroundColor: houseColor.withValues(alpha: 0.15),
-          child: Icon(Icons.edit_note_rounded, color: houseColor),
-        ),
-        title: Text(
-          p['title'] as String? ?? 'Untitled Ballot',
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        subtitle: Text(
-          '${(p['status'] ?? 'draft').toString().toUpperCase()} · ${p['position']} · House: ${p['house']} · Grades ${p['minGrade']}–${p['maxGrade']}',
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Header Bar
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: houseColor.withValues(alpha: 0.12),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+            ),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: houseColor.withValues(alpha: 0.25),
+                  child: Icon(Icons.edit_note_rounded, color: houseColor, size: 20),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        p['title'] as String? ?? 'Untitled Ballot',
+                        style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+                      ),
+                      Text(
+                        'Position: ${p['position']} • House: ${house.toUpperCase()} • Grades ${p['minGrade']}–${p['maxGrade']}',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    '📝 DRAFT',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.orange),
+                  ),
+                ),
+              ],
+            ),
+          ),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.schedule, size: 14, color: Colors.grey),
-                    const SizedBox(width: 4),
+                    const Icon(Icons.calendar_today_rounded, size: 14, color: Colors.grey),
+                    const SizedBox(width: 6),
                     Text(
-                      'Opens: ${DateTime.fromMillisecondsSinceEpoch(p['startMs'] as int? ?? 0, isUtc: true).toLocal()}',
-                      style: const TextStyle(fontSize: 12),
+                      'Opens: ${DateTime.fromMillisecondsSinceEpoch(p['startMs'] as int? ?? 0, isUtc: true).toLocal().toString().substring(0, 16)}',
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                    const SizedBox(width: 12),
+                    const Icon(Icons.event_busy_rounded, size: 14, color: Colors.grey),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Closes: ${DateTime.fromMillisecondsSinceEpoch(p['endMs'] as int? ?? 0, isUtc: true).toLocal().toString().substring(0, 16)}',
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
                     ),
                   ],
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 14),
+                Text(
+                  'Nominated Candidates (${candidates.length})',
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                ),
+                const SizedBox(height: 8),
+                if (candidates.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.info_outline, size: 16, color: Colors.grey),
+                        SizedBox(width: 8),
+                        Text(
+                          'No candidates added yet. Tap "+ Add Candidate" below.',
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  for (final c in candidates)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
+                      ),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 16,
+                            backgroundColor: houseColor.withValues(alpha: 0.15),
+                            child: const Icon(Icons.person, size: 18),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  c['name'] as String? ?? 'Candidate',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                ),
+                                if ((c['statement'] as String? ?? '').isNotEmpty)
+                                  Text(
+                                    c['statement'] as String,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Colors.redAccent),
+                            tooltip: 'Remove candidate',
+                            onPressed: () async {
+                              if (await confirm('Remove Candidate?', 'Remove "${c['name']}" from this draft ballot?') && mounted) {
+                                await run(() async => call('remove', doc.id, {'candidateId': c['id']}));
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                const SizedBox(height: 12),
                 Row(
                   children: [
-                    const Icon(Icons.event_busy, size: 14, color: Colors.grey),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Closes: ${DateTime.fromMillisecondsSinceEpoch(p['endMs'] as int? ?? 0, isUtc: true).toLocal()}',
-                      style: const TextStyle(fontSize: 12),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        icon: const Icon(Icons.person_add_rounded, size: 16),
+                        label: const Text('Add Candidate', style: TextStyle(fontWeight: FontWeight.bold)),
+                        onPressed: busy ? null : () => add(doc.id),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.green[700],
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        icon: const Icon(Icons.campaign_rounded, size: 16),
+                        label: const Text('Publish Ballot', style: TextStyle(fontWeight: FontWeight.bold)),
+                        onPressed: busy
+                            ? null
+                            : () async {
+                                if (candidates.length < 2) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Please add at least 2 candidates before publishing.')),
+                                  );
+                                  return;
+                                }
+                                if (await confirm(
+                                      'Publish Official Ballot?',
+                                      'Freeze this list of ${candidates.length} candidates and schedule active voting.',
+                                    ) &&
+                                    mounted) {
+                                  await run(() async => call('publish', doc.id));
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('✓ Ballot published! Voting is now scheduled.'),
+                                        backgroundColor: Colors.green,
+                                      ),
+                                    );
+                                  }
+                                }
+                              },
+                      ),
                     ),
                   ],
                 ),
               ],
             ),
-          ),
-          for (final c in candidates)
-            ListTile(
-              dense: true,
-              leading: const Icon(Icons.person_pin, size: 20),
-              title: Text(c['name'] as String? ?? 'Candidate', style: const TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: Text(c['statement'] as String? ?? ''),
-              trailing: p['status'] == 'draft'
-                  ? action(
-                      'Remove',
-                      () async {
-                        if (await confirm('Remove candidate?', c['name'] as String) && mounted) {
-                          await call('remove', doc.id, {'candidateId': c['id']});
-                        }
-                      },
-                      color: Colors.red[700],
-                    )
-                  : null,
-            ),
-          OverflowBar(
-            alignment: MainAxisAlignment.end,
-            children: [
-              if (p['status'] == 'draft') ...[
-                action('Add Candidate', () => add(doc.id)),
-                action('Publish Ballot', () async {
-                  if (await confirm(
-                        'Publish Official Ballot?',
-                        'Freeze this list of ${candidates.length} candidates and schedule active voting.',
-                      ) &&
-                      mounted) {
-                    await call('publish', doc.id);
-                  }
-                }, color: Colors.green[700]),
-              ],
-              if (p['status'] == 'published')
-                action('Certify Outcome', () async {
-                  if (await confirm(
-                        'Certify Final Count?',
-                        'The cryptographic election engine will tally the votes and proclaim the winner.',
-                      ) &&
-                      mounted) {
-                    await call('certify', doc.id);
-                  }
-                }, color: Colors.deepPurple),
-            ],
           ),
         ],
       ),
@@ -895,132 +1264,150 @@ class _ElectionDeskState extends State<_ElectionDesk> {
                 : 'Awaiting certification';
 
     final house = (p['house'] ?? 'all').toString();
-    final houseColor = house == 'ruby'
-        ? HouseColors.ruby
-        : house == 'sapphire'
-            ? const Color(0xFF2563EB)
-            : house == 'emerald'
-                ? const Color(0xFF059669)
-                : house == 'topaz'
-                    ? const Color(0xFFD97706)
-                    : Colors.deepPurple;
+    final houseColor = HouseColors.getHouseColor(house);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Card(
-      elevation: 2,
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: phase == 'Open' ? Colors.green : houseColor.withValues(alpha: 0.3),
-          width: phase == 'Open' ? 1.5 : 1.0,
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: phase == 'Open' ? Colors.green : houseColor.withValues(alpha: 0.35),
+          width: phase == 'Open' ? 2.0 : 1.5,
         ),
-      ),
-      child: ExpansionTile(
-        leading: CircleAvatar(
-          backgroundColor: (phase == 'Open' ? Colors.green : houseColor).withValues(alpha: 0.15),
-          child: Icon(
-            phase == 'Certified'
-                ? Icons.emoji_events_rounded
-                : phase == 'Open'
-                    ? Icons.how_to_vote_rounded
-                    : Icons.event_note_rounded,
-            color: phase == 'Open' ? Colors.green[700] : houseColor,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
-        ),
-        title: Text(
-          p['title'] as String? ?? 'Ballot',
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        subtitle: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: phase == 'Open'
-                    ? Colors.green.withValues(alpha: 0.15)
-                    : phase == 'Certified'
-                        ? Colors.deepPurple.withValues(alpha: 0.15)
-                        : Colors.orange.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                phase.toUpperCase(),
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                  color: phase == 'Open'
-                      ? Colors.green[800]
-                      : phase == 'Certified'
-                          ? Colors.deepPurple[800]
-                          : Colors.orange[900],
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              '${p['house']} · Grades ${p['minGrade']}–${p['maxGrade']}',
-              style: const TextStyle(fontSize: 12),
-            ),
-          ],
-        ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: (phase == 'Open' ? Colors.green : houseColor).withValues(alpha: 0.12),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+            ),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: (phase == 'Open' ? Colors.green : houseColor).withValues(alpha: 0.25),
+                  child: Icon(
+                    phase == 'Certified'
+                        ? Icons.emoji_events_rounded
+                        : phase == 'Open'
+                            ? Icons.how_to_vote_rounded
+                            : Icons.event_note_rounded,
+                    color: phase == 'Open' ? Colors.green[800] : houseColor,
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        p['title'] as String? ?? 'Ballot',
+                        style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+                      ),
+                      Text(
+                        'House: ${house.toUpperCase()} • Grades ${p['minGrade']}–${p['maxGrade']}',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: phase == 'Open'
+                        ? Colors.green.withValues(alpha: 0.2)
+                        : phase == 'Certified'
+                            ? Colors.deepPurple.withValues(alpha: 0.2)
+                            : Colors.orange.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    phase.toUpperCase(),
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: phase == 'Open'
+                          ? Colors.green[800]
+                          : phase == 'Certified'
+                              ? Colors.deepPurple[800]
+                              : Colors.orange[900],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Voting window (local time): ${opens.toLocal().toString().substring(0, 16)} to ${closes.toLocal().toString().substring(0, 16)}',
+                  'Voting window: ${opens.toLocal().toString().substring(0, 16)} to ${closes.toLocal().toString().substring(0, 16)}',
                   style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
-                const SizedBox(height: 4),
-                if (result != null)
+                if (result != null) ...[
+                  const SizedBox(height: 8),
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    margin: const EdgeInsets.only(top: 4, bottom: 8),
+                    padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: Colors.amber.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: Colors.amber.shade400),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.workspace_premium_rounded, color: Colors.amber),
-                        const SizedBox(width: 8),
+                        const Icon(Icons.workspace_premium_rounded, color: Colors.amber, size: 24),
+                        const SizedBox(width: 10),
                         Expanded(
                           child: Text(
                             outcome == 'winner'
-                                ? 'Elected: $leaders'
+                                ? '🏆 Duly Elected: $leaders'
                                 : outcome == 'tie'
-                                    ? 'Tied: $leaders'
+                                    ? '🤝 Tied: $leaders'
                                     : 'No votes recorded',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                           ),
                         ),
                       ],
                     ),
                   ),
-                if (recorded != null)
+                ],
+                if (recorded != null) ...[
+                  const SizedBox(height: 8),
                   Container(
-                    margin: const EdgeInsets.symmetric(vertical: 4),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
-                      color: Colors.green.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(6),
+                      color: Colors.green.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.check_circle, color: Colors.green, size: 16),
-                        const SizedBox(width: 6),
+                        const Icon(Icons.check_circle_rounded, color: Colors.green, size: 18),
+                        const SizedBox(width: 8),
                         Expanded(
                           child: SelectableText(
-                            'Vote Recorded · Receipt: $recorded',
+                            'Vote Recorded • Receipt: $recorded',
                             style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
                           ),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.copy, size: 14),
+                          icon: const Icon(Icons.copy_rounded, size: 16),
                           tooltip: 'Copy receipt',
                           onPressed: () {
                             Clipboard.setData(ClipboardData(text: recorded));
@@ -1032,57 +1419,107 @@ class _ElectionDeskState extends State<_ElectionDesk> {
                       ],
                     ),
                   ),
-                if (published && inWindow && !eligible)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 4),
-                    child: Text(
-                      'Ballot is open for eligible voting scholars in this grade and house.',
-                      style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
+                ],
+                const SizedBox(height: 12),
+                Text(
+                  'Candidates (${candidates.length})',
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                ),
+                const SizedBox(height: 8),
+                for (final c in candidates)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
+                    ),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 18,
+                          backgroundColor: houseColor.withValues(alpha: 0.15),
+                          child: Text(
+                            HouseColors.getHouseEmoji(house),
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                c['name'] as String? ?? 'Candidate',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                              ),
+                              if ((c['statement'] as String? ?? '').isNotEmpty)
+                                Text(
+                                  c['statement'] as String,
+                                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                ),
+                            ],
+                          ),
+                        ),
+                        if (result != null)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '${counts[c['id']] ?? 0} votes',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                            ),
+                          )
+                        else if (eligible && published && inWindow && recorded == null)
+                          FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: Colors.green[700],
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            icon: const Icon(Icons.how_to_vote, size: 16),
+                            label: const Text('Vote'),
+                            onPressed: () async {
+                              if (await confirm(
+                                    'Cast Vote for ${c['name']}?',
+                                    'You can cast one secret ballot in this election. Your vote will be cryptographically sealed.',
+                                  ) &&
+                                  mounted) {
+                                await checkReceipt(doc.id, candidateId: c['id'] as String);
+                              }
+                            },
+                          ),
+                      ],
                     ),
                   ),
-              ],
-            ),
-          ),
-          for (final c in candidates)
-            ListTile(
-              leading: const Icon(Icons.account_circle, size: 28),
-              title: Text(c['name'] as String? ?? 'Candidate', style: const TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: Text(c['statement'] as String? ?? ''),
-              trailing: result != null
-                  ? Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        '${counts[c['id']] ?? 0} votes',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    )
-                  : eligible && published && inWindow && recorded == null
-                      ? FilledButton.icon(
-                          icon: const Icon(Icons.how_to_vote, size: 16),
-                          label: const Text('Vote'),
-                          onPressed: () async {
-                            if (await confirm(
-                                  'Cast Vote for ${c['name']}?',
-                                  'You can cast one secret ballot in this election. Your vote will be cryptographically sealed.',
-                                ) &&
-                                mounted) {
-                              await checkReceipt(doc.id, candidateId: c['id'] as String);
-                            }
-                          },
-                        )
-                      : null,
-            ),
-          Padding(
-            padding: const EdgeInsets.only(right: 8, bottom: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                if (student)
-                  action('Verify My Receipt', () => checkReceipt(doc.id)),
+                if (phase == 'Awaiting certification' &&
+                    (member['capabilities']?['manage_elections'] == true ||
+                        member['role'] == 'admin' ||
+                        member['role'] == 'super_admin' ||
+                        member['scholar_no'] == '11209')) ...[
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.deepPurple,
+                      minimumSize: const Size.fromHeight(44),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    icon: const Icon(Icons.verified_rounded, size: 18),
+                    label: const Text('Certify Election Outcome', style: TextStyle(fontWeight: FontWeight.bold)),
+                    onPressed: () async {
+                      if (await confirm(
+                            'Certify Final Count?',
+                            'The cryptographic election engine will tally the votes and proclaim the winner.',
+                          ) &&
+                          mounted) {
+                        await run(() async => call('certify', doc.id));
+                      }
+                    },
+                  ),
+                ],
               ],
             ),
           ),
@@ -1093,45 +1530,23 @@ class _ElectionDeskState extends State<_ElectionDesk> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Institutional Elections (v2)', style: TextStyle(fontWeight: FontWeight.w900)),
-        actions: [
-          IconButton(
-            tooltip: 'Election Gazette & Proclamations',
-            icon: const Icon(Icons.newspaper_rounded),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const ElectionGazetteScreen()),
-              );
-            },
-          ),
-          IconButton(
-            tooltip: 'Candidate Chambers',
-            icon: const Icon(Icons.people_alt_rounded),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const ElectionChamberScreen()),
-              );
-            },
-          ),
-          IconButton(
-            tooltip: 'Refresh elections',
-            onPressed: busy ? null : refresh,
-            icon: const Icon(Icons.refresh_rounded),
-          ),
-        ],
-      ),
-      body: FutureBuilder<({Fields member, List<ElectionDoc> polls, List<ElectionDoc> drafts})>(
-        future: feed,
-        builder: (context, snap) {
-          if (snap.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snap.hasError) {
-            return Center(
+    return FutureBuilder<({Fields member, List<ElectionDoc> polls, List<ElectionDoc> drafts})>(
+      future: feed,
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return Scaffold(
+            appBar: AppBar(
+              title: const Text('Institutional Elections (v2)', style: TextStyle(fontWeight: FontWeight.w900)),
+            ),
+            body: const Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (snap.hasError) {
+          return Scaffold(
+            appBar: AppBar(
+              title: const Text('Institutional Elections (v2)', style: TextStyle(fontWeight: FontWeight.w900)),
+            ),
+            body: Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Column(
@@ -1145,60 +1560,218 @@ class _ElectionDeskState extends State<_ElectionDesk> {
                   ],
                 ),
               ),
-            );
-          }
-          final data = snap.requireData;
-          final manage = data.member['capabilities']?['manage_elections'] == true ||
-              data.member['role'] == 'admin' ||
-              data.member['role'] == 'super_admin';
-
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              if (busy) const LinearProgressIndicator(),
-              if (manage) ...[
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Election Management', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-                    FilledButton.icon(
-                      icon: const Icon(Icons.add, size: 18),
-                      label: const Text('Create Draft'),
-                      onPressed: busy ? null : createDraft,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                if (data.drafts.isEmpty)
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Text('No draft ballots in preparation. Tap "Create Draft" to begin.'),
-                  ),
-                for (final d in data.drafts) managerCard(d),
-                const SizedBox(height: 20),
-              ],
-              Text('Official Ballots & Proclamations', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              if (data.polls.isEmpty)
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Center(
-                    child: Text('The school administration has not published any ballots yet.'),
-                  ),
-                ),
-              for (final d in data.polls) ballot(d, data.member),
-            ],
+            ),
           );
-        },
-      ),
+        }
+
+        final data = snap.requireData;
+        final manage = data.member['capabilities']?['manage_elections'] == true ||
+            data.member['role'] == 'admin' ||
+            data.member['role'] == 'super_admin' ||
+            data.member['scholar_no'] == 'admin' ||
+            data.member['scholar_no'] == '11209' ||
+            HierarchyService.isSuperAdmin(
+              scholarNo: data.member['scholar_no']?.toString(),
+              role: data.member['role']?.toString(),
+            );
+
+        final activePolls = data.polls.where((p) => p.data()['status'] != 'certified').toList();
+        final certifiedPolls = data.polls.where((p) => p.data()['status'] == 'certified').toList();
+
+        return DefaultTabController(
+          length: manage ? 3 : 2,
+          child: Scaffold(
+            appBar: AppBar(
+              title: const Text('Institutional Elections (v2)', style: TextStyle(fontWeight: FontWeight.w900)),
+              elevation: 0,
+              actions: [
+                IconButton(
+                  tooltip: 'Election Gazette & Proclamations',
+                  icon: const Icon(Icons.newspaper_rounded),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const ElectionGazetteScreen()),
+                    );
+                  },
+                ),
+                IconButton(
+                  tooltip: 'Candidate Chambers',
+                  icon: const Icon(Icons.people_alt_rounded),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const ElectionChamberScreen()),
+                    );
+                  },
+                ),
+                IconButton(
+                  tooltip: 'Refresh elections',
+                  onPressed: busy ? null : refresh,
+                  icon: const Icon(Icons.refresh_rounded),
+                ),
+              ],
+              bottom: TabBar(
+                isScrollable: false,
+                indicatorWeight: 3,
+                tabs: [
+                  Tab(
+                    icon: const Icon(Icons.how_to_vote_rounded),
+                    text: 'Active (${activePolls.length})',
+                  ),
+                  if (manage)
+                    Tab(
+                      icon: const Icon(Icons.edit_document),
+                      text: 'Drafts (${data.drafts.length})',
+                    ),
+                  Tab(
+                    icon: const Icon(Icons.emoji_events_rounded),
+                    text: 'Certified (${certifiedPolls.length})',
+                  ),
+                ],
+              ),
+            ),
+            body: Column(
+              children: [
+                if (busy) const LinearProgressIndicator(),
+                // Voter Identity Hero Strip
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  color: Colors.blue.withValues(alpha: 0.08),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 14,
+                        backgroundColor: HouseColors.getHouseColor(data.member['house'] ?? 'ruby'),
+                        child: Text(
+                          HouseColors.getHouseEmoji(data.member['house'] ?? 'ruby'),
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '${data.member['display_name']} • #${data.member['scholar_no']} • ${(data.member['house'] ?? 'ruby').toString().toUpperCase()}',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: manage ? Colors.deepPurple.withValues(alpha: 0.2) : Colors.green.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          manage ? '🛡️ COMMISSION ADMIN' : '🟢 ACTIVE VOTER',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: manage ? Colors.deepPurple : Colors.green[800],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      // TAB 1: Active Elections
+                      ListView(
+                        padding: const EdgeInsets.all(16),
+                        children: [
+                          if (activePolls.isEmpty)
+                            Container(
+                              padding: const EdgeInsets.all(32),
+                              child: const Center(
+                                child: Column(
+                                  children: [
+                                    Icon(Icons.how_to_vote_outlined, size: 48, color: Colors.grey),
+                                    SizedBox(height: 12),
+                                    Text('No active elections right now.', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                    SizedBox(height: 6),
+                                    Text('Published polls will appear here when voting begins.', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                                  ],
+                                ),
+                              ),
+                            )
+                          else
+                            for (final d in activePolls) ballot(d, data.member),
+                        ],
+                      ),
+
+                      // TAB 2: Drafts & Staging (Managers only)
+                      if (manage)
+                        ListView(
+                          padding: const EdgeInsets.all(16),
+                          children: [
+                            ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF1E3A8A),
+                                foregroundColor: Colors.white,
+                                minimumSize: const Size.fromHeight(48),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                elevation: 2,
+                              ),
+                              icon: const Icon(Icons.add_task_rounded, size: 20),
+                              label: const Text(
+                                '+ Create New Ballot Draft',
+                                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
+                              ),
+                              onPressed: busy ? null : createDraft,
+                            ),
+                            const SizedBox(height: 16),
+                            if (data.drafts.isEmpty)
+                              Container(
+                                padding: const EdgeInsets.all(32),
+                                child: const Center(
+                                  child: Column(
+                                    children: [
+                                      Icon(Icons.edit_note_rounded, size: 48, color: Colors.grey),
+                                      SizedBox(height: 12),
+                                      Text('No draft ballots in staging.', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                      SizedBox(height: 6),
+                                      Text('Tap "+ Create New Ballot Draft" above to begin staging an election.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 12)),
+                                    ],
+                                  ),
+                                ),
+                              )
+                            else
+                              for (final d in data.drafts) managerCard(d),
+                          ],
+                        ),
+
+                      // TAB 3: Certified Outcomes
+                      ListView(
+                        padding: const EdgeInsets.all(16),
+                        children: [
+                          if (certifiedPolls.isEmpty)
+                            Container(
+                              padding: const EdgeInsets.all(32),
+                              child: const Center(
+                                child: Column(
+                                  children: [
+                                    Icon(Icons.emoji_events_outlined, size: 48, color: Colors.grey),
+                                    SizedBox(height: 12),
+                                    Text('No certified outcomes yet.', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                    SizedBox(height: 6),
+                                    Text('Certified election outcomes and proclamations will appear here.', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                                  ],
+                                ),
+                              ),
+                            )
+                          else
+                            for (final d in certifiedPolls) ballot(d, data.member),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

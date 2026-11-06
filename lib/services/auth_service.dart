@@ -2706,7 +2706,10 @@ class AuthService {
         roleRaw == 'faculty' ||
         roleRaw == 'principal' ||
         roleRaw == 'staff' ||
-        scholarNo.toLowerCase() == 'admin';
+        scholarNo.toLowerCase() == 'admin' ||
+        scholarNo == '11209' ||
+        HierarchyService.isSuperAdmin(scholarNo: scholarNo, role: roleRaw) ||
+        HierarchyService.isTeacherOrFaculty(scholarNo: scholarNo, role: roleRaw);
 
     // Parse grade (1 to 12) from class_level or grade
     int grade = 10;
@@ -4059,6 +4062,7 @@ class AuthService {
         'houseName': 'ruby',
         'classLevel': 'Grade 10',
         'manifesto': '',
+        'isFound': false,
       };
     }
 
@@ -4067,15 +4071,20 @@ class AuthService {
       final accounts = getSavedAccounts();
       for (final a in accounts) {
         if (a.scholarNo.trim().toLowerCase() == clean.toLowerCase()) {
+          final isSuper = HierarchyService.isSuperAdmin(scholarNo: a.scholarNo, role: a.role);
+          final name = isSuper && (a.fullName.isEmpty || a.fullName == 'Student')
+              ? 'Administrator'
+              : a.fullName;
           return {
             'scholarNo': a.scholarNo,
-            'fullName': a.fullName,
+            'fullName': name,
             'houseName': a.houseName.toLowerCase(),
             'classLevel': a.classLevel ?? 'Grade 11',
             'manifesto': generateDefaultManifesto(
               position: runningPosition ?? 'Council Representative',
-              candidateName: a.fullName,
+              candidateName: name,
             ),
+            'isFound': true,
           };
         }
       }
@@ -4102,6 +4111,7 @@ class AuthService {
             position: runningPosition ?? 'Council Representative',
             candidateName: name,
           ),
+          'isFound': true,
         };
       }
 
@@ -4124,22 +4134,36 @@ class AuthService {
             position: runningPosition ?? 'Council Representative',
             candidateName: name,
           ),
+          'isFound': true,
         };
       }
     } catch (_) {}
 
-    // 3. Fallback: intelligent name & house inference
+    // Special case for administrative scholar logins
+    if (clean.toLowerCase() == 'admin' || clean == '11209') {
+      return {
+        'scholarNo': clean,
+        'fullName': 'Administrator',
+        'houseName': 'ruby',
+        'classLevel': 'Staff / Faculty',
+        'manifesto': generateDefaultManifesto(
+          position: runningPosition ?? 'Staff Advisor',
+          candidateName: 'Administrator',
+        ),
+        'isFound': true,
+      };
+    }
+
+    // 3. Fallback: Scholar not found in records.
+    // Return empty fullName and manifesto so the user can enter their genuine details without fake placeholder names.
     final inferredHouse = inferHouseFromScholarNo(clean) ?? 'ruby';
-    final fallbackName = clean.toLowerCase() == 'admin' ? 'Administrator' : 'Scholar #$clean';
     return {
       'scholarNo': clean,
-      'fullName': fallbackName,
+      'fullName': '',
       'houseName': inferredHouse,
       'classLevel': 'Grade 11',
-      'manifesto': generateDefaultManifesto(
-        position: runningPosition ?? 'Council Representative',
-        candidateName: fallbackName,
-      ),
+      'manifesto': '',
+      'isFound': false,
     };
   }
 
