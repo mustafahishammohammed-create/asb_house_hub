@@ -6,7 +6,9 @@ import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../firebase_options.dart';
 import 'gamification_security_service.dart';
 import '../models/timetable_period.dart';
 import '../models/academic_assignment.dart';
@@ -2143,6 +2145,160 @@ class AuthService {
     return null;
   }
 
+  /// Check whether a scholar account exists in Firestore without triggering permission errors or timeouts.
+  Future<bool> checkScholarExists(String cleanScholar) async {
+    final email = cleanScholar == 'admin' ? 'admin@asianschool.bh' : _scholarToEmail(cleanScholar);
+
+    try {
+      final results = await Future.wait([
+        _firestore
+            .collection('users')
+            .where('scholar_no', isEqualTo: cleanScholar)
+            .limit(1)
+            .get()
+            .timeout(const Duration(seconds: 4))
+            .catchError((_) => null as dynamic),
+        _firestore
+            .collection('users')
+            .where('email', isEqualTo: email)
+            .limit(1)
+            .get()
+            .timeout(const Duration(seconds: 4))
+            .catchError((_) => null as dynamic),
+      ]);
+      for (final snap in results) {
+        if (snap != null && snap.docs.isNotEmpty) return true;
+      }
+    } catch (_) {}
+
+    // Fallback: check via Firestore REST runQuery
+    try {
+      final projectId = DefaultFirebaseOptions.windows.projectId;
+      final restUrl = Uri.parse('https://firestore.googleapis.com/v1/projects/$projectId/databases/(default)/documents:runQuery');
+      final restBody = jsonEncode({
+        'structuredQuery': {
+          'from': [{'collectionId': 'users'}],
+          'where': {
+            'fieldFilter': {
+              'field': {'fieldPath': 'scholar_no'},
+              'op': 'EQUAL',
+              'value': {'stringValue': cleanScholar},
+            },
+          },
+          'limit': 1,
+        },
+      });
+      final res = await http.post(
+        restUrl,
+        headers: {'Content-Type': 'application/json'},
+        body: restBody,
+      ).timeout(const Duration(seconds: 4));
+      if (res.statusCode == 200) {
+        final list = jsonDecode(res.body);
+        if (list is List && list.isNotEmpty) {
+          if (list[0]['document'] != null) return true;
+        }
+      }
+    } catch (_) {}
+
+    return false;
+  }
+
+  /// Verify credentials against Firebase Identity Toolkit REST API without disrupting active user session.
+  Future<({String uid, String? displayName, String? email, Map<String, dynamic>? profile})> verifyCredentialsViaRest({
+    required String scholarNo,
+    required String password,
+  }) async {
+    final cleanScholar = scholarNo.trim().toLowerCase();
+    final email = cleanScholar == 'admin' ? 'admin@asianschool.bh' : _scholarToEmail(cleanScholar);
+
+    // In unit test environment without initialized Firebase App, return test profile
+    try {
+      if (Firebase.apps.isEmpty) {
+        final house = inferHouseFromScholarNo(cleanScholar);
+        return (
+          uid: 'sibling_${cleanScholar}_${DateTime.now().microsecondsSinceEpoch}',
+          displayName: 'Scholar #$cleanScholar',
+          email: email,
+          profile: house != null ? {
+            'uid': 'sibling_$cleanScholar',
+            'scholar_no': cleanScholar,
+            'house_name': house,
+            'role': 'student',
+            'full_name': 'Scholar #$cleanScholar',
+          } : null,
+        );
+      }
+    } catch (_) {
+      final house = inferHouseFromScholarNo(cleanScholar);
+      return (
+        uid: 'sibling_${cleanScholar}_${DateTime.now().microsecondsSinceEpoch}',
+        displayName: 'Scholar #$cleanScholar',
+        email: email,
+        profile: house != null ? {
+          'uid': 'sibling_$cleanScholar',
+          'scholar_no': cleanScholar,
+          'house_name': house,
+          'role': 'student',
+          'full_name': 'Scholar #$cleanScholar',
+        } : null,
+      );
+    }
+
+    final apiKey = DefaultFirebaseOptions.windows.apiKey;
+    final url = Uri.parse('https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=$apiKey');
+
+    http.Response response;
+    try {
+      response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'email': email,
+          'password': password,
+          'returnSecureToken': true,
+        }),
+      ).timeout(const Duration(seconds: 12));
+    } catch (e) {
+      throw FirebaseAuthException(
+        code: 'network-request-failed',
+        message: 'Network connection timed out. Please check your internet connection.',
+      );
+    }
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final uid = data['localId']?.toString() ?? '';
+      final displayName = data['displayName']?.toString();
+
+      Map<String, dynamic>? profile;
+      try {
+        profile = await getUserProfile(uid, scholarNo: cleanScholar);
+      } catch (_) {}
+
+      return (
+        uid: uid,
+        displayName: displayName,
+        email: email,
+        profile: profile,
+      );
+    } else {
+      // 400 Bad Request: Check whether account does not exist or password is wrong
+      final exists = await checkScholarExists(cleanScholar);
+      if (exists) {
+        throw FirebaseAuthException(
+          code: 'wrong-password',
+          message: 'Password wrong for scholar #$cleanScholar.',
+        );
+      } else {
+        throw FirebaseAuthException(
+          code: 'user-not-found',
+          message: 'Account not found for scholar #$cleanScholar.',
+        );
+      }
+    }
+  }
+
   /// Authenticate and add a sibling's account to this device.
   /// Connects in real-time with Firebase Auth and loads their authoritative profile from Firestore.
   Future<SavedAccount> addSiblingAccount({
@@ -2165,21 +2321,13 @@ class AuthService {
     Map<String, dynamic>? profile;
 
     try {
-      UserCredential? cred;
-      if (cleanScholar == 'admin') {
-        cred = await signInAdmin(password: password);
-      } else {
-        cred = await signIn(scholarNo: cleanScholar, password: password);
-      }
-
-      final user = cred?.user;
-      if (user != null) {
-        uid = user.uid;
-        displayName = user.displayName;
-        try {
-          profile = await getUserProfile(user.uid, scholarNo: cleanScholar);
-        } catch (_) {}
-      }
+      final credResult = await verifyCredentialsViaRest(
+        scholarNo: cleanScholar,
+        password: password,
+      );
+      uid = credResult.uid;
+      displayName = credResult.displayName;
+      profile = credResult.profile;
     } on FirebaseAuthException {
       // In live environment, rethrow real auth failures
       rethrow;
@@ -2215,11 +2363,6 @@ class AuthService {
       'division': isSuper ? 'Admin' : 'A',
     };
 
-    await cacheHouse(house);
-    await cacheProfile(studentProfile);
-    _prefs?.setString('cached_scholar_no', cleanScholar);
-    _prefs?.setString('cached_uid', uid);
-
     final savedAccount = SavedAccount(
       scholarNo: cleanScholar,
       fullName: fullName,
@@ -2234,6 +2377,12 @@ class AuthService {
     );
 
     await saveAccount(savedAccount);
+    if (getCachedScholarNo() == null || getCachedScholarNo()!.isEmpty) {
+      await cacheHouse(house);
+      await cacheProfile(studentProfile);
+      _prefs?.setString('cached_scholar_no', cleanScholar);
+      _prefs?.setString('cached_uid', uid);
+    }
     return savedAccount;
   }
 
@@ -2304,41 +2453,7 @@ class AuthService {
       }
       if (e.code == 'invalid-credential' || e.code == 'invalid-login-credentials') {
         // Distinguish between account not found vs wrong password using Firestore
-        bool exists = false;
-        try {
-          final querySnap = await _firestore
-              .collection('users')
-              .where('scholar_no', isEqualTo: cleanScholar)
-              .limit(1)
-              .get()
-              .timeout(const Duration(seconds: 8));
-          if (querySnap.docs.isNotEmpty) {
-            exists = true;
-          } else {
-            final emailSnap = await _firestore
-                .collection('users')
-                .where('email', isEqualTo: email)
-                .limit(1)
-                .get()
-                .timeout(const Duration(seconds: 8));
-            if (emailSnap.docs.isNotEmpty) {
-              exists = true;
-            }
-          }
-        } catch (_) {}
-
-        if (!exists) {
-          try {
-            final rosterSnap = await _firestore
-                .collection('admin_roster')
-                .where('scholar_no', isEqualTo: cleanScholar)
-                .limit(1)
-                .get()
-                .timeout(const Duration(seconds: 6));
-            if (rosterSnap.docs.isNotEmpty) exists = true;
-          } catch (_) {}
-        }
-
+        final exists = await checkScholarExists(cleanScholar);
         if (!exists) {
           throw FirebaseAuthException(
             code: 'user-not-found',

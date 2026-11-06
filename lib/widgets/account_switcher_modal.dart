@@ -645,11 +645,14 @@ class _AddSiblingModalState extends State<AddSiblingModal> {
       String friendlyMessage;
       if (rawMsg.toLowerCase().contains('user-not-found') ||
           rawMsg.toLowerCase().contains('account not found') ||
-          rawMsg.toLowerCase().contains('no student account found')) {
+          rawMsg.toLowerCase().contains('no student account found') ||
+          rawMsg.toLowerCase().contains('not found')) {
         friendlyMessage = 'Account not found for scholar #$scholarText.';
       } else if (rawMsg.toLowerCase().contains('wrong-password') ||
           rawMsg.toLowerCase().contains('password wrong') ||
-          rawMsg.toLowerCase().contains('incorrect password')) {
+          rawMsg.toLowerCase().contains('incorrect password') ||
+          rawMsg.toLowerCase().contains('invalid-credential') ||
+          rawMsg.toLowerCase().contains('invalid-login-credentials')) {
         friendlyMessage = 'Password wrong for scholar #$scholarText.';
       } else if (rawMsg.toLowerCase().contains('timeout') ||
           rawMsg.toLowerCase().contains('network')) {
