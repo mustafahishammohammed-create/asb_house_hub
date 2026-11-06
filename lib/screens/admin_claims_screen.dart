@@ -869,6 +869,88 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
                             ),
                           ),
                         ),
+                        if (data['ai_status'] != null) ...[
+                          const SizedBox(height: 10),
+                          Builder(builder: (context) {
+                            final aiStatus = data['ai_status']?.toString().toLowerCase();
+                            final aiConfidence = (data['ai_confidence'] as num?)?.toDouble() ?? 0.0;
+                            final aiSummary = data['ai_summary']?.toString() ?? '';
+
+                            if (aiStatus == 'verified') {
+                              return Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.verified_rounded, color: Colors.green, size: 18),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'AI Seal Matched (${aiConfidence.toInt()}% confidence)\n${aiSummary.isNotEmpty ? aiSummary : "Institutional marker detected"}',
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.green,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            } else if (aiStatus == 'unrecognized') {
+                              return Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
+                                ),
+                                child: const Row(
+                                  children: [
+                                    Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 18),
+                                    SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'AI Warning: No official school seal detected. Manual staff inspection required.',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.amber,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            } else {
+                              return Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Row(
+                                  children: [
+                                    SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    ),
+                                    SizedBox(width: 10),
+                                    Text(
+                                      'Cloud Vision AI scanning certificate in background...',
+                                      style: TextStyle(fontSize: 11, color: Colors.blue),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
+                          }),
+                        ],
                         const SizedBox(height: 20),
                         Divider(color: Colors.grey.withValues(alpha: 0.2)),
                         const SizedBox(height: 12),

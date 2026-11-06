@@ -389,6 +389,209 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  void _showStudentClaimsHistoryModal({
+    required BuildContext context,
+    required String scholarNo,
+    required String houseName,
+    required Color themeColor,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final isDark = Theme.of(ctx).brightness == Brightness.dark;
+        return Container(
+          height: MediaQuery.of(ctx).size.height * 0.75,
+          padding: const EdgeInsets.only(top: 24, left: 24, right: 24, bottom: 24),
+          decoration: BoxDecoration(
+            color: Theme.of(ctx).colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 48,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: themeColor.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Icon(Icons.history_edu_rounded, color: themeColor, size: 24),
+                  ),
+                  const SizedBox(width: 14),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'My Certificate Claims',
+                          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+                        ),
+                        Text(
+                          'Real-time status of your house point submissions',
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: StreamBuilder<QuerySnapshot>(
+                  stream: _authService.getStudentClaimsStream(scholarNo),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    final docs = snapshot.data?.docs ?? [];
+                    if (docs.isEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.assignment_late_outlined, size: 48, color: Colors.grey[400]),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'No claims submitted yet',
+                              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Upload certificates to earn points for ${houseName.toUpperCase()} House!',
+                              style: const TextStyle(fontSize: 13, color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+                    return ListView.separated(
+                      itemCount: docs.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 12),
+                      itemBuilder: (context, idx) {
+                        final data = docs[idx].data() as Map<String, dynamic>? ?? {};
+                        final title = (data['activity_title'] ?? 'Competition Entry').toString();
+                        final pts = data['points'] ?? 10;
+                        final status = (data['status'] ?? 'pending').toString().toLowerCase();
+                        final aiStatus = data['ai_status']?.toString().toLowerCase();
+                        final reason = data['rejection_reason']?.toString();
+
+                        Color statusColor;
+                        String statusLabel;
+                        IconData statusIcon;
+
+                        if (status == 'approved') {
+                          statusColor = Colors.green;
+                          statusLabel = 'Approved (+$pts Pts)';
+                          statusIcon = Icons.check_circle_rounded;
+                        } else if (status == 'rejected') {
+                          statusColor = Colors.redAccent;
+                          statusLabel = 'Not Approved';
+                          statusIcon = Icons.cancel_rounded;
+                        } else {
+                          statusColor = Colors.amber;
+                          statusLabel = 'Under Review';
+                          statusIcon = Icons.hourglass_top_rounded;
+                        }
+
+                        return Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: statusColor.withValues(alpha: 0.3),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      title,
+                                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: statusColor.withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: statusColor.withValues(alpha: 0.5)),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(statusIcon, size: 12, color: statusColor),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          statusLabel,
+                                          style: TextStyle(
+                                            color: statusColor,
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (aiStatus == 'verified') ...[
+                                const SizedBox(height: 6),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.verified_rounded, size: 12, color: Colors.green),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'AI Seal Verified',
+                                      style: TextStyle(color: Colors.green[700], fontSize: 11, fontWeight: FontWeight.w600),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                              if (status == 'rejected' && reason != null && reason.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Feedback: $reason',
+                                  style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+                                ),
+                              ],
+                            ],
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   void _showSubmitClaimModal(
     String houseName,
     String scholarNo,
@@ -475,6 +678,19 @@ class _HomeScreenState extends State<HomeScreen>
                           ),
                         ],
                       ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.history_rounded),
+                      tooltip: 'View My Claims History',
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _showStudentClaimsHistoryModal(
+                          context: context,
+                          scholarNo: scholarNo,
+                          houseName: houseName,
+                          themeColor: color,
+                        );
+                      },
                     ),
                   ],
                 ),

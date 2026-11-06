@@ -2854,9 +2854,43 @@ class AuthService {
       claimId: effectiveClaimId,
     );
 
-    // Windows desktop guard: bypass C++ firebase_storage taskEvent channel
-    // to prevent native threading violations (shell.cc:1183)
+    // On Windows desktop, use direct Firebase Storage REST upload to ensure GCS objects are created
+    // and trigger backend Cloud Functions without native C++ threading crashes.
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+      try {
+        final bucket = DefaultFirebaseOptions.windows.storageBucket;
+        String? idToken;
+        try {
+          idToken = await currentUser?.getIdToken();
+        } catch (_) {}
+
+        final uploadUri = Uri.parse(
+          'https://firebasestorage.googleapis.com/v0/b/$bucket/o?uploadType=media&name=${Uri.encodeComponent(storagePath)}',
+        );
+        final response = await http.post(
+          uploadUri,
+          headers: {
+            'Content-Type': 'image/jpeg',
+            if (idToken != null && idToken.isNotEmpty)
+              'Authorization': 'Bearer $idToken',
+          },
+          body: fileBytes,
+        ).timeout(const Duration(seconds: 15));
+
+        if (response.statusCode == 200) {
+          final bodyJson = jsonDecode(response.body) as Map<String, dynamic>;
+          final downloadTokens = bodyJson['downloadTokens']?.toString();
+          if (downloadTokens != null && downloadTokens.isNotEmpty) {
+            final firstToken = downloadTokens.split(',').first.trim();
+            return 'https://firebasestorage.googleapis.com/v0/b/$bucket/o/${Uri.encodeComponent(storagePath)}?alt=media&token=$firstToken';
+          }
+          return 'https://firebasestorage.googleapis.com/v0/b/$bucket/o/${Uri.encodeComponent(storagePath)}?alt=media';
+        } else {
+          debugPrint('Storage REST upload returned code ${response.statusCode}: ${response.body}');
+        }
+      } catch (e) {
+        debugPrint('Windows Storage REST upload failed: $e. Falling back to Base64.');
+      }
       final base64Str = base64Encode(fileBytes);
       return 'data:image/jpeg;base64,$base64Str';
     }
@@ -2942,6 +2976,7 @@ class AuthService {
         'points': points,
         'cert_url': finalCertUrl,
         'status': 'pending',
+        'ai_status': 'pending_scan',
         'created_at': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     } catch (e) {
@@ -2962,6 +2997,19 @@ class AuthService {
         .snapshots();
   }
 
+  /// Stream house claims submitted by a specific student.
+  Stream<QuerySnapshot> getStudentClaimsStream(String scholarNo) {
+    final cleanScholar = scholarNo.trim().replaceAll('_', '');
+    try {
+      return _firestore
+          .collection('house_claims')
+          .where('scholar_no', isEqualTo: cleanScholar)
+          .snapshots();
+    } catch (_) {
+      return const Stream.empty();
+    }
+  }
+
   /// Stream approved claims for Admin and Council gallery view.
   Stream<QuerySnapshot> getApprovedClaimsStream() {
     return _firestore
@@ -2979,48 +3027,42 @@ class AuthService {
     String? studentName,
     String? activityTitle,
   }) async {
-    final hName = houseName.toLowerCase().trim();
-
-    // 0. Fetch claim doc if any critical student detail is missing
-    String sNo = (scholarNo ?? '').trim();
-    String sName = (studentName ?? '').trim();
-    String aTitle = (activityTitle ?? '').trim();
-
-    try {
-      final claimDoc =
-          await _firestore.collection('house_claims').doc(claimId).get();
-      if (claimDoc.exists) {
-        final data = claimDoc.data() ?? <String, dynamic>{};
-        if (sNo.isEmpty) sNo = (data['scholar_no'] ?? '').toString().trim();
-        if (sName.isEmpty) sName = (data['student_name'] ?? '').toString().trim();
-        if (aTitle.isEmpty) {
-          aTitle = (data['activity_title'] ?? 'House Achievement').toString();
-        }
-      }
-    } catch (_) {}
-
-    if (aTitle.isEmpty) aTitle = 'House Achievement';
-
-    // 1. Transactionally check status and update claim, house points, and contributor totals atomically
     final claimRef = _firestore.collection('house_claims').doc(claimId);
-    final houseRef = _firestore.collection('house_points').doc(hName);
-    final contributorRef = (sNo.isNotEmpty && sNo != '---')
-        ? _firestore.collection('house_contributors').doc(sNo)
-        : null;
+
+    String authHouse = houseName.toLowerCase().trim();
+    int authPoints = points;
+    String authScholar = (scholarNo ?? '').trim();
+    String authStudentName = (studentName ?? '').trim();
+    String authTitle = (activityTitle ?? '').trim();
 
     bool shouldProceed = false;
     try {
       await _firestore.runTransaction((tx) async {
         // Reads must precede writes in Firestore transactions
         final claimSnap = await tx.get(claimRef);
-        if (claimSnap.exists) {
-          final curStatus =
-              (claimSnap.data()?['status'] ?? '').toString().toLowerCase();
-          if (curStatus == 'approved') {
-            // Already approved by another admin or prior tap - abort duplicate credit
-            return;
-          }
+        if (!claimSnap.exists) {
+          return;
         }
+
+        final claimData = claimSnap.data() as Map<String, dynamic>? ?? {};
+        final curStatus =
+            (claimData['status'] ?? '').toString().toLowerCase();
+        if (curStatus == 'approved') {
+          // Already approved - abort duplicate credit
+          return;
+        }
+
+        // Authoritative values from server document
+        authHouse = (claimData['house_name'] ?? houseName).toString().toLowerCase().trim();
+        authPoints = (claimData['points'] as num?)?.toInt() ?? points;
+        authScholar = (claimData['scholar_no'] ?? scholarNo ?? '').toString().trim();
+        authStudentName = (claimData['student_name'] ?? studentName ?? 'Scholar $authScholar').toString().trim();
+        authTitle = (claimData['activity_title'] ?? activityTitle ?? 'House Achievement').toString().trim();
+
+        final houseRef = _firestore.collection('house_points').doc(authHouse);
+        final contributorRef = (authScholar.isNotEmpty && authScholar != '---')
+            ? _firestore.collection('house_contributors').doc(authScholar)
+            : null;
 
         final houseSnap = await tx.get(houseRef);
         final contributorSnap =
@@ -3030,28 +3072,30 @@ class AuthService {
         tx.set(claimRef, {
           'status': 'approved',
           'verified_at': FieldValue.serverTimestamp(),
+          'reviewer_id': currentUser?.uid ?? 'admin',
+          'reviewer_name': currentUser?.displayName ?? 'School Administration',
         }, SetOptions(merge: true));
 
         if (!houseSnap.exists) {
           tx.set(houseRef, {
-            'house_name': hName,
-            'total_points': points.clamp(0, 999999),
+            'house_name': authHouse,
+            'total_points': authPoints.clamp(0, 999999),
           });
         } else {
           final currentPoints =
               (houseSnap.data()?['total_points'] as num?)?.toInt() ?? 0;
-          final newPts = (currentPoints + points).clamp(0, 999999);
+          final newPts = (currentPoints + authPoints).clamp(0, 999999);
           tx.update(houseRef, {'total_points': newPts});
         }
 
         if (contributorRef != null && contributorSnap != null) {
           if (!contributorSnap.exists) {
             tx.set(contributorRef, {
-              'scholar_no': sNo,
-              'student_name': sName.isNotEmpty ? sName : 'Scholar $sNo',
-              'house_name': hName,
+              'scholar_no': authScholar,
+              'student_name': authStudentName.isNotEmpty ? authStudentName : 'Scholar $authScholar',
+              'house_name': authHouse,
               'class_level': 'Senior Tier',
-              'total_contributed': points,
+              'total_contributed': authPoints,
               'merits_count': 1,
               'demerits_count': 0,
               'last_updated': FieldValue.serverTimestamp(),
@@ -3062,9 +3106,9 @@ class AuthService {
             final merits =
                 (contributorSnap.data()?['merits_count'] as num?)?.toInt() ?? 0;
             tx.update(contributorRef, {
-              if (sName.isNotEmpty) 'student_name': sName,
-              'house_name': hName,
-              'total_contributed': currentContributed + points,
+              if (authStudentName.isNotEmpty) 'student_name': authStudentName,
+              'house_name': authHouse,
+              'total_contributed': currentContributed + authPoints,
               'merits_count': merits + 1,
               'last_updated': FieldValue.serverTimestamp(),
             });
@@ -3080,25 +3124,25 @@ class AuthService {
     if (!shouldProceed) return;
 
     // Write-through update local disk standings cache
-    await incrementCachedHousePoints(hName, points);
+    await incrementCachedHousePoints(authHouse, authPoints);
 
     // 4. Update user document and trigger push notification queue
-    if (sNo.isNotEmpty && sNo != '---') {
+    if (authScholar.isNotEmpty && authScholar != '---') {
       try {
         final userQuery = await _firestore
             .collection('users')
-            .where('scholar_no', isEqualTo: sNo)
+            .where('scholar_no', isEqualTo: authScholar)
             .limit(1)
             .get();
         if (userQuery.docs.isNotEmpty) {
           final userDoc = userQuery.docs.first;
           await userDoc.reference.update({
-            'points_contributed': FieldValue.increment(points),
+            'points_contributed': FieldValue.increment(authPoints),
           });
           await userDoc.reference.collection('notifications').add({
-            'title': '🏆 Claim Approved: +$points Pts!',
+            'title': '🏆 Claim Approved: +$authPoints Pts!',
             'body':
-                'Your verified claim for "$aTitle" was approved! +$points points contributed to ${hName.toUpperCase()} House.',
+                'Your verified claim for "$authTitle" was approved! +$authPoints points contributed to ${authHouse.toUpperCase()} House.',
             'timestamp': FieldValue.serverTimestamp(),
             'is_read': false,
             'type': 'claim_approved',
@@ -3114,34 +3158,29 @@ class AuthService {
     String? reason,
     String? studentName,
   }) async {
-    String sNo = '';
-    String aTitle = 'Competition Entry';
-
-    try {
-      final claimDoc =
-          await _firestore.collection('house_claims').doc(claimId).get();
-      if (claimDoc.exists) {
-        final data = claimDoc.data() ?? <String, dynamic>{};
-        sNo = (data['scholar_no'] ?? '').toString().trim();
-        aTitle = (data['activity_title'] ?? 'Competition Entry').toString();
-      }
-    } catch (_) {}
-
     final claimRef = _firestore.collection('house_claims').doc(claimId);
+    String authScholar = '';
+    String authTitle = 'Competition Entry';
+
     bool shouldProceed = false;
     try {
       await _firestore.runTransaction((tx) async {
         final snap = await tx.get(claimRef);
-        if (snap.exists) {
-          final curStatus = (snap.data()?['status'] ?? '').toString().toLowerCase();
-          if (curStatus == 'approved' || curStatus == 'rejected') {
-            return;
-          }
+        if (!snap.exists) return;
+        final data = snap.data() ?? <String, dynamic>{};
+        final curStatus = (data['status'] ?? '').toString().toLowerCase();
+        if (curStatus == 'approved' || curStatus == 'rejected') {
+          return;
         }
+        authScholar = (data['scholar_no'] ?? '').toString().trim();
+        authTitle = (data['activity_title'] ?? 'Competition Entry').toString();
+
         tx.set(claimRef, {
           'status': 'rejected',
           'rejection_reason': reason ?? 'Verification criteria not met.',
           'verified_at': FieldValue.serverTimestamp(),
+          'reviewer_id': currentUser?.uid ?? 'admin',
+          'reviewer_name': currentUser?.displayName ?? 'School Administration',
         }, SetOptions(merge: true));
         shouldProceed = true;
       });
@@ -3152,19 +3191,18 @@ class AuthService {
 
     if (!shouldProceed) return;
 
-    if (sNo.isNotEmpty && sNo != '---') {
+    if (authScholar.isNotEmpty && authScholar != '---') {
       try {
         final userQuery = await _firestore
             .collection('users')
-            .where('scholar_no', isEqualTo: sNo)
+            .where('scholar_no', isEqualTo: authScholar)
             .limit(1)
             .get();
         if (userQuery.docs.isNotEmpty) {
           final userDoc = userQuery.docs.first;
           await userDoc.reference.collection('notifications').add({
             'title': '❌ House Claim Not Approved',
-            'body':
-                'Your claim for "$aTitle" was not approved.${reason != null ? " Reason: $reason" : ""}',
+            'body': 'Your certificate claim for "$authTitle" was not approved. Reason: ${reason ?? "Verification criteria not met."}',
             'timestamp': FieldValue.serverTimestamp(),
             'is_read': false,
             'type': 'claim_rejected',

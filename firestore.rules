@@ -326,7 +326,8 @@ service cloud.firestore {
         'points', 'cert_url', 'status', 'created_at', 'auto_validated',
         'ocr_keywords', 'verified_at', 'verifiedAt', 'updated_at', 'updatedAt',
         'rejection_reason', 'reviewer_id', 'reviewer_name',
-        'file_path', 'verificationLogs'
+        'file_path', 'verificationLogs',
+        'ai_status', 'ai_confidence', 'ai_markers', 'ai_summary', 'ai_processed_at'
       ]) &&
       hasRequiredFields(['scholar_no', 'student_name', 'house_name', 'activity_title', 'points', 'cert_url', 'status']) &&
       data.scholar_no is string && data.scholar_no.size() >= 4 && data.scholar_no.size() <= 20 &&
@@ -342,6 +343,11 @@ service cloud.firestore {
       (!('verificationLogs' in data) || (data.verificationLogs is list && data.verificationLogs.size() <= 50)) &&
       (!('auto_validated' in data) || data.auto_validated is bool) &&
       (!('ocr_keywords' in data) || (data.ocr_keywords is list && data.ocr_keywords.size() <= 30)) &&
+      (!('ai_status' in data) || (data.ai_status is string && data.ai_status.size() <= 50)) &&
+      (!('ai_confidence' in data) || (data.ai_confidence is number && data.ai_confidence >= 0 && data.ai_confidence <= 100)) &&
+      (!('ai_markers' in data) || (data.ai_markers is list && data.ai_markers.size() <= 30)) &&
+      (!('ai_summary' in data) || (data.ai_summary is string && data.ai_summary.size() <= 500)) &&
+      (!('ai_processed_at' in data) || data.ai_processed_at is timestamp) &&
       (!('rejection_reason' in data) || (data.rejection_reason is string && data.rejection_reason.size() <= 500)) &&
       (!('reviewer_name' in data) || (data.reviewer_name is string && data.reviewer_name.size() <= 100)) &&
       (!('created_at' in data) || data.created_at is timestamp) &&
