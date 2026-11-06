@@ -2123,19 +2123,21 @@ class AuthService {
     );
 
     if (account.password != null && account.password!.isNotEmpty) {
-      // Only perform live sign in if current Firebase Auth user does not already match
-      try {
-        if (currentUser?.uid != account.uid) {
-          if (account.scholarNo.toLowerCase() == 'admin') {
-            return await signInAdmin(password: account.password!);
-          } else {
-            final cleanScholar = account.scholarNo.trim();
-            final cred = await signIn(scholarNo: cleanScholar, password: account.password!);
-            return cred;
+      if (currentUser?.uid != account.uid) {
+        // Run live Firebase Auth synchronization in background so UI switches instantly
+        final cleanScholar = account.scholarNo.trim();
+        final pwd = account.password!;
+        Future.microtask(() async {
+          try {
+            if (cleanScholar.toLowerCase() == 'admin') {
+              await signInAdmin(password: pwd);
+            } else {
+              await signIn(scholarNo: cleanScholar, password: pwd);
+            }
+          } catch (e) {
+            debugPrint('switchAccount live auth background sync: $e');
           }
-        }
-      } catch (e) {
-        debugPrint('switchAccount live auth attempt error: $e');
+        });
       }
     }
     return null;
@@ -2451,7 +2453,7 @@ class AuthService {
         : null;
 
     try {
-      // 1. Try local Firestore cache or quick server read with 10s fallback
+      // 1. Try local Firestore cache or quick server read with 3s fallback
       DocumentSnapshot<Map<String, dynamic>>? doc;
       try {
         doc = await _firestore
@@ -2466,7 +2468,7 @@ class AuthService {
             .doc(uid)
             .get()
             .timeout(
-              const Duration(seconds: 10),
+              const Duration(seconds: 3),
               onTimeout: () => throw Exception('Firestore timeout'),
             );
       }
@@ -2526,7 +2528,7 @@ class AuthService {
               .where('scholar_no', isEqualTo: scholarNo)
               .limit(1)
               .get()
-              .timeout(const Duration(seconds: 10));
+              .timeout(const Duration(seconds: 3));
           if (querySnap.docs.isNotEmpty) {
             final data = Map<String, dynamic>.from(querySnap.docs.first.data());
             data['uid'] = uid;
