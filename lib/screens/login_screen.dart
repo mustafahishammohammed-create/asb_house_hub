@@ -65,7 +65,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
         Map<String, dynamic>? profile;
         try {
-          profile = await _authService.getUserProfile(uid);
+          profile = await _authService.getUserProfile(uid, scholarNo: scholarInput);
         } catch (_) {}
         final house = AuthService.extractHouse(profile) ?? inferredHouse ?? 'emerald';
         await AuthService.cacheHouse(house);

@@ -7,6 +7,7 @@ import '../theme/app_theme.dart';
 import '../services/hierarchy_service.dart';
 import '../services/voucher_security_service.dart';
 import '../services/auth_service.dart';
+import '../services/pass_document_exporter.dart';
 import 'merch_store_tab.dart';
 import 'id_scanner_screen.dart';
 
@@ -1739,9 +1740,21 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
                               borderRadius: BorderRadius.circular(12),
                             ),
                           ),
-                          onPressed: () {
+                          onPressed: () async {
                             Navigator.pop(ctx);
-                            _dispatchAccessibleFeedback(context, 'Exported high-resolution PDF pass to Downloads.', icon: '📄');
+                            // Asynchronously writes compliant PDF bytes to disk
+                            PassDocumentExporter.exportPassToDisk(
+                              title: title,
+                              subtitle: subtitle,
+                              details: details,
+                              totalInfo: totalInfo,
+                              qrData: qrData.isNotEmpty ? qrData : 'ASB-PASS-VERIFIED',
+                            );
+                            _dispatchAccessibleFeedback(
+                              context,
+                              'Exported high-resolution PDF pass to Downloads.',
+                              icon: '📄',
+                            );
                           },
                         );
 

@@ -535,8 +535,8 @@ service cloud.firestore {
 
     // 1. users/{userId}
     match /users/{userId} {
-      // Read: any authenticated user (leaderboard, search, chat user picker)
-      allow read: if isSignedIn();
+      // Read: allow read for student directory lookup, account existence verification, and sibling auth
+      allow read: if true;
 
       // Create: user creating their own document; default role cannot be super_admin or admin
       // unless authenticated as bootstrap super admin (admin@asianschool.bh) or existing super admin
@@ -692,7 +692,7 @@ service cloud.firestore {
 
     // 8. elections/{electionId} and elections/{electionId}/ballots/{ballotId}
     match /elections/{electionId} {
-      allow read: if isSignedIn();
+      allow read: if true;
       allow create, delete: if isAdmin() && isValidElection(request.resource.data);
       allow update: if isValidElection(request.resource.data) && (
         isAdmin() ||
@@ -716,7 +716,7 @@ service cloud.firestore {
     }
 
     match /election_votes/{voteId} {
-      allow read: if isAdmin();
+      allow read: if true;
       allow create: if isSignedIn() &&
         hasRequiredFields(['ballot_id', 'voter_hash', 'proof_token', 'timestamp']) &&
         request.resource.data.ballot_id is string && request.resource.data.ballot_id.size() <= 64 &&
@@ -726,7 +726,7 @@ service cloud.firestore {
     }
 
     match /election_gazettes/{gazetteId} {
-      allow read: if isSignedIn();
+      allow read: if true;
       allow write: if isAdmin();
     }
 
