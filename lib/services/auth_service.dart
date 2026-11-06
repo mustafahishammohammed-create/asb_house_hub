@@ -1986,10 +1986,9 @@ class AuthService {
     try {
       _prefs ??= await SharedPreferences.getInstance();
       final accounts = getSavedAccounts();
+      final cleanScholar = account.scholarNo.trim().toLowerCase();
       final index = accounts.indexWhere(
-        (a) =>
-            a.scholarNo.toLowerCase() == account.scholarNo.toLowerCase() ||
-            (account.uid.isNotEmpty && !account.uid.startsWith('sibling_') && a.uid == account.uid),
+        (a) => a.scholarNo.trim().toLowerCase() == cleanScholar,
       );
       if (index >= 0) {
         final existing = accounts[index];
@@ -2135,12 +2134,8 @@ class AuthService {
             return cred;
           }
         }
-      } on FirebaseAuthException {
-        rethrow;
       } catch (e) {
-        if (!_isNoAppException(e)) {
-          debugPrint('switchAccount live auth attempt error: $e');
-        }
+        debugPrint('switchAccount live auth attempt error: $e');
       }
     }
     return null;
@@ -2153,7 +2148,7 @@ class AuthService {
     required String password,
   }) async {
     String cleanScholar = scholarNo.trim().toLowerCase();
-    if (cleanScholar.contains('@asianschool.bh')) {
+    if (cleanScholar.contains('@')) {
       cleanScholar = cleanScholar.split('@').first;
     }
     if (cleanScholar.isEmpty) {
