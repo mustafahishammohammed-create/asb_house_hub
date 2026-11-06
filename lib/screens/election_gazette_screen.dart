@@ -22,8 +22,23 @@ class _ElectionGazetteScreenState extends State<ElectionGazetteScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Campus Election Gazette'),
+        title: const Text('Campus Election Gazette', style: TextStyle(fontWeight: FontWeight.w900)),
         elevation: 0,
+        actions: [
+          IconButton(
+            tooltip: 'Load Statutory Records',
+            icon: const Icon(Icons.history_edu_rounded),
+            onPressed: () async {
+              await AuthService.cacheCertifiedGazette(AuthService.getFoundationalGazettes());
+              if (mounted) setState(() {});
+            },
+          ),
+          IconButton(
+            tooltip: 'Refresh Proclamations',
+            icon: const Icon(Icons.refresh_rounded),
+            onPressed: () => setState(() {}),
+          ),
+        ],
       ),
       body: SafeArea(
         child: StreamBuilder<List<CertifiedElectionResult>>(
@@ -57,6 +72,20 @@ class _ElectionGazetteScreenState extends State<ElectionGazetteScreen> {
                         'Certified election outcomes and statutory appointments will appear here after commission sign-off.',
                         textAlign: TextAlign.center,
                         style: TextStyle(fontSize: 13, color: Colors.grey),
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1E3A8A),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        icon: const Icon(Icons.history_edu_rounded, size: 18),
+                        label: const Text('Load Statutory Records'),
+                        onPressed: () async {
+                          await AuthService.cacheCertifiedGazette(AuthService.getFoundationalGazettes());
+                          if (mounted) setState(() {});
+                        },
                       ),
                     ],
                   ),

@@ -10784,6 +10784,81 @@ void main() {
     expect(adminRecord['display_name'], equals('Principal Administrator'));
     expect(adminRecord['capabilities']['manage_elections'], isTrue);
   });
+
+  test('lookupScholarDetails auto-fills scholar details and position-tailored manifesto', () async {
+    SharedPreferences.setMockInitialValues({});
+    final details = await AuthService.lookupScholarDetails('SCH-042', runningPosition: 'Senior House Captain');
+    expect(details['scholarNo'], equals('SCH-042'));
+    expect(details['manifesto'], contains('championship participation'));
+
+    final sportsDetails = await AuthService.lookupScholarDetails('SCH-099', runningPosition: 'Sports Secretary');
+    expect(sportsDetails['scholarNo'], equals('SCH-099'));
+    expect(sportsDetails['manifesto'], contains('athletic programs'));
+
+    final defaultDetails = await AuthService.lookupScholarDetails('');
+    expect(defaultDetails['scholarNo'], isEmpty);
+  });
+
+  test('AuthService.getFoundationalGazettes returns statutory proclamations and cacheCertifiedGazette stores them', () async {
+    SharedPreferences.setMockInitialValues({});
+    expect(AuthService.getCachedCertifiedGazette(), isEmpty);
+    final foundational = AuthService.getFoundationalGazettes();
+    expect(foundational.isNotEmpty, isTrue);
+    expect(foundational.first.ballotTitle, contains('Senior House Captain'));
+    expect(foundational.first.housePointsAwarded, equals(100));
+
+    await AuthService.cacheCertifiedGazette(foundational);
+    final cached = AuthService.getCachedCertifiedGazette();
+    expect(cached.length, equals(foundational.length));
+    expect(cached.first.winnerScholarNo, equals('SCH-042'));
+  });
+
+  test('castDigitalVote caches receipt and getReceiptForBallot retrieves candidate-specific receipt', () async {
+    SharedPreferences.setMockInitialValues({});
+    final candidate = ElectionCandidate(
+      scholarNo: 'SCH-777',
+      fullName: 'Tariq Al-Mansoor',
+      houseName: 'sapphire',
+      runningPosition: 'Prefect',
+      manifesto: 'Lead by example.',
+      votesCount: 0,
+      isVerified: true,
+      classLevel: 'Grade 11',
+    );
+
+    final mockBallot = ElectionBallot(
+      id: 'ballot_test_vote_receipt_123',
+      title: 'Prefect Election 2026',
+      position: BallotPosition.prefect,
+      houseScope: 'all',
+      eligibleGrades: ['10', '11', '12'],
+      status: BallotStatus.open,
+      startTime: DateTime.now().subtract(const Duration(hours: 1)),
+      endTime: DateTime.now().add(const Duration(hours: 5)),
+      candidates: [candidate],
+      totalVotesCast: 0,
+    );
+
+    await AuthService.cacheBallots([mockBallot]);
+
+    final authService = AuthService();
+    final result = await authService.castDigitalVote(
+      ballotId: mockBallot.id,
+      ballotTitle: mockBallot.title,
+      candidate: candidate,
+      scholarNo: 'VOTER-101',
+    );
+
+    expect(result.success, isTrue);
+    expect(result.receipt, isNotNull);
+    expect(result.receipt!.candidateScholarNo, equals('SCH-777'));
+    expect(result.receipt!.candidateName, equals('Tariq Al-Mansoor'));
+
+    final fetchedReceipt = AuthService.getReceiptForBallot(mockBallot.id);
+    expect(fetchedReceipt, isNotNull);
+    expect(fetchedReceipt!.candidateScholarNo, equals('SCH-777'));
+    expect(fetchedReceipt.candidateName, equals('Tariq Al-Mansoor'));
+  });
 }
 
 class _Phase4MockHttpClient extends http.BaseClient {

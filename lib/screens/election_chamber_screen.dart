@@ -521,6 +521,25 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                 return _buildCandidateRow(ballot, candidate, houseColor, isDark);
               },
             ),
+          if (ballot.isOpen && ballot.candidates.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.amber.shade800,
+                  side: BorderSide(color: Colors.amber.shade800.withValues(alpha: 0.5)),
+                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  minimumSize: const Size.fromHeight(44),
+                ),
+                icon: const Icon(Icons.workspace_premium_rounded, size: 18),
+                label: const Text(
+                  'Close & Certify Election Proclamation',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                ),
+                onPressed: () => _certifyBallotWinner(ballot, houseColor),
+              ),
+            ),
         ],
       ),
     );
@@ -533,7 +552,12 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
     bool isDark,
   ) {
     final candHouseColor = HouseColors.getHouseColor(candidate.houseName);
-    final hasVoted = AuthService.hasVotedInBallotCached(ballot.id);
+    final receipt = AuthService.getReceiptForBallot(ballot.id);
+    final isMyVote = receipt != null &&
+        (receipt.candidateScholarNo.trim().toLowerCase() == candidate.scholarNo.trim().toLowerCase() ||
+            (receipt.candidateScholarNo.isEmpty &&
+                receipt.candidateName.trim().toLowerCase() == candidate.fullName.trim().toLowerCase()));
+    final hasVotedAny = receipt != null || AuthService.hasVotedInBallotCached(ballot.id);
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -644,18 +668,18 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
             ),
           ),
 
-          // Vote Button or Voted Indicator
+          // Vote Button or Candidate-Specific Voted Indicator
           if (ballot.isOpen) ...[
             const SizedBox(width: 6),
             ConstrainedBox(
               constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-              child: hasVoted
+              child: isMyVote
                   ? Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                       decoration: BoxDecoration(
                         color: Colors.green.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                        border: Border.all(color: Colors.green.withValues(alpha: 0.4)),
                       ),
                       child: const Row(
                         mainAxisSize: MainAxisSize.min,
@@ -663,7 +687,7 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                           Icon(Icons.check_circle_rounded, color: Colors.green, size: 16),
                           SizedBox(width: 4),
                           Text(
-                            'Voted',
+                            'Your Vote',
                             style: TextStyle(
                               color: Colors.green,
                               fontWeight: FontWeight.w800,
@@ -673,45 +697,54 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                         ],
                       ),
                     )
-                  : ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: houseColor,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                  : hasVotedAny
+                      ? Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text(
+                            'Not selected',
+                            style: TextStyle(
+                              color: Colors.grey,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 11,
+                            ),
+                          ),
+                        )
+                      : ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: houseColor,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          icon: const Icon(Icons.how_to_vote_rounded, size: 16),
+                          label: const Text(
+                            'Vote',
+                            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+                          ),
+                          onPressed: () => _showVoteConfirmationModal(
+                            ballot: ballot,
+                            candidate: candidate,
+                            scholarNo: _effectiveScholarNo,
+                            houseColor: houseColor,
+                          ),
                         ),
-                      ),
-                      icon: const Icon(Icons.how_to_vote_rounded, size: 16),
-                      label: const Text(
-                        'Vote',
-                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
-                      ),
-                      onPressed: () => _showVoteConfirmationModal(
-                        ballot: ballot,
-                        candidate: candidate,
-                        scholarNo: _effectiveScholarNo,
-                        houseColor: houseColor,
-                      ),
-                    ),
             ),
-          ],
-          if (ballot.isOpen && ballot.candidates.isNotEmpty) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-              child: OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.amber.shade800,
-                  side: BorderSide(color: Colors.amber.shade800.withValues(alpha: 0.5)),
-                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                icon: const Icon(Icons.workspace_premium_rounded, size: 18),
-                label: const Text(
-                  'Close & Certify Election Proclamation',
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
-                ),
-                onPressed: () => _certifyBallotWinner(ballot, houseColor),
+          ] else ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.grey.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '${candidate.votesCount} votes',
+                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
               ),
             ),
           ],
@@ -1296,15 +1329,47 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                                 controller: scholarController,
                                 decoration: InputDecoration(
                                   labelText: 'Scholar #',
-                                  hintText: 'e.g. 2310001',
+                                  hintText: 'e.g. SCH-042',
                                   filled: true,
                                   fillColor: isDark ? const Color(0xFF1E293B) : Colors.white,
                                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                                  suffixIcon: IconButton(
+                                    tooltip: 'Auto-fill details from roster',
+                                    icon: const Icon(Icons.auto_awesome, color: Colors.amber, size: 20),
+                                    onPressed: () async {
+                                      final clean = scholarController.text.trim();
+                                      if (clean.isEmpty) return;
+                                      final details = await AuthService.lookupScholarDetails(
+                                        clean,
+                                        runningPosition: selectedPosition.displayName,
+                                      );
+                                      nameController.text = details['fullName'] as String? ?? '';
+                                      manifestoController.text = details['manifesto'] as String? ?? '';
+                                      setModalState(() => selectedHouse = details['houseName'] as String? ?? 'ruby');
+                                    },
+                                  ),
                                 ),
-                                onChanged: (val) {
-                                  final inferred = AuthService.inferHouseFromScholarNo(val.trim());
+                                onChanged: (val) async {
+                                  final clean = val.trim();
+                                  final inferred = AuthService.inferHouseFromScholarNo(clean);
                                   if (inferred != null) {
                                     setModalState(() => selectedHouse = inferred);
+                                  }
+                                  if (clean.length >= 2) {
+                                    final details = await AuthService.lookupScholarDetails(
+                                      clean,
+                                      runningPosition: selectedPosition.displayName,
+                                    );
+                                    final fullName = details['fullName'] as String? ?? '';
+                                    final house = details['houseName'] as String? ?? 'ruby';
+                                    final manifesto = details['manifesto'] as String? ?? '';
+                                    if (nameController.text.trim().isEmpty || nameController.text.startsWith('Scholar #')) {
+                                      nameController.text = fullName;
+                                    }
+                                    if (manifestoController.text.trim().isEmpty) {
+                                      manifestoController.text = manifesto;
+                                    }
+                                    setModalState(() => selectedHouse = house);
                                   }
                                 },
                               ),
@@ -1524,6 +1589,7 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
 
       if (mounted) {
         if (res.success) {
+          setState(() {});
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('🏆 ${winner.fullName} officially certified! +100 House Points awarded.'),

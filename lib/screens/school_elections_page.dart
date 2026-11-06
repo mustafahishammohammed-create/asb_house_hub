@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import '../services/auth_service.dart';
+import '../models/election_gazette.dart';
 import '../theme/app_theme.dart';
 import 'election_chamber_screen.dart';
 import 'election_gazette_screen.dart';
@@ -405,6 +406,37 @@ class _ElectionDeskState extends State<_ElectionDesk> {
           'certifiedBy': user.uid,
         });
 
+        // Publish statutory proclamation to Campus Election Gazette
+        try {
+          if (leaders.isNotEmpty) {
+            final winningCand = candidates.firstWhere(
+              (c) => c['id'] == leaders.first,
+              orElse: () => candidates.first,
+            );
+            final winnerName = (winningCand['name'] ?? 'Candidate').toString();
+            final house = (box['house'] ?? 'ruby').toString().toLowerCase();
+            final winnerHouse = house == 'all' ? 'ruby' : house;
+
+            final proclamation = CertifiedElectionResult(
+              ballotId: pollId,
+              ballotTitle: (box['title'] ?? 'School Election').toString(),
+              runningPosition: (box['position'] ?? 'Council Representative').toString(),
+              winnerScholarNo: (winningCand['scholar_no'] ?? winningCand['id'] ?? 'SCH-001').toString(),
+              winnerName: winnerName,
+              winnerHouse: winnerHouse,
+              totalVotesReceived: maxCount,
+              victoryMarginVotes: maxCount - (rows.length > 1 ? rows[1]['count'] as int : 0),
+              housePointsAwarded: 100,
+              commissionerName: user.displayName ?? "Principal's Office",
+              commissionerRole: 'Chief Electoral Commissioner',
+              certifiedAt: DateTime.now(),
+              proclamationText:
+                  'By order of the Electoral Commission, $winnerName is duly elected and sworn as ${box['position']}, conferring +100 championship points to ${winnerHouse.toUpperCase()} House.',
+            );
+            _authService.publishGazetteProclamation(proclamation);
+          }
+        } catch (_) {}
+
         return {'pollId': pollId, 'result': result};
       });
     }
@@ -536,10 +568,133 @@ class _ElectionDeskState extends State<_ElectionDesk> {
   }
 
   Future<void> add(String id) async {
-    final input = await form('Add Nominated Candidate', {
-      'scholarNo': 'Registered Scholar Number (e.g. SCH-042)',
-      'statement': 'Approved Candidate Pledge / Manifesto Statement',
-    });
+    final scholarCtrl = TextEditingController();
+    final nameCtrl = TextEditingController();
+    final statementCtrl = TextEditingController();
+    String detectedHouse = 'ruby';
+    String detectedClass = 'Grade 10';
+    bool isLookingUp = false;
+
+    final input = await showDialog<Fields>(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (ctx, setDlgState) {
+          Future<void> doLookup(String raw) async {
+            final clean = raw.trim();
+            if (clean.length < 2) return;
+            setDlgState(() => isLookingUp = true);
+            try {
+              final details = await AuthService.lookupScholarDetails(clean);
+              nameCtrl.text = details['fullName'] as String? ?? '';
+              statementCtrl.text = details['manifesto'] as String? ?? '';
+              detectedHouse = details['houseName'] as String? ?? 'ruby';
+              detectedClass = details['classLevel'] as String? ?? 'Grade 10';
+            } catch (_) {} finally {
+              setDlgState(() => isLookingUp = false);
+            }
+          }
+
+          return AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.person_add_alt_1_rounded, color: Colors.blueAccent),
+                SizedBox(width: 8),
+                Text('Add Candidate (Auto-Filled)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  TextField(
+                    controller: scholarCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Scholar Number (e.g. SCH-042)',
+                      border: const OutlineInputBorder(),
+                      suffixIcon: IconButton(
+                        tooltip: 'Auto-fill from roster',
+                        icon: isLookingUp
+                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                            : const Icon(Icons.auto_awesome, color: Colors.amber),
+                        onPressed: () => doLookup(scholarCtrl.text),
+                      ),
+                    ),
+                    onChanged: (val) {
+                      if (val.trim().length >= 3) {
+                        doLookup(val);
+                      }
+                    },
+                  ),
+                  if (nameCtrl.text.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.check_circle_rounded, color: Colors.green, size: 16),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Roster Match: ${nameCtrl.text} (${detectedHouse.toUpperCase()} • $detectedClass)',
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: nameCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Candidate Full Name (Editable)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: statementCtrl,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: 'Approved Candidate Statement / Pledge (Editable)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('Cancel')),
+              FilledButton(
+                onPressed: () {
+                  final sNo = scholarCtrl.text.trim();
+                  final stmt = statementCtrl.text.trim();
+                  if (sNo.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Please enter candidate scholar number.')),
+                    );
+                    return;
+                  }
+                  Navigator.pop(dialogCtx, {
+                    'scholarNo': sNo,
+                    'statement': stmt.isNotEmpty ? stmt : 'Dedicated to active service and leadership.',
+                    'name': nameCtrl.text.trim(),
+                  });
+                },
+                child: const Text('Add Candidate'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
     if (input != null && mounted) await call('add', id, input);
   }
 

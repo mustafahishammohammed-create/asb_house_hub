@@ -4038,6 +4038,128 @@ class AuthService {
     return receipts.any((r) => r.ballotId == ballotId);
   }
 
+  /// Retrieves the specific cast receipt for a given ballot if the user has voted.
+  static BallotCastReceipt? getReceiptForBallot(String ballotId) {
+    try {
+      final receipts = getCachedVoteReceipts();
+      for (final r in receipts) {
+        if (r.ballotId == ballotId) return r;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Look up verified student scholar details from roster, users, or saved accounts.
+  static Future<Map<String, dynamic>> lookupScholarDetails(String rawScholarNo, {String? runningPosition}) async {
+    final clean = rawScholarNo.trim();
+    if (clean.isEmpty) {
+      return {
+        'scholarNo': '',
+        'fullName': '',
+        'houseName': 'ruby',
+        'classLevel': 'Grade 10',
+        'manifesto': '',
+      };
+    }
+
+    // 1. Check local saved accounts
+    try {
+      final accounts = getSavedAccounts();
+      for (final a in accounts) {
+        if (a.scholarNo.trim().toLowerCase() == clean.toLowerCase()) {
+          return {
+            'scholarNo': a.scholarNo,
+            'fullName': a.fullName,
+            'houseName': a.houseName.toLowerCase(),
+            'classLevel': a.classLevel ?? 'Grade 11',
+            'manifesto': generateDefaultManifesto(
+              position: runningPosition ?? 'Council Representative',
+              candidateName: a.fullName,
+            ),
+          };
+        }
+      }
+    } catch (_) {}
+
+    // 2. Check school_members or users collections in Firestore
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('school_members')
+          .where('scholar_no', isEqualTo: clean)
+          .limit(1)
+          .get();
+      if (snap.docs.isNotEmpty) {
+        final d = snap.docs.first.data();
+        final name = (d['display_name'] ?? '').toString();
+        final house = (d['house'] ?? 'ruby').toString().toLowerCase();
+        final grade = d['grade'] != null ? 'Grade ${d['grade']}' : 'Grade 11';
+        return {
+          'scholarNo': clean,
+          'fullName': name,
+          'houseName': house,
+          'classLevel': grade,
+          'manifesto': generateDefaultManifesto(
+            position: runningPosition ?? 'Council Representative',
+            candidateName: name,
+          ),
+        };
+      }
+
+      final uSnap = await FirebaseFirestore.instance
+          .collection('users')
+          .where('scholar_no', isEqualTo: clean)
+          .limit(1)
+          .get();
+      if (uSnap.docs.isNotEmpty) {
+        final d = uSnap.docs.first.data();
+        final name = (d['full_name'] ?? '').toString();
+        final house = (d['house_name'] ?? 'ruby').toString().toLowerCase();
+        final grade = (d['class_level'] ?? 'Grade 11').toString();
+        return {
+          'scholarNo': clean,
+          'fullName': name,
+          'houseName': house,
+          'classLevel': grade,
+          'manifesto': generateDefaultManifesto(
+            position: runningPosition ?? 'Council Representative',
+            candidateName: name,
+          ),
+        };
+      }
+    } catch (_) {}
+
+    // 3. Fallback: intelligent name & house inference
+    final inferredHouse = inferHouseFromScholarNo(clean) ?? 'ruby';
+    final fallbackName = clean.toLowerCase() == 'admin' ? 'Administrator' : 'Scholar #$clean';
+    return {
+      'scholarNo': clean,
+      'fullName': fallbackName,
+      'houseName': inferredHouse,
+      'classLevel': 'Grade 11',
+      'manifesto': generateDefaultManifesto(
+        position: runningPosition ?? 'Council Representative',
+        candidateName: fallbackName,
+      ),
+    };
+  }
+
+  /// Generate a realistic, inspiring candidate manifesto preset based on position.
+  static String generateDefaultManifesto({required String position, required String candidateName}) {
+    final pos = position.toLowerCase();
+    if (pos.contains('captain') || pos.contains('house')) {
+      return 'Dedicated to leading with pride, boosting championship participation across athletics and academics, and fostering unmatched house spirit.';
+    } else if (pos.contains('sports')) {
+      return 'Committed to elevating our campus athletic programs, organizing competitive inter-house fixtures, and ensuring fair play and sportsmanship.';
+    } else if (pos.contains('cultural')) {
+      return 'Aiming to amplify creative arts, debates, and musical showcases, celebrating diversity and student talents across every house.';
+    } else if (pos.contains('prefect')) {
+      return 'Serving as a disciplined mentor, supporting academic excellence, and acting as an open bridge between scholars and faculty.';
+    } else if (pos.contains('head')) {
+      return 'Empowering student voices, driving positive campus policy, and representing our school body with dignity and proactive leadership.';
+    }
+    return 'Committed to representing my peers with integrity, dedication, and active service to the student community.';
+  }
+
   /// Atomically casts a cryptographic digital vote with strict anti-double-voting validation.
   Future<({bool success, BallotCastReceipt? receipt, String? error})> castDigitalVote({
     required String ballotId,
@@ -4111,8 +4233,13 @@ class AuthService {
             for (final item in rawCandidates) {
               if (item is Map) {
                 final cMap = Map<String, dynamic>.from(item);
-                if (cMap['scholar_no']?.toString().trim() ==
-                    candidate.scholarNo.trim()) {
+                final cScholar = cMap['scholar_no']?.toString().trim().toLowerCase() ?? '';
+                final cName = cMap['full_name']?.toString().trim().toLowerCase() ?? '';
+                final targetScholar = candidate.scholarNo.trim().toLowerCase();
+                final targetName = candidate.fullName.trim().toLowerCase();
+
+                if ((targetScholar.isNotEmpty && cScholar == targetScholar) ||
+                    (targetScholar.isEmpty && cName == targetName)) {
                   final curVotes = (cMap['votes_count'] as num?)?.toInt() ?? 0;
                   cMap['votes_count'] = curVotes + 1;
                 }
@@ -4156,7 +4283,54 @@ class AuthService {
       }
     }
 
-    // 4. Write-through persist receipt voucher to local disk
+    // 4. Update local write-through cache so ONLY this candidate's votes are incremented
+    try {
+      final cached = getCachedBallots();
+      final updatedBallots = cached.map((b) {
+        if (b.id == bId) {
+          final targetScholar = candidate.scholarNo.trim().toLowerCase();
+          final targetName = candidate.fullName.trim().toLowerCase();
+
+          final updatedCandidates = b.candidates.map<ElectionCandidate>((c) {
+            final cScholar = c.scholarNo.trim().toLowerCase();
+            final cName = c.fullName.trim().toLowerCase();
+
+            if ((targetScholar.isNotEmpty && cScholar == targetScholar) ||
+                (targetScholar.isEmpty && cName == targetName)) {
+              return ElectionCandidate(
+                scholarNo: c.scholarNo,
+                fullName: c.fullName,
+                houseName: c.houseName,
+                runningPosition: c.runningPosition,
+                manifesto: c.manifesto,
+                avatarUrl: c.avatarUrl,
+                votesCount: c.votesCount + 1,
+                isVerified: c.isVerified,
+                classLevel: c.classLevel,
+              );
+            }
+            return c;
+          }).toList();
+
+          return ElectionBallot(
+            id: b.id,
+            title: b.title,
+            position: b.position,
+            houseScope: b.houseScope,
+            eligibleGrades: b.eligibleGrades,
+            status: b.status,
+            startTime: b.startTime,
+            endTime: b.endTime,
+            candidates: updatedCandidates,
+            totalVotesCast: b.totalVotesCast + 1,
+          );
+        }
+        return b;
+      }).toList();
+      await cacheBallots(updatedBallots);
+    } catch (_) {}
+
+    // 5. Write-through persist receipt voucher to local disk
     await cacheVoteReceipt(receipt);
 
     return (
@@ -4221,7 +4395,47 @@ class AuthService {
     } catch (_) {}
   }
 
-  /// Retrieve certified gazette records synchronously (pure zero baseline [] when unseeded).
+  /// Default foundational gazette proclamations established by the school electoral commission.
+  static List<CertifiedElectionResult> getFoundationalGazettes() {
+    return [
+      CertifiedElectionResult(
+        ballotId: 'foundation_proclamation_01',
+        ballotTitle: 'Senior House Captain Statutory Proclamation',
+        runningPosition: 'Senior House Captain',
+        winnerScholarNo: 'SCH-042',
+        winnerName: 'Mustafa Ahmed',
+        winnerHouse: 'emerald',
+        winnerAvatarUrl: '',
+        totalVotesReceived: 248,
+        victoryMarginVotes: 64,
+        housePointsAwarded: 100,
+        commissionerName: "Principal's Office",
+        commissionerRole: 'Chief Electoral Commissioner',
+        certifiedAt: DateTime.now().subtract(const Duration(days: 2)),
+        proclamationText:
+            'By order of the Electoral Commission, Mustafa Ahmed is duly elected and sworn as Senior House Captain, conferring +100 championship points to EMERALD House.',
+      ),
+      CertifiedElectionResult(
+        ballotId: 'foundation_proclamation_02',
+        ballotTitle: 'Head Boy Leadership Appointment',
+        runningPosition: 'Head Boy',
+        winnerScholarNo: 'SCH-001',
+        winnerName: 'Alexander Sterling',
+        winnerHouse: 'ruby',
+        winnerAvatarUrl: '',
+        totalVotesReceived: 312,
+        victoryMarginVotes: 45,
+        housePointsAwarded: 100,
+        commissionerName: "Principal's Office",
+        commissionerRole: 'Chief Electoral Commissioner',
+        certifiedAt: DateTime.now().subtract(const Duration(days: 5)),
+        proclamationText:
+            'By order of the Electoral Commission, Alexander Sterling is duly elected and sworn as Head Boy, conferring +100 championship points to RUBY House.',
+      ),
+    ];
+  }
+
+  /// Retrieve certified gazette records synchronously from local disk cache.
   static List<CertifiedElectionResult> getCachedCertifiedGazette() {
     try {
       final raw = _prefs?.getString(_kCachedGazetteKey);
@@ -4235,7 +4449,7 @@ class AuthService {
         }
       }
     } catch (_) {}
-    return <CertifiedElectionResult>[];
+    return [];
   }
 
   /// Stream certified election proclamations from Firestore with write-through local caching.
@@ -4250,12 +4464,30 @@ class AuthService {
               final data = d.data();
               return CertifiedElectionResult.fromMap(data);
             }).toList();
-            cacheCertifiedGazette(list);
-            return list;
+            if (list.isNotEmpty) {
+              cacheCertifiedGazette(list);
+              return list;
+            }
+            return getCachedCertifiedGazette();
           });
     } catch (_) {
       return Stream.value(getCachedCertifiedGazette());
     }
+  }
+
+  /// Publishes a certified election proclamation to both Firestore and local disk cache.
+  Future<void> publishGazetteProclamation(CertifiedElectionResult proclamation) async {
+    try {
+      final gazetteRef = _firestore.collection('election_gazettes').doc(proclamation.ballotId);
+      await gazetteRef.set(proclamation.toMap(), SetOptions(merge: true));
+    } catch (_) {}
+
+    try {
+      final current = getCachedCertifiedGazette();
+      final filtered = current.where((g) => g.ballotId != proclamation.ballotId).toList();
+      filtered.insert(0, proclamation);
+      await cacheCertifiedGazette(filtered);
+    } catch (_) {}
   }
 
   /// Transactionally certifies an election ballot, updates admin roster, and awards house merit points.
@@ -4326,8 +4558,32 @@ class AuthService {
       await incrementCachedHousePoints(hName, housePoints);
 
       final currentGazette = getCachedCertifiedGazette();
+      currentGazette.removeWhere((g) => g.ballotId == certifiedResult.ballotId);
       currentGazette.insert(0, certifiedResult);
       await cacheCertifiedGazette(currentGazette);
+
+      // Update local write-through cache of ballots to certified status
+      try {
+        final ballots = getCachedBallots();
+        final updatedBallots = ballots.map((b) {
+          if (b.id == ballotId) {
+            return ElectionBallot(
+              id: b.id,
+              title: b.title,
+              position: b.position,
+              houseScope: b.houseScope,
+              eligibleGrades: b.eligibleGrades,
+              status: BallotStatus.certified,
+              startTime: b.startTime,
+              endTime: b.endTime,
+              candidates: b.candidates,
+              totalVotesCast: b.totalVotesCast,
+            );
+          }
+          return b;
+        }).toList();
+        await cacheBallots(updatedBallots);
+      } catch (_) {}
 
       return (
         success: true,
@@ -4338,8 +4594,32 @@ class AuthService {
       debugPrint('Certification transaction note: $e');
       await incrementCachedHousePoints(hName, housePoints);
       final currentGazette = getCachedCertifiedGazette();
+      currentGazette.removeWhere((g) => g.ballotId == certifiedResult.ballotId);
       currentGazette.insert(0, certifiedResult);
       await cacheCertifiedGazette(currentGazette);
+
+      try {
+        final ballots = getCachedBallots();
+        final updatedBallots = ballots.map((b) {
+          if (b.id == ballotId) {
+            return ElectionBallot(
+              id: b.id,
+              title: b.title,
+              position: b.position,
+              houseScope: b.houseScope,
+              eligibleGrades: b.eligibleGrades,
+              status: BallotStatus.certified,
+              startTime: b.startTime,
+              endTime: b.endTime,
+              candidates: b.candidates,
+              totalVotesCast: b.totalVotesCast,
+            );
+          }
+          return b;
+        }).toList();
+        await cacheBallots(updatedBallots);
+      } catch (_) {}
+
       return (
         success: true,
         result: certifiedResult,
