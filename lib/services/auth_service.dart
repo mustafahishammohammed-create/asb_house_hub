@@ -2283,8 +2283,11 @@ class AuthService {
             password: password,
           )
           .timeout(
-            const Duration(seconds: 6),
-            onTimeout: () => throw Exception('Firebase authentication connection timed out.'),
+            const Duration(seconds: 25),
+            onTimeout: () => throw FirebaseAuthException(
+              code: 'network-request-failed',
+              message: 'Authentication connection timed out. Please check your internet connection.',
+            ),
           );
     } on FirebaseAuthException catch (e) {
       if (e.code == 'user-not-found') {
@@ -2308,18 +2311,33 @@ class AuthService {
               .where('scholar_no', isEqualTo: cleanScholar)
               .limit(1)
               .get()
-              .timeout(const Duration(seconds: 2));
+              .timeout(const Duration(seconds: 8));
           if (querySnap.docs.isNotEmpty) {
             exists = true;
           } else {
-            final docSnap = await _firestore
+            final emailSnap = await _firestore
                 .collection('users')
-                .doc(cleanScholar)
+                .where('email', isEqualTo: email)
+                .limit(1)
                 .get()
-                .timeout(const Duration(seconds: 2));
-            if (docSnap.exists) exists = true;
+                .timeout(const Duration(seconds: 8));
+            if (emailSnap.docs.isNotEmpty) {
+              exists = true;
+            }
           }
         } catch (_) {}
+
+        if (!exists) {
+          try {
+            final rosterSnap = await _firestore
+                .collection('admin_roster')
+                .where('scholar_no', isEqualTo: cleanScholar)
+                .limit(1)
+                .get()
+                .timeout(const Duration(seconds: 6));
+            if (rosterSnap.docs.isNotEmpty) exists = true;
+          } catch (_) {}
+        }
 
         if (!exists) {
           throw FirebaseAuthException(
