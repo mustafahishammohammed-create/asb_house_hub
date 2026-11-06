@@ -156,11 +156,11 @@ class SavedAccount {
     this.password,
     Map<String, dynamic>? cachedProfile,
     DateTime? lastActive,
-  })  : cachedProfile = cachedProfile ?? const {},
+  })  : cachedProfile = cachedProfile != null ? AuthService._sanitizeForJson(cachedProfile) : const {},
         lastActive = lastActive ?? DateTime.now();
 
   Map<String, dynamic> toMap() {
-    final sanitizedProfile = Map<String, dynamic>.from(cachedProfile)
+    final sanitizedProfile = AuthService._sanitizeForJson(cachedProfile)
       ..remove('password');
     return {
       'scholar_no': scholarNo,
@@ -178,11 +178,12 @@ class SavedAccount {
 
   factory SavedAccount.fromMap(Map<String, dynamic> map) {
     final scholar = (map['scholar_no'] ?? '').toString().trim();
-    final profile = map['cached_profile'] is Map
+    final rawProfile = map['cached_profile'] is Map
         ? Map<String, dynamic>.from(map['cached_profile'] as Map)
         : (map['profile'] is Map
             ? Map<String, dynamic>.from(map['profile'] as Map)
             : <String, dynamic>{});
+    final profile = AuthService._sanitizeForJson(rawProfile);
 
     final extractedHouse = AuthService.extractHouse(map) ??
         AuthService.extractHouse(profile) ??
@@ -1957,6 +1958,30 @@ class AuthService {
               deduped[sNo] = updated;
             }
           }
+
+          final activeScholar = (getCachedScholarNo() ?? '').trim().toLowerCase();
+          if (activeScholar.isNotEmpty && !deduped.containsKey(activeScholar)) {
+            final profile = getCachedProfile();
+            final house = extractHouse(profile) ?? getCachedHouse() ?? 'emerald';
+            final isSuper = HierarchyService.isSuperAdmin(
+              scholarNo: activeScholar,
+              role: profile?['role']?.toString(),
+            );
+            final activeAccount = SavedAccount(
+              scholarNo: activeScholar,
+              fullName: profile?['full_name']?.toString() ?? (isSuper ? 'Administrator' : 'Student Scholar'),
+              houseName: house,
+              uid: profile?['uid']?.toString() ?? getCachedUid() ?? '',
+              role: isSuper ? 'super_admin' : profile?['role']?.toString(),
+              classLevel: isSuper ? 'Staff' : profile?['class_level']?.toString(),
+              division: isSuper ? 'Admin' : profile?['division']?.toString(),
+              cachedProfile: profile ?? {},
+              lastActive: DateTime.now(),
+            );
+            deduped[activeScholar] = activeAccount;
+            saveAccount(activeAccount);
+          }
+
           return deduped.values.toList();
         }
       }
@@ -2024,7 +2049,9 @@ class AuthService {
       }
       final encoded = jsonEncode(accounts.map((a) => a.toMap()).toList());
       await _prefs?.setString(_kSavedAccountsKey, encoded);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Error saving account to saved accounts list: $e');
+    }
   }
 
   /// Save account locally (alias).
@@ -2040,7 +2067,9 @@ class AuthService {
       );
       final encoded = jsonEncode(accounts.map((a) => a.toMap()).toList());
       await _prefs?.setString(_kSavedAccountsKey, encoded);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Error removing saved account: $e');
+    }
   }
 
   /// Clear all saved accounts on this device.
@@ -2090,6 +2119,7 @@ class AuthService {
           ? password
           : existing?.password;
 
+      final cleanProfile = _sanitizeForJson(profile);
       final updated = SavedAccount(
         scholarNo: scholarNo,
         fullName: effectiveFullName,
@@ -2101,14 +2131,16 @@ class AuthService {
         password: effectivePassword,
         cachedProfile: {
           ...(existing?.cachedProfile ?? {}),
-          ...profile,
+          ...cleanProfile,
           if (isSuper) 'role': 'super_admin',
         },
         lastActive: DateTime.now(),
       );
 
       await saveAccount(updated);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Error recording active account: $e');
+    }
   }
 
   /// Switch the active student session on this device.
