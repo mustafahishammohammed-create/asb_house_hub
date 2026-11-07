@@ -51,6 +51,19 @@ User? get _safeCurrentUser {
   return null;
 }
 
+bool get _isFirebaseLive {
+  try {
+    return Firebase.apps.isNotEmpty;
+  } catch (_) {
+    return false;
+  }
+}
+
+bool _isNoAppException(dynamic e) {
+  final s = e.toString().toLowerCase();
+  return s.contains('no-app') || s.contains('no app') || s.contains('has been created');
+}
+
 class SchoolElectionsPage extends StatelessWidget {
   const SchoolElectionsPage({super.key});
 
@@ -217,29 +230,33 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
     try {
       final snap = await db.collection('election_polls_v2').get();
       for (final doc in snap.docs) {
-        final data = doc.data();
-        final isCert = certifiedIds.contains(doc.id) ||
-            data['status'] == 'certified' ||
-            data['is_certified'] == true;
-        if (isCert && data['status'] != 'certified') {
-          final m = Map<String, dynamic>.from(data);
-          m['status'] = 'certified';
-          m['is_certified'] = true;
-          pollsMap[doc.id] = MemoryElectionDoc(doc.id, m);
-        } else {
-          pollsMap[doc.id] = QueryElectionDoc(doc);
-        }
-        if (activeScholar.isNotEmpty && activeScholar != 'guest') {
-          try {
-            final sKey = sha256.convert(utf8.encode('${doc.id}:${activeScholar.toLowerCase()}')).toString();
-            final partDoc = await doc.reference.collection('participation').doc(sKey).get();
-            if (partDoc.exists) {
-              final rcpt = partDoc.data()?['receipt']?.toString();
-              if (rcpt != null && rcpt.isNotEmpty) {
-                receipts['${activeScholar}_${doc.id}'] = rcpt;
+        try {
+          final data = doc.data();
+          final isCert = certifiedIds.contains(doc.id) ||
+              data['status'] == 'certified' ||
+              data['is_certified'] == true;
+          if (isCert && data['status'] != 'certified') {
+            final m = Map<String, dynamic>.from(data);
+            m['status'] = 'certified';
+            m['is_certified'] = true;
+            pollsMap[doc.id] = MemoryElectionDoc(doc.id, m);
+          } else {
+            pollsMap[doc.id] = QueryElectionDoc(doc);
+          }
+          if (activeScholar.isNotEmpty && activeScholar != 'guest') {
+            try {
+              final sKey = sha256.convert(utf8.encode('${doc.id}:${activeScholar.toLowerCase()}')).toString();
+              final partDoc = await doc.reference.collection('participation').doc(sKey).get();
+              if (partDoc.exists) {
+                final rcpt = partDoc.data()?['receipt']?.toString();
+                if (rcpt != null && rcpt.isNotEmpty) {
+                  receipts['${activeScholar}_${doc.id}'] = rcpt;
+                }
               }
-            }
-          } catch (_) {}
+            } catch (_) {}
+          }
+        } catch (e) {
+          debugPrint('Skipping malformed v2 poll doc ${doc.id}: $e');
         }
       }
     } catch (_) {}
@@ -278,36 +295,48 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
     try {
       final legacySnap = await db.collection('elections').get();
       for (final doc in legacySnap.docs) {
-        final data = doc.data();
-        final isCert = certifiedIds.contains(doc.id) ||
-            data['status'] == 'certified' ||
-            data['is_certified'] == true;
-        if (!pollsMap.containsKey(doc.id)) {
-          pollsMap[doc.id] = MemoryElectionDoc(doc.id, {
-            'id': doc.id,
-            'title': data['title'] ?? 'School Election',
-            'position': data['position'] ?? data['running_position'] ?? 'School Leader',
-            'house': data['house_scope'] ?? data['house'] ?? 'all',
-            'minGrade': 1,
-            'maxGrade': 12,
-            'opensAt': data['start_time'] != null ? Timestamp.fromDate(DateTime.tryParse(data['start_time'].toString()) ?? DateTime.now()) : Timestamp.now(),
-            'closesAt': data['end_time'] != null ? Timestamp.fromDate(DateTime.tryParse(data['end_time'].toString()) ?? DateTime.now().add(const Duration(days: 7))) : Timestamp.fromDate(DateTime.now().add(const Duration(days: 7))),
-            'candidates': (data['candidates'] as List? ?? []).map((c) => {
-              'id': c['id'] ?? c['scholar_no'] ?? '',
-              'name': c['full_name'] ?? c['name'] ?? '',
-              'scholar_no': c['scholar_no'] ?? '',
-              'statement': c['manifesto'] ?? c['statement'] ?? '',
-              'votes_count': (c['votes_count'] as num?)?.toInt() ?? 0,
-            }).toList(),
-            'status': isCert ? 'certified' : 'published',
-            'is_certified': isCert,
-            'total_votes_cast': (data['total_votes_cast'] as num?)?.toInt() ?? 0,
-          });
-        } else if (isCert) {
-          final existing = Map<String, dynamic>.from(pollsMap[doc.id]!.data());
-          existing['status'] = 'certified';
-          existing['is_certified'] = true;
-          pollsMap[doc.id] = MemoryElectionDoc(doc.id, existing);
+        try {
+          final data = doc.data();
+          final isCert = certifiedIds.contains(doc.id) ||
+              data['status'] == 'certified' ||
+              data['is_certified'] == true;
+          final rawEndTime = data['end_time'];
+          final parsedEndTime = rawEndTime != null ? DateTime.tryParse(rawEndTime.toString()) : null;
+          final hasValidEnd = parsedEndTime != null;
+          final closesAt = hasValidEnd
+              ? Timestamp.fromDate(parsedEndTime)
+              : Timestamp.fromMillisecondsSinceEpoch(0);
+          final defaultStatus = hasValidEnd ? 'published' : 'closed';
+
+          if (!pollsMap.containsKey(doc.id)) {
+            pollsMap[doc.id] = MemoryElectionDoc(doc.id, {
+              'id': doc.id,
+              'title': data['title'] ?? 'School Election',
+              'position': data['position'] ?? data['running_position'] ?? 'School Leader',
+              'house': data['house_scope'] ?? data['house'] ?? 'all',
+              'minGrade': 1,
+              'maxGrade': 12,
+              'opensAt': data['start_time'] != null ? Timestamp.fromDate(DateTime.tryParse(data['start_time'].toString()) ?? DateTime.now()) : Timestamp.now(),
+              'closesAt': closesAt,
+              'candidates': (data['candidates'] as List? ?? []).map((c) => {
+                'id': c['id'] ?? c['scholar_no'] ?? '',
+                'name': c['full_name'] ?? c['name'] ?? '',
+                'scholar_no': c['scholar_no'] ?? '',
+                'statement': c['manifesto'] ?? c['statement'] ?? '',
+                'votes_count': (c['votes_count'] as num?)?.toInt() ?? 0,
+              }).toList(),
+              'status': isCert ? 'certified' : defaultStatus,
+              'is_certified': isCert,
+              'total_votes_cast': (data['total_votes_cast'] as num?)?.toInt() ?? 0,
+            });
+          } else if (isCert) {
+            final existing = Map<String, dynamic>.from(pollsMap[doc.id]!.data());
+            existing['status'] = 'certified';
+            existing['is_certified'] = true;
+            pollsMap[doc.id] = MemoryElectionDoc(doc.id, existing);
+          }
+        } catch (e) {
+          debugPrint('Skipping malformed legacy election doc ${doc.id}: $e');
         }
       }
     } catch (_) {}
@@ -412,35 +441,40 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
     final user = _safeCurrentUser;
     final activeUid = widget.uid.trim();
 
-    // Step A: Attempt server-authoritative Cloud Function invocation only if active session matches auth identity
-    if (user != null && user.uid == activeUid && activeUid != 'guest') {
-      try {
-        final token = await user.getIdToken();
-        if (token != null) {
-          final project = Firebase.app().options.projectId;
-          final url = Uri.https('us-central1-$project.cloudfunctions.net', '/schoolElection');
-          final reply = await http.post(
-            url,
-            headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
-            body: jsonEncode({'data': {...args, 'action': action, 'pollId': id}}),
-          ).timeout(const Duration(milliseconds: 1500));
+    if (Firebase.apps.isNotEmpty) {
+      if (user == null || user.uid != activeUid || activeUid == 'guest') {
+        throw StateError('Active session does not match authenticated identity. Please sign in again.');
+      }
+      final token = await user.getIdToken();
+      if (token == null) {
+        throw StateError('Authentication token unavailable. Please sign in again.');
+      }
+      final project = Firebase.app().options.projectId;
+      final url = Uri.https('us-central1-$project.cloudfunctions.net', '/schoolElection');
+      final reply = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
+        body: jsonEncode({'data': {...args, 'action': action, 'pollId': id}}),
+      ).timeout(const Duration(seconds: 15));
 
-          if (reply.statusCode == 200) {
-            final envelope = jsonDecode(reply.body);
-            if (envelope is Map && envelope['error'] == null) {
-              final result = envelope['result'] ?? envelope['data'];
-              if (result is Map) {
-                return Map<String, dynamic>.from(result);
-              }
-            }
-          }
+      final envelope = jsonDecode(reply.body);
+      if (envelope is Map) {
+        if (envelope['error'] != null) {
+          final err = envelope['error'];
+          final msg = err is Map ? (err['message'] ?? err.toString()) : err.toString();
+          throw Exception(msg);
         }
-      } catch (e) {
-        debugPrint('Cloud Function schoolElection note: $e. Using resilient Firestore transaction.');
+        final result = envelope['result'] ?? envelope['data'];
+        if (result is Map) {
+          return Map<String, dynamic>.from(result);
+        }
+      }
+      if (reply.statusCode != 200) {
+        throw Exception('Official election server error (Status ${reply.statusCode}). Please try again.');
       }
     }
 
-    // Step B: Authoritative direct Firestore Transaction fallback
+    // Direct Firestore fallback only permitted in offline testing/unit-harness
     return await _callFirestoreFallback(action, id, args, user);
   }
 
@@ -472,12 +506,6 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
     if (action == 'receipt' || action == 'vote') {
       final scholar = activeScholar.isNotEmpty ? activeScholar : (person['scholar_no'] ?? '').toString().trim();
       if (scholar.isEmpty) throw StateError('Verified roster identity required.');
-      final isPrivilegedTester = scholar == 'admin' ||
-          scholar == '11209' ||
-          cachedRole == 'admin' ||
-          cachedRole == 'super_admin' ||
-          cachedRole == 'principal' ||
-          HierarchyService.isSuperAdmin(scholarNo: scholar, role: cachedRole);
       final normalizedScholar = scholar.toLowerCase().trim();
       final key = sha256.convert(utf8.encode('$pollId:$normalizedScholar')).toString();
       final partRef = pollRef.collection('participation').doc(key);
@@ -501,19 +529,17 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
       final candidateId = (args['candidateId'] ?? '').toString().trim();
       if (candidateId.isEmpty) throw StateError('Select a candidate to cast your vote.');
 
-      if (!isPrivilegedTester) {
-        try {
-          final priorSnap = await partRef.get();
-          if (priorSnap.exists) {
-            final prior = priorSnap.data();
-            return {'receipt': prior?['receipt'], 'alreadyRecorded': true};
-          }
-        } catch (_) {}
-
-        final cachedPrior = AuthService.getReceiptForBallot(pollId, scholarNo: scholar);
-        if (cachedPrior != null) {
-          return {'receipt': cachedPrior.receiptId, 'alreadyRecorded': true};
+      try {
+        final priorSnap = await partRef.get();
+        if (priorSnap.exists) {
+          final prior = priorSnap.data();
+          return {'receipt': prior?['receipt'], 'alreadyRecorded': true};
         }
+      } catch (_) {}
+
+      final cachedPrior = AuthService.getReceiptForBallot(pollId, scholarNo: scholar);
+      if (cachedPrior != null) {
+        return {'receipt': cachedPrior.receiptId, 'alreadyRecorded': true};
       }
 
       final gradeVal = person['grade'] is int ? person['grade'] as int : 10;
@@ -669,8 +695,6 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
               'candidates': updatedLegCandidates,
               'total_votes_cast': curLegTotal + 1,
             });
-            final legCountRef = legElectionRef.collection('counts').doc(candScholarNo.isNotEmpty ? candScholarNo : cId);
-            tx.set(legCountRef, {'count': FieldValue.increment(1)}, SetOptions(merge: true));
           }
 
           // Write-through to legacy election_votes preserving voter secrecy (C7)
@@ -965,8 +989,15 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
       Map<String, dynamic>? d;
       try {
         final dSnap = await draftRef.get();
-        if (dSnap.exists) d = dSnap.data();
-      } catch (_) {}
+        if (dSnap.exists) {
+          d = dSnap.data();
+        } else if (_isFirebaseLive) {
+          await AuthService.removeCachedDraftBallot(pollId);
+          throw StateError('Draft not found on server or already published.');
+        }
+      } catch (e) {
+        if (e is StateError) rethrow;
+      }
       if (d == null) {
         final cachedDrafts = AuthService.getCachedDraftBallots();
         for (final cd in cachedDrafts) {
@@ -1048,6 +1079,9 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
         });
       } catch (e) {
         debugPrint('Firestore publish pollRef note: $e');
+        if (_isFirebaseLive && !_isNoAppException(e)) {
+          throw StateError('Failed to publish election ballot: $e');
+        }
       }
 
       try {
@@ -2128,27 +2162,31 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
     final cachedProfile = AuthService.getCachedProfile() ?? {};
     final cachedRole = (cachedProfile['role'] ?? '').toString().toLowerCase();
     final role = (member['role'] ?? cachedRole).toString().toLowerCase();
-    final isPrivilegedTester = activeScholar.toLowerCase() == 'admin' ||
-        activeScholar == '11209' ||
-        role == 'admin' ||
+    final isStaffOrAdmin = role == 'admin' ||
         role == 'super_admin' ||
         role == 'administrator' ||
         role == 'principal' ||
+        role == 'teacher' ||
+        role == 'faculty' ||
+        role == 'staff' ||
         cachedRole == 'admin' ||
         cachedRole == 'super_admin' ||
         cachedRole == 'administrator' ||
         cachedRole == 'principal' ||
-        HierarchyService.isSuperAdmin(scholarNo: activeScholar, role: role);
-    final isStaffOnly = !isPrivilegedTester && (role == 'teacher' || role == 'faculty' || role == 'staff');
-    final inWindow = (isStarted && now.isBefore(closes)) || isPrivilegedTester;
-    final grade = member['grade'] is int ? member['grade'] as int : 10;
+        cachedRole == 'teacher' ||
+        cachedRole == 'faculty' ||
+        cachedRole == 'staff';
+    final inWindow = isStarted && now.isBefore(closes);
+    final rawGrade = member['grade'];
+    final grade = rawGrade is int ? rawGrade : (int.tryParse(rawGrade?.toString() ?? '') ?? 0);
     final minGrade = p['minGrade'] as int? ?? 1;
     final maxGrade = p['maxGrade'] as int? ?? 12;
     final targetHouse = (p['house'] ?? p['house_scope'] ?? 'all').toString().toLowerCase();
     final memberHouse = (member['house'] ?? 'all').toString().toLowerCase();
-    final inHouse = targetHouse == 'all' || targetHouse == memberHouse || isPrivilegedTester;
-    final inGrade = (grade >= minGrade && grade <= maxGrade) || isPrivilegedTester;
-    final eligible = isPrivilegedTester || (!isStaffOnly && inHouse && inGrade);
+    final inHouse = targetHouse == 'all' || targetHouse == memberHouse;
+    final inGrade = grade >= minGrade && grade <= maxGrade;
+    final isStudent = role == 'student' || (!isStaffOrAdmin && role.isEmpty);
+    final eligible = isStudent && inHouse && inGrade;
     final cachedRcpt = AuthService.getReceiptForBallot(doc.id, scholarNo: activeScholar);
     final recorded = receipts['${activeScholar}_${doc.id}'] ?? cachedRcpt?.receiptId;
     final candidates = (p['candidates'] as List? ?? []).cast<Map>();
@@ -2323,6 +2361,36 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
                               const SnackBar(content: Text('Receipt copied to clipboard!')),
                             );
                           },
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                if (result == null && recorded == null && published && inWindow && !eligible) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.blueGrey.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.blueGrey.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.info_outline_rounded, size: 16, color: Colors.blueGrey),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            isStaffOrAdmin
+                                ? 'Supervisory View: Non-student accounts observe and manage elections; voting is reserved for enrolled student electors.'
+                                : !inHouse
+                                    ? 'Eligibility Notice: This ballot is open only to scholars belonging to ${targetHouse.toUpperCase()} House.'
+                                    : !inGrade
+                                        ? 'Eligibility Notice: This ballot is restricted to scholars in Grades $minGrade–$maxGrade.'
+                                        : 'Eligibility Notice: Account does not meet current voter registration requirements.',
+                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.blueGrey),
+                          ),
                         ),
                       ],
                     ),

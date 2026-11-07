@@ -1972,8 +1972,10 @@ class AuthService {
           'status': finalBallot.status == BallotStatus.open ? 'published' : finalBallot.status.name,
           'publishedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
-      } catch (_) {
-        // Allow uninitialized Firebase / offline cache write-through in testing
+      } catch (e) {
+        if (_isFirebaseLive && !_isNoAppException(e)) {
+          return (success: false, error: 'Could not record ballot in Firestore: $e', ballotId: null);
+        }
       }
 
       final cached = getCachedBallots();
@@ -2054,7 +2056,7 @@ class AuthService {
               scholarNo: activeScholar,
               role: profile?['role']?.toString(),
             );
-            final activeAccount = SavedAccount(
+            deduped[activeScholar] = SavedAccount(
               scholarNo: activeScholar,
               fullName: profile?['full_name']?.toString() ?? (isSuper ? 'Administrator' : 'Student Scholar'),
               houseName: house,
@@ -2065,9 +2067,6 @@ class AuthService {
               cachedProfile: profile ?? {},
               lastActive: DateTime.now(),
             );
-            deduped[activeScholar] = activeAccount;
-            final encoded = jsonEncode(deduped.values.map((a) => a.toMap()).toList());
-            _prefs?.setString(_kSavedAccountsKey, encoded);
           }
 
           return deduped.values.toList();
@@ -2243,22 +2242,23 @@ class AuthService {
     final cleanScholar = account.scholarNo.trim();
     UserCredential? liveCred;
 
-    // Step 1: Re-authenticate Firebase Auth first when credentials are provided
-    if (_isFirebaseLive && account.password != null && account.password!.isNotEmpty) {
-      if (currentUser?.uid != account.uid) {
-        final pwd = account.password!;
-        try {
-          if (cleanScholar.toLowerCase() == 'admin') {
-            liveCred = await signInAdmin(password: pwd).timeout(const Duration(seconds: 10));
-          } else {
-            liveCred = await signIn(scholarNo: cleanScholar, password: pwd).timeout(const Duration(seconds: 10));
-          }
-        } catch (e) {
-          debugPrint('switchAccount live auth sync note: $e');
-          if (!_isNoAppException(e)) {
-            // In live environment, rethrow to prevent unauthenticated session corruption
-            rethrow;
-          }
+    // Step 1: Re-authenticate Firebase Auth first before session cache swap
+    if (_isFirebaseLive && currentUser?.uid != account.uid) {
+      if (account.password == null || account.password!.isEmpty) {
+        throw StateError('Password required to switch session for ${account.scholarNo}. Please authenticate to continue.');
+      }
+      final pwd = account.password!;
+      try {
+        if (cleanScholar.toLowerCase() == 'admin') {
+          liveCred = await signInAdmin(password: pwd).timeout(const Duration(seconds: 10));
+        } else {
+          liveCred = await signIn(scholarNo: cleanScholar, password: pwd).timeout(const Duration(seconds: 10));
+        }
+      } catch (e) {
+        debugPrint('switchAccount live auth sync note: $e');
+        if (!_isNoAppException(e)) {
+          // In live environment, rethrow to prevent unauthenticated session corruption
+          rethrow;
         }
       }
     }
@@ -2690,23 +2690,10 @@ class AuthService {
   /// Verifies credentials securely against Firebase Auth.
   Future<UserCredential?> signInAdmin({required String password}) async {
     const adminEmail = 'admin@asianschool.bh';
-    UserCredential cred;
-
-    try {
-      cred = await _auth.signInWithEmailAndPassword(
-        email: adminEmail,
-        password: password,
-      );
-    } on FirebaseAuthException catch (e) {
-      if (e.code == 'user-not-found') {
-        cred = await _auth.createUserWithEmailAndPassword(
-          email: adminEmail,
-          password: password,
-        );
-      } else {
-        rethrow;
-      }
-    }
+    final cred = await _auth.signInWithEmailAndPassword(
+      email: adminEmail,
+      password: password,
+    );
 
     final u = cred.user;
     if (u != null) {
@@ -4440,23 +4427,40 @@ class AuthService {
             return;
           }
 
+          if (!ballotSnap.exists && !v2PollSnap.exists) {
+            throw StateError('Ballot $bId does not exist.');
+          }
+
           final targetScholar = candidate.scholarNo.trim().toLowerCase();
-          final targetName = candidate.fullName.trim().toLowerCase();
 
           if (ballotSnap.exists) {
             final ballotData = ballotSnap.data() ?? {};
+            final bStatus = (ballotData['status'] ?? '').toString().toLowerCase();
+            final isOpen = ballotData['is_open'] == true || bStatus == 'open' || bStatus == 'published';
+            if (!isOpen || bStatus == 'certified' || bStatus == 'closed') {
+              throw StateError('This election is closed or certified.');
+            }
+            final sTime = ballotData['start_time'] is Timestamp ? (ballotData['start_time'] as Timestamp).toDate() : null;
+            final eTime = ballotData['end_time'] is Timestamp ? (ballotData['end_time'] as Timestamp).toDate() : null;
+            if (sTime != null && now.isBefore(sTime.subtract(const Duration(seconds: 15)))) {
+              throw StateError('Voting has not yet opened for this election.');
+            }
+            if (eTime != null && now.isAfter(eTime)) {
+              throw StateError('The voting window has closed for this election.');
+            }
+
             final rawCandidates = ballotData['candidates'] as List? ?? [];
             final updatedCandidates = <Map<String, dynamic>>[];
+            bool matched = false;
 
             for (final item in rawCandidates) {
               if (item is Map) {
                 final cMap = Map<String, dynamic>.from(item);
                 final cScholar = cMap['scholar_no']?.toString().trim().toLowerCase() ?? '';
                 final cId = cMap['id']?.toString().trim().toLowerCase() ?? '';
-                final cName = (cMap['full_name'] ?? cMap['name'] ?? '').toString().trim().toLowerCase();
 
-                if ((targetScholar.isNotEmpty && (cScholar == targetScholar || cId == targetScholar)) ||
-                    (targetName.isNotEmpty && cName == targetName)) {
+                if (!matched && targetScholar.isNotEmpty && (cScholar == targetScholar || cId == targetScholar)) {
+                  matched = true;
                   final curVotes = (cMap['votes_count'] as num?)?.toInt() ?? 0;
                   cMap['votes_count'] = curVotes + 1;
                 }
@@ -4487,36 +4491,24 @@ class AuthService {
               'total_votes_cast': curTotal + 1,
               'last_updated': FieldValue.serverTimestamp(),
             });
-          } else {
-            transaction.set(voteLockRef, {
-              'ballot_id': bId,
-              'voter_hash': voterHash,
-              'proof_token': proofToken,
-              'timestamp': FieldValue.serverTimestamp(),
-            });
-
-            transaction.set(v2PartRef, {
-              'receipt': receipt.receiptId,
-              'timestamp': FieldValue.serverTimestamp(),
-            });
-
-            transaction.set(v2CountRef, {
-              'count': FieldValue.increment(1),
-            }, SetOptions(merge: true));
           }
 
           // Also synchronize candidate tally into election_polls_v2
           String? v2MatchedCandidateId;
           if (v2PollSnap.exists) {
             final v2Box = v2PollSnap.data() ?? {};
+            final v2Status = (v2Box['status'] ?? '').toString().toLowerCase();
+            if (v2Status == 'certified' || v2Status == 'closed') {
+              throw StateError('This election is closed or certified.');
+            }
             final v2Candidates = (v2Box['candidates'] as List? ?? []).cast<Map>();
+            bool v2Matched = false;
             final updatedV2Candidates = v2Candidates.map((c) {
               final cMap = Map<String, dynamic>.from(c);
               final cScholar = (cMap['scholar_no'] ?? '').toString().trim().toLowerCase();
               final cId = (cMap['id'] ?? '').toString().trim().toLowerCase();
-              final cName = (cMap['name'] ?? cMap['full_name'] ?? '').toString().trim().toLowerCase();
-              if ((targetScholar.isNotEmpty && (cScholar == targetScholar || cId == targetScholar)) ||
-                  (targetName.isNotEmpty && cName == targetName)) {
+              if (!v2Matched && targetScholar.isNotEmpty && (cScholar == targetScholar || cId == targetScholar)) {
+                v2Matched = true;
                 v2MatchedCandidateId = (cMap['id'] ?? cMap['scholar_no'])?.toString();
                 final cur = (cMap['votes_count'] as num?)?.toInt() ?? 0;
                 cMap['votes_count'] = cur + 1;
@@ -4802,12 +4794,44 @@ class AuthService {
     );
 
     try {
+      if (_isFirebaseLive && currentUser != null) {
+        try {
+          final token = await currentUser!.getIdToken();
+          if (token != null) {
+            final project = Firebase.app().options.projectId;
+            final url = Uri.https('us-central1-$project.cloudfunctions.net', '/schoolElection');
+            final reply = await http.post(
+              url,
+              headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
+              body: jsonEncode({
+                'data': {
+                  'action': 'certify',
+                  'pollId': ballotId,
+                }
+              }),
+            ).timeout(const Duration(seconds: 15));
+
+            final envelope = jsonDecode(reply.body);
+            if (envelope is Map && envelope['error'] != null) {
+              final err = envelope['error'];
+              final String msg = err is Map ? (err['message']?.toString() ?? err.toString()) : err.toString();
+              return (success: false, result: null as CertifiedElectionResult?, error: msg);
+            }
+          }
+        } catch (e) {
+          if (!_isNoAppException(e)) {
+            return (success: false, result: null as CertifiedElectionResult?, error: 'Server certification failed: $e');
+          }
+        }
+      }
+
       final ballotRef = _firestore.collection('elections').doc(ballotId);
       final gazetteRef = _firestore.collection('election_gazettes').doc(ballotId);
       final houseRef = _firestore.collection('house_points').doc(hName);
       final v2PollRef = _firestore.collection('election_polls_v2').doc(ballotId);
 
-      await _firestore.runTransaction((transaction) async {
+      if (!_isFirebaseLive) {
+        await _firestore.runTransaction((transaction) async {
         final gazetteSnap = await transaction.get(gazetteRef);
         if (gazetteSnap.exists) {
           throw Exception('This election has already been officially certified.');
@@ -4857,6 +4881,7 @@ class AuthService {
           SetOptions(merge: true),
         );
       });
+      }
 
       await incrementCachedHousePoints(hName, housePoints);
 

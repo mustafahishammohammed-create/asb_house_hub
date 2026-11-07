@@ -235,12 +235,13 @@ service cloud.firestore {
     // Role-Based Access Control
     function isSuperAdmin() {
       return isSignedIn() && (
-        (request.auth.token != null && 'email' in request.auth.token && request.auth.token.email in ['admin@asianschool.bh', '11209@asianschool.bh']) ||
-        (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in ['super_admin', 'admin']) ||
-        (hasUserDoc() && (
-          ('role' in getUserData() && getUserData().role in ['super_admin', 'admin']) ||
-          ('scholar_no' in getUserData() && getUserData().scholar_no in ['admin', '11209'])
-        ))
+        (request.auth.token != null && (
+          ('admin' in request.auth.token && request.auth.token.admin == true) ||
+          ('role' in request.auth.token && request.auth.token.role in ['super_admin', 'admin']) ||
+          ('email' in request.auth.token && request.auth.token.email in ['admin@asianschool.bh', '11209@asianschool.bh'])
+        )) ||
+        exists(/databases/$(database)/documents/admin_roster/$(request.auth.uid)) ||
+        (hasUserDoc() && 'role' in getUserData() && getUserData().role in ['super_admin', 'admin'])
       );
     }
 
@@ -299,6 +300,8 @@ service cloud.firestore {
       hasRequiredFields(['scholar_no', 'full_name', 'role', 'house_name']) &&
       data.full_name is string && data.full_name.size() >= 2 && data.full_name.size() <= 100 &&
       data.scholar_no is string && data.scholar_no.size() >= 4 && data.scholar_no.size() <= 20 &&
+      !(data.scholar_no in ['admin', '11209']) &&
+      !(data.scholar_no.lower() in ['admin', '11209']) &&
       data.role is string && data.role in [
         'student', 'prefect', 'captain', 'vice_captain',
         'house_captain', 'house_vice_captain', 'council',
@@ -741,25 +744,22 @@ service cloud.firestore {
     // 8. elections/{electionId} and elections/{electionId}/ballots/{ballotId}
     match /elections/{electionId} {
       allow read: if true;
-      allow create, delete: if isSignedIn();
-      allow update: if isSignedIn();
+      allow write: if false;
 
       match /ballots/{ballotId} {
-        allow read: if true;
-        allow create: if isSignedIn();
-        allow update, delete: if false;
+        allow read: if false;
+        allow write: if false;
       }
     }
 
     match /election_votes/{voteId} {
-      allow read: if true;
-      allow create: if isSignedIn();
-      allow update, delete: if false;
+      allow read: if false;
+      allow write: if false;
     }
 
     match /election_gazettes/{gazetteId} {
       allow read: if true;
-      allow write: if isSignedIn();
+      allow write: if false;
     }
 
     // 9. announcements/{announcementId}, notices/{noticeId}, events/{eventId}
@@ -889,30 +889,30 @@ service cloud.firestore {
 
     // 19. school_members/{memberId} (Zero-Trust Elections v2 Roster)
     match /school_members/{memberId} {
-      allow read: if true;
-      allow write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if false;
     }
 
     // 20. election_polls_v2/{pollId} (Zero-Trust Elections v2 Published Polls)
     match /election_polls_v2/{pollId} {
       allow read: if true;
-      allow create, update, delete: if isSignedIn();
+      allow write: if false;
 
       match /counts/{candidateId} {
         allow read: if true;
-        allow write: if isSignedIn();
+        allow write: if false;
       }
 
       match /participation/{key} {
-        allow read: if true;
-        allow write: if isSignedIn();
+        allow read: if false;
+        allow write: if false;
       }
     }
 
     // 21. election_drafts_v2/{draftId} (Zero-Trust Elections v2 Drafts)
     match /election_drafts_v2/{draftId} {
-      allow read: if true;
-      allow write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if false;
     }
   }
 }

@@ -1,3 +1,4 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../models/election_ballot.dart';
@@ -43,11 +44,17 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
     final cached = AuthService.getCachedProfile() ?? {};
     final sNo = _effectiveScholarNo.toLowerCase();
     final role = cached['role']?.toString().toLowerCase();
+    String? safeEmail;
+    try {
+      if (Firebase.apps.isNotEmpty) {
+        safeEmail = FirebaseAuth.instance.currentUser?.email;
+      }
+    } catch (_) {}
     return HierarchyService.canManageElections(
       scholarNo: sNo,
       role: role,
       capabilities: cached['capabilities'] is Map ? Map<String, dynamic>.from(cached['capabilities']) : null,
-      email: FirebaseAuth.instance.currentUser?.email,
+      email: safeEmail,
     );
   }
 
@@ -901,7 +908,7 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                     ),
                     const SizedBox(height: 10),
                     const Text(
-                      '🔒 Ballot Secrecy Protection: Your voter identity is cryptographically hashed with HMAC-SHA256. This ballot choice is completely anonymous and cannot be changed once cast.',
+                      '🔒 Secret Ballot Guarantee: Your participation is registered under an anonymized cryptographic token. Your candidate choice is counted confidentially and cannot be altered once submitted.',
                       style: TextStyle(fontSize: 11, color: Colors.grey),
                     ),
                   ],
@@ -1127,7 +1134,7 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
             Text(
               _canManageElections
                   ? 'Student Council and House Captain polls can be staged and published here.'
-                  : 'No active election ballots at this time. When polling begins, official voting forms will appear here.',
+                  : 'Student Council and House Captain polls will be registered here by school administration.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 13,
@@ -1768,8 +1775,47 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
   Future<void> _certifyBallotWinner(ElectionBallot ballot, Color houseColor) async {
     if (ballot.candidates.isEmpty) return;
 
+    if (DateTime.now().isBefore(ballot.endTime)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Voting is currently active. Elections can only be certified after the scheduled voting window closes.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
     final sortedCandidates = List<ElectionCandidate>.from(ballot.candidates)
       ..sort((a, b) => b.votesCount.compareTo(a.votesCount));
+
+    // Zero-votes guard (C8)
+    if (sortedCandidates.first.votesCount == 0) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cannot certify election: 0 votes cast. Ballots must be received prior to official certification.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
+    // Tie guard (C8)
+    if (sortedCandidates.length > 1 && sortedCandidates[0].votesCount == sortedCandidates[1].votesCount) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Cannot certify winner: Polling concluded in a tie (${sortedCandidates[0].votesCount} votes each between ${sortedCandidates[0].fullName} and ${sortedCandidates[1].fullName}). Runoff election required.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
     final rawWinner = sortedCandidates.first;
     String winnerHouse = rawWinner.houseName.trim().toLowerCase();
     if (winnerHouse.isEmpty || !['ruby', 'sapphire', 'emerald', 'topaz'].contains(winnerHouse)) {

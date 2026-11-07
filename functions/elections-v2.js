@@ -175,7 +175,55 @@ exports.schoolElection = onCall(async (request) => {
       const result = { rows, total, leaders, outcome };
       tx.update(poll, { status: "certified", result, certifiedAt: FieldValue.serverTimestamp() });
       tx.update(draft, { status: "certified", certifiedBy: uid });
+
+      // In winner outcome, award 100 points to winner's genuine house and publish gazette (C8, M10)
+      if (outcome === "winner" && leaders.length === 1) {
+        const winner = box.candidates.find((c) => c.id === leaders[0]);
+        const winnerHouse = (winner?.house || box.house || "ruby").toLowerCase();
+        if (winnerHouse && winnerHouse !== "all") {
+          tx.set(
+            db.collection("house_points").doc(winnerHouse),
+            {
+              house_name: winnerHouse,
+              total_points: FieldValue.increment(100),
+              last_updated: FieldValue.serverTimestamp()
+            },
+            { merge: true }
+          );
+        }
+        const runnerUpCount = rows.length > 1 ? Math.max(...rows.filter((r) => r.id !== leaders[0]).map((r) => r.count)) : 0;
+        tx.set(db.collection("election_gazettes").doc(pollId), {
+          ballot_id: pollId,
+          ballot_title: box.title,
+          running_position: box.position,
+          winner_scholar_no: winner?.uid || winner?.id || "",
+          winner_name: winner?.name || "Elected Candidate",
+          winner_house: winnerHouse,
+          total_votes_received: max,
+          victory_margin_votes: max - runnerUpCount,
+          house_points_awarded: 100,
+          commissioner_name: person.display_name || "Returning Officer",
+          commissioner_role: person.role || "Electoral Commissioner",
+          certified_at: FieldValue.serverTimestamp(),
+          proclamation_text: `By order of the Electoral Commission, ${winner?.name || "the candidate"} is officially certified as ${box.position}, conferring +100 championship points to ${winnerHouse.toUpperCase()} House.`
+        });
+      }
+
       return { pollId, result };
+    }
+
+    if (action === "close") {
+      const box = (await tx.get(poll)).data();
+      requireState(Boolean(box), "Poll not found.");
+      requireState(box.status === "published", "Only published polls can be closed.");
+      tx.update(poll, { status: "closed", closesAt: FieldValue.serverTimestamp() });
+      return { pollId, status: "closed" };
+    }
+
+    if (action === "deleteDraft") {
+      requireState(current.status === "draft", "Only unconfirmed drafts can be deleted.");
+      tx.delete(draft);
+      return { pollId, deleted: true };
     }
 
     requireState(current.status === "draft", "Published candidates and settings are frozen.");

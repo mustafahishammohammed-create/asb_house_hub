@@ -88,7 +88,7 @@ class ElectionSecurityService {
         return (
           verified: true,
           receipt: r,
-          message: 'Cryptographically certified: Ballot recorded and counted in official tally.',
+          message: 'Cryptographically verified: Ballot receipt matches recorded ballot register.',
         );
       }
     }
@@ -96,7 +96,7 @@ class ElectionSecurityService {
     return (
       verified: false,
       receipt: null,
-      message: 'Receipt not found in certified election ledger.',
+      message: 'Receipt code not found in recorded ballot register.',
     );
   }
 }
