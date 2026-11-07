@@ -16,11 +16,13 @@ Prioritized plan mapped to finding IDs. Split by the user's standing constraint:
 - [ ] **G6** Fail closed on negative elapsed time; monotonic high-water mark.
 - [ ] **G7** One contributor doc scheme (`{scholarNo}`), create-on-award, merge migration; derive `users.points_contributed`.
 - [ ] **G11** Content-derived award IDs (idempotency); make claim `points`/`house_name` immutable on update.
+- [ ] **G12** Election certify: early return with server result on live success; cache/gazette writes demo-only; unify the demo award constant (+50 vs +100).
 
 ## P2 — Polish (no Blaze required)
 
 - [ ] **G8** Constant-time compares; drop raw-JSON token fallback; explicit replay stance.
 - [ ] **G10** Standings cache written only from server snapshots; label offline states; AI context uses synced data.
+- [ ] **G13** Spirit reactor: numeric bounds + cap in rules, atomic `FieldValue.increment` per caller's house, `last_contributor` tied to caller.
 
 ## Deferred — requires Blaze (add to the Blaze completion list)
 

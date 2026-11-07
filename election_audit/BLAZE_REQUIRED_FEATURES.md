@@ -85,7 +85,7 @@ The points audit (`gamification_audit/README.md`, 2026-11-07) found the student 
 
 1. **`schoolGamification` callable** (new, to be authored): server-side activity validation, Firestore-backed cooldowns with server timestamps, atomic awards, idempotency keys, consumed-nonce store, append-only audit log. Then lock `house_points`/`house_contributors` direct writes in rules.
 2. **Sports certification callable**: mint/verify match tokens server-side; remove the client salt.
-3. **Live points smoke test**: student earns → ledger reflects it exactly once; sports lead cannot exceed bounds; replay/clock tricks rejected.
+3. **Live points smoke test**: student earns → ledger reflects it exactly once; sports lead cannot exceed bounds; replay/clock tricks rejected; election certify leaves the local cache equal to the server ledger (G12 in `gamification_audit/FINAL_POINTS_REPORT.md`).
 
 Interim no-Blaze hardening (truthful failures, secret eradication, rules validators) is tracked in `gamification_audit/REMEDIATION_ROADMAP.md` P0–P2 and can proceed now.
 
