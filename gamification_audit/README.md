@@ -53,4 +53,6 @@ Each finding follows: **Problem → What breaks → Solution → Done when**.
 ## Companion documents
 
 - [REMEDIATION_ROADMAP.md](REMEDIATION_ROADMAP.md) — prioritized P0/P1/P2 plan, split into no-Blaze work (now) and Blaze work (deferred, mirrors `election_audit/BLAZE_REQUIRED_FEATURES.md`).
+- [NOT_DONE_AND_FALSE_CLAIMS.md](NOT_DONE_AND_FALSE_CLAIMS.md) — P0 verification at `59048ad`: what is truly done, what was overclaimed (G7/G8/G11), the `pearl` phantom house, and the unconfirmed rules deployment.
+- [COUNCIL_PRIVILEGES.md](COUNCIL_PRIVILEGES.md) — requirement R1: council roster privileges (claims approval, grading) with the proposed matrix and exact rules/service changes.
 - Election audit pattern reference: [../election_audit/README.md](../election_audit/README.md) — the same Problem→Solution format and the A1/A2 secret-eradication pattern to copy.

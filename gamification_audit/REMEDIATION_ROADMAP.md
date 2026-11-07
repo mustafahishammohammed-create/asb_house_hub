@@ -2,6 +2,8 @@
 
 Prioritized plan mapped to finding IDs. Split by the user's standing constraint: **no Blaze plan for now** — server work is deferred exactly like elections.
 
+**Verification update (2026-11-07, `59048ad`):** P0 core verified TRUE; G7/G8/G11 closures were overclaimed and are marked partial below. Details and solutions: [NOT_DONE_AND_FALSE_CLAIMS.md](NOT_DONE_AND_FALSE_CLAIMS.md). New requirement R1 (council roster privileges, supersedes staff-only G4 wording): [COUNCIL_PRIVILEGES.md](COUNCIL_PRIVILEGES.md).
+
 ## P0 — Do now (no Blaze required)
 
 - [x] **G1** Make award failures truthful: remove blanket `catch (_) {}` in `awardVerifiedGamificationPoints`; return failure on live rules denial; move cache writes after server ack; label offline/demo states.
@@ -11,16 +13,16 @@ Prioritized plan mapped to finding IDs. Split by the user's standing constraint:
 
 ## P1 — Do now (no Blaze required)
 
-- [ ] **G4** Gate `graded` transitions to staff (UI + service); make GPA required and server-sourced or disable student merit claims.
+- [ ] **G4** Gate `graded` transitions to staff **+ council** (R1 — see [COUNCIL_PRIVILEGES.md](COUNCIL_PRIVILEGES.md)); make GPA required and server-sourced or disable student merit claims.
 - [x] **G5** Route Blitz through the award service (ceiling + cooldown); stop direct batch writes; treat quiz points as demo until server validation.
 - [ ] **G6** Fail closed on negative elapsed time; monotonic high-water mark.
-- [x] **G7** One contributor doc scheme (`{scholarNo}`), create-on-award, merge migration; derive `users.points_contributed`.
-- [x] **G11** Content-derived award IDs (idempotency); make claim `points`/`house_name` immutable on update (enforced in rules).
+- [ ] **G7** ~~One contributor doc scheme (`{scholarNo}`), create-on-award~~ (done at 59048ad); **remaining:** merge migration of legacy `{house}_{scholar}` docs, derive `users.points_contributed`, use real name/class instead of placeholders (P-1 in not-done file).
+- [ ] **G11** ~~Make claim `points`/`house_name` immutable on update~~ (done at 59048ad); **remaining:** content-derived award IDs — trophy ID is still timestamp-based (F-2 in not-done file).
 - [ ] **G12** Election certify: early return with server result on live success; cache/gazette writes demo-only; unify the demo award constant (+50 vs +100).
 
 ## P2 — Polish (no Blaze required)
 
-- [x] **G8** Constant-time compares (`_constantTimeEquals` in gamification & sports security services); drop raw-JSON token fallback; explicit replay stance.
+- [ ] **G8** ~~Constant-time compares~~ (done at 59048ad); **remaining:** drop raw-JSON token fallback (still at gamification_security_service:172-191), consume nonces / explicit replay stance (F-1 in not-done file).
 - [ ] **G10** Standings cache written only from server snapshots; label offline states; AI context uses synced data.
 - [ ] **G13** Spirit reactor: numeric bounds + cap in rules, atomic `FieldValue.increment` per caller's house, `last_contributor` tied to caller.
 
