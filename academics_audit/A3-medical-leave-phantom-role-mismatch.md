@@ -21,7 +21,7 @@ Three compounding issues in the medical-leave flow:
 **3. No create validator, no transition guard:**
 - `medical_leaves` create checks only ownership + `status == 'pending'` ([firestore.rules:1003-1005](../firestore.rules)) — no field whitelist, no size caps (the base64 certificate photo is bounded only by the client's picker compression, [academics_screen.dart:6884-6885](../lib/screens/academics_screen.dart)), no date sanity.
 - Update is a blanket `isAdmin()` — an admin can flip `approved → pending → approved`, rewrite `scholar_no`, or replace the photo; no `pending → approved/rejected` transition lock, no immutable reviewer fields.
-- The doc comment on `approveMedicalLeave` claims it creates "excused attendance entries" ([auth_service.dart:6467](../lib/services/auth_service.dart)) — **the code does not**. Approved leave has zero effect on attendance (tracked as D5 automation).
+- The doc comment on `approveMedicalLeave` claimed it creates "excused attendance entries" ([auth_service.dart:6467](../lib/services/auth_service.dart)) — **the code does not, and per school policy it must not**: a scholar with a submitted or approved leave is still marked **absent** (user-confirmed 2026-11-08). The leave is documentation for administration, not an attendance override. The comment has been corrected; no automation is wanted.
 
 ## What breaks
 
@@ -41,7 +41,7 @@ Three compounding issues in the medical-leave flow:
 5. Rules hardening: add `isValidMedicalLeave(data)` (field whitelist mirroring the model, string length caps, photo size cap well under the 1 MiB doc limit, `start_date <= end_date`, status enum) on create; split update so `status` may only move `pending → approved/rejected` and `scholar_no`/dates/photo are immutable after creation.
 6. Tests: denial → `false` + no cache mutation; council account sees no Medical Reports tab; rules-contract tests for the validator and transition guard.
 
-**End state (Blaze, D5):** approval atomically writes excused attendance records for the leave date range server-side, with an audit entry — see `election_audit/BLAZE_REQUIRED_FEATURES.md` D5. (An admin-client batch is technically possible on Spark since admins may write attendance, but it is not atomic with the approval; the callable is the correct end state.)
+**Policy note (user-confirmed 2026-11-08):** approved leave does **not** excuse attendance — the scholar remains marked absent. Do not build leave-to-attendance automation; the only fix is keeping comments/UI honest about that.
 
 ## Done when
 

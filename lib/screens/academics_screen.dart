@@ -12,6 +12,7 @@ import '../models/medical_leave_request.dart';
 import '../services/auth_service.dart';
 import '../services/hierarchy_service.dart';
 import '../widgets/managed_modal_scope.dart';
+import '../widgets/academic_image.dart';
 import 'home_screen.dart';
 
 /// School days in The Asian School Bahrain (Sunday through Thursday).
@@ -976,6 +977,14 @@ class _TimetableTabState extends State<TimetableTab> {
                         ),
                       ],
                     ),
+                    if (period.imageUrl != null && period.imageUrl!.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      AcademicImageThumbnail(
+                        imageUrl: period.imageUrl!,
+                        title: '${period.subject} — P${period.periodNumber}',
+                        height: 110,
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -1222,6 +1231,7 @@ class _TimetableTabState extends State<TimetableTab> {
     String selectedDay = (existing != null && existing.dayOfWeek.isNotEmpty) ? existing.dayOfWeek : _selectedDay;
     String selectedTimeSlot = existing?.timeSlot ?? '07:45 - 08:30';
     bool isBreak = existing?.isBreak ?? false;
+    String? photoBase64 = existing?.imageUrl;
 
     final subjectController = TextEditingController(text: existing?.subject ?? '');
     final teacherController = TextEditingController(text: existing?.teacherName ?? '');
@@ -1516,6 +1526,13 @@ class _TimetableTabState extends State<TimetableTab> {
                         value: isBreak,
                         onChanged: (v) => setModalState(() => isBreak = v),
                       ),
+                      const SizedBox(height: 10),
+
+                      AcademicImageUploadField(
+                        label: 'Timetable / Circular Photo (Optional)',
+                        value: photoBase64,
+                        onChanged: (v) => setModalState(() => photoBase64 = v),
+                      ),
                       const SizedBox(height: 16),
 
                       SizedBox(
@@ -1537,6 +1554,7 @@ class _TimetableTabState extends State<TimetableTab> {
                               isBreak: isBreak,
                               dayOfWeek: selectedDay,
                               classLevel: _effectiveClass,
+                              imageUrl: photoBase64,
                             );
 
                             final scaffoldMessenger = ScaffoldMessenger.of(context);
@@ -2073,6 +2091,15 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                 overflow: TextOverflow.ellipsis,
               ),
 
+              if (assignment.imageUrl != null && assignment.imageUrl!.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                AcademicImageThumbnail(
+                  imageUrl: assignment.imageUrl!,
+                  title: assignment.title,
+                  height: 110,
+                ),
+              ],
+
               const SizedBox(height: 14),
 
               // Bottom Actions: Urgency Countdown Chip & Status Cycle Button
@@ -2341,6 +2368,7 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
     String selectedSubject = _currentSubject != 'All' ? _currentSubject : 'Mathematics';
     DateTime selectedDue = DateTime.now().add(const Duration(days: 1));
     int selectedPoints = 20;
+    String? photoBase64;
 
     final formKey = GlobalKey<FormState>();
 
@@ -2516,6 +2544,13 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                         ),
                       ),
+                      const SizedBox(height: 14),
+
+                      AcademicImageUploadField(
+                        label: 'Worksheet / Reference Photo (Optional)',
+                        value: photoBase64,
+                        onChanged: (v) => setModalState(() => photoBase64 = v),
+                      ),
                       const SizedBox(height: 20),
 
                       SizedBox(
@@ -2535,6 +2570,7 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                               status: AssignmentStatus.pending,
                               description: descController.text.trim(),
                               classLevel: _effectiveClass,
+                              imageUrl: photoBase64,
                             );
 
                             final scaffoldMessenger = ScaffoldMessenger.of(context);
@@ -4899,6 +4935,16 @@ class _ReportCardTabState extends State<ReportCardTab> {
             ),
           ),
 
+          if (card.imageUrl != null && card.imageUrl!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+              child: AcademicImageThumbnail(
+                imageUrl: card.imageUrl!,
+                title: '${card.studentName} — ${card.termName}',
+                height: 140,
+              ),
+            ),
+
           // 2. Subject Performance Analytics
           Padding(
             padding: const EdgeInsets.all(20),
@@ -5223,6 +5269,7 @@ class _ReportCardTabState extends State<ReportCardTab> {
       text: 'Exemplary academic effort and analytical diligence in all subjects.',
     );
     bool isSaving = false;
+    String? photoBase64;
 
     showModalBottomSheet(
       context: context,
@@ -5451,6 +5498,13 @@ class _ReportCardTabState extends State<ReportCardTab> {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 14),
+
+                  AcademicImageUploadField(
+                    label: 'Report Card Scan / Photo (Optional)',
+                    value: photoBase64,
+                    onChanged: (v) => setModalState(() => photoBase64 = v),
+                  ),
                   const SizedBox(height: 20),
 
                   // Submit Button
@@ -5536,6 +5590,7 @@ class _ReportCardTabState extends State<ReportCardTab> {
                                   attendanceRate: att,
                                   teacherRemarks: remarksController.text.trim(),
                                   subjectGrades: subjects,
+                                  imageUrl: photoBase64,
                                 );
 
                                 if (ctx.mounted) {

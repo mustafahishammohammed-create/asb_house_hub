@@ -95,13 +95,14 @@ Interim no-Blaze hardening (truthful failures, secret eradication, rules validat
 
 ## D5. Academics server authority (from academics_audit)
 
-The academics audit (`academics_audit/README.md`, 2026-11-08, HEAD `91114ea`) found 7 findings (A1–A7). All client/rules interim fixes are no-Blaze and tracked in `academics_audit/REMEDIATION_ROADMAP.md` P0–P2. Two end-state features need server authority:
+The academics audit (`academics_audit/README.md`, 2026-11-08, HEAD `91114ea`) found 7 findings (A1–A7). All client/rules interim fixes are no-Blaze and tracked in `academics_audit/REMEDIATION_ROADMAP.md` P0–P2. One end-state feature needs server authority:
 
 1. **Atomic honours merit claim** (A4): today `claimReportCardHonoursMerit` trusts the caller's GPA and its `is_merit_claimed` flag write is admin-only, so the flag can never persist from a student device — currently harmless only because student awards are fail-closed pending D4. The callable must: read the report card → verify ownership + document GPA ≥ 3.80 → check `is_merit_claimed == false` → award points and set the flag in one transaction with an idempotency key. Rides on D4's `schoolGamification`.
-2. **Leave → excused-attendance automation** (A3/A7): `approveMedicalLeave`'s comment promises excused attendance entries but no such write exists. On approval, the server should atomically write `excused` attendance records for the leave date range plus an audit entry. (An admin-client batch is possible on Spark but is not atomic with the approval; the callable is the correct end state.)
-3. **Live academics smoke test**: re-run the P0–P2 manual checklist (owner-only report cards, staff-only publish/leave review, truthful failures) against the deployed callables.
+2. **Live academics smoke test**: re-run the P0–P2 manual checklist (owner-only report cards, staff-only publish/leave review, truthful failures) against the deployed callables.
 
-**Done when:** both callables are deployed, the merit claim is idempotent across cache clear/reinstall, approved leaves produce excused attendance exactly once, and the live academics smoke passes.
+**Policy note (user-confirmed 2026-11-08):** medical leave **never** excuses attendance — a scholar with a submitted or approved leave is still marked **absent**. The earlier "leave → excused-attendance automation" idea is **cancelled**; no such feature is to be built. The only fix needed was the misleading doc comment (done, no-Blaze).
+
+**Done when:** the merit callable is deployed, the claim is idempotent across cache clear/reinstall, and the live academics smoke passes.
 
 ---
 
@@ -112,5 +113,5 @@ The academics audit (`academics_audit/README.md`, 2026-11-08, HEAD `91114ea`) fo
 3. D2: run the live smoke test checklist.
 4. D3: activate App Check when mobile/web clients ship.
 5. D4: author + deploy `schoolGamification`, then run the live points smoke test.
-6. D5: academics merit-claim + leave-attendance automation on top of D4, then the live academics smoke test.
+6. D5: academics merit-claim automation on top of D4, then the live academics smoke test.
 7. Check the boxes above and update `election_audit/README.md` — only then are B1/B3 from `NOT_DONE_AND_FALSE_CLAIMS.md` closed.

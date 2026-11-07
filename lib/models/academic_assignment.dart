@@ -82,6 +82,7 @@ class AcademicAssignment implements Comparable<AcademicAssignment> {
   final DateTime? submittedAt;
   final DateTime? gradedAt;
   final String classLevel;
+  final String? imageUrl;
 
   const AcademicAssignment({
     required this.id,
@@ -96,6 +97,7 @@ class AcademicAssignment implements Comparable<AcademicAssignment> {
     this.submittedAt,
     this.gradedAt,
     this.classLevel = '',
+    this.imageUrl,
   });
 
   /// Evaluates whether assignment deadline has passed without completion.
@@ -181,6 +183,7 @@ class AcademicAssignment implements Comparable<AcademicAssignment> {
     'submitted_at': submittedAt?.toIso8601String(),
     'graded_at': gradedAt?.toIso8601String(),
     'class_level': classLevel,
+    if (imageUrl != null && imageUrl!.isNotEmpty) 'image_url': imageUrl,
   };
 
   Map<String, dynamic> toJson() => toMap();
@@ -226,6 +229,7 @@ class AcademicAssignment implements Comparable<AcademicAssignment> {
       submittedAt: parseNullableDate(map['submitted_at'] ?? map['submittedAt']),
       gradedAt: parseNullableDate(map['graded_at'] ?? map['gradedAt']),
       classLevel: (map['class_level'] ?? map['classLevel'] ?? map['class'] ?? '').toString().trim(),
+      imageUrl: (map['image_url'] ?? map['imageUrl'])?.toString().trim(),
     );
   }
 
@@ -249,6 +253,7 @@ class AcademicAssignment implements Comparable<AcademicAssignment> {
     DateTime? submittedAt,
     DateTime? gradedAt,
     String? classLevel,
+    String? imageUrl,
   }) {
     return AcademicAssignment(
       id: id ?? this.id,
@@ -263,6 +268,7 @@ class AcademicAssignment implements Comparable<AcademicAssignment> {
       submittedAt: submittedAt ?? this.submittedAt,
       gradedAt: gradedAt ?? this.gradedAt,
       classLevel: classLevel ?? this.classLevel,
+      imageUrl: imageUrl ?? this.imageUrl,
     );
   }
 
@@ -284,7 +290,8 @@ class AcademicAssignment implements Comparable<AcademicAssignment> {
         other.submissionNotes == submissionNotes &&
         other.submittedAt == submittedAt &&
         other.gradedAt == gradedAt &&
-        other.classLevel == classLevel;
+        other.classLevel == classLevel &&
+        other.imageUrl == imageUrl;
   }
 
   @override
@@ -301,6 +308,7 @@ class AcademicAssignment implements Comparable<AcademicAssignment> {
     submittedAt,
     gradedAt,
     classLevel,
+    imageUrl,
   );
 
   @override

@@ -381,7 +381,7 @@ service cloud.firestore {
         'id', 'title', 'subject', 'class_level', 'division',
         'assigned_date', 'due_date', 'description', 'teacher_name',
         'max_marks', 'attachments', 'created_at', 'updated_at',
-        'status', 'points_reward', 'submission_notes', 'submitted_at', 'graded_at'
+        'status', 'points_reward', 'submission_notes', 'submitted_at', 'graded_at', 'image_url'
       ]) &&
       hasRequiredFields(['title', 'subject']) &&
       data.title is string && data.title.size() >= 1 && data.title.size() <= 150 &&
@@ -395,6 +395,7 @@ service cloud.firestore {
       (!('teacher_name' in data) || (data.teacher_name is string && data.teacher_name.size() <= 100)) &&
       (!('max_marks' in data) || (data.max_marks is number && data.max_marks >= 0 && data.max_marks <= 1000)) &&
       (!('attachments' in data) || (data.attachments is list && data.attachments.size() <= 10)) &&
+      (!('image_url' in data) || (data.image_url is string && data.image_url.size() <= 500000)) &&
       (!('created_at' in data) || data.created_at is timestamp) &&
       (!('updated_at' in data) || data.updated_at is timestamp);
     }

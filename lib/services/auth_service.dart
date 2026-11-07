@@ -1646,6 +1646,7 @@ class AuthService {
     double attendanceRate = 100.0,
     String teacherRemarks = '',
     List<SubjectGrade> subjectGrades = const [],
+    String? imageUrl,
   }) async {
     final cleanClass = classLevel.trim().isNotEmpty ? classLevel.trim() : 'Grade 10';
     final cleanScholar = scholarNo.trim().isNotEmpty ? scholarNo.trim() : (getCachedScholarNo() ?? '');
@@ -1666,6 +1667,7 @@ class AuthService {
       subjectGrades: subjectGrades,
       publishedAt: DateTime.now(),
       isMeritClaimed: false,
+      imageUrl: imageUrl,
     );
 
     if (_isFirebaseLive) {
@@ -6464,7 +6466,7 @@ class AuthService {
     return true;
   }
 
-  /// Approves a medical leave, creating excused attendance entries.
+  /// Approves a medical leave. Does not alter attendance — the scholar is still marked absent (school policy).
   Future<bool> approveMedicalLeave({
     required String leaveId,
     required String reviewerName,

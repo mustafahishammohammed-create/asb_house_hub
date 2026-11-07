@@ -25,6 +25,7 @@ Audit baseline: HEAD `91114ea`, 2026-11-08. Read-only audit — nothing here is 
 | P1-3 | Align faculty role lists | A6 | Decide `faculty_advisor`/`teacher_lead`: add to rules `isAdmin()` **or** remove from client; contract test keeps lists equal | Test asserts client list == rules list |
 | P1-4 | Attendance dialog error handling | A6 | try/catch around Save; visible error, dialog stays open on failure | Denial → error snackbar, nothing saved |
 | P1-5 | Honours claim interim hardening | A4 | Read the card doc server-side for GPA/ownership (ignore caller `gpa`); stop the doomed `is_merit_claimed` client write; derive claimed state from the award ledger; truthful fail-closed messaging | Claim uses doc GPA; no cache-only claimed state |
+| P1-6 | Stop fabricating official report cards | A8 | Block invalid numeric input (no 90.0/98.0 fallbacks); per-subject entry or clearly-labeled template; remove hardcoded principalRemarks/status/section values; drop demo scholar prefill | No invented scores/endorsements on published cards |
 
 ## P2 — Hygiene
 
@@ -33,8 +34,10 @@ Audit baseline: HEAD `91114ea`, 2026-11-08. Read-only audit — nothing here is 
 | P2-1 | Remove hardcoded identity fallbacks | A7 | Block leave submit when profile unresolved; no `2310910`/`Mohammed Ayaan`/`ruby` defaults | Cold-cache submit → clear error, no write |
 | P2-2 | Collision-free leave IDs | A7 | Auto-ID or `med_${sNo}_${millis}` | Double-submit creates two docs |
 | P2-3 | Attendance validator: bind scholar to path, check date | A7 | Pass `{scholarNo}` into `isValidAttendance`; date type check | Rules-contract test |
-| P2-4 | Fix the "excused attendance" promise | A7 | Correct the doc comment + reviewer UI note (automation itself is D5) | Comment matches behavior |
+| P2-4 | Fix the "excused attendance" comment | A7 | Correct the doc comment: leave approval never excuses attendance — scholar remains absent (school policy, user-confirmed 2026-11-08). No automation wanted | Comment matches policy |
 | P2-5 | Stream fallbacks catch async errors | A7/A1/A3 | `.handleError` → cache on report-cards and medical-leaves streams | Denial → cache fallback, no unhandled error |
+| P2-6 | Empty publisher defaults | A9 | Teacher/paper-title/syllabus controllers start empty with hints (keep genuine defaults like hall/duration) | No boilerplate published unchanged |
+| P2-7 | Attachments per-item cap | A9 | `isValidHomework`: each attachment item `is string && size() <= 2000` | Rules-contract test |
 
 ## Acceptance gate (whole module)
 
@@ -51,7 +54,8 @@ Audit baseline: HEAD `91114ea`, 2026-11-08. Read-only audit — nothing here is 
 Mirrored in `election_audit/BLAZE_REQUIRED_FEATURES.md`:
 
 1. **Atomic honours merit claim** (A4 end state): callable reads card → verifies ownership + GPA → checks `is_merit_claimed == false` → awards + sets flag in one transaction with idempotency key. Depends on D4 (`schoolGamification`).
-2. **Leave → excused-attendance automation** (A3/A7 end state): approval writes excused attendance for the date range atomically with an audit entry.
-3. **Live academics smoke test**: the P0–P2 manual checklist re-run against the deployed callables.
+2. **Live academics smoke test**: the P0–P2 manual checklist re-run against the deployed callables.
 
-**Order when Blaze arrives:** D4 first (points authority), then D5 items 1–2 (they ride on the points callable), then item 3.
+**Cancelled — do not build:** leave → excused-attendance automation. School policy (user-confirmed 2026-11-08): a scholar with a submitted or approved medical leave is still marked **absent**; the leave never overrides attendance.
+
+**Order when Blaze arrives:** D4 first (points authority), then D5 item 1 (rides on the points callable), then item 2.

@@ -12,6 +12,7 @@ class TimetablePeriod implements Comparable<TimetablePeriod> {
   final bool isBreak;
   final String dayOfWeek;
   final String classLevel;
+  final String? imageUrl;
 
   const TimetablePeriod({
     required this.periodNumber,
@@ -22,6 +23,7 @@ class TimetablePeriod implements Comparable<TimetablePeriod> {
     this.isBreak = false,
     this.dayOfWeek = '',
     this.classLevel = '',
+    this.imageUrl,
   });
 
   /// Parse timeSlot string into (startTime, endTime) TimeOfDay pair.
@@ -156,6 +158,7 @@ class TimetablePeriod implements Comparable<TimetablePeriod> {
     'is_break': isBreak,
     'day_of_week': dayOfWeek,
     'class_level': classLevel,
+    if (imageUrl != null && imageUrl!.isNotEmpty) 'image_url': imageUrl,
   };
 
   Map<String, dynamic> toJson() => toMap();
@@ -180,6 +183,7 @@ class TimetablePeriod implements Comparable<TimetablePeriod> {
       isBreak: map['is_break'] == true || map['isBreak'] == true,
       dayOfWeek: (map['day_of_week'] ?? map['dayOfWeek'] ?? map['day'] ?? '').toString().trim(),
       classLevel: (map['class_level'] ?? map['classLevel'] ?? map['class'] ?? '').toString().trim(),
+      imageUrl: (map['image_url'] ?? map['imageUrl'])?.toString().trim(),
     );
   }
 
@@ -199,6 +203,7 @@ class TimetablePeriod implements Comparable<TimetablePeriod> {
     bool? isBreak,
     String? dayOfWeek,
     String? classLevel,
+    String? imageUrl,
   }) {
     return TimetablePeriod(
       periodNumber: periodNumber ?? this.periodNumber,
@@ -209,6 +214,7 @@ class TimetablePeriod implements Comparable<TimetablePeriod> {
       isBreak: isBreak ?? this.isBreak,
       dayOfWeek: dayOfWeek ?? this.dayOfWeek,
       classLevel: classLevel ?? this.classLevel,
+      imageUrl: imageUrl ?? this.imageUrl,
     );
   }
 
@@ -226,7 +232,8 @@ class TimetablePeriod implements Comparable<TimetablePeriod> {
         other.room == room &&
         other.isBreak == isBreak &&
         other.dayOfWeek == dayOfWeek &&
-        other.classLevel == classLevel;
+        other.classLevel == classLevel &&
+        other.imageUrl == imageUrl;
   }
 
   @override
@@ -239,6 +246,7 @@ class TimetablePeriod implements Comparable<TimetablePeriod> {
     isBreak,
     dayOfWeek,
     classLevel,
+    imageUrl,
   );
 
   @override
