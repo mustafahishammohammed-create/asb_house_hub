@@ -88,7 +88,7 @@ function publicHeader(draft) {
   };
 }
 
-exports.schoolElection = onCall(async (request) => {
+exports.schoolElection = onCall({ enforceAppCheck: true }, async (request) => {
   const uid = request.auth?.uid;
   if (!uid) fail("unauthenticated", "Sign in to continue.");
   const data = request.data ?? {};

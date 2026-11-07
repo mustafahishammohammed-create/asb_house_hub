@@ -77,6 +77,7 @@ extension BallotStatusExt on BallotStatus {
 }
 
 class ElectionCandidate {
+  final String id;
   final String scholarNo;
   final String fullName;
   final String houseName;
@@ -88,19 +89,21 @@ class ElectionCandidate {
   final bool isVerified;
 
   ElectionCandidate({
+    this.id = '',
     required this.scholarNo,
     required this.fullName,
     required this.houseName,
     required this.runningPosition,
     required this.manifesto,
     this.avatarUrl = '',
-    this.classLevel = 'Grade 11',
+    this.classLevel = '',
     this.votesCount = 0,
     this.isVerified = false,
   });
 
   Map<String, dynamic> toMap() {
     return {
+      if (id.isNotEmpty) 'id': id,
       'scholar_no': scholarNo,
       'full_name': fullName,
       'house_name': houseName,
@@ -115,13 +118,14 @@ class ElectionCandidate {
 
   factory ElectionCandidate.fromMap(Map<String, dynamic> map) {
     return ElectionCandidate(
+      id: (map['id'] ?? map['candidate_id'] ?? map['candidateId'] ?? '').toString().trim(),
       scholarNo: (map['scholar_no'] ?? map['scholarNo'] ?? map['id'] ?? '').toString().trim(),
       fullName: (map['full_name'] ?? map['fullName'] ?? map['name'] ?? 'Candidate').toString().trim(),
       houseName: (map['house_name'] ?? map['houseName'] ?? map['house'] ?? '').toString().trim().toLowerCase(),
       runningPosition: (map['running_position'] ?? map['runningPosition'] ?? map['position'] ?? 'House Captain').toString(),
       manifesto: (map['manifesto'] ?? map['statement'] ?? '').toString(),
       avatarUrl: (map['avatar_url'] ?? map['avatarUrl'] ?? '').toString(),
-      classLevel: (map['class_level'] ?? map['classLevel'] ?? 'Grade 11').toString(),
+      classLevel: (map['class_level'] ?? map['classLevel'] ?? '').toString(),
       votesCount: (map['votes_count'] ?? map['votesCount'] ?? map['count'] as num?)?.toInt() ?? 0,
       isVerified: map['is_verified'] == true || map['isVerified'] == true,
     );
@@ -144,8 +148,8 @@ class ElectionBallot implements Comparable<ElectionBallot> {
     required this.id,
     required this.title,
     required this.position,
-    this.houseScope = 'All',
-    this.eligibleGrades = const ['Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'],
+    this.houseScope = '',
+    this.eligibleGrades = const [],
     required this.status,
     required this.startTime,
     required this.endTime,
@@ -153,11 +157,7 @@ class ElectionBallot implements Comparable<ElectionBallot> {
     this.totalVotesCast = 0,
   });
 
-  bool get isOpen {
-    if (status != BallotStatus.open) return false;
-    final now = DateTime.now();
-    return now.isAfter(startTime) && now.isBefore(endTime);
-  }
+  bool get isOpen => status == BallotStatus.open && endTime.millisecondsSinceEpoch > 0;
 
   bool get isCertified => status == BallotStatus.certified;
 
@@ -248,10 +248,8 @@ class ElectionBallot implements Comparable<ElectionBallot> {
       id: docId ?? map['id']?.toString() ?? '',
       title: map['title']?.toString() ?? 'Election',
       position: BallotPositionExt.fromString(map['position']?.toString() ?? map['running_position']?.toString()),
-      houseScope: map['house_scope']?.toString() ?? map['house']?.toString() ?? 'All',
-      eligibleGrades: gradeList.isNotEmpty
-          ? gradeList
-          : const ['Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'],
+      houseScope: map['house_scope']?.toString() ?? map['house']?.toString() ?? '',
+      eligibleGrades: gradeList,
       status: parsedStatus,
       startTime: parseDate(map['start_time'] ?? map['opensAt'] ?? map['startMs']),
       endTime: parseDate(map['end_time'] ?? map['closesAt'] ?? map['endMs']),

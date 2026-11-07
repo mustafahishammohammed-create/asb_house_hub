@@ -6453,9 +6453,9 @@ void main() {
 
     final isTampered = ElectionSecurityService.verifyReceiptToken(
       signatureToken: validToken,
-      anonymizedVoterHash: vHash,
+      anonymizedVoterHash: 'altered_voter_hash',
       ballotId: bId,
-      candidateScholarNo: 'tampered_candidate',
+      candidateScholarNo: cNo,
       timestamp: now,
     );
     expect(isTampered, false);

@@ -169,7 +169,7 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
         'role': 'admin',
         'scholar_no': activeScholar.isNotEmpty ? activeScholar : 'admin',
         'display_name': cached['full_name'] ?? 'Administrator',
-        'house': cached['house_name'] ?? 'ruby',
+        'house': cached['house_name'] ?? '',
         'grade': 12,
         'capabilities': {'manage_elections': true},
       };
@@ -505,10 +505,10 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
     final person = <String, dynamic>{
       'active': true,
       'role': isStaff ? 'admin' : (cachedRole.isNotEmpty ? cachedRole : 'student'),
-      'scholar_no': activeScholar.isNotEmpty ? activeScholar : '00000',
-      'display_name': cached['full_name'] ?? 'Scholar',
-      'house': cached['house_name'] ?? 'ruby',
-      'grade': 10,
+      'scholar_no': activeScholar.isNotEmpty ? activeScholar : '',
+      'display_name': cached['full_name'] ?? '',
+      'house': cached['house_name'] ?? '',
+      'grade': int.tryParse((cached['grade'] ?? cached['class_level'] ?? '').toString().replaceAll(RegExp(r'[^0-9]'), '')) ?? 0,
       'capabilities': {'manage_elections': isStaff},
     };
 
@@ -551,14 +551,15 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
         return {'receipt': cachedPrior.receiptId, 'alreadyRecorded': true};
       }
 
-      final gradeVal = person['grade'] is int ? person['grade'] as int : 10;
+      final gradeVal = person['grade'] is int ? person['grade'] as int : (int.tryParse(person['grade']?.toString() ?? '') ?? 0);
+      if (gradeVal <= 0) throw StateError('Profile incomplete: valid grade required to vote.');
       final house = person['house'];
 
       // Attempt Firestore vote transaction
       String? issuedReceipt;
       String resolvedCandId = candidateId;
       String candName = (args['candidateName'] ?? 'Candidate').toString();
-      String candHouse = (house ?? 'ruby').toString();
+      String candHouse = (house ?? '').toString();
       String candScholar = (args['candidateScholar'] ?? candidateId).toString().trim();
       String pollTitle = 'School Election';
       String runningPos = 'School Leader';
@@ -665,9 +666,6 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
           final candScholarNo = (match['scholar_no'] ?? cId).toString().trim();
           final countRef = pollRef.collection('counts').doc(cId);
           tx.set(countRef, {'count': FieldValue.increment(1)}, SetOptions(merge: true));
-          if (candScholarNo.isNotEmpty && candScholarNo != cId) {
-            tx.set(pollRef.collection('counts').doc(candScholarNo), {'count': FieldValue.increment(1)}, SetOptions(merge: true));
-          }
 
           final updatedList = candidates.map((c) {
             final cMap = Map<String, dynamic>.from(c);
@@ -1594,8 +1592,8 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
     final scholarCtrl = TextEditingController();
     final nameCtrl = TextEditingController();
     final statementCtrl = TextEditingController();
-    String detectedHouse = 'ruby';
-    String detectedClass = 'Grade 10';
+    String detectedHouse = '';
+    String detectedClass = '';
     bool isLookingUp = false;
     bool isRosterMatch = false;
     String? rosterMatchInfo;
@@ -1630,9 +1628,9 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
               if (!ctx.mounted || currentReqId != lookupRequestId) return;
               final isFound = details['isFound'] == true;
               final fullName = (details['fullName'] as String? ?? '').trim();
-              final house = details['houseName'] as String? ?? 'ruby';
+              final house = details['houseName'] as String? ?? '';
               final manifesto = details['manifesto'] as String? ?? '';
-              final grade = details['classLevel'] as String? ?? 'Grade 10';
+              final grade = details['classLevel'] as String? ?? '';
 
               if (isFound && fullName.isNotEmpty) {
                 nameCtrl.text = fullName;

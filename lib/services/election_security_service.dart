@@ -3,7 +3,11 @@ import 'package:crypto/crypto.dart';
 import '../models/digital_ballot_cast.dart';
 
 class ElectionSecurityService {
-  static const String _kElectionHmacSalt = 'ASB_CAMPUS_DEMOCRACY_SECURE_SALT_v1';
+  static String get _electionSalt {
+    const envSalt = String.fromEnvironment('ELECTION_HMAC_SALT');
+    if (envSalt.isNotEmpty) return envSalt;
+    return 'ASB_CAMPUS_DEMOCRACY_SECURE_SALT_v1';
+  }
 
   /// Generates a deterministic, anonymized voter hash.
   /// Prevents linking a voter's scholar number to their candidate choice while
@@ -14,23 +18,24 @@ class ElectionSecurityService {
   }) {
     final cleanScholar = scholarNo.trim().toLowerCase();
     final cleanBallot = ballotId.trim();
-    final key = utf8.encode('$_kElectionHmacSalt:VOTER_ANONYMIZATION');
+    final key = utf8.encode('$_electionSalt:VOTER_ANONYMIZATION');
     final bytes = utf8.encode('$cleanScholar::$cleanBallot');
     final hmac = Hmac(sha256, key);
     return hmac.convert(bytes).toString();
   }
 
   /// Generates an immutable cryptographic signature proof token for the ballot receipt voucher.
+  /// Zero-knowledge proof: commits strictly to voter hash, ballot ID, and UTC timestamp
+  /// NEVER including candidate choice, preserving ballot secrecy against brute-force attacks.
   static String generateBallotProofToken({
     required String anonymizedVoterHash,
     required String ballotId,
-    required String candidateScholarNo,
+    String? candidateScholarNo,
     required DateTime timestamp,
   }) {
-    final key = utf8.encode('$_kElectionHmacSalt:RECEIPT_PROOF_SIGNATURE');
+    final key = utf8.encode('$_electionSalt:RECEIPT_PROOF_SIGNATURE');
     final utcIso = timestamp.toUtc().toIso8601String();
-    final payload =
-        '$anonymizedVoterHash::$ballotId::$candidateScholarNo::$utcIso';
+    final payload = '$anonymizedVoterHash::$ballotId::$utcIso';
     final bytes = utf8.encode(payload);
     final hmac = Hmac(sha256, key);
     return hmac.convert(bytes).toString();
@@ -50,16 +55,26 @@ class ElectionSecurityService {
     required String signatureToken,
     required String anonymizedVoterHash,
     required String ballotId,
-    required String candidateScholarNo,
+    String? candidateScholarNo,
     required DateTime timestamp,
   }) {
     final expected = generateBallotProofToken(
       anonymizedVoterHash: anonymizedVoterHash,
       ballotId: ballotId,
-      candidateScholarNo: candidateScholarNo,
       timestamp: timestamp,
     );
-    return _constantTimeEquals(expected, signatureToken);
+    if (_constantTimeEquals(expected, signatureToken)) return true;
+
+    // Backward compatibility for legacy receipts that included candidate scholar number
+    if (candidateScholarNo != null && candidateScholarNo.isNotEmpty) {
+      final key = utf8.encode('$_electionSalt:RECEIPT_PROOF_SIGNATURE');
+      final utcIso = timestamp.toUtc().toIso8601String();
+      final legacyPayload = '$anonymizedVoterHash::$ballotId::$candidateScholarNo::$utcIso';
+      final legacyBytes = utf8.encode(legacyPayload);
+      final legacyExpected = Hmac(sha256, key).convert(legacyBytes).toString();
+      if (_constantTimeEquals(legacyExpected, signatureToken)) return true;
+    }
+    return false;
   }
 
   /// Verifies ballot box integrity by recalculating cryptographic signatures

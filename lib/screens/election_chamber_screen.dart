@@ -19,7 +19,7 @@ class ElectionChamberScreen extends StatefulWidget {
 
   const ElectionChamberScreen({
     super.key,
-    this.userHouse = 'ruby',
+    this.userHouse = '',
     this.scholarNo = '',
     this.studentName = '',
     this.mockNow,
@@ -1450,9 +1450,9 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                                       if (!modalCtx.mounted) return;
                                       final isFound = details['isFound'] == true;
                                       final fullName = details['fullName'] as String? ?? '';
-                                      final house = details['houseName'] as String? ?? 'ruby';
+                                      final house = details['houseName'] as String? ?? '';
                                       final manifesto = details['manifesto'] as String? ?? '';
-                                      final grade = details['classLevel'] as String? ?? 'Grade 11';
+                                      final grade = details['classLevel'] as String? ?? '';
 
                                       if (isFound && fullName.isNotEmpty) {
                                         nameController.text = fullName;
@@ -1522,9 +1522,9 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
 
                                   final isFound = details['isFound'] == true;
                                   final fullName = details['fullName'] as String? ?? '';
-                                  final house = details['houseName'] as String? ?? 'ruby';
+                                  final house = details['houseName'] as String? ?? '';
                                   final manifesto = details['manifesto'] as String? ?? '';
-                                  final grade = details['classLevel'] as String? ?? 'Grade 11';
+                                  final grade = details['classLevel'] as String? ?? '';
 
                                   if (isFound && fullName.isNotEmpty) {
                                     nameController.text = fullName;

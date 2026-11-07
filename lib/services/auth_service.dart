@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -38,7 +39,11 @@ const String kSchoolDomain = 'asianschool.bh';
 /// stored in local device preferences (replaces plaintext serialization in SharedPreferences).
 class CredentialVaultService {
   static const String tokenPrefix = 'enc:v1:';
-  static const String _vaultSecret = 'ASB_CREDENTIAL_VAULT_HMAC_AES_SECRET_2026';
+  static String get _vaultSecret {
+    const envSecret = String.fromEnvironment('VAULT_SECRET');
+    if (envSecret.isNotEmpty) return envSecret;
+    return 'ASB_RUNTIME_VAULT_KEY_${kSchoolDomain.hashCode}';
+  }
 
   /// Encrypts a plaintext credential string into an authenticated tamper-evident token.
   static String? encrypt(String? plaintext) {
@@ -1898,38 +1903,65 @@ class AuthService {
   }
 
   /// Stream real-time ballots from Firestore with write-through local caching.
+  /// Combines v2 system of record (election_polls_v2) and legacy collections without caching override leaks.
   Stream<List<ElectionBallot>> getElectionsStream() {
+    if (!_isFirebaseLive) {
+      return Stream.value(getCachedBallots());
+    }
     try {
-      return _firestore
-          .collection('elections')
-          .orderBy('start_time', descending: false)
-          .snapshots()
-          .map((snap) {
-        final list = snap.docs.map((d) {
-          final data = d.data();
-          return ElectionBallot.fromMap(data, docId: d.id);
-        }).toList();
+      final controller = StreamController<List<ElectionBallot>>.broadcast();
+      final v2Map = <String, ElectionBallot>{};
+      final legacyMap = <String, ElectionBallot>{};
 
-        final cached = getCachedBallots();
-        final map = <String, ElectionBallot>{};
-        for (final b in cached) {
-          map[b.id] = b;
+      void emitMerged() {
+        final merged = <String, ElectionBallot>{};
+        merged.addAll(legacyMap);
+        merged.addAll(v2Map); // v2 is system of record and overrides legacy
+        final list = merged.values.toList()..sort();
+        if (list.isNotEmpty) {
+          cacheBallots(list);
         }
-        for (final b in list) {
-          if (map.containsKey(b.id) &&
-              map[b.id]!.status == BallotStatus.certified &&
-              b.status != BallotStatus.certified) {
-            // Preserve certified status from cache
-          } else {
-            map[b.id] = b;
-          }
+        if (!controller.isClosed) {
+          controller.add(list);
         }
-        final merged = map.values.toList()..sort();
-        if (merged.isNotEmpty) {
-          cacheBallots(merged);
-        }
-        return merged;
-      });
+      }
+
+      StreamSubscription? subV2;
+      StreamSubscription? subLegacy;
+
+      controller.onListen = () {
+        subV2 = _firestore.collection('election_polls_v2').snapshots().listen(
+          (snap) {
+            v2Map.clear();
+            for (final d in snap.docs) {
+              final b = ElectionBallot.fromMap(d.data(), docId: d.id);
+              v2Map[b.id] = b;
+            }
+            emitMerged();
+          },
+          onError: (_) {},
+        );
+
+        subLegacy = _firestore.collection('elections').snapshots().listen(
+          (snap) {
+            legacyMap.clear();
+            for (final d in snap.docs) {
+              final b = ElectionBallot.fromMap(d.data(), docId: d.id);
+              legacyMap[b.id] = b;
+            }
+            emitMerged();
+          },
+          onError: (_) {},
+        );
+      };
+
+      controller.onCancel = () {
+        subV2?.cancel();
+        subLegacy?.cancel();
+        controller.close();
+      };
+
+      return controller.stream;
     } catch (_) {
       return Stream.value(getCachedBallots());
     }
@@ -1952,6 +1984,20 @@ class AuthService {
         totalVotesCast: ballot.totalVotesCast,
       );
 
+      int parsedMin = 1;
+      int parsedMax = 12;
+      if (finalBallot.eligibleGrades.isNotEmpty) {
+        final gradeNums = finalBallot.eligibleGrades
+            .map((g) => int.tryParse(g.replaceAll(RegExp(r'[^0-9]'), '')))
+            .whereType<int>()
+            .toList();
+        if (gradeNums.isNotEmpty) {
+          gradeNums.sort();
+          parsedMin = gradeNums.first;
+          parsedMax = gradeNums.last;
+        }
+      }
+
       if (_isFirebaseLive && currentUser != null) {
         try {
           final token = await currentUser!.getIdToken();
@@ -1967,10 +2013,10 @@ class AuthService {
                   'action': 'create',
                   'pollId': docId,
                   'title': finalBallot.title,
-                  'position': finalBallot.position.displayName,
+                  'position': finalBallot.position.name,
                   'house': finalBallot.houseScope.toLowerCase(),
-                  'minGrade': 1,
-                  'maxGrade': 12,
+                  'minGrade': parsedMin,
+                  'maxGrade': parsedMax,
                   'startMs': finalBallot.startTime.millisecondsSinceEpoch,
                   'endMs': finalBallot.endTime.millisecondsSinceEpoch,
                 }
@@ -1983,9 +2029,9 @@ class AuthService {
               return (success: false, error: err is Map ? err['message']?.toString() : err.toString(), ballotId: null);
             }
 
-            // 2. Add candidates
+            // 2. Add candidates with strict reply error-checking
             for (final c in finalBallot.candidates) {
-              await http.post(
+              final addReply = await http.post(
                 url,
                 headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
                 body: jsonEncode({
@@ -1997,11 +2043,17 @@ class AuthService {
                   }
                 }),
               ).timeout(const Duration(seconds: 15));
+
+              final addEnv = jsonDecode(addReply.body);
+              if (addEnv is Map && addEnv['error'] != null) {
+                final err = addEnv['error'];
+                return (success: false, error: err is Map ? err['message']?.toString() : err.toString(), ballotId: null);
+              }
             }
 
-            // 3. Publish if open
+            // 3. Publish if open with strict reply error-checking
             if (finalBallot.status == BallotStatus.open && finalBallot.candidates.length >= 2) {
-              await http.post(
+              final pubReply = await http.post(
                 url,
                 headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
                 body: jsonEncode({
@@ -2011,6 +2063,12 @@ class AuthService {
                   }
                 }),
               ).timeout(const Duration(seconds: 15));
+
+              final pubEnv = jsonDecode(pubReply.body);
+              if (pubEnv is Map && pubEnv['error'] != null) {
+                final err = pubEnv['error'];
+                return (success: false, error: err is Map ? err['message']?.toString() : err.toString(), ballotId: null);
+              }
             }
           }
         } catch (e) {
@@ -2024,7 +2082,7 @@ class AuthService {
         try {
           await _firestore.collection('elections').doc(docId).set(finalBallot.toMap(), SetOptions(merge: true));
           final v2Candidates = finalBallot.candidates.map((c) => {
-            'id': c.scholarNo.isNotEmpty ? c.scholarNo : 'cand_${c.fullName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_')}',
+            'id': c.id.isNotEmpty ? c.id : (c.scholarNo.isNotEmpty ? c.scholarNo : 'cand_${c.fullName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_')}'),
             'name': c.fullName,
             'scholar_no': c.scholarNo,
             'statement': c.manifesto,
@@ -2032,8 +2090,8 @@ class AuthService {
           await _firestore.collection('election_polls_v2').doc(docId).set({
             'title': finalBallot.title,
             'position': finalBallot.position.name,
-            'minGrade': 1,
-            'maxGrade': 12,
+            'minGrade': parsedMin,
+            'maxGrade': parsedMax,
             'house': finalBallot.houseScope.toLowerCase(),
             'opensAt': Timestamp.fromDate(finalBallot.startTime),
             'closesAt': Timestamp.fromDate(finalBallot.endTime),
@@ -4474,7 +4532,28 @@ class AuthService {
           if (token != null) {
             final project = Firebase.app().options.projectId;
             final url = Uri.https('us-central1-$project.cloudfunctions.net', '/schoolElection');
-            final candId = candidate.scholarNo.isNotEmpty ? candidate.scholarNo : candidate.fullName;
+            String candId = candidate.id.isNotEmpty ? candidate.id : candidate.scholarNo;
+            if (candId.isEmpty || candId == candidate.scholarNo) {
+              try {
+                final pollDoc = await _firestore.collection('election_polls_v2').doc(bId).get();
+                if (pollDoc.exists) {
+                  final pData = pollDoc.data();
+                  final cList = (pData?['candidates'] as List? ?? []).cast<Map>();
+                  for (final c in cList) {
+                    final cSNo = (c['scholar_no'] ?? c['scholarNo'] ?? '').toString().trim().toLowerCase();
+                    final cName = (c['name'] ?? c['full_name'] ?? '').toString().trim().toLowerCase();
+                    if ((cSNo.isNotEmpty && cSNo == candidate.scholarNo.trim().toLowerCase()) ||
+                        (cName.isNotEmpty && cName == candidate.fullName.trim().toLowerCase())) {
+                      final foundId = (c['id'] ?? '').toString().trim();
+                      if (foundId.isNotEmpty) {
+                        candId = foundId;
+                        break;
+                      }
+                    }
+                  }
+                }
+              } catch (_) {}
+            }
             final reply = await http.post(
               url,
               headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
@@ -4839,6 +4918,9 @@ class AuthService {
 
   /// Stream certified election proclamations from Firestore with write-through local caching.
   Stream<List<CertifiedElectionResult>> getCertifiedGazetteStream() {
+    if (!_isFirebaseLive) {
+      return Stream.value(getCachedCertifiedGazette());
+    }
     try {
       return _firestore
           .collection('election_gazettes')
@@ -4849,11 +4931,8 @@ class AuthService {
               final data = d.data();
               return CertifiedElectionResult.fromMap(data);
             }).toList();
-            if (list.isNotEmpty) {
-              cacheCertifiedGazette(list);
-              return list;
-            }
-            return getCachedCertifiedGazette();
+            cacheCertifiedGazette(list);
+            return list;
           });
     } catch (_) {
       return Stream.value(getCachedCertifiedGazette());

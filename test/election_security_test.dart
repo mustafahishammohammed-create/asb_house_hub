@@ -1280,6 +1280,22 @@ void main() {
       expect(isForged, isFalse);
     });
 
+    test('F8 Zero-Knowledge Proof: Token is independent of candidate choice', () {
+      final tokenCandidateA = ElectionSecurityService.generateBallotProofToken(
+        ballotId: 'ballot_sec_zkp',
+        candidateScholarNo: '1111',
+        anonymizedVoterHash: 'voter_hash_999',
+        timestamp: DateTime.utc(2026, 11, 7, 12, 0, 0),
+      );
+      final tokenCandidateB = ElectionSecurityService.generateBallotProofToken(
+        ballotId: 'ballot_sec_zkp',
+        candidateScholarNo: '2222',
+        anonymizedVoterHash: 'voter_hash_999',
+        timestamp: DateTime.utc(2026, 11, 7, 12, 0, 0),
+      );
+      expect(tokenCandidateA, equals(tokenCandidateB), reason: 'Proof token must commit strictly to voter receipt without leaking candidate choice');
+    });
+
     test('F5 Voter Normalization & Case-Insensitive Matching', () {
       final hashLower = ElectionSecurityService.generateAnonymizedVoterHash(scholarNo: '11209', ballotId: 'poll_1');
       final hashUpper = ElectionSecurityService.generateAnonymizedVoterHash(scholarNo: ' 11209 ', ballotId: 'poll_1');

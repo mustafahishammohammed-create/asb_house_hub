@@ -57,7 +57,7 @@ class BallotCastReceipt {
       ballotTitle: (map['ballot_title'] ?? 'Election Ballot').toString(),
       candidateScholarNo: (map['candidate_scholar_no'] ?? '').toString(),
       candidateName: (map['candidate_name'] ?? 'Candidate').toString(),
-      candidateHouse: (map['candidate_house'] ?? 'ruby').toString().toLowerCase(),
+      candidateHouse: (map['candidate_house'] ?? '').toString().toLowerCase(),
       runningPosition: (map['running_position'] ?? 'Council').toString(),
       anonymizedVoterHash: (map['anonymized_voter_hash'] ?? '').toString(),
       signatureProofToken: (map['signature_proof_token'] ?? '').toString(),

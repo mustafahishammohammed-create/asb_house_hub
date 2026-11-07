@@ -67,7 +67,7 @@ class CertifiedElectionResult {
       runningPosition: (map['running_position'] ?? 'Council Appointment').toString(),
       winnerScholarNo: (map['winner_scholar_no'] ?? '').toString(),
       winnerName: (map['winner_name'] ?? 'Candidate').toString(),
-      winnerHouse: (map['winner_house'] ?? 'ruby').toString().toLowerCase(),
+      winnerHouse: (map['winner_house'] ?? '').toString().toLowerCase(),
       winnerAvatarUrl: (map['winner_avatar_url'] ?? '').toString(),
       totalVotesReceived: (map['total_votes_received'] as num?)?.toInt() ?? 0,
       victoryMarginVotes: (map['victory_margin_votes'] as num?)?.toInt() ?? 0,
