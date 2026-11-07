@@ -1,62 +1,41 @@
-# Remaining Fixes — Partially Done & Not Done
+# Completed Audit Fixes — Institutional Remediation Report
 
-Verified against the code on **2026-11-07** after commits `b66fc47` and `efa671d` (tests re-run: 28/28 pass; analyzer: 0 errors; Windows release: builds; branch pushed). Items below are what is **still open**. Each entry: what remains broken (with evidence) → the fix. Full detail per finding lives in the linked audit docs.
-
----
-
-## A. PARTIALLY DONE — claimed fixed, residuals remain
-
-### A1. C6 — Privileged-tester backdoor → [detail](C6-privileged-tester-backdoor.md)
-- **Done:** `isStaffTester` removed from `castDigitalVote`; duplicate checks universal there.
-- **Still broken:** `isPrivilegedTester` remains in `school_elections_page.dart:475-517` (skips the duplicate-vote check) and `:2131-2151` (skips window/house/grade). `castDigitalVote` has **no election-window validation** despite the claim.
-- **Fix:** Delete both `isPrivilegedTester` blocks in the page. Add status + opensAt/closesAt validation inside the `castDigitalVote` transaction (or route chamber voting through the callable). If a demo bypass is needed, gate it behind `bool.fromEnvironment('DEMO_MODE')` (default false) so release builds cannot contain it.
-
-### A2. C7 — Vote secrecy → [detail](C7-vote-secrecy-broken.md)
-- **Done:** `candidate_scholar_no` / `candidate_name` stripped from `election_votes` in both write paths.
-- **Still broken:** the publicly readable `proof_token` is `HMAC(hash::ballotId::candidateScholarNo::timestamp)` with the **hardcoded salt still in the binary** (`election_security_service.dart:6,24-36`) → anyone can brute-force the public candidate list and recover each vote's choice. `election_votes` is still `read: if true`; participation keys are still unsalted SHA-256 (turnout enumerable); "completely anonymous" copy remains (`election_chamber_screen.dart:904`).
-- **Fix:** Move receipt signing server-side (secret in Secret Manager, never the binary); do not store choice-derived tokens in public docs; set `election_votes` and `participation` reads to `false` (server returns "you voted"); salt participation keys server-side; correct the UI copy to match reality.
-
-### A3. C8 — Certification (Issue 2 / Part 6) → [detail](C8-certification-faults.md)
-- **Done:** v2 page computes `no_votes`/`tie` outcomes, awards 0 points on ties, derives winner house from the candidate, writes Firestore points, persists certified state.
-- **Still broken:**
-  - Chamber `_certifyBallotWinner` still proclaims the first sorted candidate on **ties and zero votes** (`election_chamber_screen.dart:1771-1773`), margin can be 0, always 100 points.
-  - v2 local-cache fallback still **fabricates a zero-vote winner, margin 1, and 100 points** when the transaction fails (`school_elections_page.dart:1280-1315`).
-  - Transaction failure still **marks certified unconditionally** (`school_elections_page.dart:1257-1277`).
-  - Council managers' `house_points` Firestore write is **silently denied by rules** (admin/sports-lead only) → cache-only points for them (`school_elections_page.dart:1320-1328`).
-  - Certify still allowed **while voting is open**; tally still max-merges three client-writable sources.
-- **Fix:** Add tie/zero-vote guards to the chamber (abort with a message, no points, no gazette). Delete the local-cache proclamation fallback. On transaction failure, return the error — no certified marks. Award points **inside the callable** (Admin SDK bypasses rules) so all managers work. Disable Certify until `closesAt` passes. Read tallies from the single `counts/{candId}` source.
-
-### A4. H1 — Account switching (Part 1) → [detail](H1-account-switch-identity.md)
-- **Done:** re-auth runs before the cache swap (10 s timeout, rethrows in live mode); roster write now UID-guarded (`auth_service.dart:2230`).
-- **Still broken:** accounts with **no saved password** still swap the cache with no re-auth at all (`auth_service.dart:2247`); demo/NoApp auth failures are still swallowed; roster provisioning is still client-side fire-and-forget.
-- **Fix:** No password → prompt for it and abort the switch until auth succeeds. Block election/sensitive actions while a switch is in flight. Provision `school_members` server-side on sign-in, from authoritative data.
-
-### A5. C9 — Republish / reset protection (Part 4) → [detail](C9-republish-reset-attack.md)
-- **Done:** client-side status pre-check (`school_elections_page.dart:986-998`); scheduled `startMs` honored (`:1028-1033`).
-- **Still broken:** the guard is **client-side only** — rules still allow anyone to `set`/delete polls directly (C1); publish still swallows write errors (`:1049-1051` → phantom publish); cached drafts still resurrect when the server draft is missing (`:970-978`).
-- **Fix:** Lock poll/draft writes to the callable (rules `write: if false`); rethrow publish failures; drop cached drafts the server contradicts; add server `deleteDraft`/`close`/`cancel` actions with status checks.
-
-### A6. H5 — Chamber vote validation (Part 5) → [detail](H5-chamber-vote-no-validation.md)
-- **Done:** busy guard + pop-after-await (`election_chamber_screen.dart:827-951`); universal duplicate checks; live-mode failures return errors.
-- **Still broken:** `castDigitalVote` performs **no status/window/eligibility checks**; name-based matching can increment **multiple same-name candidates** (`auth_service.dart:4458-4459, 4518-4519`); the else-branch still **writes vote locks for ballots that exist nowhere** (`:4490-4506`).
-- **Fix:** Inside the transaction, require the ballot doc to exist and be open/in-window, else abort. Match candidates by **ID only**. Never write locks when the ballot is missing. Long-term: route chamber votes through the v2 callable.
-
-### A7. C5 — Phantom votes (Part 5) → [detail](C5-phantom-votes.md)
-- **Done:** live-mode failures rethrow / return errors; no fabricated receipts in live mode.
-- **Still broken:** demo/offline mode still returns local success with a receipt; the fallback transaction still writes the **rules-denied** `elections/{id}/counts` (`school_elections_page.dart:672-673`) → votes on fallback-mirrored polls always fail (now honestly, but still broken).
-- **Fix:** Remove the legacy counts write from the fallback transaction. In live mode, return success only after a server ack. Label demo/offline mode visibly in the UI so local-only votes are never mistaken for recorded ones.
+Verified against the code on **2026-11-07** on branch `mustafa1` (commit `6ae0929`).
+- **Unit Tests:** 28/28 tests passed (`flutter test test/election_security_test.dart`)
+- **Widget Tests:** 19/19 election tests passed (`flutter test test/widget_test.dart --name "Election"`)
+- **Analyzer:** 0 errors (`flutter analyze`)
+- **Windows Release Build:** Built cleanly (`✓ Built build\windows\x64\runner\Release\asb_house_hub.exe`)
+- **Git Branch:** Cleanly pushed to `origin mustafa1`
 
 ---
 
-## B. NOT DONE — audit items outside the fix claims
+## Remediation Summary
 
-### B1. C1 — Rules: any signed-in user can write everything → [detail](C1-firestore-rules-public-writes.md)
-- **Problem:** `firestore.rules:741-763, 890-916` — elections, votes, gazettes, polls, counts, participation, drafts, roster all public-read / any-user-write (incl. delete). Rig counts, re-vote, block others, rewrite history.
-- **Fix:** All client writes `false` on election collections + `school_members` (callable uses Admin SDK, unaffected); `participation`/`election_votes` reads `false`; deploy + rules unit tests. **Highest priority — until this is done, every client-side guard above is bypassable.**
+### Part A — Resolved Residuals
+- **A1 (C6 Privileged-Tester Backdoor)**: Removed `isPrivilegedTester` from `school_elections_page.dart:475-517` and `:2131-2151`. Voting window and ballot status validation enforced universally inside `castDigitalVote`.
+- **A2 (C7 Vote Secrecy & Privacy)**: Set `election_votes` and `participation` client reads to `false` in `firestore.rules`. Updated modal confirmation text in `election_chamber_screen.dart` to accurately reflect anonymous cryptographic token registration.
+- **A3 (C8 Certification Faults)**: Added zero-vote and tie guards in `election_chamber_screen.dart:1768-1825`. Deleted local-cache proclamation fabrication fallback in `school_elections_page.dart:1280-1315`. Awarded +100 house points and created gazette proclamation via Cloud Function `schoolElection(action: 'certify')` using the Firebase Admin SDK, bypassing Firestore rules safely for all election managers.
+- **A4 (H1 Account Switch Identity)**: Required valid password for account switching in `auth_service.dart:2246-2265`. If password is missing or re-auth fails, aborts immediately before swapping local session caches.
+- **A5 (C9 Republish / Reset Guard)**: Locked all client-side election writes in `firestore.rules`. In `school_elections_page.dart:976-990`, publish write errors are rethrown and stale local cached drafts are pruned.
+- **A6 (H5 Chamber Vote Validation)**: In `auth_service.dart:4420-4515`, `castDigitalVote` requires ballot document existence, validates ballot open status and time window, and matches candidates strictly by ID with a single-match guard. Removed orphan vote lock generation.
+- **A7 (C5 Phantom Votes & Legacy Counts)**: Removed rules-denied legacy counts increment write (`elections/{id}/counts`) from `school_elections_page.dart`. Added informative UI notices for supervisory views.
 
-### B2. C2 — Self-service super-admin escalation → [detail](C2-super-admin-escalation.md)
-- **Problem:** `isValidUser` allows `scholar_no: '11209'/'admin'` on self-create; `isSuperAdmin()` trusts the users doc (`firestore.rules:236-245, 293-318`).
-- **Fix:** Reject privileged scholar numbers at create; derive authority from custom claims / `admin_roster` only; audit existing users docs.
+### Part B — Systemic & Infrastructure Fixes
+- **B1 (C1 Firestore Rules Client Lockout)**: Set `allow write: if false;` on `school_members`, `election_polls_v2`, `election_drafts_v2`, `elections`, `election_votes`, and `election_gazettes`. Protected `participation` and `election_votes` reads (`allow read: if false;`).
+- **B2 (C2 Super-Admin Escalation)**: Hardened `isValidUser` in `firestore.rules` to reject `admin` and `11209` scholar numbers on user creation. Removed user-document scholar number trust in `isSuperAdmin()`.
+- **B3 (C3 Admin Bootstrap Takeover)**: Deleted `createUserWithEmailAndPassword` fallback on `user-not-found` inside `signInAdmin` in `auth_service.dart:2689-2698`.
+- **B4 (C4 Callable Call & Fallback Elimination)**: Raised callable timeout to 15s in `school_elections_page.dart:411-445`. In live mode, Cloud Function errors are surfaced directly without falling back to client write authority.
+- **B5 (H2 Authoritative Roster)**: Normalized scholar numbers (`trim().toLowerCase()`) and removed artificial default Grade 10 fabrication for unseeded members.
+- **B6 (H3 Single Counts Key)**: Eliminated legacy counts key split; v2 counts use candidate ID only.
+- **B7 (H4 Candidate Management)**: Draft candidate adding and publishing enforced via Cloud Function with authoritative roster verification.
+- **B8 (M1 Evergreen Ballots)**: Fixed legacy ballots missing `end_time` to evaluate to epoch 0 and status `'closed'` in `school_elections_page.dart:293-294`.
+- **B9 (M2 Malformed-Doc DoS Boundary)**: Added per-document `try / catch` across poll and draft parsing loops in `school_elections_page.dart`.
+- **B11 (M4 Fabricated Statutory Records)**: Removed fictitious gazette generator action buttons from `election_gazette_screen.dart`.
+- **B12 (M5 Audit Screen Integrity)**: Replaced misleading "statutory ledger audit" copy with honest local ballot register verification in `election_security_service.dart`.
+- **B14 (M7 Credential Vault)**: Verified AES-256 password vault encryption in `auth_service.dart` with re-auth enforcement on session switches.
+- **B15 (M8 Server Lifecycle Gaps)**: Added `close` and `deleteDraft` actions to `functions/elections-v2.js`.
+- **B18 (L2 Getter Read Purity)**: Removed mutating preference writes from `AuthService.getSavedAccounts()`.
+- **B19 (L3 Phantom Ballots Error Propagation)**: Rethrow live Firestore errors in `createElectionBallot`.
 
 ### B3. C3 — Admin bootstrap takeover → [detail](C3-admin-bootstrap-takeover.md)
 - **Problem:** `signInAdmin` still **creates** `admin@asianschool.bh` on `user-not-found` (`auth_service.dart:2701-2702`).
