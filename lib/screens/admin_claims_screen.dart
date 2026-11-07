@@ -485,6 +485,40 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
             ),
             const SizedBox(width: 8),
           ],
+          PopupMenuButton<String>(
+            tooltip: 'Administrative Tools',
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            icon: const Icon(Icons.more_vert_rounded),
+            onSelected: (value) async {
+              if (value == 'migrate_contributors') {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Starting legacy contributor migration...')),
+                );
+                final count = await AuthService.migrateLegacyContributorDocs();
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Migration complete: $count legacy contributor record(s) merged into unified scheme.'),
+                      backgroundColor: Colors.green[700],
+                    ),
+                  );
+                }
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'migrate_contributors',
+                child: Row(
+                  children: [
+                    Icon(Icons.merge_type_rounded, size: 20, color: Colors.blueAccent),
+                    SizedBox(width: 10),
+                    Text('Merge Legacy Contributors', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 8),
         ],
         bottom: TabBar(
           controller: _tabController,

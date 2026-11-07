@@ -1022,15 +1022,22 @@ class AuthService {
         updateData['graded_at'] = now.toIso8601String();
       }
 
-      // 1. Update Firestore document if available
-      try {
-        await _firestore
-            .collection('classes')
-            .doc(cLevel)
-            .collection('assignments')
-            .doc(assignmentId)
-            .update(updateData);
-      } catch (_) {}
+      // 1. Update Firestore document if live, failing truthfully on server denial
+      if (_isFirebaseLive) {
+        try {
+          await _firestore
+              .collection('classes')
+              .doc(cLevel)
+              .collection('assignments')
+              .doc(assignmentId)
+              .update(updateData);
+        } catch (e) {
+          if (!_isNoAppException(e)) {
+            debugPrint('Firestore updateAssignmentStatus write rejected: $e');
+            return false;
+          }
+        }
+      }
 
       // 2. Update local cached assignments list
       final cached = getCachedAssignments(classLevel: cLevel);
@@ -4112,6 +4119,7 @@ class AuthService {
   /// into the unified `{scholarNo}` scheme.
   /// Sums total_contributed, keeps max merits_count, and deletes the legacy documents.
   static Future<int> migrateLegacyContributorDocs({FirebaseFirestore? firestore}) async {
+    if (firestore == null && !_isFirebaseLive) return 0;
     final db = firestore ?? FirebaseFirestore.instance;
     int migratedCount = 0;
     try {
@@ -4225,6 +4233,17 @@ class AuthService {
   /// Seed the complete admin and council roster into Firestore database.
   Future<void> seedAdminRoster() async {
     try {
+      // O-3: One-time background migration of legacy contributor docs for active sessions
+      final hasMigrated = _prefs?.getBool('has_migrated_legacy_contributors_v1') ?? false;
+      if (!hasMigrated && _isFirebaseLive) {
+        migrateLegacyContributorDocs().then((migratedCount) {
+          if (migratedCount > 0) {
+            debugPrint('Legacy contributor migration: $migratedCount records merged into unified scheme.');
+          }
+          _prefs?.setBool('has_migrated_legacy_contributors_v1', true);
+        }).catchError((_) {});
+      }
+
       final snapshot = await _firestore.collection('admin_roster').limit(2).get().timeout(const Duration(seconds: 4));
       if (snapshot.docs.isNotEmpty) return; // Already seeded other slots!
 
@@ -5032,11 +5051,18 @@ class AuthService {
 
   static const String _kCachedGazetteKey = 'cached_certified_gazette_list';
 
-  /// Persist certified election proclamations to local disk cache.
+  /// Persist certified election proclamations to local disk cache with deduplication.
   static Future<void> cacheCertifiedGazette(List<CertifiedElectionResult> list) async {
     try {
       _prefs ??= await SharedPreferences.getInstance();
-      final jsonStr = jsonEncode(list.map((g) => g.toMap()).toList());
+      final seen = <String>{};
+      final uniqueList = <CertifiedElectionResult>[];
+      for (final item in list) {
+        if (seen.add(item.ballotId)) {
+          uniqueList.add(item);
+        }
+      }
+      final jsonStr = jsonEncode(uniqueList.map((g) => g.toMap()).toList());
       await _prefs?.setString(_kCachedGazetteKey, jsonStr);
     } catch (_) {}
   }
@@ -5202,6 +5228,14 @@ class AuthService {
             if (envelope is Map && envelope['result'] != null) {
               await incrementCachedHousePoints(hName, housePoints);
               await cacheCertifiedGazette([certifiedResult, ...getCachedCertifiedGazette()]);
+              final ballots = getCachedBallots();
+              final updatedBallots = ballots.map<ElectionBallot>((b) {
+                if (b.id == ballotId) {
+                  return b.copyWith(status: BallotStatus.certified, isCertified: true);
+                }
+                return b;
+              }).toList();
+              await cacheBallots(updatedBallots);
               return (success: true, result: certifiedResult, error: null);
             }
           }

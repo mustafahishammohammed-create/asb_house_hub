@@ -380,14 +380,18 @@ service cloud.firestore {
       return hasOnlyAllowedFields([
         'id', 'title', 'subject', 'class_level', 'division',
         'assigned_date', 'due_date', 'description', 'teacher_name',
-        'max_marks', 'attachments', 'created_at', 'updated_at'
+        'max_marks', 'attachments', 'created_at', 'updated_at',
+        'status', 'points_reward', 'submission_notes', 'submitted_at', 'graded_at'
       ]) &&
       hasRequiredFields(['title', 'subject']) &&
       data.title is string && data.title.size() >= 1 && data.title.size() <= 150 &&
       data.subject is string && data.subject.size() >= 1 && data.subject.size() <= 80 &&
+      (!('status' in data) || (data.status is string && data.status in ['pending', 'submitted', 'graded'])) &&
+      (!('points_reward' in data) || (data.points_reward is int && data.points_reward >= 0 && data.points_reward <= 500)) &&
       (!('class_level' in data) || (data.class_level is string && data.class_level.size() <= 50)) &&
       (!('division' in data) || (data.division is string && data.division.size() <= 10)) &&
       (!('description' in data) || (data.description is string && data.description.size() <= 3000)) &&
+      (!('submission_notes' in data) || (data.submission_notes is string && data.submission_notes.size() <= 3000)) &&
       (!('teacher_name' in data) || (data.teacher_name is string && data.teacher_name.size() <= 100)) &&
       (!('max_marks' in data) || (data.max_marks is number && data.max_marks >= 0 && data.max_marks <= 1000)) &&
       (!('attachments' in data) || (data.attachments is list && data.attachments.size() <= 10)) &&
@@ -475,25 +479,6 @@ service cloud.firestore {
       (!('venue' in data) || (data.venue is string && data.venue.size() <= 100)) &&
       (!('mvp_name' in data) || (data.mvp_name is string && data.mvp_name.size() <= 100)) &&
       (!('certification_token' in data) || (data.certification_token is string && data.certification_token.size() <= 256));
-    }
-
-    function isValidElection(data) {
-      return hasOnlyAllowedFields([
-        'id', 'title', 'position', 'running_position',
-        'start_time', 'end_time', 'is_open', 'candidates',
-        'total_votes_cast', 'last_updated', 'created_at',
-        'house_scope', 'eligible_grades', 'status',
-        'is_certified', 'certified_by', 'certified_at'
-      ]) &&
-      (!('title' in data) || (data.title is string && data.title.size() <= 150)) &&
-      (!('position' in data) || (data.position is string && data.position.size() <= 100)) &&
-      (!('house_scope' in data) || (data.house_scope is string && data.house_scope.size() <= 50)) &&
-      (!('status' in data) || (data.status is string && data.status in ['upcoming', 'open', 'closed', 'certified'])) &&
-      (!('candidates' in data) || (data.candidates is list && data.candidates.size() <= 50)) &&
-      (!('eligible_grades' in data) || (data.eligible_grades is list && data.eligible_grades.size() <= 20)) &&
-      (!('is_certified' in data) || data.is_certified is bool) &&
-      (!('certified_by' in data) || (data.certified_by is string && data.certified_by.size() <= 100)) &&
-      (!('total_votes_cast' in data) || (data.total_votes_cast is int && data.total_votes_cast >= 0));
     }
 
     function isValidAnnouncement(data) {
@@ -681,7 +666,8 @@ service cloud.firestore {
           (isCouncil() || isCaptain()) &&
           request.resource.data.role == resource.data.role &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['points_contributed']) &&
-          (!('points_contributed' in resource.data) ||
+          (!('points_contributed' in resource.data) ?
+            (request.resource.data.points_contributed >= 0 && request.resource.data.points_contributed <= 500) :
             (request.resource.data.points_contributed >= resource.data.points_contributed &&
              request.resource.data.points_contributed - resource.data.points_contributed <= 500)) &&
           request.resource.data.points_contributed <= 1000000 &&
@@ -725,7 +711,21 @@ service cloud.firestore {
 
       match /assignments/{assignmentId} {
         allow read: if isSignedIn();
-        allow write: if isAdmin() && isValidHomework(request.resource.data);
+        allow create: if isAdmin() && isValidHomework(request.resource.data);
+        allow update: if (
+          (isAdmin() && isValidHomework(request.resource.data)) ||
+          (
+            isCouncil() &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'submitted_at', 'graded_at']) &&
+            request.resource.data.status in ['pending', 'submitted', 'graded']
+          ) ||
+          (
+            isSignedIn() &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'submitted_at']) &&
+            request.resource.data.status in ['pending', 'submitted']
+          )
+        );
+        allow delete: if isAdmin();
       }
 
       match /midterm_exams/{examId} {
@@ -752,7 +752,21 @@ service cloud.firestore {
     // 4. homework/{assignmentId}
     match /homework/{assignmentId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin() && isValidHomework(request.resource.data);
+      allow create: if isAdmin() && isValidHomework(request.resource.data);
+      allow update: if (
+        (isAdmin() && isValidHomework(request.resource.data)) ||
+        (
+          isCouncil() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'submitted_at', 'graded_at']) &&
+          request.resource.data.status in ['pending', 'submitted', 'graded']
+        ) ||
+        (
+          isSignedIn() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'submitted_at']) &&
+          request.resource.data.status in ['pending', 'submitted']
+        )
+      );
+      allow delete: if isAdmin();
     }
 
     // 5. house_claims/{claimId}
@@ -820,6 +834,7 @@ service cloud.firestore {
     }
 
     // 8. elections/{electionId} and elections/{electionId}/ballots/{ballotId}
+    // Callable-managed schema: house_scope, eligible_grades, status, is_certified
     match /elections/{electionId} {
       allow read: if true;
       allow write: if false;
@@ -899,15 +914,23 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isValidHousePoints(houseId, request.resource.data) && (
         isAdmin() || (
-          (isSportsLead() || isCouncil()) &&
+          (
+            isSportsLead() ||
+            isCouncil() ||
+            (isCaptain() && hasUserDoc() && 'house_name' in getUserData() && getUserData().house_name.lower() == houseId.lower())
+          ) &&
           request.resource.data.total_points >= 0 &&
           request.resource.data.total_points <= 500
         )
       );
       allow update: if isValidHousePoints(houseId, request.resource.data) && (
         isAdmin() || (
-          (isSportsLead() || isCouncil()) &&
-          // Sports leads and council may only apply positive bounded increments (0 to +500); negative deductions are admin only
+          (
+            isSportsLead() ||
+            isCouncil() ||
+            (isCaptain() && hasUserDoc() && 'house_name' in getUserData() && getUserData().house_name.lower() == houseId.lower())
+          ) &&
+          // Sports leads, council, and same-house captains may only apply positive bounded increments (0 to +500); negative deductions are admin only
           (request.resource.data.total_points >= resource.data.total_points) &&
           (request.resource.data.total_points - resource.data.total_points <= 500)
         )
@@ -917,7 +940,7 @@ service cloud.firestore {
 
     match /house_contributors/{scholarNo} {
       allow read: if isSignedIn();
-      allow write: if (isAdmin() || isCouncil()) && isValidHouseContributor(scholarNo, request.resource.data);
+      allow write: if (isAdmin() || isCouncil() || isCaptain()) && isValidHouseContributor(scholarNo, request.resource.data);
     }
 
     match /student_conduct/{conductId} {

@@ -6,6 +6,7 @@ import 'package:asb_house_hub/services/sports_security_service.dart';
 import 'package:asb_house_hub/models/sports_tournament.dart';
 import 'package:asb_house_hub/models/player_sports_stats.dart';
 import 'package:asb_house_hub/models/academic_assignment.dart';
+import 'package:asb_house_hub/models/election_gazette.dart';
 import 'package:asb_house_hub/services/hierarchy_service.dart';
 
 void main() {
@@ -381,6 +382,50 @@ void main() {
 
       // Must succeed
       expect(success, isTrue);
+    });
+
+    test('cacheCertifiedGazette deduplicates duplicate ballotId proclamations', () async {
+      final now = DateTime.now();
+      final p1 = CertifiedElectionResult(
+        ballotId: 'ballot_dup_1',
+        ballotTitle: 'Title 1',
+        runningPosition: 'Captain',
+        winnerScholarNo: '11209',
+        winnerName: 'Winner A',
+        winnerHouse: 'ruby',
+        winnerAvatarUrl: '',
+        totalVotesReceived: 50,
+        victoryMarginVotes: 10,
+        housePointsAwarded: 100,
+        commissionerName: 'Returning Officer',
+        certifiedAt: now,
+        proclamationText: 'Official Proclamation 1',
+      );
+      final p2 = CertifiedElectionResult(
+        ballotId: 'ballot_dup_1', // Duplicate ID
+        ballotTitle: 'Title 1 Duplicate',
+        runningPosition: 'Captain',
+        winnerScholarNo: '11209',
+        winnerName: 'Winner A',
+        winnerHouse: 'ruby',
+        winnerAvatarUrl: '',
+        totalVotesReceived: 50,
+        victoryMarginVotes: 10,
+        housePointsAwarded: 100,
+        commissionerName: 'Returning Officer',
+        certifiedAt: now,
+        proclamationText: 'Official Proclamation 2',
+      );
+
+      await AuthService.cacheCertifiedGazette([p1, p2]);
+      final cached = AuthService.getCachedCertifiedGazette();
+      final matching = cached.where((c) => c.ballotId == 'ballot_dup_1').toList();
+      expect(matching.length, equals(1));
+    });
+
+    test('migrateLegacyContributorDocs runs without crashing when empty', () async {
+      final count = await AuthService.migrateLegacyContributorDocs();
+      expect(count, isNonNegative);
     });
   });
 }
