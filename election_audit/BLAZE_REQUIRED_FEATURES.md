@@ -79,10 +79,25 @@ Without these, election hashing and vault operations throw `StateError` by desig
 
 ---
 
+## D4. Gamification / points server authority (from gamification_audit)
+
+The points audit (`gamification_audit/README.md`, 2026-11-07) found the student points economy is phantom without a server: every student award is rules-denied and reported as success (G1). The real fix needs:
+
+1. **`schoolGamification` callable** (new, to be authored): server-side activity validation, Firestore-backed cooldowns with server timestamps, atomic awards, idempotency keys, consumed-nonce store, append-only audit log. Then lock `house_points`/`house_contributors` direct writes in rules.
+2. **Sports certification callable**: mint/verify match tokens server-side; remove the client salt.
+3. **Live points smoke test**: student earns → ledger reflects it exactly once; sports lead cannot exceed bounds; replay/clock tricks rejected.
+
+Interim no-Blaze hardening (truthful failures, secret eradication, rules validators) is tracked in `gamification_audit/REMEDIATION_ROADMAP.md` P0–P2 and can proceed now.
+
+**Done when:** the callable is deployed, direct points writes are locked, and the live points smoke test passes.
+
+---
+
 ## Completion order when Blaze is available
 
 1. Upgrade project to Blaze in Firebase Console (billing).
 2. D1: deploy functions (enable Cloud Build, Artifact Registry, Cloud Vision APIs if prompted).
 3. D2: run the live smoke test checklist.
 4. D3: activate App Check when mobile/web clients ship.
-5. Check the boxes above and update `election_audit/README.md` — only then are B1/B3 from `NOT_DONE_AND_FALSE_CLAIMS.md` closed.
+5. D4: author + deploy `schoolGamification`, then run the live points smoke test.
+6. Check the boxes above and update `election_audit/README.md` — only then are B1/B3 from `NOT_DONE_AND_FALSE_CLAIMS.md` closed.
