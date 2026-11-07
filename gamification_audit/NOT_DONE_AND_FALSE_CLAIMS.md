@@ -6,7 +6,7 @@ Independent verification of the remediation reports.
 - **Round 3:** `eae5f6b` (O-1/O-2/O-3/O-4 closure report).
 - **Round 4:** `c78ddd8` (G10/G13/R-1/R-2/R-3 closure report).
 - **Round 5:** `6c6f7bc` (R-4/R-5/R-6/G13-nits closure report).
-- **Round 6:** (R-7/N-1/N-2 closure report). Independently verified 2026-11-08: diffs checked line-by-line, all suites re-run first-hand (29/29 gamification + 32/32 election = 61/61, 262/262 widget, analyze 20 infos / 0 errors / 0 warnings), rules deploy released to `cloud.firestore` with 0 warnings.
+- **Round 6:** `753c976` (R-7/N-1/N-2 closure report). Independently verified 2026-11-08: diffs checked line-by-line, all suites re-run first-hand (29/29 gamification + 32/32 election = 61/61, 262/262 widget, analyze 20 infos / 0 errors / 0 warnings), rules deploy released to `cloud.firestore` with 0 warnings.
 
 **Round-6 Overall Verdict:** **ALL FINDINGS (G1–G13) & ALL RESIDUALS (R-1 through R-7, G13-nits, N-1, N-2) FULLY RESOLVED & DEPLOY-VERIFIED.**
 - **R-7 (Closed):** The `last_contributor` binding in `firestore.rules` is now strictly conjunctive and fail-closed: `(!('last_contributor' in request.resource.data) || (hasUserDoc() && 'scholar_no' in getUserData() && request.resource.data.last_contributor == getUserData().scholar_no))`. The client in `house_arena_screen.dart` includes `last_contributor` only when `scholarNo.trim().isNotEmpty`, omitting the key entirely otherwise.
