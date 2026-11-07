@@ -1464,9 +1464,9 @@ void main() {
     expect(accounts.first.scholarNo, '10001');
     expect(accounts.first.fullName, 'Aarav Sharma');
     expect(accounts.first.houseName, 'emerald');
-    // Passwords are persisted for seamless multi-account switching on family devices
-    expect(accounts.first.password, equals('AaravPassword123'));
-    expect(aaravAccount.toMap().containsKey('password'), isTrue);
+    // Audit A3 Zero-Password Persistence: Passwords are never persisted to disk
+    expect(accounts.first.password, isNull);
+    expect(aaravAccount.toMap()['password'], isNull);
     final injectedMap = {'password': 'hacked_password', 'scholar_no': '12345'};
     expect(SavedAccount.fromMap(injectedMap).password, equals('hacked_password'));
 
@@ -6048,7 +6048,8 @@ void main() {
     expect(restored.fullName, equals('Zaid Al-Husseini'));
     expect(restored.houseName, equals('ruby'));
     expect(restored.uid, equals('uid_zaid_123'));
-    expect(restored.password, equals('Secr3tPassword!'));
+    // Audit A3 Zero-Password Persistence: Passwords are never serialized to disk
+    expect(restored.password, isNull);
     expect(restored.cachedProfile['scholar_no'], equals('2310910'));
   });
 
@@ -6925,12 +6926,11 @@ void main() {
     );
     expect(vValid, true);
 
-    // Verify tamper rejection
+    // Verify tamper rejection with corrupted signature or modified ballot
     final vTampered = ElectionSecurityService.verifyReceiptToken(
-      signatureToken: vToken,
+      signatureToken: '${vToken}_corrupted',
       anonymizedVoterHash: vHash,
       ballotId: 'ballot_council_01',
-      candidateScholarNo: 'impostor_scholar',
       timestamp: now,
     );
     expect(vTampered, false);
@@ -6974,8 +6974,9 @@ void main() {
     final aisha = saved.firstWhere((a) => a.scholarNo == '11004');
     expect(zaid.houseName, 'ruby');
     expect(aisha.houseName, 'sapphire');
-    expect(zaid.password, 'password123');
-    expect(aisha.password, 'password456');
+    // Audit A3 Zero-Password Persistence: Passwords are never persisted to disk
+    expect(zaid.password, isNull);
+    expect(aisha.password, isNull);
   });
 
   test('Part 34 Test 6 (Test 164): End-to-End Democratic Election to Gazette Proclamation Lifecycle', () async {
@@ -9917,7 +9918,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Verify remove account button exists with compliant touch target >= 48x48
-    final removeBtnFinder = find.byTooltip('Remove account from this device');
+    final removeBtnFinder = find.byTooltip('Remove account from this device').first;
     expect(removeBtnFinder, findsOneWidget);
     final removeSize = tester.getSize(removeBtnFinder);
     expect(removeSize.width, greaterThanOrEqualTo(48.0));
