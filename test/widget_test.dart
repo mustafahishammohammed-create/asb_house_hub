@@ -76,6 +76,8 @@ void main() {
   setUpAll(() {
     ElectionSecurityService.setTestSalt('EPHEMERAL_TEST_HARNESS_SALT_2026');
     CredentialVaultService.setTestSecret('TEST_VAULT_SECRET_2026');
+    GamificationSecurityService.setTestSecret('TEST_GAMIFICATION_SECRET_2026');
+    SportsSecurityService.setTestSalt('TEST_SPORTS_CERT_SALT_2026');
   });
 
   setUp(() async {

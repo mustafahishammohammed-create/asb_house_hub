@@ -3379,6 +3379,9 @@ class AuthService {
       }, SetOptions(merge: true));
     } catch (e) {
       debugPrint('Firestore submitHouseClaim fallback or error: $e');
+      if (_isFirebaseLive) {
+        rethrow;
+      }
       if (effectiveClaimId.isEmpty) {
         effectiveClaimId = 'claim_${DateTime.now().millisecondsSinceEpoch}';
       }
@@ -3980,45 +3983,64 @@ class AuthService {
     await GamificationSecurityService.recordSubmissionAttempt(sNo);
     await GamificationSecurityService.recordActivityCompletion(sNo, aId);
 
-    // 5. Write-through update local disk standings cache
+    // 5. Firestore atomic transaction (with strict error propagation in live mode)
+    if (_isFirebaseLive) {
+      try {
+        final houseRef = _firestore.collection('house_points').doc(hName);
+        final contributorRef = _firestore.collection('house_contributors').doc(sNo);
+
+        await _firestore.runTransaction((transaction) async {
+          final houseSnap = await transaction.get(houseRef);
+          final currentPts = houseSnap.exists
+              ? ((houseSnap.data()?['total_points'] as num?)?.toInt() ?? 0)
+              : 0;
+
+          transaction.set(
+            houseRef,
+            {
+              'house_name': hName,
+              'total_points': (currentPts + points).clamp(0, 1000000),
+              'last_updated': FieldValue.serverTimestamp(),
+            },
+            SetOptions(merge: true),
+          );
+
+          final contSnap = await transaction.get(contributorRef);
+          if (!contSnap.exists) {
+            transaction.set(contributorRef, {
+              'scholar_no': sNo,
+              'student_name': 'Scholar $sNo',
+              'house_name': hName,
+              'class_level': 'Senior Tier',
+              'total_contributed': points,
+              'merits_count': 1,
+              'demerits_count': 0,
+              'last_updated': FieldValue.serverTimestamp(),
+            });
+          } else {
+            final curCont = (contSnap.data()?['total_contributed'] as num?)?.toInt() ?? 0;
+            final curMerits = (contSnap.data()?['merits_count'] as num?)?.toInt() ?? 0;
+            transaction.update(contributorRef, {
+              'house_name': hName,
+              'total_contributed': curCont + points,
+              'merits_count': curMerits + 1,
+              'last_updated': FieldValue.serverTimestamp(),
+            });
+          }
+        });
+      } catch (e) {
+        debugPrint('Firestore awardVerifiedGamificationPoints transaction failed: $e');
+        return (
+          success: false,
+          pointsAwarded: 0,
+          error: 'Server transaction rejected award: ${e.toString()}',
+        );
+      }
+    }
+
+    // 6. Write-through update local disk standings cache ONLY after server confirmation
     await incrementCachedHousePoints(hName, points);
     await updateCachedStudentContribution(sNo, pointsToAdd: points, meritsToAdd: 1);
-
-    // 6. Firestore atomic transaction (with safe error handling for offline/test environments)
-    try {
-      final houseRef = _firestore.collection('house_points').doc(hName);
-      final contributorRef = _firestore
-          .collection('house_contributors')
-          .doc('${hName}_$sNo');
-
-      await _firestore.runTransaction((transaction) async {
-        final houseSnap = await transaction.get(houseRef);
-        final currentPts = houseSnap.exists
-            ? ((houseSnap.data()?['total_points'] as num?)?.toInt() ?? 0)
-            : 0;
-
-        transaction.set(
-          houseRef,
-          {
-            'house_name': hName,
-            'total_points': currentPts + points,
-            'last_updated': FieldValue.serverTimestamp(),
-          },
-          SetOptions(merge: true),
-        );
-
-        final contSnap = await transaction.get(contributorRef);
-        if (contSnap.exists) {
-          final curCont = (contSnap.data()?['total_contributed'] as num?)?.toInt() ?? 0;
-          final curMerits = (contSnap.data()?['merits_count'] as num?)?.toInt() ?? 0;
-          transaction.update(contributorRef, {
-            'total_contributed': curCont + points,
-            'merits_count': curMerits + 1,
-            'last_updated': FieldValue.serverTimestamp(),
-          });
-        }
-      });
-    } catch (_) {}
 
     return (
       success: true,
@@ -5695,7 +5717,11 @@ class AuthService {
       await cachePlayerSportsStats(currentStats);
 
       return true;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Firestore awardMatchMvp error: $e');
+      if (_isFirebaseLive) {
+        return false;
+      }
       // Offline / unit test fallback
       final currentStats = getCachedPlayerSportsStats();
       final statIdx = currentStats.indexWhere(
@@ -5813,6 +5839,8 @@ class AuthService {
     }
 
     final now = DateTime.now();
+    final safePoints = pointsAwarded.clamp(0, 100);
+    final safeRunnerUpPoints = runnerUpPoints.clamp(0, 50);
     final trophyId = 'trophy_${sportType.name}_${now.millisecondsSinceEpoch}';
 
     final trophyRecord = SportsTrophyRecord(
@@ -5821,8 +5849,8 @@ class AuthService {
       sportType: sportType,
       winningHouse: winningHouse.toLowerCase(),
       runnerUpHouse: runnerUpHouse.toLowerCase(),
-      pointsAwarded: pointsAwarded,
-      runnerUpPoints: runnerUpPoints,
+      pointsAwarded: safePoints,
+      runnerUpPoints: safeRunnerUpPoints,
       mvpScholarNo: mvpScholarNo,
       mvpName: mvpName,
       awardedAt: now,
@@ -5841,12 +5869,20 @@ class AuthService {
 
         await _firestore.runTransaction((tx) async {
           tx.set(trophyRef, trophyRecord.toMap());
-          tx.set(winnerRef, {'total_points': FieldValue.increment(pointsAwarded)}, SetOptions(merge: true));
-          tx.set(runnerUpRef, {'total_points': FieldValue.increment(runnerUpPoints)}, SetOptions(merge: true));
+          tx.set(winnerRef, {
+            'house_name': winningHouse.toLowerCase(),
+            'total_points': FieldValue.increment(safePoints),
+            'last_updated': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+          tx.set(runnerUpRef, {
+            'house_name': runnerUpHouse.toLowerCase(),
+            'total_points': FieldValue.increment(safeRunnerUpPoints),
+            'last_updated': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
           tx.set(noticeRef, {
             'title': '🏆 ${trophyRecord.proclamationHeadline}',
             'content':
-                'Official proclamation: ${winningHouse.toUpperCase()} House has been awarded +$pointsAwarded PTS for winning ${tournamentTitle.toUpperCase()}! ${runnerUpHouse.toUpperCase()} awarded +$runnerUpPoints PTS as runners-up.',
+                'Official proclamation: ${winningHouse.toUpperCase()} House has been awarded +$safePoints PTS for winning ${tournamentTitle.toUpperCase()}! ${runnerUpHouse.toUpperCase()} awarded +$safeRunnerUpPoints PTS as runners-up.',
             'created_at': FieldValue.serverTimestamp(),
             'house': winningHouse.toLowerCase(),
           });
@@ -5935,6 +5971,7 @@ class AuthService {
   }) async {
     final sNo = scholarNo.trim();
     final hName = houseName.toLowerCase().trim();
+    final safeMeritPoints = meritPoints.clamp(0, 50);
 
     try {
       final statsDocId = '${sNo}_${sportType.name}';
@@ -5955,14 +5992,23 @@ class AuthService {
         'updated_at': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
-      if (meritPoints > 0) {
+      if (safeMeritPoints > 0) {
         batch.set(houseRef, {
-          'total_points': FieldValue.increment(meritPoints),
+          'house_name': hName,
+          'total_points': FieldValue.increment(safeMeritPoints),
+          'last_updated': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
       }
 
-      await batch.commit();
-    } catch (_) {}
+      if (_isFirebaseLive) {
+        await batch.commit();
+      }
+    } catch (e) {
+      debugPrint('Firestore awardPlayerAccoladeCustom error: $e');
+      if (_isFirebaseLive) {
+        return false;
+      }
+    }
 
     // Update local cache
     final currentStats = getCachedPlayerSportsStats();
@@ -5997,9 +6043,9 @@ class AuthService {
     }
     await cachePlayerSportsStats(currentStats);
 
-    if (meritPoints > 0) {
+    if (safeMeritPoints > 0) {
       final curPoints = getCachedHouseStandings();
-      curPoints[hName] = (curPoints[hName] ?? 0) + meritPoints;
+      curPoints[hName] = (curPoints[hName] ?? 0) + safeMeritPoints;
       await cacheHouseStandings(curPoints);
     }
 

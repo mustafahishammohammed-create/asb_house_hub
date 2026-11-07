@@ -520,6 +520,18 @@ service cloud.firestore {
       (!('pointsValue' in data) || (data.pointsValue is int && data.pointsValue >= 0 && data.pointsValue <= 5000));
     }
 
+    function isValidHousePoints(houseId, data) {
+      return houseId in ['ruby', 'sapphire', 'emerald', 'topaz', 'pearl'] &&
+        hasOnlyAllowedFields(['house_name', 'total_points', 'last_updated', 'updated_at']) &&
+        hasRequiredFields(['house_name', 'total_points']) &&
+        data.house_name.lower() == houseId &&
+        data.total_points is int &&
+        data.total_points >= 0 &&
+        data.total_points <= 1000000 &&
+        (!('last_updated' in data) || data.last_updated is timestamp) &&
+        (!('updated_at' in data) || data.updated_at is timestamp);
+    }
+
     function isValidSpiritReactor(data) {
       return hasOnlyAllowedFields(['ruby', 'sapphire', 'emerald', 'topaz', 'last_contributor', 'last_updated']) &&
         (!('ruby' in data) || data.ruby is number) &&
@@ -695,7 +707,7 @@ service cloud.firestore {
       // Update: strictly admin (approving/rejecting claim and awarding points)
       allow update: if isAdmin() &&
         isValidHouseClaim(request.resource.data) &&
-        areImmutableFieldsUnchanged(['scholar_no', 'activity_title', 'cert_url']);
+        areImmutableFieldsUnchanged(['scholar_no', 'activity_title', 'cert_url', 'points', 'house_name']);
 
       allow delete: if isSuperAdmin();
     }
@@ -819,7 +831,16 @@ service cloud.firestore {
     // Additional Supporting Collections
     match /house_points/{houseId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin() || isSportsLead();
+      allow create: if isAdmin() && isValidHousePoints(houseId, request.resource.data);
+      allow update: if isValidHousePoints(houseId, request.resource.data) && (
+        isAdmin() || (
+          isSportsLead() &&
+          // Sports leads may only modify points within bounded delta (-100 to +500)
+          (request.resource.data.total_points - resource.data.total_points >= -100) &&
+          (request.resource.data.total_points - resource.data.total_points <= 500)
+        )
+      );
+      allow delete: if isAdmin();
     }
 
     match /house_contributors/{scholarNo} {

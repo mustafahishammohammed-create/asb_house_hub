@@ -7,6 +7,8 @@ import 'package:asb_house_hub/models/election_ballot.dart';
 import 'package:asb_house_hub/models/election_gazette.dart';
 import 'package:asb_house_hub/services/auth_service.dart';
 import 'package:asb_house_hub/services/election_security_service.dart';
+import 'package:asb_house_hub/services/gamification_security_service.dart';
+import 'package:asb_house_hub/services/sports_security_service.dart';
 import 'package:asb_house_hub/services/hierarchy_service.dart';
 
 void main() {
@@ -15,6 +17,8 @@ void main() {
   setUpAll(() {
     ElectionSecurityService.setTestSalt('EPHEMERAL_TEST_HARNESS_SALT_2026');
     CredentialVaultService.setTestSecret('TEST_VAULT_SECRET_2026');
+    GamificationSecurityService.setTestSecret('TEST_GAMIFICATION_SECRET_2026');
+    SportsSecurityService.setTestSalt('TEST_SPORTS_CERT_SALT_2026');
   });
 
   setUp(() async {

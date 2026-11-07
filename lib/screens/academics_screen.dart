@@ -4258,16 +4258,15 @@ class _ReportCardTabState extends State<ReportCardTab> {
       _isClaiming = false;
     });
 
-    final view = View.maybeOf(context);
-    if (view != null) {
-      SemanticsService.sendAnnouncement(
-        view,
-        'Claimed 50 House Points for Academic Distinction in ${card.term}!',
-        TextDirection.ltr,
-      );
-    }
-
     if (success) {
+      final view = View.maybeOf(context);
+      if (view != null) {
+        SemanticsService.sendAnnouncement(
+          view,
+          'Claimed 50 House Points for Academic Distinction in ${card.term}!',
+          TextDirection.ltr,
+        );
+      }
       widget.onHonoursClaimed?.call(card.copyWith(pointsClaimed: true));
     }
   }

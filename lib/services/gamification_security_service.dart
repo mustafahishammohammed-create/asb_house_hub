@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 typedef ScoreProofVerificationResult = ({
@@ -23,7 +24,38 @@ typedef CooldownCheckResult = ({
 /// Cryptographic security, score anti-tampering, and rate-limiting service
 /// for ASB House Hub gamification activities and daily challenges.
 class GamificationSecurityService {
-  static const String _institutionSecret = 'ASB_GAMIFICATION_SECRET_HMAC_KEY_2026_V1';
+  static String? _testOverrideSecret;
+
+  @visibleForTesting
+  static void setTestSecret(String? secret) {
+    _testOverrideSecret = secret;
+  }
+
+  /// Secure fail-closed getter for institution HMAC secret.
+  /// Live builds require --dart-define=GAMIFICATION_HMAC_SECRET=...
+  /// Test harnesses inject via setTestSecret(...).
+  static String get _institutionSecret {
+    const envSecret = String.fromEnvironment('GAMIFICATION_HMAC_SECRET');
+    if (envSecret.isNotEmpty) return envSecret;
+    if (_testOverrideSecret != null && _testOverrideSecret!.isNotEmpty) {
+      return _testOverrideSecret!;
+    }
+    throw StateError(
+      'Security Exception: GAMIFICATION_HMAC_SECRET is not configured. '
+      'Live operation requires a configured secret via --dart-define=GAMIFICATION_HMAC_SECRET=... '
+      'or GamificationSecurityService.setTestSecret(...) in test harnesses.',
+    );
+  }
+
+  static bool _constantTimeEquals(String a, String b) {
+    if (a.length != b.length) return false;
+    int result = 0;
+    for (int i = 0; i < a.length; i++) {
+      result |= a.codeUnitAt(i) ^ b.codeUnitAt(i);
+    }
+    return result == 0;
+  }
+
   static const int maxScoreCeiling = 50;
   static const int slidingWindowToleranceMs = 5 * 60 * 1000; // 5 minutes
 
@@ -218,7 +250,7 @@ class GamificationSecurityService {
       nonce: nonce,
     );
 
-    if (signature.toLowerCase() != expectedSig.toLowerCase()) {
+    if (!_constantTimeEquals(signature.toLowerCase(), expectedSig.toLowerCase())) {
       return (
         isValid: false,
         isTampered: true,

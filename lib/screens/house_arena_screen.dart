@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/semantics.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../services/auth_service.dart';
+import '../services/gamification_security_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/confetti_overlay.dart';
 import '../widgets/apple_fitness_badges_vault.dart';
@@ -491,48 +492,33 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
         _startBlitzCountdown();
       } else {
         // Finished Quiz!
+        final effectiveScore = _blitzScore.clamp(0, 50);
         setState(() {
           _blitzFinished = true;
           _blitzActive = false;
-          _showConfetti = _blitzScore >= 60;
         });
 
-        if (_blitzScore > 0) {
-          final batch = FirebaseFirestore.instance.batch();
-          final hName = widget.userHouse.toLowerCase().trim();
-          final houseRef = FirebaseFirestore.instance
-              .collection('house_points')
-              .doc(hName);
-          batch.set(houseRef, {
-            'house_name': hName,
-            'total_points': FieldValue.increment(_blitzScore),
-            'last_updated': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
-
-          final uid = FirebaseAuth.instance.currentUser?.uid;
-          if (uid != null) {
-            final userRef =
-                FirebaseFirestore.instance.collection('users').doc(uid);
-            batch.set(userRef, {
-              'points_contributed': FieldValue.increment(_blitzScore),
-            }, SetOptions(merge: true));
-          }
-
-          if (widget.scholarNo.isNotEmpty && widget.scholarNo != '---') {
-            final contribRef = FirebaseFirestore.instance
-                .collection('house_contributors')
-                .doc(widget.scholarNo);
-            batch.set(contribRef, {
-              'scholar_no': widget.scholarNo,
-              'student_name': widget.userName,
-              'house_name': widget.userHouse,
-              'total_contributed': FieldValue.increment(_blitzScore),
-              'merits_count': FieldValue.increment((_blitzScore / 20).round()),
-              'last_blitz_date': FieldValue.serverTimestamp(),
-            }, SetOptions(merge: true));
-          }
-
-          await batch.commit().catchError((_) {});
+        if (effectiveScore > 0) {
+          final sNo = widget.scholarNo.isNotEmpty && widget.scholarNo != '---'
+              ? widget.scholarNo
+              : (AuthService.getCachedScholarNo() ?? 'guest');
+          final token = GamificationSecurityService.generateScoreProofToken(
+            scholarNo: sNo,
+            activityId: 'blitz_quiz',
+            points: effectiveScore,
+          );
+          AuthService().awardVerifiedGamificationPoints(
+            scholarNo: sNo,
+            activityId: 'blitz_quiz',
+            house: widget.userHouse,
+            token: token,
+          ).then((res) {
+            if (mounted && res.success) {
+              setState(() {
+                _showConfetti = _blitzScore >= 40;
+              });
+            }
+          });
         }
       }
     });

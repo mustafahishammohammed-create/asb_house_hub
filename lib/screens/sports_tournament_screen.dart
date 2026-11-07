@@ -1240,7 +1240,7 @@ class _SportsTournamentScreenState extends State<SportsTournamentScreen>
                         onPressed: () async {
                           final count = int.tryParse(statCountController.text) ?? 1;
                           Navigator.of(ctx).pop();
-                          await _authService.awardPlayerAccoladeCustom(
+                          final success = await _authService.awardPlayerAccoladeCustom(
                             scholarNo: scholarController.text,
                             studentName: nameController.text,
                             houseName: selectedHouse,
@@ -1254,12 +1254,21 @@ class _SportsTournamentScreenState extends State<SportsTournamentScreen>
                           );
                           if (!mounted) return;
                           setState(() {});
-                          parentMessenger.showSnackBar(
-                            SnackBar(
-                              content: Text('Awarded ${selectedAccolade.title} to ${nameController.text} (+25 PTS)!'),
-                              backgroundColor: Colors.amber[800],
-                            ),
-                          );
+                          if (success) {
+                            parentMessenger.showSnackBar(
+                              SnackBar(
+                                content: Text('Awarded ${selectedAccolade.title} to ${nameController.text} (+25 PTS)!'),
+                                backgroundColor: Colors.amber[800],
+                              ),
+                            );
+                          } else {
+                            parentMessenger.showSnackBar(
+                              const SnackBar(
+                                content: Text('Failed to award accolade. Insufficient permissions or server error.'),
+                                backgroundColor: Colors.redAccent,
+                              ),
+                            );
+                          }
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.amber[800],
