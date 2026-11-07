@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../models/election_ballot.dart';
 import '../models/digital_ballot_cast.dart';
@@ -42,22 +43,12 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
     final cached = AuthService.getCachedProfile() ?? {};
     final sNo = _effectiveScholarNo.toLowerCase();
     final role = cached['role']?.toString().toLowerCase();
-    return sNo == 'admin' ||
-        sNo == '11209' ||
-        HierarchyService.isSuperAdmin(scholarNo: sNo, role: role) ||
-        HierarchyService.isTeacherOrFaculty(scholarNo: sNo, role: role) ||
-        HierarchyService.isCouncil(scholarNo: sNo, role: role) ||
-        role == 'admin' ||
-        role == 'super_admin' ||
-        role == 'teacher' ||
-        role == 'faculty' ||
-        role == 'principal' ||
-        role == 'staff' ||
-        role == 'captain' ||
-        role == 'vice_captain' ||
-        role == 'house_captain' ||
-        role == 'house_vice_captain' ||
-        role == 'council';
+    return HierarchyService.canManageElections(
+      scholarNo: sNo,
+      role: role,
+      capabilities: cached['capabilities'] is Map ? Map<String, dynamic>.from(cached['capabilities']) : null,
+      email: FirebaseAuth.instance.currentUser?.email,
+    );
   }
 
   @override
@@ -881,7 +872,7 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                   ballotId: ballot.id,
                   ballotTitle: ballot.title,
                   candidate: candidate,
-                  scholarNo: scholarNo,
+                  scholarNo: _effectiveScholarNo,
                 );
 
                 if (mounted) {
@@ -1675,26 +1666,27 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                         title: title,
                         position: selectedPosition,
                         houseScope: selectedScope,
-                        eligibleGrades: const ['Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'],
+                        eligibleGrades: const ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'],
                         status: BallotStatus.open,
-                        startTime: DateTime.now(),
+                        startTime: DateTime.now().subtract(const Duration(seconds: 2)),
                         endTime: DateTime.now().add(const Duration(days: 7)),
                         candidates: candidatesDraft,
                         totalVotesCast: 0,
                       );
 
+                      final messenger = ScaffoldMessenger.of(context);
                       Navigator.pop(modalCtx);
                       final res = await AuthService().createElectionBallot(newBallot);
                       if (mounted) {
                         if (res.success) {
-                          ScaffoldMessenger.of(context).showSnackBar(
+                          messenger.showSnackBar(
                             const SnackBar(
                               content: Text('🎉 Official election ballot published! Voting is now open.'),
                               backgroundColor: Colors.green,
                             ),
                           );
                         } else {
-                          ScaffoldMessenger.of(context).showSnackBar(
+                          messenger.showSnackBar(
                             SnackBar(
                               content: Text(res.error ?? 'Failed to publish ballot.'),
                               backgroundColor: Colors.redAccent,

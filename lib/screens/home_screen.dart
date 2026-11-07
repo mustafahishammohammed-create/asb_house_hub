@@ -330,7 +330,6 @@ class _HomeScreenState extends State<HomeScreen>
     try {
       await _authService.switchAccount(account);
       await AuthService.cacheHouse(account.houseName);
-      await AuthService.cacheProfile(account.cachedProfile);
 
       if (mounted) {
         // Clean slate re-navigation: forces fresh state initialization for the switched scholar
@@ -485,7 +484,7 @@ class _HomeScreenState extends State<HomeScreen>
                     }
                     return ListView.separated(
                       itemCount: docs.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 12),
+                      separatorBuilder: (_, _) => const SizedBox(height: 12),
                       itemBuilder: (context, idx) {
                         final data = docs[idx].data() as Map<String, dynamic>? ?? {};
                         final title = (data['activity_title'] ?? 'Competition Entry').toString();
@@ -3415,12 +3414,13 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
               );
             } else if (item['title'] == '🗳️ Student Council Elections') {
+              final activeSNo = (AuthService.getCachedScholarNo() ?? scholarNo).trim();
               Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) => ElectionChamberScreen(
                     userHouse: houseName,
-                    scholarNo: scholarNo,
+                    scholarNo: activeSNo,
                     studentName: studentName,
                   ),
                 ),

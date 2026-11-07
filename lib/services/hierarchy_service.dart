@@ -109,6 +109,39 @@ class HierarchyService {
         isPrefect(scholarNo: scholarNo, role: role, fullName: fullName);
   }
 
+  /// Canonical check whether an account is authorized to manage elections
+  /// (create drafts, configure candidate slates, publish ballots, certify outcomes).
+  /// Authorized: Super Admin, Administrators, Principal, Faculty/Teachers, Staff, Council, House Captains.
+  /// Strictly Prohibited: Regular Students.
+  static bool canManageElections({
+    String? scholarNo,
+    String? role,
+    Map<String, dynamic>? capabilities,
+    String? email,
+  }) {
+    final sNo = (scholarNo ?? '').trim().toLowerCase();
+    final rStr = (role ?? '').trim().toLowerCase();
+    final em = (email ?? '').trim().toLowerCase();
+
+    if (sNo == 'admin' || sNo == '11209') return true;
+    if (rStr == 'admin' || rStr == 'super_admin' || rStr == 'principal') return true;
+    if (em.contains('admin@asianschool.bh') ||
+        em.contains('superadmin@asianschool.bh') ||
+        em.contains('principal@asianschool.bh')) {
+      return true;
+    }
+    if (isSuperAdmin(scholarNo: sNo, role: rStr)) return true;
+    if (isTeacherOrFaculty(scholarNo: sNo, role: rStr)) return true;
+    if (isCouncil(scholarNo: sNo, role: rStr)) return true;
+    if (isCaptain(scholarNo: sNo, role: rStr)) return true;
+    if (capabilities != null &&
+        (capabilities['manage_elections'] == true || capabilities['is_admin'] == true)) {
+      return true;
+    }
+
+    return false;
+  }
+
   /// General check if user is Council or Faculty.
   static bool isCouncilOrTeacher({
     String? scholarNo,
