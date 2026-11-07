@@ -2,7 +2,7 @@
 
 **User requirement (2026-11-07, verbatim):** "see i want not only the staff can change but also the council roster has some priviledges"
 
-**Status:** **FULLY IMPLEMENTED & VERIFIED LIVE** — Rules deployed to production (verified first-hand 2026-11-07), council claims approval works end-to-end, captain claim approval verified live for same-house claims (O-1), council grading verified live with scoped rules grant and truthful failure semantics (O-2).
+**Status:** **IMPLEMENTED & DEPLOY-VERIFIED** — Rules deployed to production (re-verified first-hand 2026-11-07 at `eae5f6b`: cloud ruleset matches repo). Council claims approval and grading, and captain same-house claim approval, are verified by rules/transaction write-set alignment and passing suites. No production role-account smoke test has been run yet. Two residuals introduced by the fixes are tracked in [NOT_DONE_AND_FALSE_CLAIMS.md](NOT_DONE_AND_FALSE_CLAIMS.md): **R-1** (captain contributor write not house-scoped) and **R-2** (students can flip shared assignment status `pending`↔`submitted`, never `graded`).
 
 ---
 
@@ -23,7 +23,7 @@ The app previously contained a council roster and a **Council Review Portal**, b
 | Approve/reject house claims (Council Review Portal) | yes | **yes** | **yes, own house only** | no | no | **IMPLEMENTED & LIVE** — Council (all houses) and Captains (same house only) can approve/reject; full transaction (`house_claims`, `house_points`, `house_contributors`, `users.points_contributed`) permitted by rules |
 | Grade assignments / award academic merit (G4) | yes | **yes** | no | no | no | **IMPLEMENTED & LIVE** — Council holds scoped update grant on assignments/homework (`status`, `submitted_at`, `graded_at`); truthful failure handling prevents point awards on write rejection |
 | Record conduct (merit/demerit) | yes | **yes** | no | read | no | **IMPLEMENTED & LIVE** |
-| Sports points (bounded 0..+500) | yes | **yes (0..+500)** | no | no | no | **IMPLEMENTED & LIVE** |
+| Sports points (bounded 0..+500) | yes | **yes (0..+500)** | **own house only, 0..+500** (grant added for O-1 claim approval) | no | no | **IMPLEMENTED & LIVE** |
 | Manage elections | yes | yes | yes | no | no | **VERIFIED** |
 | Assign roles / roster management | super admin only | no | no | no | no | **RETAINED** |
 

@@ -2,7 +2,7 @@
 
 Prioritized plan mapped to finding IDs. Split by the user's standing constraint: **no Blaze plan for now** — server work is deferred exactly like elections.
 
-**Verification update (2026-11-07, round 2 at `cf1a1ac`):** G8/G11/G6/G12 and most round-1 open items verified TRUE; rules release verified first-hand. Still open: **O-1** captain approval broken, **O-2** council grading split-brain (both block R1), **O-3** migration helper never called (blocks G7). Full verdicts: [NOT_DONE_AND_FALSE_CLAIMS.md](NOT_DONE_AND_FALSE_CLAIMS.md). Requirement R1: [COUNCIL_PRIVILEGES.md](COUNCIL_PRIVILEGES.md).
+**Verification update (2026-11-07, round 3 at `eae5f6b`):** O-1/O-2/O-3/O-4 verified TRUE first-hand (code + rules + suites + deploy match + push). G4 and G7 now closed. Still open: **G10** (standings cache/AI context) and **G13** (spirit reactor) — never remediated; plus new residuals **R-1** (captain contributor write unscoped), **R-2** (student shared-doc status flips), **R-3** (migration test depth). Full verdicts: [NOT_DONE_AND_FALSE_CLAIMS.md](NOT_DONE_AND_FALSE_CLAIMS.md). Requirement R1: [COUNCIL_PRIVILEGES.md](COUNCIL_PRIVILEGES.md).
 
 ## P0 — Do now (no Blaze required)
 
@@ -13,10 +13,10 @@ Prioritized plan mapped to finding IDs. Split by the user's standing constraint:
 
 ## P1 — Do now (no Blaze required)
 
-- [ ] **G4** Gate `graded` transitions to staff **+ council** (R1); GPA strictly required ✓ (cf1a1ac). **Remaining (O-2):** council grading is client-only — rules grant council scoped status writes on class assignments, and the swallowed status-write failure must become truthful before points are awarded.
+- [x] **G4** Gate `graded` transitions to staff **+ council** (R1); GPA strictly required ✓ (cf1a1ac). O-2 closed at `eae5f6b`: council holds scoped status-only rules grants on assignments/homework; `updateAssignmentStatus` fails truthfully before cache/points on live rejection. Residual R-2: students can flip shared-doc status `pending`↔`submitted` (never `graded`).
 - [x] **G5** Route Blitz through the award service (ceiling + cooldown); stop direct batch writes; treat quiz points as demo until server validation.
 - [x] **G6** Fail closed on negative elapsed time / clock rollback in daily cooldowns and rapid-fire debounce throttles.
-- [ ] **G7** One contributor doc scheme (`{scholarNo}`), create-on-award ✓; real name/class ✓; `users.points_contributed` in transaction ✓ (cf1a1ac). **Remaining (O-3):** `migrateLegacyContributorDocs()` has zero callers — wire it to an admin action or run it once with evidence.
+- [x] **G7** One contributor doc scheme (`{scholarNo}`), create-on-award ✓; real name/class ✓; `users.points_contributed` in transaction ✓ (cf1a1ac). O-3 closed at `eae5f6b`: migration wired to AdminClaimsScreen menu + one-time `seedAdminRoster` startup run behind `has_migrated_legacy_contributors_v1`. Residual R-3: merge-correctness test still needed (current test is empty-run smoke only).
 - [x] **G11** Make claim `points`/`house_name` immutable on update; content-derived trophy IDs (`trophy_{sport}_{slug}_{winner}_{runnerUp}_{year}`) for award idempotency in transaction and cache.
 - [x] **G12** Election certify: early return with server result on live success; cache/gazette writes demo-only; unified award constant to 100 points across client and server.
 
