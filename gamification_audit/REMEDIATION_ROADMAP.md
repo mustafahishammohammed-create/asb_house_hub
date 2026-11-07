@@ -2,7 +2,7 @@
 
 Prioritized plan mapped to finding IDs. Split by the user's standing constraint: **no Blaze plan for now** — server work is deferred exactly like elections.
 
-**Verification update (2026-11-08, round 5 at `6c6f7bc`):** R-4 (freshness-gated AI provenance), R-5 (owner self-grade lock), R-6 (grader-keyed submission isolation) verified TRUE first-hand; G13-nits seed ceiling + logging TRUE. Suites 29/29 + 32/32 + 262/262, analyze 20 infos / 0 errors / 0 warnings, deploy match re-verified, push confirmed. **G13-nits PARTIAL:** `last_contributor` binding fails open for doc-less accounts — new residual **R-7**; minor nits N-1 (stamp default), N-2 (owner graded→submitted downgrade). Full verdicts + solutions: [NOT_DONE_AND_FALSE_CLAIMS.md](NOT_DONE_AND_FALSE_CLAIMS.md). Requirement R1: [COUNCIL_PRIVILEGES.md](COUNCIL_PRIVILEGES.md).
+**Verification update (2026-11-08, round 6 at `753c976`/`03918a1`):** R-7 (fail-closed `last_contributor` binding + client omission), N-1 (explicit-only sync stamps), N-2 (graded submissions owner-immutable) verified TRUE first-hand — diffs, contract tests, suites 29/29 + 32/32 + 262/262, analyze 20 infos / 0 errors / 0 warnings, deploy match ("already up to date"), push confirmed. **All G1–G13 findings and R-1..R-7/N-1/N-2 residuals closed.** Full verdicts: [NOT_DONE_AND_FALSE_CLAIMS.md](NOT_DONE_AND_FALSE_CLAIMS.md). Requirement R1: [COUNCIL_PRIVILEGES.md](COUNCIL_PRIVILEGES.md).
 
 ## P0 — Do now (no Blaze required)
 
@@ -23,8 +23,8 @@ Prioritized plan mapped to finding IDs. Split by the user's standing constraint:
 ## P2 — Polish (no Blaze required)
 
 - [x] **G8** Constant-time MAC compares; dropped raw-JSON token decode fallback; nonce consumption tracking (`isNonceConsumed`, `consumeNonce`) with replay rejection.
-- [x] **G10** Standings cache written only from server snapshots; label offline states; AI context uses synced data. ✓ (`6c6f7bc`): sync timestamp persisted (`cached_standings_synced_at`), AI provenance freshness-gated (<15 min + live → "Live Server Verified"), offline banner retained. Nit N-1: `syncedAt ?? DateTime.now()` default lets write-through/demo callers refresh the stamp — solution in NOT_DONE doc.
-- [x] **G13** Spirit reactor: numeric bounds + cap in rules, atomic `FieldValue.increment` per caller's house ✓ (c78ddd8); create seed ≤500 + rejection logging ✓ (`6c6f7bc`). **Open residual R-7:** `last_contributor` binding fails open for accounts without a user doc (`!hasUserDoc() ||` disjunct) and false-denies userName-fallback clients — fail-closed fix + test in NOT_DONE doc.
+- [x] **G10** Standings cache written only from server snapshots; label offline states; AI context uses synced data. ✓ (`6c6f7bc` + `753c976`): sync timestamp persisted only on explicit `syncedAt` (no default), AI provenance freshness-gated (<15 min + live → "Live Server Verified"), offline banner retained; N-1 closed.
+- [x] **G13** Spirit reactor: numeric bounds + cap in rules, atomic `FieldValue.increment` per caller's house ✓ (c78ddd8); create seed ≤500 + rejection logging ✓ (`6c6f7bc`); R-7 closed (`753c976`): `last_contributor` binding fail-closed (`hasUserDoc() && 'scholar_no' in getUserData() &&` equality), client omits the key when scholarNo is empty, contract test forbids the `!hasUserDoc() ||` bypass.
 
 ## Deferred — requires Blaze (add to the Blaze completion list)
 

@@ -2,7 +2,7 @@
 
 **User requirement (2026-11-07, verbatim):** "see i want not only the staff can change but also the council roster has some priviledges"
 
-**Status:** **FULLY IMPLEMENTED & DEPLOY-VERIFIED** — Rules deployed to production (re-verified first-hand 2026-11-08: cloud ruleset matches repo). Council claims approval and grading, and captain same-house claim approval, are verified by rules/transaction write-set alignment and passing suites. All audit items and residuals (R-1 through R-7, G13-nits, N-1, N-2) are fully closed:
+**Status:** **FULLY IMPLEMENTED & DEPLOY-VERIFIED** — Rules deployed to production (re-verified first-hand 2026-11-08: cloud ruleset matches repo at `753c976`). Council claims approval and grading, and captain same-house claim approval, are verified by rules/transaction write-set alignment and passing suites. All audit items and residuals (R-1 through R-7, G13-nits, N-1, N-2) are fully closed — round-6 closures independently re-verified TRUE:
 - R-1: Captain contributor writes house-scoped on both request and resource docs.
 - R-2, R-5 & N-2: Per-student submission subcollections (`submissions/{scholarNo}`) prevent students from altering shared class assignments, `status in ['pending', 'submitted']` prevents self-marking as `graded`, and resource status check prevents owner downgrade of staff-graded submissions.
 - R-6: Assignment status transitions isolate student submissions without generating grader-keyed records.
