@@ -73,21 +73,21 @@ After D1, when shipping Android/iOS/web clients:
 
 Release builds now fail closed without secrets. Any live build must supply:
 ```bash
-flutter build windows --release --dart-define=ELECTION_HMAC_SALT=<value> --dart-define=VAULT_SECRET=<value>
+flutter build windows --release --dart-define=ELECTION_HMAC_SALT=<value> --dart-define=VAULT_SECRET=<value> --dart-define=GAMIFICATION_HMAC_SECRET=<value> --dart-define=SPORTS_CERT_SECRET=<value>
 ```
-Without these, election hashing and vault operations throw `StateError` by design (audit items A1/A2). Test harnesses inject ephemeral values via `setTestSalt`/`setTestSecret` and never ship them.
+Without these, election hashing and vault operations throw `StateError` by design (audit items A1/A2), and gamification/sports token minting fails closed (G2). Test harnesses inject ephemeral values via `setTestSalt`/`setTestSecret` and never ship them.
 
 ---
 
 ## D4. Gamification / points server authority (from gamification_audit)
 
-The points audit (`gamification_audit/README.md`, 2026-11-07) found the student points economy is phantom without a server: every student award is rules-denied and reported as success (G1). The real fix needs:
+The points audit (`gamification_audit/README.md`, 2026-11-07) found the student points economy was phantom without a server (G1). **All interim no-Blaze hardening is now complete and independently verified** (round 6, `753c976`): truthful failures, secret eradication, rules validators/bounds, council/captain privileges, per-student submissions, cache provenance — G1–G13 and R-1..R-7/N-1/N-2 all closed in `gamification_audit/REMEDIATION_ROADMAP.md` P0–P2. Student live awards remain intentionally fail-closed until the server authority below ships. The real fix needs:
 
 1. **`schoolGamification` callable** (new, to be authored): server-side activity validation, Firestore-backed cooldowns with server timestamps, atomic awards, idempotency keys, consumed-nonce store, append-only audit log. Then lock `house_points`/`house_contributors` direct writes in rules.
 2. **Sports certification callable**: mint/verify match tokens server-side; remove the client salt.
 3. **Live points smoke test**: student earns → ledger reflects it exactly once; sports lead cannot exceed bounds; replay/clock tricks rejected; election certify leaves the local cache equal to the server ledger (G12 in `gamification_audit/FINAL_POINTS_REPORT.md`).
 
-Interim no-Blaze hardening (truthful failures, secret eradication, rules validators) is tracked in `gamification_audit/REMEDIATION_ROADMAP.md` P0–P2 and can proceed now.
+Interim no-Blaze hardening (truthful failures, secret eradication, rules validators) is **done** — tracked and closed in `gamification_audit/REMEDIATION_ROADMAP.md` P0–P2 (verified 2026-11-08).
 
 **Done when:** the callable is deployed, direct points writes are locked, and the live points smoke test passes.
 
