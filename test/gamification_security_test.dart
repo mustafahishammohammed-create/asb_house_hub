@@ -503,9 +503,18 @@ void main() {
       expect(current['scholar_no'], equals('11209'));
     });
 
-    test('R-4: cacheHouseStandings records sync timestamp and getStandingsLastSyncedAt retrieves it', () async {
+    test('R-4 & N-1: cacheHouseStandings records sync timestamp only when syncedAt is explicitly provided', () async {
+      final earlier = DateTime(2026, 1, 1, 12, 0, 0);
+      await AuthService.cacheHouseStandings({'ruby': 500, 'sapphire': 450}, syncedAt: earlier);
+      expect(AuthService.getStandingsLastSyncedAt()?.isAtSameMomentAs(earlier), isTrue);
+
+      // Calling without syncedAt (e.g. demo / local mutations) does NOT refresh the timestamp
+      await AuthService.cacheHouseStandings({'ruby': 550, 'sapphire': 450});
+      expect(AuthService.getStandingsLastSyncedAt()?.isAtSameMomentAs(earlier), isTrue);
+
+      // Explicitly passing a new syncedAt updates it
       final now = DateTime.now();
-      await AuthService.cacheHouseStandings({'ruby': 500, 'sapphire': 450}, syncedAt: now);
+      await AuthService.cacheHouseStandings({'ruby': 550, 'sapphire': 450}, syncedAt: now);
       final retrieved = AuthService.getStandingsLastSyncedAt();
       expect(retrieved, isNotNull);
       expect(retrieved!.difference(now).inSeconds.abs(), lessThanOrEqualTo(2));
@@ -569,28 +578,34 @@ void main() {
       expect(block, contains('getUserData().house_name.lower() == request.resource.data.house_name.lower()'));
     });
 
-    test('R-2 & R-5: assignments and homework disallow direct student writes and forbid students from setting graded', () {
+    test('R-2, R-5 & N-2: assignments and homework disallow direct student writes, forbid setting graded, and prevent downgrade', () {
       final assignBlock = matchBlock(r'/assignments/\{assignmentId\}');
       expect(assignBlock, isNot(contains("isSignedIn() &&\n            request.resource.data.diff")));
       expect(assignBlock, contains('match /submissions/{scholarNo}'));
       expect(assignBlock, contains('isScholarOwner(scholarNo)'));
       // R-5: submission owners limited to pending and submitted; graded reserved for admin/council
       expect(assignBlock, contains("(isScholarOwner(scholarNo) && request.resource.data.status in ['pending', 'submitted'])"));
+      // N-2: owner cannot downgrade an already-graded submission doc
+      expect(assignBlock, contains("(!('status' in resource.data) || resource.data.status in ['pending', 'submitted'])"));
 
       final hwBlock = matchBlock(r'/homework/\{assignmentId\}');
       expect(hwBlock, isNot(contains("isSignedIn() &&\n          request.resource.data.diff")));
       expect(hwBlock, contains('match /submissions/{scholarNo}'));
       expect(hwBlock, contains('isScholarOwner(scholarNo)'));
       expect(hwBlock, contains("(isScholarOwner(scholarNo) && request.resource.data.status in ['pending', 'submitted'])"));
+      expect(hwBlock, contains("(!('status' in resource.data) || resource.data.status in ['pending', 'submitted'])"));
     });
 
-    test('G13: spirit reactor enforces numeric bounds, non-decreasing increments, and seed ceiling', () {
+    test('G13 & R-7: spirit reactor enforces numeric bounds, non-decreasing increments, seed ceiling, and fail-closed contributor binding', () {
       final reactorBlock = matchBlock(r'/system_config/\{configId\}');
       expect(reactorBlock, contains('isValidSpiritReactor(request.resource.data)'));
       expect(reactorBlock, contains('request.resource.data.ruby >= resource.data.ruby'));
       expect(reactorBlock, contains('request.resource.data.ruby - resource.data.ruby <= 500'));
       // G13-nit: create-time seed ceiling
       expect(reactorBlock, contains('request.resource.data.ruby <= 500'));
+      // R-7: fail-closed last_contributor binding (conjunctive, not failing open with !hasUserDoc())
+      expect(reactorBlock, contains("(hasUserDoc() && 'scholar_no' in getUserData() && request.resource.data.last_contributor == getUserData().scholar_no)"));
+      expect(reactorBlock, isNot(contains('!hasUserDoc() ||')));
 
       final m = RegExp(r'function isValidSpiritReactor\(data\)\s*\{').firstMatch(rules);
       expect(m, isNotNull);

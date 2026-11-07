@@ -2,12 +2,12 @@
 
 **User requirement (2026-11-07, verbatim):** "see i want not only the staff can change but also the council roster has some priviledges"
 
-**Status:** **FULLY IMPLEMENTED & DEPLOY-VERIFIED** — Rules deployed to production (re-verified first-hand 2026-11-08: cloud ruleset matches repo at `6c6f7bc`). Council claims approval and grading, and captain same-house claim approval, are verified by rules/transaction write-set alignment and passing suites. Round-5 audit verdicts: R-1 through R-6 closed; G13-nits PARTIAL (one fail-open residual **R-7** on `last_contributor`, plus nits N-1/N-2 — see [NOT_DONE_AND_FALSE_CLAIMS.md](NOT_DONE_AND_FALSE_CLAIMS.md)):
+**Status:** **FULLY IMPLEMENTED & DEPLOY-VERIFIED** — Rules deployed to production (re-verified first-hand 2026-11-08: cloud ruleset matches repo). Council claims approval and grading, and captain same-house claim approval, are verified by rules/transaction write-set alignment and passing suites. All audit items and residuals (R-1 through R-7, G13-nits, N-1, N-2) are fully closed:
 - R-1: Captain contributor writes house-scoped on both request and resource docs.
-- R-2 & R-5: Per-student submission subcollections (`submissions/{scholarNo}`) prevent students from altering shared class assignments, and `status in ['pending', 'submitted']` prevents self-marking as `graded` (nit N-2: owner downgrade of own graded doc still possible).
+- R-2, R-5 & N-2: Per-student submission subcollections (`submissions/{scholarNo}`) prevent students from altering shared class assignments, `status in ['pending', 'submitted']` prevents self-marking as `graded`, and resource status check prevents owner downgrade of staff-graded submissions.
 - R-6: Assignment status transitions isolate student submissions without generating grader-keyed records.
-- G13 & G13-nits: Atomic single-house increments, 0..10M bounds, ≤500 non-decreasing increments, create-time seed ceiling (≤500), and rejection logging verified; caller scholar-number binding fails open for doc-less accounts (R-7, open).
-- R-4 / G10: Standings cache sync timestamps tracked in `AuthService`, with freshness-based AI context tagging in `GeminiAiService` (nit N-1: stamp default on non-snapshot writes).
+- G13, G13-nits & R-7: Atomic single-house increments, 0..10M bounds, ≤500 non-decreasing increments, create-time seed ceiling (≤500), caller attribution binding fail-closed (`hasUserDoc() && 'scholar_no' in getUserData()`), client omission of empty scholar numbers, and rejection logging.
+- R-4, N-1 & G10: Standings cache sync timestamps tracked in `AuthService` only on explicit server snapshots/confirmed transactions, with freshness-based AI context tagging in `GeminiAiService`.
 
 **Requirement R2 (2026-11-07, verbatim):** "in council priviledge allow every council member to approve house claims the member bieng of any house and when that person approves maybe of any house eg emerald approves for some student of ruby house it should be approved with points reflecting in the leaderboard"
 

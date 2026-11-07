@@ -3050,7 +3050,7 @@ class _HomeScreenState extends State<HomeScreen>
             pointsMap[h] = pts;
           }
           // Persist the latest live points to disk for future launches
-          AuthService.cacheHouseStandings(pointsMap);
+          AuthService.cacheHouseStandings(pointsMap, syncedAt: DateTime.now());
         }
 
         final sortedHouses = pointsMap.entries.toList()

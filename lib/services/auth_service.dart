@@ -457,8 +457,9 @@ class AuthService {
     try {
       _prefs ??= await SharedPreferences.getInstance();
       await _prefs?.setString(_kCachedStandingsKey, jsonEncode(pointsMap));
-      final ts = syncedAt ?? DateTime.now();
-      await _prefs?.setString(_kCachedStandingsSyncedAtKey, ts.toIso8601String());
+      if (syncedAt != null) {
+        await _prefs?.setString(_kCachedStandingsSyncedAtKey, syncedAt.toIso8601String());
+      }
     } catch (_) {}
   }
 
@@ -6177,7 +6178,7 @@ class AuthService {
       final curPoints = getCachedHouseStandings();
       curPoints[winningHouse.toLowerCase()] = (curPoints[winningHouse.toLowerCase()] ?? 0) + pointsAwarded;
       curPoints[runnerUpHouse.toLowerCase()] = (curPoints[runnerUpHouse.toLowerCase()] ?? 0) + runnerUpPoints;
-      await cacheHouseStandings(curPoints);
+      await cacheHouseStandings(curPoints, syncedAt: _isFirebaseLive ? DateTime.now() : null);
 
       return (success: true, error: null, record: trophyRecord);
     } catch (e) {
@@ -6334,7 +6335,7 @@ class AuthService {
     if (safeMeritPoints > 0) {
       final curPoints = getCachedHouseStandings();
       curPoints[hName] = (curPoints[hName] ?? 0) + safeMeritPoints;
-      await cacheHouseStandings(curPoints);
+      await cacheHouseStandings(curPoints, syncedAt: _isFirebaseLive ? DateTime.now() : null);
     }
 
     return true;
