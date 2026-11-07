@@ -58,7 +58,8 @@ Each finding below follows the format: **Problem → What breaks → Solution**.
 
 ## Companion documents
 
-- [REMAINING_FIXES.md](REMAINING_FIXES.md) — **current status**: what is partially done (with residuals) and not done, each with its fix. Verified 2026-11-07 after commits `b66fc47`/`efa671d`.
+- [FINAL_ELECTION_FIXES.md](FINAL_ELECTION_FIXES.md) — **the last and final election work list**: every remaining item with a complete solution and acceptance criteria. Nothing may be done partially or left untouched; once its Final Acceptance passes, election work is closed. Verified 2026-11-07 at commit `2483575`; supersedes all earlier status docs.
+- [REMAINING_FIXES.md](REMAINING_FIXES.md) — earlier status snapshot (superseded by FINAL_ELECTION_FIXES.md; some completion claims were contradicted by code verification).
 - [ACCOUNT_SWITCHING.md](ACCOUNT_SWITCHING.md) — S1–S9 scenario walkthroughs (switch timing, siblings, shared devices, vault extraction).
 - [REMEDIATION_ROADMAP.md](REMEDIATION_ROADMAP.md) — prioritized P0/P1/P2 fix plan with a checklist mapped to finding IDs.
 
