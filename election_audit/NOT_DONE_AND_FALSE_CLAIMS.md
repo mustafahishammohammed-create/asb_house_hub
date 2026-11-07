@@ -1,5 +1,16 @@
 # NOT DONE & FALSE CLAIMS — Post-cd1686a Verification
 
+**UPDATE 2026-11-07 (independent re-verification at `4a816f6`):** every Section A and
+Section C claim below was checked against code and confirmed genuinely fixed — salt and
+vault getters fail closed with `StateError` (no literals remain in `lib/`), disk
+persistence is zero-password with legacy purge, the switch prompt is wired, house
+fallbacks are gone from election paths, embedded-array mutations are deleted, and the
+chamber UUID lookup matches only scholar number or candidate ID. Suites re-run:
+32/32 election, 19/19 Election widget, 6/6 Part 30, 5/5 Phase 1, analyzer 0 errors,
+`node --check` OK on all three functions files, Windows release build OK.
+Section B (Blaze-dependent) is **deferred by user decision** — tracked with completion
+steps in [BLAZE_REQUIRED_FEATURES.md](BLAZE_REQUIRED_FEATURES.md).
+
 **Basis:** independently verified on 2026-11-07 against commit `cd1686a` (branch `mustafa1`,
 pushed). Reproduced: 32/32 election tests, 19/19 widget Election tests, 6/6 Part 30 tests,
 `node --check` OK, analyzer 0 errors/0 warnings, Windows release build.
@@ -20,7 +31,7 @@ error checks, dynamic grades), F14 code (App Check flag, strict house), F8 paylo
 ### A1. "Static salt replaced with dynamic getter" — RESOLVED
 
 - **Remediation & Verification Evidence:**
-  1. The hardcoded salt literal `'ASB_CAMPUS_DEMOCRACY_SECURE_SALT_v1'` was completely deleted from [election_security_service.dart](../lib/services/election_security_service.dart).
+  1. The hardcoded salt literal (value withheld) was completely deleted from [election_security_service.dart](../lib/services/election_security_service.dart).
   2. In production / live execution, absence of `--dart-define=ELECTION_HMAC_SALT=...` fails closed by throwing a `StateError`. No fallback literal exists in client source.
   3. Ephemeral test salt is set strictly in test harnesses via `@visibleForTesting static void setTestSalt(...)`.
   4. Grep confirms 0 occurrences of HMAC salt literals in `lib/`.
@@ -28,7 +39,7 @@ error checks, dynamic grades), F14 code (App Check flag, strict house), F8 paylo
 ### A2. "Hardcoded vault secret replaced with dynamic getter" — RESOLVED
 
 - **Remediation & Verification Evidence:**
-  1. Derivable fallback key `'ASB_RUNTIME_VAULT_KEY_${kSchoolDomain.hashCode}'` was completely deleted from [auth_service.dart](../lib/services/auth_service.dart).
+  1. The derivable fallback key (pattern withheld; it was derived from the school domain hash) was completely deleted from [auth_service.dart](../lib/services/auth_service.dart).
   2. In production / live execution, absence of `--dart-define=VAULT_SECRET=...` fails closed by throwing a `StateError`.
   3. Ephemeral test secret is set strictly in test harnesses via `@visibleForTesting static void setTestSecret(...)`.
   4. Grep confirms 0 vault secret literals or derivable keys in `lib/`.
@@ -87,7 +98,10 @@ error checks, dynamic grades), F14 code (App Check flag, strict house), F8 paylo
 
 ## Closure rule
 
-A1–A3 and B1–B3 are **mandatory**; C1–C3 must be fixed in the same pass. When every
+A1–A3 and C1–C3 are **verified closed at `4a816f6`**. B1–B3 remain open but are
+**deferred by explicit user decision** until the Blaze upgrade; their completion steps
+live in [BLAZE_REQUIRED_FEATURES.md](BLAZE_REQUIRED_FEATURES.md). When every Blaze item's
 "Done when" passes with evidence — including the first-ever live smoke test — update
 FINAL_ELECTION_FIXES.md's Final Acceptance truthfully and only then declare elections
-closed. Any report claiming closure before that is, by definition, a false claim.
+fully closed. Any report claiming live closure before deployment is, by definition,
+a false claim.

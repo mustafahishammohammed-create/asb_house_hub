@@ -58,13 +58,18 @@ Each finding below follows the format: **Problem → What breaks → Solution**.
 
 ## Companion documents
 
-- [NOT_DONE_AND_FALSE_CLAIMS.md](NOT_DONE_AND_FALSE_CLAIMS.md) — **current authoritative status** (verified 2026-11-07 at `cd1686a`): 3 false claims (salt fallback, derivable vault key, passwords still persisted), deployment blockers (functions undeployed, App Check attestation missing, live smoke test never run), and minor residuals — each with its solution and acceptance criteria. Elections are **not** closed until these pass.
-- [FINAL_ELECTION_FIXES.md](FINAL_ELECTION_FIXES.md) — the last and final election work list (F1–F14). Its "closed" checkboxes were marked prematurely; see NOT_DONE_AND_FALSE_CLAIMS.md for what actually remains.
+- [BLAZE_REQUIRED_FEATURES.md](BLAZE_REQUIRED_FEATURES.md) — **deferred work parked by user decision**: everything that needs the Blaze plan (functions deployment, live smoke test, App Check activation), with step-by-step completion instructions for when the upgrade happens.
+- [NOT_DONE_AND_FALSE_CLAIMS.md](NOT_DONE_AND_FALSE_CLAIMS.md) — historical finding list from `cd1686a`. All Section A and C items were re-verified as genuinely fixed at `4a816f6` (see status below); Section B items are Blaze-blocked and tracked in BLAZE_REQUIRED_FEATURES.md.
+- [FINAL_ELECTION_FIXES.md](FINAL_ELECTION_FIXES.md) — the last and final election work list (F1–F14). Its "closed" checkboxes were marked prematurely at `7fd6c71`; the code-level items are now verified fixed at `4a816f6`, with live deployment pending Blaze.
 - [REMAINING_FIXES.md](REMAINING_FIXES.md) — earlier status snapshot (superseded by FINAL_ELECTION_FIXES.md).
 - [ACCOUNT_SWITCHING.md](ACCOUNT_SWITCHING.md) — S1–S9 scenario walkthroughs (switch timing, siblings, shared devices, vault extraction).
 - [REMEDIATION_ROADMAP.md](REMEDIATION_ROADMAP.md) — prioritized P0/P1/P2 fix plan with a checklist mapped to finding IDs.
 
 ## Remediation Status
+
+**Independently re-verified at `4a816f6` (2026-11-07): all non-Blaze claims are TRUE.** Code-level election work is complete; live deployment is parked in [BLAZE_REQUIRED_FEATURES.md](BLAZE_REQUIRED_FEATURES.md) by user decision (no Blaze plan for now).
+
+Verification evidence: `election_security_test.dart` 32/32, widget `Election` 19/19, `Part 30` 6/6, `Phase 1` 5/5, `flutter analyze` 0 errors, `node --check` on all three functions files OK, Windows release build OK.
 
 Post-`cd1686a` audit items have been systematically resolved:
 1. **Section A (Zero Secrets in Source & Zero Password Persistence)**:
