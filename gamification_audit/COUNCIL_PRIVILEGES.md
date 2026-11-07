@@ -4,6 +4,19 @@
 
 **Status:** **IMPLEMENTED & DEPLOY-VERIFIED** — Rules deployed to production (re-verified first-hand 2026-11-07 at `eae5f6b`: cloud ruleset matches repo). Council claims approval and grading, and captain same-house claim approval, are verified by rules/transaction write-set alignment and passing suites. No production role-account smoke test has been run yet. Two residuals introduced by the fixes are tracked in [NOT_DONE_AND_FALSE_CLAIMS.md](NOT_DONE_AND_FALSE_CLAIMS.md): **R-1** (captain contributor write not house-scoped) and **R-2** (students can flip shared assignment status `pending`↔`submitted`, never `graded`).
 
+**Requirement R2 (2026-11-07, verbatim):** "in council priviledge allow every council member to approve house claims the member bieng of any house and when that person approves maybe of any house eg emerald approves for some student of ruby house it should be approved with points reflecting in the leaderboard"
+
+**R2 status: ALREADY LIVE — verified end-to-end and locked with regression tests.** No code or rules change was needed; every layer already permits cross-house council approval. Verified chain for the exact example (emerald council officer approves a ruby student's claim):
+
+1. **Portal shows all houses' claims** — `getPendingClaimsStream()` filters only `status == 'pending'`, no house filter ([auth_service.dart:3417-3422](../lib/services/auth_service.dart)); client gate `HierarchyService.isCouncil` admits all 10 executive roles regardless of house ([hierarchy_service.dart:66-76](../lib/services/hierarchy_service.dart)).
+2. **Claim update permitted** — `house_claims` update grants `isCouncil()` as an unscoped disjunct; only the captain branch is house-scoped ([firestore.rules:784-790](../firestore.rules)).
+3. **Points go to the CLAIM's house, not the reviewer's** — the transaction reads authoritative `house_name` from the claim document (`authHouse`), so ruby receives the points even though the approver is emerald ([auth_service.dart:3480-3513](../lib/services/auth_service.dart)).
+4. **Every ledger write in the transaction is council-permitted for any house** — `house_points` create/update `isCouncil()` unscoped, bounded 0..+500 (:915-937); `house_contributors` write `isCouncil()` (:943); claim points are validated 1..500 (:416) so the delta always fits the council cap.
+5. **Student profile + notification** — `users.points_contributed` council branch is house-agnostic, delta ≤ 500 (:666-674); notification create allowed for any signed-in reviewer (:688).
+6. **Leaderboard reflects it live** — `house_leaderboard_screen` streams `house_points/{house}` snapshots from Firestore, so the ruby total updates on every device, not just the approver's ([house_leaderboard_screen.dart:216-232](../lib/screens/house_leaderboard_screen.dart)).
+
+**R2 regression lock:** 6 tests in `test/gamification_security_test.dart` group "R2 Cross-house council claim approval" assert the council grants stay house-agnostic on all four collections, captains stay house-scoped, claim points stay ≤ 500, and all 10 council roles pass the client gate. Suite: **23/23 passed**.
+
 ---
 
 ## The Problem Solved
@@ -55,7 +68,7 @@ The app previously contained a council roster and a **Council Review Portal**, b
 - Added legacy contributor migration trigger to `AdminClaimsScreen` AppBar and automated one-time background execution in `AuthService.seedAdminRoster()` (O-3).
 
 ### 3. Verification & Test Evidence
-- `test/gamification_security_test.dart` (17/17 passed):
+- `test/gamification_security_test.dart` (23/23 passed, includes 6 R2 cross-house contract tests):
   - `HierarchyService.canGradeAcademics grants staff and council, rejects students and prefects` PASSED
   - `updateAssignmentStatus blocks regular student from transitioning assignment to graded` PASSED
   - `updateAssignmentStatus allows council officer to transition assignment to graded` PASSED

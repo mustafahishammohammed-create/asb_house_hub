@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:asb_house_hub/services/auth_service.dart';
@@ -426,6 +428,89 @@ void main() {
     test('migrateLegacyContributorDocs runs without crashing when empty', () async {
       final count = await AuthService.migrateLegacyContributorDocs();
       expect(count, isNonNegative);
+    });
+  });
+
+  group('R2 Cross-house council claim approval (any council house -> any claim house)', () {
+    // Rules-contract tests locking the requirement: a council officer of any
+    // house (e.g. emerald) can approve a claim from any other house (e.g. ruby),
+    // and the points land on the claim's house ledger that the leaderboard
+    // streams live. If someone later house-scopes the council grants, these fail.
+    late String rules;
+
+    setUpAll(() {
+      rules = File('firestore.rules').readAsStringSync();
+    });
+
+    String blockAt(int open) {
+      var depth = 0;
+      for (var i = open; i < rules.length; i++) {
+        if (rules[i] == '{') depth++;
+        if (rules[i] == '}') {
+          depth--;
+          if (depth == 0) return rules.substring(open, i + 1);
+        }
+      }
+      fail('Unbalanced braces in firestore.rules');
+    }
+
+    String matchBlock(String pathPattern) {
+      final m = RegExp('match\\s+$pathPattern\\s*\\{').firstMatch(rules);
+      expect(m, isNotNull, reason: 'Missing match block: $pathPattern');
+      return blockAt(m!.end - 1);
+    }
+
+    test('house_claims update grants council unscoped; only captains are house-scoped', () {
+      final block = matchBlock(r'/house_claims/\{claimId\}');
+      expect(block, matches(RegExp(r'isAdmin\(\)\s*\|\|\s*isCouncil\(\)\s*\|\|')));
+      expect(
+        block,
+        contains("isCaptain() && hasUserDoc() && 'house_name' in getUserData() && getUserData().house_name.lower() == resource.data.house_name.lower()"),
+      );
+    });
+
+    test('house_points create and update grant council for any house within 0..+500', () {
+      final block = matchBlock(r'/house_points/\{houseId\}');
+      final councilGrants = RegExp(r'isCouncil\(\)\s*\|\|').allMatches(block).length;
+      expect(councilGrants, greaterThanOrEqualTo(2));
+      expect(block, contains('request.resource.data.total_points - resource.data.total_points <= 500'));
+      final houseScopedLines = block.split('\n').where((l) => l.contains('houseId.lower()'));
+      expect(houseScopedLines, isNotEmpty);
+      for (final line in houseScopedLines) {
+        expect(line, contains('isCaptain()'));
+      }
+    });
+
+    test('house_contributors write grants council', () {
+      final block = matchBlock(r'/house_contributors/\{scholarNo\}');
+      expect(block, contains('isAdmin() || isCouncil() || isCaptain()'));
+    });
+
+    test('users points_contributed increment branch is house-agnostic and bounded', () {
+      final block = matchBlock(r'/users/\{userId\}');
+      expect(block, contains('(isCouncil() || isCaptain())'));
+      expect(block, contains("hasOnly(['points_contributed'])"));
+      expect(block, contains('<= 500'));
+    });
+
+    test('claim points stay within 1..500 so every approval fits the council delta cap', () {
+      final m = RegExp(r'function isValidHouseClaim\(data\)\s*\{').firstMatch(rules);
+      expect(m, isNotNull);
+      final fn = blockAt(m!.end - 1);
+      expect(fn, contains('data.points >= 1 && data.points <= 500'));
+    });
+
+    test('HierarchyService.isCouncil admits all 10 executive roles regardless of house', () {
+      const councilRoles = [
+        'council', 'head_boy', 'head_girl', 'deputy_head_boy', 'deputy_head_girl',
+        'head_of_activities', 'cultural_secretary', 'sports_captain',
+        'sports_vice_captain', 'executive_council',
+      ];
+      for (final role in councilRoles) {
+        expect(HierarchyService.isCouncil(role: role), isTrue, reason: role);
+        expect(HierarchyService.isAdmin(role: role), isTrue, reason: role);
+      }
+      expect(HierarchyService.isCouncil(role: 'student'), isFalse);
     });
   });
 }
