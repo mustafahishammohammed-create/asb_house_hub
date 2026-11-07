@@ -1824,6 +1824,14 @@ class AuthService {
     } catch (_) {}
   }
 
+  /// Upsert a single election ballot into the local cache.
+  static Future<void> cacheBallot(ElectionBallot ballot) async {
+    final list = getCachedBallots();
+    list.removeWhere((b) => b.id == ballot.id);
+    list.insert(0, ballot);
+    await cacheBallots(list);
+  }
+
   /// Retrieve cached election ballots synchronously (zero-flash, pure zero baseline [] when unseeded).
   static List<ElectionBallot> getCachedBallots() {
     try {
@@ -1841,6 +1849,47 @@ class AuthService {
       }
     } catch (_) {}
     return <ElectionBallot>[];
+  }
+
+  static const String _kCachedDraftsKey = 'cached_election_drafts_v2_list';
+
+  /// Persist draft ballot to local disk cache for instant availability.
+  static Future<void> cacheDraftBallot(Map<String, dynamic> draft) async {
+    try {
+      _prefs ??= await SharedPreferences.getInstance();
+      final drafts = getCachedDraftBallots();
+      final id = draft['id']?.toString() ?? '';
+      final idx = drafts.indexWhere((d) => d['id'] == id);
+      if (idx >= 0) {
+        drafts[idx] = draft;
+      } else {
+        drafts.add(draft);
+      }
+      await _prefs?.setString(_kCachedDraftsKey, jsonEncode(drafts));
+    } catch (_) {}
+  }
+
+  /// Retrieve cached election draft ballots.
+  static List<Map<String, dynamic>> getCachedDraftBallots() {
+    try {
+      final raw = _prefs?.getString(_kCachedDraftsKey);
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          return decoded.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList();
+        }
+      }
+    } catch (_) {}
+    return <Map<String, dynamic>>[];
+  }
+
+  /// Remove draft ballot from disk cache.
+  static Future<void> removeCachedDraftBallot(String draftId) async {
+    try {
+      _prefs ??= await SharedPreferences.getInstance();
+      final drafts = getCachedDraftBallots().where((d) => d['id'] != draftId).toList();
+      await _prefs?.setString(_kCachedDraftsKey, jsonEncode(drafts));
+    } catch (_) {}
   }
 
   /// Stream real-time ballots from Firestore with write-through local caching.

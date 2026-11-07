@@ -33,8 +33,9 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
   String _searchQuery = '';
 
   String get _effectiveScholarNo {
-    if (widget.scholarNo.trim().isNotEmpty) return widget.scholarNo.trim();
-    return AuthService.getCachedScholarNo() ?? '';
+    final cached = AuthService.getCachedScholarNo()?.trim();
+    if (cached != null && cached.isNotEmpty) return cached;
+    return widget.scholarNo.trim();
   }
 
   bool get _canManageElections {
@@ -1073,29 +1074,33 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Student Council and House Captain polls will be registered here by school administration.',
+              _canManageElections
+                  ? 'Student Council and House Captain polls can be staged and published here.'
+                  : 'No active election ballots at this time. When polling begins, official voting forms will appear here.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 13,
                 color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
               ),
             ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: houseColor,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                elevation: 3,
+            if (_canManageElections) ...[
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: houseColor,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  elevation: 3,
+                ),
+                icon: const Icon(Icons.add_task_rounded, size: 20),
+                label: const Text(
+                  'Create Ballot & Add Candidates',
+                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
+                ),
+                onPressed: () => _showCreateBallotModal(context, houseColor),
               ),
-              icon: const Icon(Icons.add_task_rounded, size: 20),
-              label: const Text(
-                'Create Ballot & Add Candidates',
-                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
-              ),
-              onPressed: () => _showCreateBallotModal(context, houseColor),
-            ),
+            ],
           ],
         ),
       ),
@@ -1103,6 +1108,7 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
   }
 
   void _showCreateBallotModal(BuildContext context, Color houseColor) {
+    if (!_canManageElections) return;
     final titleController = TextEditingController(text: 'Student Council Election 2026');
     final scholarController = TextEditingController();
     final nameController = TextEditingController();

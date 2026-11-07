@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:asb_house_hub/models/digital_ballot_cast.dart';
+import 'package:asb_house_hub/models/election_ballot.dart';
+import 'package:asb_house_hub/models/election_gazette.dart';
 import 'package:asb_house_hub/services/auth_service.dart';
 import 'package:asb_house_hub/services/election_security_service.dart';
 import 'package:asb_house_hub/services/hierarchy_service.dart';
@@ -138,6 +140,88 @@ void main() {
       // Synthetic name must NOT be populated as the candidate full name
       expect(res['fullName'], isNot(equals('Scholar #12428')));
       expect(res['fullName'], isNot(startsWith('Scholar #')));
+    });
+  });
+
+  group('Draft and Certified Proclamation Resilience', () {
+    test('Draft ballots can be cached, retrieved, and removed locally', () async {
+      final draft = {
+        'id': 'draft_test_101',
+        'title': 'Senior Prefect Election',
+        'position': 'Head Boy',
+        'house': 'all',
+        'status': 'draft',
+      };
+
+      await AuthService.cacheDraftBallot(draft);
+      final cached = AuthService.getCachedDraftBallots();
+      expect(cached.any((d) => d['id'] == 'draft_test_101'), isTrue);
+
+      await AuthService.removeCachedDraftBallot('draft_test_101');
+      final afterRemove = AuthService.getCachedDraftBallots();
+      expect(afterRemove.any((d) => d['id'] == 'draft_test_101'), isFalse);
+    });
+
+    test('Published ballot immediately appears in cached ballots with open status', () async {
+      final now = DateTime.now();
+      final published = ElectionBallot(
+        id: 'poll_published_v2_test',
+        title: 'Junior House Captain Election',
+        position: BallotPosition.houseCaptain,
+        candidates: [
+          ElectionCandidate(
+            scholarNo: '11209',
+            fullName: 'Candidate One',
+            houseName: 'ruby',
+            runningPosition: 'House Captain',
+            manifesto: 'Manifesto One',
+            votesCount: 0,
+            isVerified: true,
+          ),
+          ElectionCandidate(
+            scholarNo: '12428',
+            fullName: 'Candidate Two',
+            houseName: 'ruby',
+            runningPosition: 'House Captain',
+            manifesto: 'Manifesto Two',
+            votesCount: 0,
+            isVerified: true,
+          ),
+        ],
+        startTime: now.subtract(const Duration(seconds: 5)),
+        endTime: now.add(const Duration(days: 7)),
+        status: BallotStatus.open,
+        totalVotesCast: 0,
+        houseScope: 'ruby',
+      );
+
+      await AuthService.cacheBallot(published);
+      final ballots = AuthService.getCachedBallots();
+      final found = ballots.firstWhere((b) => b.id == 'poll_published_v2_test');
+      expect(found.status, equals(BallotStatus.open));
+      expect(found.candidates.length, equals(2));
+      expect(found.houseScope, equals('ruby'));
+    });
+
+    test('Certified proclamation caching persists and can be queried', () async {
+      final proc = CertifiedElectionResult(
+        ballotId: 'ballot_certified_999',
+        ballotTitle: 'Sports Captain Election',
+        runningPosition: 'Sports Captain',
+        winnerScholarNo: '11209',
+        winnerName: 'Administrator',
+        winnerHouse: 'ruby',
+        totalVotesReceived: 30,
+        victoryMarginVotes: 12,
+        housePointsAwarded: 50,
+        commissionerName: 'Electoral Commission',
+        certifiedAt: DateTime.now(),
+        proclamationText: 'Official certification proclamation',
+      );
+
+      await AuthService.cacheCertifiedGazette([proc]);
+      final gazettes = AuthService.getCachedCertifiedGazette();
+      expect(gazettes.any((g) => g.ballotId == 'ballot_certified_999'), isTrue);
     });
   });
 }
