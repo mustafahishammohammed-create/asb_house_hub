@@ -96,7 +96,7 @@ class ElectionCandidate {
     this.avatarUrl = '',
     this.classLevel = 'Grade 11',
     this.votesCount = 0,
-    this.isVerified = true,
+    this.isVerified = false,
   });
 
   Map<String, dynamic> toMap() {
@@ -117,13 +117,13 @@ class ElectionCandidate {
     return ElectionCandidate(
       scholarNo: (map['scholar_no'] ?? map['scholarNo'] ?? map['id'] ?? '').toString().trim(),
       fullName: (map['full_name'] ?? map['fullName'] ?? map['name'] ?? 'Candidate').toString().trim(),
-      houseName: (map['house_name'] ?? map['houseName'] ?? map['house'] ?? 'ruby').toString().trim().toLowerCase(),
+      houseName: (map['house_name'] ?? map['houseName'] ?? map['house'] ?? '').toString().trim().toLowerCase(),
       runningPosition: (map['running_position'] ?? map['runningPosition'] ?? map['position'] ?? 'House Captain').toString(),
       manifesto: (map['manifesto'] ?? map['statement'] ?? '').toString(),
       avatarUrl: (map['avatar_url'] ?? map['avatarUrl'] ?? '').toString(),
       classLevel: (map['class_level'] ?? map['classLevel'] ?? 'Grade 11').toString(),
       votesCount: (map['votes_count'] ?? map['votesCount'] ?? map['count'] as num?)?.toInt() ?? 0,
-      isVerified: map['is_verified'] != false && map['isVerified'] != false,
+      isVerified: map['is_verified'] == true || map['isVerified'] == true,
     );
   }
 }
@@ -217,8 +217,8 @@ class ElectionBallot implements Comparable<ElectionBallot> {
       if (v is Timestamp) return v.toDate();
       if (v is DateTime) return v;
       if (v is num) return DateTime.fromMillisecondsSinceEpoch(v.toInt());
-      if (v is String) return DateTime.tryParse(v) ?? DateTime.now();
-      return DateTime.now();
+      if (v is String) return DateTime.tryParse(v) ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return DateTime.fromMillisecondsSinceEpoch(0);
     }
 
     final rawCandidates = map['candidates'];

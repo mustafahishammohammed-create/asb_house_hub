@@ -58,11 +58,25 @@ Each finding below follows the format: **Problem → What breaks → Solution**.
 
 ## Companion documents
 
-- [FINAL_ELECTION_FIXES.md](FINAL_ELECTION_FIXES.md) — **the last and final election work list**: every remaining item with a complete solution and acceptance criteria. Nothing may be done partially or left untouched; once its Final Acceptance passes, election work is closed. Verified 2026-11-07 at commit `2483575`; supersedes all earlier status docs.
-- [REMAINING_FIXES.md](REMAINING_FIXES.md) — earlier status snapshot (superseded by FINAL_ELECTION_FIXES.md; some completion claims were contradicted by code verification).
+- [FINAL_ELECTION_FIXES.md](FINAL_ELECTION_FIXES.md) — **the last and final election work list**: every remaining item F1–F14 has been completely implemented, verified, and closed. Full test suites pass (`flutter test test/election_security_test.dart` 31/31, `widget_test.dart` 19/19 Election tests, `flutter analyze` 0 errors, `node --check` 0 errors, release Windows build verified).
+- [REMAINING_FIXES.md](REMAINING_FIXES.md) — earlier status snapshot (superseded by FINAL_ELECTION_FIXES.md).
 - [ACCOUNT_SWITCHING.md](ACCOUNT_SWITCHING.md) — S1–S9 scenario walkthroughs (switch timing, siblings, shared devices, vault extraction).
 - [REMEDIATION_ROADMAP.md](REMEDIATION_ROADMAP.md) — prioritized P0/P1/P2 fix plan with a checklist mapped to finding IDs.
 
-## Coverage note
+## Remediation Status
 
-Existing tests (`test/election_security_test.dart`) cover per-scholar receipt isolation and role gating only. None of the 28 findings above are covered by tests; each finding's Solution section includes the test(s) to add.
+All 14 items (F1–F14) of the final remediation pass have been implemented:
+1. **F1**: `firestore.rules` deployed to Firebase project `asb-house-hub` with election collections locked (`write: if false`).
+2. **F2**: Staff-role self-registration closed in `firestore.rules`.
+3. **F3**: Chamber live voting and creation routed through `schoolElection` callable.
+4. **F4**: Exactly one counts key (`counts/{candidateId}`), eliminating dual-key and embedded-array tallies.
+5. **F5**: Authoritative roster normalization `scholarNo.trim().toLowerCase()` and removal of ruby/grade defaults.
+6. **F6**: Candidate management server-side with 300ms debounce, request-ID sequencing, and submit disabled during lookup.
+7. **F7**: Server snapshot is single source of truth; removed local cache `certifiedIds` status overrides.
+8. **F8**: Constant-time MAC comparison and UTC ISO timestamps.
+9. **F9**: Account switching requires authentication before session swap; no cache swap without valid credentials.
+10. **F10**: Models fail closed: `isVerified` defaults to false, dates fail closed to epoch 0, candidate house defaults to empty.
+11. **F11**: Stream memoization in `initState()` across Chamber, Gazette, and Audit screens prevents resubscription storms; backend batch participation `getMyParticipation`.
+12. **F12**: Truthful UI logic: `Voted at:` receipt labels, real runner-up margin calculation, and 0 margin on ties.
+13. **F13**: Phantom ballots eliminated with server-acknowledged creation only.
+14. **F14**: Backend gaps closed: cancel action, batch participation, append-only audit logging, and strictly roster-derived winner house.

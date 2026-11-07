@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:crypto/crypto.dart';
@@ -209,32 +210,41 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
         member = {
           'active': true,
           'role': isStaff ? 'staff' : (cached['role'] ?? 'student'),
-          'scholar_no': activeScholar.isNotEmpty ? activeScholar : '00000',
+          'scholar_no': activeScholar.isNotEmpty ? activeScholar : '',
           'display_name': cached['full_name'] ?? 'Scholar',
-          'house': cached['house_name'] ?? 'ruby',
-          'grade': 10,
+          'house': cached['house_name'] ?? '',
+          'grade': cached['grade'] is int ? cached['grade'] : (int.tryParse(cached['grade']?.toString() ?? '') ?? 0),
           'capabilities': {'manage_elections': isStaff},
         };
       }
     }
 
-    // 2. Fetch published polls (with resilient fallback across v2, v1 and cache)
+    // 2. Fetch published polls (server-authoritative truth, F7)
     final pollsMap = <String, ElectionDoc>{};
     final cachedBallots = AuthService.getCachedBallots();
     final cachedGazettes = AuthService.getCachedCertifiedGazette();
-    final certifiedIds = <String>{
-      ...cachedBallots.where((b) => b.status == BallotStatus.certified).map((b) => b.id),
-      ...cachedGazettes.map((g) => g.ballotId),
-    };
 
     try {
       final snap = await db.collection('election_polls_v2').get();
+      final pollDocIds = snap.docs.map((d) => d.id).toList();
+
+      // Batch participation lookup via callable (F11 eliminates N+1)
+      if (activeScholar.isNotEmpty && activeScholar != 'guest' && _isFirebaseLive && pollDocIds.isNotEmpty) {
+        try {
+          final res = await call('getMyParticipation', pollDocIds.first, {'pollIds': pollDocIds});
+          final partMap = res['participation'] as Map?;
+          if (partMap != null) {
+            for (final entry in partMap.entries) {
+              receipts['${activeScholar}_${entry.key}'] = entry.value.toString();
+            }
+          }
+        } catch (_) {}
+      }
+
       for (final doc in snap.docs) {
         try {
           final data = doc.data();
-          final isCert = certifiedIds.contains(doc.id) ||
-              data['status'] == 'certified' ||
-              data['is_certified'] == true;
+          final isCert = data['status'] == 'certified' || data['is_certified'] == true;
           if (isCert && data['status'] != 'certified') {
             final m = Map<String, dynamic>.from(data);
             m['status'] = 'certified';
@@ -243,17 +253,13 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
           } else {
             pollsMap[doc.id] = QueryElectionDoc(doc);
           }
-          if (activeScholar.isNotEmpty && activeScholar != 'guest') {
-            try {
-              final sKey = sha256.convert(utf8.encode('${doc.id}:${activeScholar.toLowerCase()}')).toString();
-              final partDoc = await doc.reference.collection('participation').doc(sKey).get();
-              if (partDoc.exists) {
-                final rcpt = partDoc.data()?['receipt']?.toString();
-                if (rcpt != null && rcpt.isNotEmpty) {
-                  receipts['${activeScholar}_${doc.id}'] = rcpt;
-                }
-              }
-            } catch (_) {}
+
+          // Local receipt cache backup
+          if (activeScholar.isNotEmpty && !receipts.containsKey('${activeScholar}_${doc.id}')) {
+            final cachedRcpt = AuthService.getReceiptForBallot(doc.id, scholarNo: activeScholar);
+            if (cachedRcpt != null) {
+              receipts['${activeScholar}_${doc.id}'] = cachedRcpt.receiptId;
+            }
           }
         } catch (e) {
           debugPrint('Skipping malformed v2 poll doc ${doc.id}: $e');
@@ -261,9 +267,10 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
       }
     } catch (_) {}
 
-    for (final b in cachedBallots) {
-      if (!pollsMap.containsKey(b.id)) {
-        final isCert = b.status == BallotStatus.certified || certifiedIds.contains(b.id);
+    // Offline fallback: load cached ballots only when remote server is unreachable (F7)
+    if (pollsMap.isEmpty && !_isFirebaseLive) {
+      for (final b in cachedBallots) {
+        final isCert = b.status == BallotStatus.certified;
         pollsMap[b.id] = MemoryElectionDoc(b.id, {
           'id': b.id,
           'title': b.title,
@@ -284,11 +291,6 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
           'is_certified': isCert,
           'total_votes_cast': b.totalVotesCast,
         });
-      } else if (b.status == BallotStatus.certified || certifiedIds.contains(b.id)) {
-        final existing = Map<String, dynamic>.from(pollsMap[b.id]!.data());
-        existing['status'] = 'certified';
-        existing['is_certified'] = true;
-        pollsMap[b.id] = MemoryElectionDoc(b.id, existing);
       }
     }
 
@@ -297,8 +299,7 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
       for (final doc in legacySnap.docs) {
         try {
           final data = doc.data();
-          final isCert = certifiedIds.contains(doc.id) ||
-              data['status'] == 'certified' ||
+          final isCert = data['status'] == 'certified' ||
               data['is_certified'] == true;
           final rawEndTime = data['end_time'];
           final parsedEndTime = rawEndTime != null ? DateTime.tryParse(rawEndTime.toString()) : null;
@@ -394,22 +395,28 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
       return bStart.compareTo(aStart);
     });
 
-    // 4. Fetch official certified gazette proclamations
+    // 4. Fetch official certified gazette proclamations (server-authoritative truth, F7)
     List<CertifiedElectionResult> proclamations = [];
     try {
       final snap = await db.collection('election_gazettes').get();
       proclamations = snap.docs
-          .map((d) => CertifiedElectionResult.fromMap(d.data()))
+          .map((d) {
+            try { return CertifiedElectionResult.fromMap(d.data()); }
+            catch (_) { return null; }
+          })
+          .whereType<CertifiedElectionResult>()
           .toList();
     } catch (_) {}
-    for (final cg in cachedGazettes) {
-      if (!proclamations.any((p) => p.ballotId == cg.ballotId)) {
-        proclamations.add(cg);
+    if (proclamations.isEmpty && !_isFirebaseLive) {
+      for (final cg in cachedGazettes) {
+        if (!proclamations.any((p) => p.ballotId == cg.ballotId)) {
+          proclamations.add(cg);
+        }
       }
     }
     proclamations.sort((a, b) => b.certifiedAt.compareTo(a.certifiedAt));
 
-    // 5. Fetch legacy certified ballots from chamber
+    // 5. Fetch legacy certified ballots from chamber (server-authoritative truth, F7)
     List<ElectionBallot> legacyCertified = [];
     try {
       final snap = await db.collection('elections').where('status', isEqualTo: 'certified').get();
@@ -417,12 +424,14 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
           .map((d) => ElectionBallot.fromMap(d.data(), docId: d.id))
           .toList();
     } catch (_) {}
-    final cachedCertifiedList = AuthService.getCachedBallots()
-        .where((b) => b.status == BallotStatus.certified)
-        .toList();
-    for (final cb in cachedCertifiedList) {
-      if (!legacyCertified.any((lb) => lb.id == cb.id)) {
-        legacyCertified.add(cb);
+    if (legacyCertified.isEmpty && !_isFirebaseLive) {
+      final cachedCertifiedList = AuthService.getCachedBallots()
+          .where((b) => b.status == BallotStatus.certified)
+          .toList();
+      for (final cb in cachedCertifiedList) {
+        if (!legacyCertified.any((lb) => lb.id == cb.id)) {
+          legacyCertified.add(cb);
+        }
       }
     }
 
@@ -866,33 +875,20 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
       try {
         matches = await db.collection('school_members').where('scholar_no', isEqualTo: scholar).limit(2).get();
       } catch (_) {}
-      if (matches == null || matches.docs.isEmpty) {
-        QuerySnapshot<Map<String, dynamic>>? userMatches;
-        try {
-          userMatches = await db.collection('users').where('scholar_no', isEqualTo: scholar).limit(1).get();
-        } catch (_) {}
-        if (userMatches != null && userMatches.docs.isNotEmpty) {
-          final uDoc = userMatches.docs.first;
-          try {
-            await _authService.ensureSchoolMemberRecord(uid: uDoc.id, profile: uDoc.data());
-            matches = await db.collection('school_members').where('scholar_no', isEqualTo: scholar).limit(2).get();
-          } catch (_) {}
-        }
-      }
 
       String candHouse = (args['house'] ?? '').toString().trim().toLowerCase();
       if (matches != null && matches.docs.isNotEmpty) {
         final candDoc = matches.docs.first;
         candUid = candDoc.id;
         final dName = (candDoc.data()['display_name'] ?? '').toString().trim();
-        if (candName.isEmpty && dName.isNotEmpty) candName = dName;
+        if (dName.isNotEmpty) candName = dName;
         final dHouse = (candDoc.data()['house'] ?? '').toString().trim().toLowerCase();
         if (dHouse.isNotEmpty) candHouse = dHouse;
       } else {
         final saved = AuthService.getSavedAccounts();
         for (final a in saved) {
           if (a.scholarNo.trim().toLowerCase() == scholar.toLowerCase()) {
-            if (candName.isEmpty) candName = a.fullName;
+            if (a.fullName.isNotEmpty) candName = a.fullName;
             if (candHouse.isEmpty) candHouse = a.houseName.toLowerCase();
             break;
           }
@@ -904,7 +900,7 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
       }
 
       if (candName.isEmpty) {
-        throw StateError('Please provide candidate full name.');
+        throw StateError('Candidate must be verified in the school roster.');
       }
 
       Map<String, dynamic>? dData;
@@ -1310,42 +1306,8 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
         }, SetOptions(merge: true));
       } catch (_) {}
 
-      // If proclamation wasn't computed from Firestore, compute from local cached ballot:
       if (proclamationToPublish == null) {
-        final cached = AuthService.getCachedBallots();
-        for (final b in cached) {
-          if (b.id == pollId) {
-            ElectionCandidate? winner;
-            int maxV = -1;
-            for (final c in b.candidates) {
-              if (c.votesCount > maxV) {
-                maxV = c.votesCount;
-                winner = c;
-              }
-            }
-            final winnerName = winner?.fullName ?? 'Duly Certified Officer';
-            final candH = winner?.houseName.toLowerCase() ?? '';
-            final winnerHouse = ['ruby', 'sapphire', 'emerald', 'topaz'].contains(candH) ? candH : 'emerald';
-            winningHouseToCredit = winnerHouse;
-            proclamationToPublish = CertifiedElectionResult(
-              ballotId: b.id,
-              ballotTitle: b.title,
-              runningPosition: b.position.displayName,
-              winnerScholarNo: winner?.scholarNo ?? 'SCH-001',
-              winnerName: winnerName,
-              winnerHouse: winnerHouse,
-              totalVotesReceived: maxV > 0 ? maxV : b.totalVotesCast,
-              victoryMarginVotes: maxV > 0 ? maxV : 1,
-              housePointsAwarded: 100,
-              commissionerName: user?.displayName ?? (AuthService.getCachedProfile()?['full_name'] as String?) ?? "Principal's Office",
-              commissionerRole: 'Chief Electoral Commissioner',
-              certifiedAt: DateTime.now(),
-              proclamationText:
-                  'By order of the Electoral Commission, $winnerName is duly elected and sworn as ${b.position.displayName}, conferring +100 championship points to ${winnerHouse.toUpperCase()} House.',
-            );
-            break;
-          }
-        }
+        throw StateError('Cannot certify: No valid election result could be determined.');
       }
 
       // Always publish proclamation and award points
@@ -1637,6 +1599,8 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
     bool isLookingUp = false;
     bool isRosterMatch = false;
     String? rosterMatchInfo;
+    int lookupRequestId = 0;
+    Timer? debounceTimer;
 
     final input = await showDialog<Fields>(
       context: context,
@@ -1645,6 +1609,7 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
           final isDark = Theme.of(ctx).brightness == Brightness.dark;
 
           Future<void> doLookup(String raw) async {
+            final currentReqId = ++lookupRequestId;
             final clean = raw.trim();
             if (clean.isEmpty || (clean.length < 4 && clean.toLowerCase() != 'admin')) {
               nameCtrl.clear();
@@ -1662,7 +1627,7 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
             setDlgState(() => isLookingUp = true);
             try {
               final details = await AuthService.lookupScholarDetails(clean);
-              if (!ctx.mounted) return;
+              if (!ctx.mounted || currentReqId != lookupRequestId) return;
               final isFound = details['isFound'] == true;
               final fullName = (details['fullName'] as String? ?? '').trim();
               final house = details['houseName'] as String? ?? 'ruby';
@@ -1691,7 +1656,9 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
                 });
               }
             } catch (_) {
-              setDlgState(() => isLookingUp = false);
+              if (currentReqId == lookupRequestId) {
+                setDlgState(() => isLookingUp = false);
+              }
             }
           }
 
@@ -1722,10 +1689,13 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
                         icon: isLookingUp
                             ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
                             : const Icon(Icons.auto_awesome, color: Colors.amber),
-                        onPressed: () => doLookup(scholarCtrl.text),
+                        onPressed: isLookingUp ? null : () => doLookup(scholarCtrl.text),
                       ),
                     ),
-                    onChanged: (val) => doLookup(val),
+                    onChanged: (val) {
+                      debounceTimer?.cancel();
+                      debounceTimer = Timer(const Duration(milliseconds: 300), () => doLookup(val));
+                    },
                   ),
                   if (isRosterMatch && rosterMatchInfo != null) ...[
                     const SizedBox(height: 8),
@@ -1797,43 +1767,58 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
               ),
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('Cancel')),
+              TextButton(
+                onPressed: () {
+                  debounceTimer?.cancel();
+                  Navigator.pop(dialogCtx);
+                },
+                child: const Text('Cancel'),
+              ),
               FilledButton(
                 style: FilledButton.styleFrom(
                   backgroundColor: const Color(0xFF1E3A8A),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
-                onPressed: () {
-                  final sNo = scholarCtrl.text.trim();
-                  final name = nameCtrl.text.trim();
-                  final stmt = statementCtrl.text.trim();
-                  if (sNo.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Please enter candidate scholar number.')),
-                    );
-                    return;
-                  }
-                  if (name.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Please enter candidate full name.')),
-                    );
-                    return;
-                  }
-                  Navigator.pop(dialogCtx, {
-                    'scholarNo': sNo,
-                    'name': name,
-                    'statement': stmt.isNotEmpty ? stmt : 'Dedicated to active service and leadership.',
-                    'house': detectedHouse,
-                    'classLevel': detectedClass,
-                  });
-                },
-                child: const Text('Add Candidate'),
+                onPressed: isLookingUp
+                    ? null
+                    : () {
+                        debounceTimer?.cancel();
+                        final sNo = scholarCtrl.text.trim();
+                        final name = nameCtrl.text.trim();
+                        final stmt = statementCtrl.text.trim();
+                        if (sNo.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Please enter candidate scholar number.')),
+                          );
+                          return;
+                        }
+                        if (name.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Please enter candidate full name.')),
+                          );
+                          return;
+                        }
+                        Navigator.pop(dialogCtx, {
+                          'scholarNo': sNo,
+                          'name': name,
+                          'statement': stmt.isNotEmpty ? stmt : 'Dedicated to active service and leadership.',
+                          'house': detectedHouse,
+                          'classLevel': detectedClass,
+                        });
+                      },
+                child: isLookingUp
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70))
+                    : const Text('Add Candidate'),
               ),
             ],
           );
         },
       ),
     );
+    debounceTimer?.cancel();
+    scholarCtrl.dispose();
+    nameCtrl.dispose();
+    statementCtrl.dispose();
 
     if (input != null && mounted) {
       await run(() async {
@@ -2626,29 +2611,33 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
         for (final lb in data.legacyCertified) {
           if (!certifiedPolls.any((cp) => cp.id == lb.id) &&
               !allProclamations.any((pr) => pr.ballotId == lb.id)) {
-            ElectionCandidate? winner;
-            int maxV = -1;
-            for (final c in lb.candidates) {
-              if (c.votesCount > maxV) {
-                maxV = c.votesCount;
-                winner = c;
-              }
-            }
+            final sortedCands = List<ElectionCandidate>.from(lb.candidates)
+              ..sort((a, b) => b.votesCount.compareTo(a.votesCount));
+            final topVotes = sortedCands.isNotEmpty ? sortedCands[0].votesCount : 0;
+            final runnerUpVotes = sortedCands.length > 1 ? sortedCands[1].votesCount : 0;
+            final isTie = sortedCands.length > 1 && topVotes == runnerUpVotes;
+            final margin = isTie ? 0 : (topVotes - runnerUpVotes);
+            final winner = sortedCands.isNotEmpty ? sortedCands.first : null;
+            final candH = (winner?.houseName ?? '').toLowerCase();
+            final winnerHouse = ['ruby', 'sapphire', 'emerald', 'topaz'].contains(candH) ? candH : 'all';
+
             allProclamations.add(
               CertifiedElectionResult(
                 ballotId: lb.id,
                 ballotTitle: lb.title,
                 runningPosition: lb.position.displayName,
-                winnerScholarNo: winner?.scholarNo ?? '',
-                winnerName: winner?.fullName ?? 'Duly Certified Officer',
-                winnerHouse: winner?.houseName ?? 'ruby',
-                totalVotesReceived: maxV > 0 ? maxV : lb.totalVotesCast,
-                victoryMarginVotes: maxV > 0 ? maxV : 1,
-                housePointsAwarded: 100,
+                winnerScholarNo: isTie ? 'TIE' : (winner?.scholarNo ?? ''),
+                winnerName: isTie ? 'Tied Result' : (winner?.fullName ?? 'Duly Certified Officer'),
+                winnerHouse: isTie ? 'all' : winnerHouse,
+                totalVotesReceived: topVotes,
+                victoryMarginVotes: margin,
+                housePointsAwarded: isTie ? 0 : 100,
                 commissionerName: 'Electoral Commission',
                 commissionerRole: 'Chief Electoral Commissioner',
                 certifiedAt: lb.endTime,
-                proclamationText: 'Statutory election victory certified for ${winner?.fullName ?? "officer"} in ${lb.title}.',
+                proclamationText: isTie
+                    ? 'Polling concluded in a tie for ${lb.title}. Runoff election required.'
+                    : 'Statutory election victory certified for ${winner?.fullName ?? "officer"} in ${lb.title}.',
               ),
             );
           }

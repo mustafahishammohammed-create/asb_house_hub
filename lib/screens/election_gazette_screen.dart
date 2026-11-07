@@ -14,6 +14,13 @@ class ElectionGazetteScreen extends StatefulWidget {
 
 class _ElectionGazetteScreenState extends State<ElectionGazetteScreen> {
   final _authService = AuthService();
+  late Stream<List<CertifiedElectionResult>> _gazetteStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _gazetteStream = _authService.getCertifiedGazetteStream();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -28,13 +35,15 @@ class _ElectionGazetteScreenState extends State<ElectionGazetteScreen> {
           IconButton(
             tooltip: 'Refresh Proclamations',
             icon: const Icon(Icons.refresh_rounded),
-            onPressed: () => setState(() {}),
+            onPressed: () => setState(() {
+              _gazetteStream = _authService.getCertifiedGazetteStream();
+            }),
           ),
         ],
       ),
       body: SafeArea(
         child: StreamBuilder<List<CertifiedElectionResult>>(
-          stream: _authService.getCertifiedGazetteStream(),
+          stream: _gazetteStream,
           initialData: cached,
           builder: (context, snapshot) {
             final proclamations = snapshot.data ?? cached;

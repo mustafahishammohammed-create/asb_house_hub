@@ -1952,29 +1952,99 @@ class AuthService {
         totalVotesCast: ballot.totalVotesCast,
       );
 
-      try {
-        await _firestore.collection('elections').doc(docId).set(finalBallot.toMap(), SetOptions(merge: true));
-        final v2Candidates = finalBallot.candidates.map((c) => {
-          'id': c.scholarNo.isNotEmpty ? c.scholarNo : 'cand_${c.fullName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_')}',
-          'name': c.fullName,
-          'scholar_no': c.scholarNo,
-          'statement': c.manifesto,
-        }).toList();
-        await _firestore.collection('election_polls_v2').doc(docId).set({
-          'title': finalBallot.title,
-          'position': finalBallot.position.name,
-          'minGrade': 1,
-          'maxGrade': 12,
-          'house': finalBallot.houseScope.toLowerCase(),
-          'opensAt': Timestamp.fromDate(finalBallot.startTime.subtract(const Duration(seconds: 2))),
-          'closesAt': Timestamp.fromDate(finalBallot.endTime),
-          'candidates': v2Candidates,
-          'status': finalBallot.status == BallotStatus.open ? 'published' : finalBallot.status.name,
-          'publishedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      } catch (e) {
-        if (_isFirebaseLive && !_isNoAppException(e)) {
-          return (success: false, error: 'Could not record ballot in Firestore: $e', ballotId: null);
+      if (_isFirebaseLive && currentUser != null) {
+        try {
+          final token = await currentUser!.getIdToken();
+          if (token != null) {
+            final project = Firebase.app().options.projectId;
+            final url = Uri.https('us-central1-$project.cloudfunctions.net', '/schoolElection');
+            // 1. Create draft on server
+            final createReply = await http.post(
+              url,
+              headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
+              body: jsonEncode({
+                'data': {
+                  'action': 'create',
+                  'pollId': docId,
+                  'title': finalBallot.title,
+                  'position': finalBallot.position.displayName,
+                  'house': finalBallot.houseScope.toLowerCase(),
+                  'minGrade': 1,
+                  'maxGrade': 12,
+                  'startMs': finalBallot.startTime.millisecondsSinceEpoch,
+                  'endMs': finalBallot.endTime.millisecondsSinceEpoch,
+                }
+              }),
+            ).timeout(const Duration(seconds: 15));
+
+            final createEnvelope = jsonDecode(createReply.body);
+            if (createEnvelope is Map && createEnvelope['error'] != null) {
+              final err = createEnvelope['error'];
+              return (success: false, error: err is Map ? err['message']?.toString() : err.toString(), ballotId: null);
+            }
+
+            // 2. Add candidates
+            for (final c in finalBallot.candidates) {
+              await http.post(
+                url,
+                headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
+                body: jsonEncode({
+                  'data': {
+                    'action': 'add',
+                    'pollId': docId,
+                    'scholarNo': c.scholarNo,
+                    'statement': c.manifesto.isNotEmpty ? c.manifesto : 'Candidate for ${finalBallot.position.displayName}',
+                  }
+                }),
+              ).timeout(const Duration(seconds: 15));
+            }
+
+            // 3. Publish if open
+            if (finalBallot.status == BallotStatus.open && finalBallot.candidates.length >= 2) {
+              await http.post(
+                url,
+                headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
+                body: jsonEncode({
+                  'data': {
+                    'action': 'publish',
+                    'pollId': docId,
+                  }
+                }),
+              ).timeout(const Duration(seconds: 15));
+            }
+          }
+        } catch (e) {
+          if (!_isNoAppException(e)) {
+            return (success: false, error: 'Could not record ballot on server: $e', ballotId: null);
+          }
+        }
+      }
+
+      if (!_isFirebaseLive) {
+        try {
+          await _firestore.collection('elections').doc(docId).set(finalBallot.toMap(), SetOptions(merge: true));
+          final v2Candidates = finalBallot.candidates.map((c) => {
+            'id': c.scholarNo.isNotEmpty ? c.scholarNo : 'cand_${c.fullName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_')}',
+            'name': c.fullName,
+            'scholar_no': c.scholarNo,
+            'statement': c.manifesto,
+          }).toList();
+          await _firestore.collection('election_polls_v2').doc(docId).set({
+            'title': finalBallot.title,
+            'position': finalBallot.position.name,
+            'minGrade': 1,
+            'maxGrade': 12,
+            'house': finalBallot.houseScope.toLowerCase(),
+            'opensAt': Timestamp.fromDate(finalBallot.startTime),
+            'closesAt': Timestamp.fromDate(finalBallot.endTime),
+            'candidates': v2Candidates,
+            'status': finalBallot.status == BallotStatus.open ? 'published' : finalBallot.status.name,
+            'publishedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+        } catch (e) {
+          if (!_isNoAppException(e)) {
+            return (success: false, error: 'Could not record ballot in Firestore: $e', ballotId: null);
+          }
         }
       }
 
@@ -4392,13 +4462,68 @@ class AuthService {
       timestamp: now,
     );
 
-    // 3. Atomic Firestore Transaction (Anti-Double-Voting Verification)
+    // 3. Atomic Firestore Transaction / Cloud Function Execution (Anti-Double-Voting Verification)
     bool alreadyVoted = false;
     try {
       if (_isFirebaseLive) {
         if (firestoreFailureSimulated != null) {
           throw firestoreFailureSimulated!;
         }
+        if (currentUser != null) {
+          final token = await currentUser!.getIdToken();
+          if (token != null) {
+            final project = Firebase.app().options.projectId;
+            final url = Uri.https('us-central1-$project.cloudfunctions.net', '/schoolElection');
+            final candId = candidate.scholarNo.isNotEmpty ? candidate.scholarNo : candidate.fullName;
+            final reply = await http.post(
+              url,
+              headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
+              body: jsonEncode({
+                'data': {
+                  'action': 'vote',
+                  'pollId': bId,
+                  'candidateId': candId,
+                }
+              }),
+            ).timeout(const Duration(seconds: 15));
+
+            final envelope = jsonDecode(reply.body);
+            if (envelope is Map) {
+              if (envelope['error'] != null) {
+                final err = envelope['error'];
+                final String msg = err is Map ? (err['message']?.toString() ?? err.toString()) : err.toString();
+                return (success: false, receipt: null, error: msg);
+              }
+              final result = envelope['result'] ?? envelope['data'];
+              if (result is Map) {
+                if (result['alreadyRecorded'] == true) {
+                  return (success: false, receipt: null, error: 'You have already cast your ballot in this election.');
+                }
+                final serverReceipt = result['receipt']?.toString() ?? receipt.receiptId;
+                final officialReceipt = BallotCastReceipt(
+                  receiptId: serverReceipt,
+                  ballotId: bId,
+                  ballotTitle: ballotTitle,
+                  candidateScholarNo: candidate.scholarNo,
+                  candidateName: candidate.fullName,
+                  candidateHouse: candidate.houseName,
+                  runningPosition: candidate.runningPosition,
+                  anonymizedVoterHash: voterHash,
+                  signatureProofToken: proofToken,
+                  timestamp: now,
+                );
+                await cacheVoteReceipt(officialReceipt);
+                return (success: true, receipt: officialReceipt, error: null);
+              }
+            }
+            if (reply.statusCode != 200) {
+              return (success: false, receipt: null, error: 'Official election server error (Status ${reply.statusCode}).');
+            }
+          }
+        }
+      }
+
+      if (!_isFirebaseLive) {
         final voteLockRef =
             _firestore.collection('election_votes').doc('${bId}_$voterHash');
         final ballotRef = _firestore.collection('elections').doc(bId);
@@ -4408,11 +4533,6 @@ class AuthService {
             .doc(bId)
             .collection('participation')
             .doc(v2PartKey);
-        final v2CountRef = _firestore
-            .collection('election_polls_v2')
-            .doc(bId)
-            .collection('counts')
-            .doc(candidate.scholarNo);
 
         final v2PollRef = _firestore.collection('election_polls_v2').doc(bId);
 
@@ -4482,10 +4602,6 @@ class AuthService {
               'timestamp': FieldValue.serverTimestamp(),
             });
 
-            transaction.set(v2CountRef, {
-              'count': FieldValue.increment(1),
-            }, SetOptions(merge: true));
-
             transaction.update(ballotRef, {
               'candidates': updatedCandidates,
               'total_votes_cast': curTotal + 1,
@@ -4493,7 +4609,7 @@ class AuthService {
             });
           }
 
-          // Also synchronize candidate tally into election_polls_v2
+          // Also synchronize candidate tally into election_polls_v2 using single count key
           String? v2MatchedCandidateId;
           if (v2PollSnap.exists) {
             final v2Box = v2PollSnap.data() ?? {};
@@ -4522,15 +4638,13 @@ class AuthService {
               'last_updated': FieldValue.serverTimestamp(),
             });
 
-            if (v2MatchedCandidateId != null && v2MatchedCandidateId != candidate.scholarNo) {
-              final v2AltCountRef = _firestore
-                  .collection('election_polls_v2')
-                  .doc(bId)
-                  .collection('counts')
-                  .doc(v2MatchedCandidateId!);
-              transaction.set(v2AltCountRef, {
-                'count': FieldValue.increment(1),
-              }, SetOptions(merge: true));
+            final countKey = v2MatchedCandidateId ?? candidate.scholarNo;
+            if (countKey.isNotEmpty) {
+              transaction.set(
+                v2PollRef.collection('counts').doc(countKey),
+                {'count': FieldValue.increment(1)},
+                SetOptions(merge: true),
+              );
             }
           }
         });

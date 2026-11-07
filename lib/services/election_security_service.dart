@@ -28,11 +28,21 @@ class ElectionSecurityService {
     required DateTime timestamp,
   }) {
     final key = utf8.encode('$_kElectionHmacSalt:RECEIPT_PROOF_SIGNATURE');
+    final utcIso = timestamp.toUtc().toIso8601String();
     final payload =
-        '$anonymizedVoterHash::$ballotId::$candidateScholarNo::${timestamp.millisecondsSinceEpoch}';
+        '$anonymizedVoterHash::$ballotId::$candidateScholarNo::$utcIso';
     final bytes = utf8.encode(payload);
     final hmac = Hmac(sha256, key);
     return hmac.convert(bytes).toString();
+  }
+
+  static bool _constantTimeEquals(String a, String b) {
+    if (a.length != b.length) return false;
+    int result = 0;
+    for (int i = 0; i < a.length; i++) {
+      result |= a.codeUnitAt(i) ^ b.codeUnitAt(i);
+    }
+    return result == 0;
   }
 
   /// Cryptographically verifies a ballot receipt voucher token against tampering.
@@ -49,7 +59,7 @@ class ElectionSecurityService {
       candidateScholarNo: candidateScholarNo,
       timestamp: timestamp,
     );
-    return expected == signatureToken;
+    return _constantTimeEquals(expected, signatureToken);
   }
 
   /// Verifies ballot box integrity by recalculating cryptographic signatures

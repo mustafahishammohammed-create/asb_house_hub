@@ -33,6 +33,13 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
   final _authService = AuthService();
   BallotPosition _selectedPosition = BallotPosition.all;
   String _searchQuery = '';
+  late final Stream<List<ElectionBallot>> _electionsStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _electionsStream = _authService.getElectionsStream();
+  }
 
   String get _effectiveScholarNo {
     final cached = AuthService.getCachedScholarNo()?.trim();
@@ -117,7 +124,7 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
           : null,
       body: StreamBuilder<List<ElectionBallot>>(
         initialData: cachedBallots,
-        stream: _authService.getElectionsStream(),
+        stream: _electionsStream,
         builder: (context, snapshot) {
           final ballots = snapshot.data ?? cachedBallots;
           final filteredBallots = ballots.where((b) {
@@ -1004,7 +1011,7 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
             Text('Position: ${receipt.runningPosition}'),
             const SizedBox(height: 10),
             Text(
-              'Certified: ${receipt.timestamp.toLocal().toString().split('.').first}',
+              'Voted at: ${receipt.timestamp.toLocal().toString().split('.').first}',
               style: const TextStyle(fontSize: 11, color: Colors.grey),
             ),
           ],

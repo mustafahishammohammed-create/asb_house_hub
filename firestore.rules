@@ -589,12 +589,12 @@ service cloud.firestore {
       // Read: allow read for student directory lookup, account existence verification, and sibling auth
       allow read: if true;
 
-      // Create: user creating their own document; default role cannot be super_admin or admin
+      // Create: user creating their own document; role MUST be 'student' on self-registration
       // unless authenticated as bootstrap super admin (admin@asianschool.bh, 11209@asianschool.bh) or existing super admin
       allow create: if isOwner(userId) &&
         isValidUser(request.resource.data) &&
         (
-          !(request.resource.data.role in ['super_admin', 'admin']) ||
+          request.resource.data.role == 'student' ||
           isSuperAdmin() ||
           (request.auth.token != null && 'email' in request.auth.token && request.auth.token.email in ['admin@asianschool.bh', '11209@asianschool.bh'])
         ) &&

@@ -1218,6 +1218,77 @@ void main() {
       expect(BallotPosition.viceCaptain.displayName, equals('House Vice-Captain'));
       expect(BallotPositionExt.fromString('viceCaptain'), equals(BallotPosition.viceCaptain));
     });
+
+    test('F10 Fail-Closed Model Guarantees: parseDate returns epoch 0 on null/invalid, isVerified defaults false', () {
+      final minimalJson = {
+        'id': 'fail_closed_ballot',
+        'title': 'Test Ballot',
+        'position': 'School Leader',
+        'house_scope': 'all',
+        'status': 'published',
+        'candidates': [
+          {
+            'scholar_no': '9999',
+            'full_name': 'Test Candidate',
+            'manifesto': 'Pledge',
+            'votes_count': 0,
+            // house omitted
+          }
+        ],
+        // start_time and end_time omitted
+      };
+
+      final ballot = ElectionBallot.fromMap(minimalJson);
+      expect(ballot.candidates.first.isVerified, isFalse, reason: 'isVerified must default to false');
+      expect(ballot.candidates.first.houseName, isEmpty, reason: 'Candidate house must not default to ruby');
+      expect(ballot.startTime, equals(DateTime.fromMillisecondsSinceEpoch(0)), reason: 'Missing start time must fail closed to epoch 0');
+      expect(ballot.endTime, equals(DateTime.fromMillisecondsSinceEpoch(0)), reason: 'Missing end time must fail closed to epoch 0');
+      expect(ballot.isOpen, isFalse, reason: 'Epoch 0 end time must result in closed ballot');
+    });
+
+    test('F8 Constant-Time MAC and Proof Token Determinism', () {
+      final token1 = ElectionSecurityService.generateBallotProofToken(
+        ballotId: 'ballot_sec_1',
+        candidateScholarNo: '12428',
+        anonymizedVoterHash: 'hash_123',
+        timestamp: DateTime.utc(2026, 11, 7, 12, 0, 0),
+      );
+      final token2 = ElectionSecurityService.generateBallotProofToken(
+        ballotId: 'ballot_sec_1',
+        candidateScholarNo: '12428',
+        anonymizedVoterHash: 'hash_123',
+        timestamp: DateTime.utc(2026, 11, 7, 12, 0, 0),
+      );
+      expect(token1, equals(token2));
+
+      final isValid = ElectionSecurityService.verifyReceiptToken(
+        signatureToken: token1,
+        ballotId: 'ballot_sec_1',
+        candidateScholarNo: '12428',
+        anonymizedVoterHash: 'hash_123',
+        timestamp: DateTime.utc(2026, 11, 7, 12, 0, 0),
+      );
+      expect(isValid, isTrue);
+
+      final isForged = ElectionSecurityService.verifyReceiptToken(
+        signatureToken: 'forged_proof_token_1234567890abcdef',
+        ballotId: 'ballot_sec_1',
+        candidateScholarNo: '12428',
+        anonymizedVoterHash: 'hash_123',
+        timestamp: DateTime.utc(2026, 11, 7, 12, 0, 0),
+      );
+      expect(isForged, isFalse);
+    });
+
+    test('F5 Voter Normalization & Case-Insensitive Matching', () {
+      final hashLower = ElectionSecurityService.generateAnonymizedVoterHash(scholarNo: '11209', ballotId: 'poll_1');
+      final hashUpper = ElectionSecurityService.generateAnonymizedVoterHash(scholarNo: ' 11209 ', ballotId: 'poll_1');
+      expect(hashLower, equals(hashUpper), reason: 'Voter hashes must be identical regardless of surrounding whitespace');
+
+      final teaLower = ElectionSecurityService.generateAnonymizedVoterHash(scholarNo: 'tea-101', ballotId: 'poll_1');
+      final teaUpper = ElectionSecurityService.generateAnonymizedVoterHash(scholarNo: 'TEA-101', ballotId: 'poll_1');
+      expect(teaLower, equals(teaUpper), reason: 'Staff scholar numbers must produce identical voter hash regardless of casing');
+    });
   });
 }
 

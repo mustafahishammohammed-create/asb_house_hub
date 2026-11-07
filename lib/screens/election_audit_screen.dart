@@ -23,9 +23,24 @@ class ElectionAuditScreen extends StatefulWidget {
 class _ElectionAuditScreenState extends State<ElectionAuditScreen> {
   final _receiptController = TextEditingController();
   final _authService = AuthService();
+  late Stream<ElectionAuditRecord?> _auditStream;
   String? _verificationMessage;
   bool? _isReceiptVerified;
   BallotCastReceipt? _verifiedReceipt;
+
+  @override
+  void initState() {
+    super.initState();
+    _auditStream = _authService.getElectionAuditStream(widget.ballotId);
+  }
+
+  @override
+  void didUpdateWidget(ElectionAuditScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.ballotId != widget.ballotId) {
+      _auditStream = _authService.getElectionAuditStream(widget.ballotId);
+    }
+  }
 
   @override
   void dispose() {
@@ -61,7 +76,7 @@ class _ElectionAuditScreenState extends State<ElectionAuditScreen> {
         elevation: 0,
       ),
       body: StreamBuilder<ElectionAuditRecord?>(
-        stream: _authService.getElectionAuditStream(widget.ballotId),
+        stream: _auditStream,
         initialData: cachedAudit,
         builder: (context, snapshot) {
           final audit = snapshot.data ??

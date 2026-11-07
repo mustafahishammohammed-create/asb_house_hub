@@ -102,9 +102,36 @@ exports.schoolElection = onCall(async (request) => {
     const person = (await tx.get(member)).data();
     if (person?.active !== true) fail("permission-denied", "School membership required.");
 
+    const logAudit = (eventType, auditData = {}) => {
+      const auditRef = poll.collection("audit").doc(randomUUID());
+      tx.set(auditRef, {
+        event: eventType,
+        uid,
+        scholar_no: person.scholar_no || "",
+        timestamp: FieldValue.serverTimestamp(),
+        ...auditData
+      });
+    };
+
+    if (action === "getMyParticipation") {
+      const pollIds = Array.isArray(data.pollIds) ? data.pollIds.slice(0, 50) : [];
+      const scholar = boundedText(person.scholar_no, 64, "verified roster identity").trim().toLowerCase();
+      const results = {};
+      for (const pId of pollIds) {
+        const cleanPid = resourceId(pId);
+        const pKey = createHash("sha256").update(cleanPid + ":" + scholar).digest("hex");
+        const pRef = db.collection("election_polls_v2").doc(cleanPid).collection("participation").doc(pKey);
+        const partSnap = await tx.get(pRef);
+        if (partSnap.exists) {
+          results[cleanPid] = partSnap.data()?.receipt || "recorded";
+        }
+      }
+      return { participation: results };
+    }
+
     if (action === "vote" || action === "receipt") {
       if (person.role !== "student") fail("permission-denied", "Student account required.");
-      const scholar = boundedText(person.scholar_no, 64, "verified roster identity");
+      const scholar = boundedText(person.scholar_no, 64, "verified roster identity").trim().toLowerCase();
       const key = createHash("sha256").update(pollId + ":" + scholar).digest("hex");
       const participation = poll.collection("participation").doc(key);
       const prior = (await tx.get(participation)).data();
@@ -133,6 +160,7 @@ exports.schoolElection = onCall(async (request) => {
         { count: FieldValue.increment(1) },
         { merge: true }
       );
+      logAudit("vote", { receipt });
       return { receipt, alreadyRecorded: false };
     }
 
@@ -152,6 +180,7 @@ exports.schoolElection = onCall(async (request) => {
       }
       requireState(settings.endMs > Date.now(), "Choose a future deadline.");
       tx.create(draft, { ...settings, candidates: [], status: "draft", createdBy: uid });
+      logAudit("create");
       return { pollId };
     }
 
@@ -176,21 +205,23 @@ exports.schoolElection = onCall(async (request) => {
       tx.update(poll, { status: "certified", result, certifiedAt: FieldValue.serverTimestamp() });
       tx.update(draft, { status: "certified", certifiedBy: uid });
 
-      // In winner outcome, award 100 points to winner's genuine house and publish gazette (C8, M10)
+      // In winner outcome, award 100 points to winner's genuine house and publish gazette (C8, M10, F14)
       if (outcome === "winner" && leaders.length === 1) {
         const winner = box.candidates.find((c) => c.id === leaders[0]);
-        const winnerHouse = (winner?.house || box.house || "ruby").toLowerCase();
-        if (winnerHouse && winnerHouse !== "all") {
-          tx.set(
-            db.collection("house_points").doc(winnerHouse),
-            {
-              house_name: winnerHouse,
-              total_points: FieldValue.increment(100),
-              last_updated: FieldValue.serverTimestamp()
-            },
-            { merge: true }
-          );
-        }
+        const winnerHouse = (winner?.house || "").toLowerCase();
+        requireState(
+          ["ruby", "sapphire", "emerald", "topaz"].includes(winnerHouse),
+          "Winner house is unknown or invalid in roster records. Cannot award house points."
+        );
+        tx.set(
+          db.collection("house_points").doc(winnerHouse),
+          {
+            house_name: winnerHouse,
+            total_points: FieldValue.increment(100),
+            last_updated: FieldValue.serverTimestamp()
+          },
+          { merge: true }
+        );
         const runnerUpCount = rows.length > 1 ? Math.max(...rows.filter((r) => r.id !== leaders[0]).map((r) => r.count)) : 0;
         tx.set(db.collection("election_gazettes").doc(pollId), {
           ballot_id: pollId,
@@ -209,6 +240,7 @@ exports.schoolElection = onCall(async (request) => {
         });
       }
 
+      logAudit("certify", { outcome, leaders, totalVotes: total });
       return { pollId, result };
     }
 
@@ -217,12 +249,23 @@ exports.schoolElection = onCall(async (request) => {
       requireState(Boolean(box), "Poll not found.");
       requireState(box.status === "published", "Only published polls can be closed.");
       tx.update(poll, { status: "closed", closesAt: FieldValue.serverTimestamp() });
+      logAudit("close");
       return { pollId, status: "closed" };
+    }
+
+    if (action === "cancel") {
+      const box = (await tx.get(poll)).data();
+      requireState(Boolean(box), "Poll not found.");
+      requireState(box.status !== "certified", "Certified elections cannot be cancelled.");
+      tx.update(poll, { status: "cancelled", closesAt: FieldValue.serverTimestamp(), cancelledAt: FieldValue.serverTimestamp(), cancelledBy: uid });
+      logAudit("cancel");
+      return { pollId, status: "cancelled" };
     }
 
     if (action === "deleteDraft") {
       requireState(current.status === "draft", "Only unconfirmed drafts can be deleted.");
       tx.delete(draft);
+      logAudit("deleteDraft");
       return { pollId, deleted: true };
     }
 
@@ -272,6 +315,7 @@ exports.schoolElection = onCall(async (request) => {
         publishedAt: FieldValue.serverTimestamp()
       });
       tx.update(draft, { status: "published", publishedBy: uid });
+      logAudit("publish", { candidateCount: candidates.length });
       return { pollId, status: "published" };
     }
     fail("invalid-argument", "Unknown election action.");
