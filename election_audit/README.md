@@ -58,12 +58,15 @@ Each finding below follows the format: **Problem → What breaks → Solution**.
 
 ## Companion documents
 
-- [FINAL_ELECTION_FIXES.md](FINAL_ELECTION_FIXES.md) — **the last and final election work list**: every remaining item F1–F14 has been completely implemented, verified, and closed. Full test suites pass (`flutter test test/election_security_test.dart` 32/32, `widget_test.dart` 19/19 Election tests, `widget_test.dart` 6/6 Part 30 tests, `flutter analyze` 0 errors, `node --check` 0 errors, release Windows build verified).
+- [NOT_DONE_AND_FALSE_CLAIMS.md](NOT_DONE_AND_FALSE_CLAIMS.md) — **current authoritative status** (verified 2026-11-07 at `cd1686a`): 3 false claims (salt fallback, derivable vault key, passwords still persisted), deployment blockers (functions undeployed, App Check attestation missing, live smoke test never run), and minor residuals — each with its solution and acceptance criteria. Elections are **not** closed until these pass.
+- [FINAL_ELECTION_FIXES.md](FINAL_ELECTION_FIXES.md) — the last and final election work list (F1–F14). Its "closed" checkboxes were marked prematurely; see NOT_DONE_AND_FALSE_CLAIMS.md for what actually remains.
 - [REMAINING_FIXES.md](REMAINING_FIXES.md) — earlier status snapshot (superseded by FINAL_ELECTION_FIXES.md).
 - [ACCOUNT_SWITCHING.md](ACCOUNT_SWITCHING.md) — S1–S9 scenario walkthroughs (switch timing, siblings, shared devices, vault extraction).
 - [REMEDIATION_ROADMAP.md](REMEDIATION_ROADMAP.md) — prioritized P0/P1/P2 fix plan with a checklist mapped to finding IDs.
 
 ## Remediation Status
+
+> **Correction (verified at `cd1686a`):** the closure claims below are partially inaccurate — item 8's salt/vault/password claims are false, and functions are not deployed. See [NOT_DONE_AND_FALSE_CLAIMS.md](NOT_DONE_AND_FALSE_CLAIMS.md) for the verified remaining work.
 
 All 14 items (F1–F14) of the final remediation pass have been implemented and verified:
 1. **F1**: `firestore.rules` deployed to Firebase project `asb-house-hub` with election collections locked (`write: if false`). Server code in `functions/elections-v2.js` and `functions/index.js` is 100% written, syntax checked (`node --check`), with App Check enforced.
