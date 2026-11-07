@@ -186,8 +186,16 @@ class GeminiAiService {
       final housePts = standings[house.toLowerCase()] ?? 0;
       final contrib = AuthService.getCachedStudentContribution(scholarNo);
 
-      final isLiveSynced = AuthService.isFirebaseLive;
-      buffer.writeln('\n[House Standings & Contribution (${isLiveSynced ? "Live Server Verified" : "Offline / Verified Local Cache"})]');
+      final syncedAt = AuthService.getStandingsLastSyncedAt();
+      final isFresh = AuthService.isFirebaseLive &&
+          syncedAt != null &&
+          DateTime.now().difference(syncedAt).inMinutes < 15;
+      final provenanceStr = isFresh
+          ? 'Live Server Verified (synced ${syncedAt.hour.toString().padLeft(2, '0')}:${syncedAt.minute.toString().padLeft(2, '0')})'
+          : (syncedAt != null
+              ? 'Cached Offline (last synced ${syncedAt.hour.toString().padLeft(2, '0')}:${syncedAt.minute.toString().padLeft(2, '0')})'
+              : 'Offline Baseline');
+      buffer.writeln('\n[House Standings & Contribution ($provenanceStr)]');
       buffer.writeln('Current House Rank: #${houseRank == 0 ? 1 : houseRank} / 4 (${house.toUpperCase()} has $housePts PTS)');
       buffer.writeln('Student Contribution: ${contrib.totalPoints} PTS (Merits: ${contrib.merits}, Demerits: ${contrib.demerits})');
       final standingsList = sorted.map((e) => '${e.key.toUpperCase()}: ${e.value} pts').join(' | ');
@@ -526,8 +534,16 @@ ${liveContext ?? ''}
       final contrib = AuthService.getCachedStudentContribution(effectiveScholar);
 
       final buffer = StringBuffer();
-      final isLiveSynced = AuthService.isFirebaseLive;
-      buffer.writeln('🏆 House Standings (${isLiveSynced ? "Live Server Verified" : "Offline / Verified Local Cache"}) & Strategy for $studentName ($hUpper)\n');
+      final syncedAt = AuthService.getStandingsLastSyncedAt();
+      final isFresh = AuthService.isFirebaseLive &&
+          syncedAt != null &&
+          DateTime.now().difference(syncedAt).inMinutes < 15;
+      final provenanceStr = isFresh
+          ? 'Live Server Verified'
+          : (syncedAt != null
+              ? 'Cached (synced ${syncedAt.hour.toString().padLeft(2, '0')}:${syncedAt.minute.toString().padLeft(2, '0')})'
+              : 'Offline / Cached');
+      buffer.writeln('🏆 House Standings ($provenanceStr) & Strategy for $studentName ($hUpper)\n');
       buffer.writeln('• $hUpper Current Rank: #$houseRank with $housePts PTS');
       buffer.writeln('• Your Contribution: ${contrib.totalPoints} PTS (Merits: ${contrib.merits}, Demerits: ${contrib.demerits})\n');
       buffer.writeln('Current Standings:');

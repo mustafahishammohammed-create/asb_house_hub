@@ -740,7 +740,11 @@ service cloud.firestore {
 
         match /submissions/{scholarNo} {
           allow read: if isScholarOwner(scholarNo) || isCouncil() || isAdmin();
-          allow write: if (isScholarOwner(scholarNo) || isCouncil() || isAdmin()) && isValidSubmission(scholarNo, request.resource.data);
+          allow create, update: if isValidSubmission(scholarNo, request.resource.data) && (
+            (isAdmin() || isCouncil()) ||
+            (isScholarOwner(scholarNo) && request.resource.data.status in ['pending', 'submitted'])
+          );
+          allow delete: if isAdmin();
         }
       }
 
@@ -781,7 +785,11 @@ service cloud.firestore {
 
       match /submissions/{scholarNo} {
         allow read: if isScholarOwner(scholarNo) || isCouncil() || isAdmin();
-        allow write: if (isScholarOwner(scholarNo) || isCouncil() || isAdmin()) && isValidSubmission(scholarNo, request.resource.data);
+        allow create, update: if isValidSubmission(scholarNo, request.resource.data) && (
+          (isAdmin() || isCouncil()) ||
+          (isScholarOwner(scholarNo) && request.resource.data.status in ['pending', 'submitted'])
+        );
+        allow delete: if isAdmin();
       }
     }
 
@@ -989,7 +997,12 @@ service cloud.firestore {
       allow create: if isAdmin() || (
         configId == 'house_spirit_reactor' &&
         isSignedIn() &&
-        isValidSpiritReactor(request.resource.data)
+        isValidSpiritReactor(request.resource.data) &&
+        (!('ruby' in request.resource.data) || (request.resource.data.ruby >= 0 && request.resource.data.ruby <= 500)) &&
+        (!('sapphire' in request.resource.data) || (request.resource.data.sapphire >= 0 && request.resource.data.sapphire <= 500)) &&
+        (!('emerald' in request.resource.data) || (request.resource.data.emerald >= 0 && request.resource.data.emerald <= 500)) &&
+        (!('topaz' in request.resource.data) || (request.resource.data.topaz >= 0 && request.resource.data.topaz <= 500)) &&
+        (!('last_contributor' in request.resource.data) || !hasUserDoc() || !('scholar_no' in getUserData()) || request.resource.data.last_contributor == getUserData().scholar_no)
       );
       allow update: if isAdmin() || (
         configId == 'house_spirit_reactor' &&
@@ -999,7 +1012,8 @@ service cloud.firestore {
         (!('ruby' in resource.data) || (request.resource.data.ruby >= resource.data.ruby && request.resource.data.ruby - resource.data.ruby <= 500)) &&
         (!('sapphire' in resource.data) || (request.resource.data.sapphire >= resource.data.sapphire && request.resource.data.sapphire - resource.data.sapphire <= 500)) &&
         (!('emerald' in resource.data) || (request.resource.data.emerald >= resource.data.emerald && request.resource.data.emerald - resource.data.emerald <= 500)) &&
-        (!('topaz' in resource.data) || (request.resource.data.topaz >= resource.data.topaz && request.resource.data.topaz - resource.data.topaz <= 500))
+        (!('topaz' in resource.data) || (request.resource.data.topaz >= resource.data.topaz && request.resource.data.topaz - resource.data.topaz <= 500)) &&
+        (!('last_contributor' in request.resource.data) || !hasUserDoc() || !('scholar_no' in getUserData()) || request.resource.data.last_contributor == getUserData().scholar_no)
       );
       allow delete: if isAdmin();
     }

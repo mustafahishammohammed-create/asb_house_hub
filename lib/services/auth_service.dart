@@ -450,12 +450,27 @@ class AuthService {
     'topaz': 0,
   };
 
-  /// Save the latest verified house points map to local disk
-  static Future<void> cacheHouseStandings(Map<String, int> pointsMap) async {
+  static const String _kCachedStandingsSyncedAtKey = 'cached_standings_synced_at';
+
+  /// Save the latest verified house points map to local disk with sync timestamp
+  static Future<void> cacheHouseStandings(Map<String, int> pointsMap, {DateTime? syncedAt}) async {
     try {
       _prefs ??= await SharedPreferences.getInstance();
       await _prefs?.setString(_kCachedStandingsKey, jsonEncode(pointsMap));
+      final ts = syncedAt ?? DateTime.now();
+      await _prefs?.setString(_kCachedStandingsSyncedAtKey, ts.toIso8601String());
     } catch (_) {}
+  }
+
+  /// Returns the timestamp when standings were last synced from Firestore or confirmed
+  static DateTime? getStandingsLastSyncedAt() {
+    try {
+      final s = _prefs?.getString(_kCachedStandingsSyncedAtKey);
+      if (s != null && s.isNotEmpty) {
+        return DateTime.tryParse(s);
+      }
+    } catch (_) {}
+    return null;
   }
 
   /// Retrieve the last known house points map from local disk with baseline zero fallback
@@ -1041,8 +1056,11 @@ class AuthService {
                 .update(updateData);
           }
 
-          // Isolated per-scholar submission tracking prevents one student from flipping class-wide status
-          if (sNo.isNotEmpty) {
+          // Isolated per-scholar submission tracking: only write to submissions subcollection
+          // on student self-submissions, or when an explicit target student scholarNo is provided
+          final isTargetedSubmission = (!canGrade && sNo.isNotEmpty) ||
+              (canGrade && scholarNo != null && scholarNo.trim().isNotEmpty);
+          if (isTargetedSubmission) {
             final subDoc = <String, dynamic>{
               'scholar_no': sNo,
               'status': newStatus.name,

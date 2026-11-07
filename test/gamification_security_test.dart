@@ -502,6 +502,14 @@ void main() {
       expect(current['merits_count'], equals(4)); // max(1, 4, 2)
       expect(current['scholar_no'], equals('11209'));
     });
+
+    test('R-4: cacheHouseStandings records sync timestamp and getStandingsLastSyncedAt retrieves it', () async {
+      final now = DateTime.now();
+      await AuthService.cacheHouseStandings({'ruby': 500, 'sapphire': 450}, syncedAt: now);
+      final retrieved = AuthService.getStandingsLastSyncedAt();
+      expect(retrieved, isNotNull);
+      expect(retrieved!.difference(now).inSeconds.abs(), lessThanOrEqualTo(2));
+    });
   });
 
   group('R2 Cross-house council claim approval (any council house -> any claim house)', () {
@@ -561,23 +569,28 @@ void main() {
       expect(block, contains('getUserData().house_name.lower() == request.resource.data.house_name.lower()'));
     });
 
-    test('R-2: assignments and homework disallow direct student writes and enforce per-student submissions', () {
+    test('R-2 & R-5: assignments and homework disallow direct student writes and forbid students from setting graded', () {
       final assignBlock = matchBlock(r'/assignments/\{assignmentId\}');
-      expect(assignBlock, isNot(contains("request.resource.data.status in ['pending', 'submitted']")));
+      expect(assignBlock, isNot(contains("isSignedIn() &&\n            request.resource.data.diff")));
       expect(assignBlock, contains('match /submissions/{scholarNo}'));
       expect(assignBlock, contains('isScholarOwner(scholarNo)'));
+      // R-5: submission owners limited to pending and submitted; graded reserved for admin/council
+      expect(assignBlock, contains("(isScholarOwner(scholarNo) && request.resource.data.status in ['pending', 'submitted'])"));
 
       final hwBlock = matchBlock(r'/homework/\{assignmentId\}');
-      expect(hwBlock, isNot(contains("request.resource.data.status in ['pending', 'submitted']")));
+      expect(hwBlock, isNot(contains("isSignedIn() &&\n          request.resource.data.diff")));
       expect(hwBlock, contains('match /submissions/{scholarNo}'));
       expect(hwBlock, contains('isScholarOwner(scholarNo)'));
+      expect(hwBlock, contains("(isScholarOwner(scholarNo) && request.resource.data.status in ['pending', 'submitted'])"));
     });
 
-    test('G13: spirit reactor enforces numeric bounds and non-decreasing increments', () {
+    test('G13: spirit reactor enforces numeric bounds, non-decreasing increments, and seed ceiling', () {
       final reactorBlock = matchBlock(r'/system_config/\{configId\}');
       expect(reactorBlock, contains('isValidSpiritReactor(request.resource.data)'));
       expect(reactorBlock, contains('request.resource.data.ruby >= resource.data.ruby'));
       expect(reactorBlock, contains('request.resource.data.ruby - resource.data.ruby <= 500'));
+      // G13-nit: create-time seed ceiling
+      expect(reactorBlock, contains('request.resource.data.ruby <= 500'));
 
       final m = RegExp(r'function isValidSpiritReactor\(data\)\s*\{').firstMatch(rules);
       expect(m, isNotNull);

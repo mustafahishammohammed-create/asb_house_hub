@@ -381,7 +381,9 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
             houseKey: FieldValue.increment(deltaToCommit),
             'last_contributor': effectiveCaller,
             'last_updated': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true)).catchError((_) {});
+          }, SetOptions(merge: true)).catchError((e) {
+            debugPrint('Spirit reactor commit rejected or offline: $e');
+          });
         } catch (_) {}
       }
     }

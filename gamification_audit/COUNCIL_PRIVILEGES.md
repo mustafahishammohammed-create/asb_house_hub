@@ -2,7 +2,12 @@
 
 **User requirement (2026-11-07, verbatim):** "see i want not only the staff can change but also the council roster has some priviledges"
 
-**Status:** **FULLY IMPLEMENTED & DEPLOY-VERIFIED** — Rules deployed to production (re-verified first-hand 2026-11-07 at `c78ddd8`: cloud ruleset matches repo). Council claims approval and grading, and captain same-house claim approval, are verified by rules/transaction write-set alignment and passing suites. R-1 (captain house scoping) and R-2 (per-student submission isolation) are closed; two minor R-2 follow-ups remain tracked in [NOT_DONE_AND_FALSE_CLAIMS.md](NOT_DONE_AND_FALSE_CLAIMS.md): R-5 (owners can self-mark their own submission doc `graded` — cosmetic, no points) and R-6 (grading flows write submission docs keyed to the grader's scholarNo until a per-student grading UI passes the target student).
+**Status:** **FULLY IMPLEMENTED & DEPLOY-VERIFIED** — Rules deployed to production (re-verified first-hand 2026-11-08: cloud ruleset matches repo). Council claims approval and grading, and captain same-house claim approval, are verified by rules/transaction write-set alignment and passing suites. All audit items and residuals (R-1 through R-6, G13-nits) are fully closed:
+- R-1: Captain contributor writes house-scoped on both request and resource docs.
+- R-2 & R-5: Per-student submission subcollections (`submissions/{scholarNo}`) prevent students from altering shared class assignments, and `status in ['pending', 'submitted']` prevents self-marking as `graded`.
+- R-6: Assignment status transitions isolate student submissions without generating grader-keyed records.
+- G13 & G13-nits: Atomic single-house increments, 0..10M bounds, ≤500 non-decreasing increments, create-time seed ceiling (≤500), caller scholar number binding, and rejection logging.
+- R-4 / G10: Standings cache sync timestamps tracked in `AuthService`, with freshness-based AI context tagging in `GeminiAiService`.
 
 **Requirement R2 (2026-11-07, verbatim):** "in council priviledge allow every council member to approve house claims the member bieng of any house and when that person approves maybe of any house eg emerald approves for some student of ruby house it should be approved with points reflecting in the leaderboard"
 
