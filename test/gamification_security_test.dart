@@ -429,6 +429,79 @@ void main() {
       final count = await AuthService.migrateLegacyContributorDocs();
       expect(count, isNonNegative);
     });
+
+    test('R-3: mergeContributorData creates clean record when no existing doc', () {
+      final legacy = {
+        'scholar_no': '12428',
+        'total_contributed': 150,
+        'merits_count': 3,
+        'student_name': 'Ali Ahmed',
+        'house_name': 'ruby',
+        'class_level': 'Grade 10',
+      };
+      final merged = AuthService.mergeContributorData(
+        legacyData: legacy,
+        scholarNo: '12428',
+        defaultHouse: 'ruby',
+      );
+      expect(merged['scholar_no'], equals('12428'));
+      expect(merged['student_name'], equals('Ali Ahmed'));
+      expect(merged['house_name'], equals('ruby'));
+      expect(merged['class_level'], equals('Grade 10'));
+      expect(merged['total_contributed'], equals(150));
+      expect(merged['merits_count'], equals(3));
+      expect(merged['demerits_count'], equals(0));
+    });
+
+    test('R-3: mergeContributorData sums points, keeps max merits, preserves identity', () {
+      final existing = {
+        'scholar_no': '12428',
+        'total_contributed': 200,
+        'merits_count': 5,
+        'demerits_count': 1,
+        'student_name': 'Ali Ahmed (Official)',
+        'house_name': 'ruby',
+        'class_level': 'Grade 10',
+      };
+      final legacy = {
+        'scholar_no': '12428',
+        'total_points': 120, // legacy key
+        'merits_count': 2,
+        'student_name': 'Scholar 12428',
+        'house_name': 'ruby',
+      };
+      final merged = AuthService.mergeContributorData(
+        existingData: existing,
+        legacyData: legacy,
+        scholarNo: '12428',
+        defaultHouse: 'ruby',
+      );
+      expect(merged['total_contributed'], equals(320)); // 200 + 120
+      expect(merged['merits_count'], equals(5)); // max(5, 2)
+      expect(merged['demerits_count'], equals(1)); // preserved
+      expect(merged['student_name'], equals('Ali Ahmed (Official)')); // preserved
+      expect(merged['house_name'], equals('ruby'));
+    });
+
+    test('R-3: mergeContributorData accumulates multiple merges accurately', () {
+      var current = <String, dynamic>{};
+      final legacyEntries = [
+        {'total_contributed': 50, 'merits_count': 1},
+        {'total_points': 75, 'merits_count': 4},
+        {'total_contributed': 100, 'merits_count': 2},
+      ];
+      for (final entry in legacyEntries) {
+        current = AuthService.mergeContributorData(
+          existingData: current.isEmpty ? null : current,
+          legacyData: entry,
+          scholarNo: '11209',
+          defaultHouse: 'ruby',
+        );
+      }
+      expect(current['total_contributed'], equals(225)); // 50 + 75 + 100
+      expect(current['merits_count'], equals(4)); // max(1, 4, 2)
+      expect(current['scholar_no'], equals('11209'));
+    });
   });
 
   group('R2 Cross-house council claim approval (any council house -> any claim house)', () {
@@ -481,9 +554,35 @@ void main() {
       }
     });
 
-    test('house_contributors write grants council', () {
+    test('house_contributors write grants council (cross-house) and scopes captains (same-house)', () {
       final block = matchBlock(r'/house_contributors/\{scholarNo\}');
-      expect(block, contains('isAdmin() || isCouncil() || isCaptain()'));
+      expect(block, contains('isCouncil()'));
+      expect(block, contains('isCaptain()'));
+      expect(block, contains('getUserData().house_name.lower() == request.resource.data.house_name.lower()'));
+    });
+
+    test('R-2: assignments and homework disallow direct student writes and enforce per-student submissions', () {
+      final assignBlock = matchBlock(r'/assignments/\{assignmentId\}');
+      expect(assignBlock, isNot(contains("request.resource.data.status in ['pending', 'submitted']")));
+      expect(assignBlock, contains('match /submissions/{scholarNo}'));
+      expect(assignBlock, contains('isScholarOwner(scholarNo)'));
+
+      final hwBlock = matchBlock(r'/homework/\{assignmentId\}');
+      expect(hwBlock, isNot(contains("request.resource.data.status in ['pending', 'submitted']")));
+      expect(hwBlock, contains('match /submissions/{scholarNo}'));
+      expect(hwBlock, contains('isScholarOwner(scholarNo)'));
+    });
+
+    test('G13: spirit reactor enforces numeric bounds and non-decreasing increments', () {
+      final reactorBlock = matchBlock(r'/system_config/\{configId\}');
+      expect(reactorBlock, contains('isValidSpiritReactor(request.resource.data)'));
+      expect(reactorBlock, contains('request.resource.data.ruby >= resource.data.ruby'));
+      expect(reactorBlock, contains('request.resource.data.ruby - resource.data.ruby <= 500'));
+
+      final m = RegExp(r'function isValidSpiritReactor\(data\)\s*\{').firstMatch(rules);
+      expect(m, isNotNull);
+      final fn = blockAt(m!.end - 1);
+      expect(fn, contains('data.ruby >= 0 && data.ruby <= 10000000'));
     });
 
     test('users points_contributed increment branch is house-agnostic and bounded', () {

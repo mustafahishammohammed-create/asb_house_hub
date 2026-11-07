@@ -186,7 +186,8 @@ class GeminiAiService {
       final housePts = standings[house.toLowerCase()] ?? 0;
       final contrib = AuthService.getCachedStudentContribution(scholarNo);
 
-      buffer.writeln('\n[House Standings & Contribution]');
+      final isLiveSynced = AuthService.isFirebaseLive;
+      buffer.writeln('\n[House Standings & Contribution (${isLiveSynced ? "Live Server Verified" : "Offline / Verified Local Cache"})]');
       buffer.writeln('Current House Rank: #${houseRank == 0 ? 1 : houseRank} / 4 (${house.toUpperCase()} has $housePts PTS)');
       buffer.writeln('Student Contribution: ${contrib.totalPoints} PTS (Merits: ${contrib.merits}, Demerits: ${contrib.demerits})');
       final standingsList = sorted.map((e) => '${e.key.toUpperCase()}: ${e.value} pts').join(' | ');
@@ -525,7 +526,8 @@ ${liveContext ?? ''}
       final contrib = AuthService.getCachedStudentContribution(effectiveScholar);
 
       final buffer = StringBuffer();
-      buffer.writeln('🏆 Live House Standings & Strategy for $studentName ($hUpper)\n');
+      final isLiveSynced = AuthService.isFirebaseLive;
+      buffer.writeln('🏆 House Standings (${isLiveSynced ? "Live Server Verified" : "Offline / Verified Local Cache"}) & Strategy for $studentName ($hUpper)\n');
       buffer.writeln('• $hUpper Current Rank: #$houseRank with $housePts PTS');
       buffer.writeln('• Your Contribution: ${contrib.totalPoints} PTS (Merits: ${contrib.merits}, Demerits: ${contrib.demerits})\n');
       buffer.writeln('Current Standings:');

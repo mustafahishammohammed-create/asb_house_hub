@@ -161,6 +161,7 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
   Timer? _comboResetTimer;
   DateTime _lastTapTime = DateTime.now();
   bool _showChantSynthesizer = false;
+  double _unflushedSpiritDelta = 0.0;
 
   // Simulated live spirit gauge across 4 houses
   double _rubySpirit = 420;
@@ -352,27 +353,37 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
       if (mounted) setState(() => _comboMultiplier = 1);
     });
 
+    final tapGain = _comboMultiplier * 1.5;
+    _unflushedSpiritDelta += tapGain;
+
     setState(() {
       _localTapCount++;
-      if (houseKey == 'ruby') _rubySpirit += _comboMultiplier * 1.5;
-      if (houseKey == 'sapphire') _sapphireSpirit += _comboMultiplier * 1.5;
-      if (houseKey == 'emerald') _emeraldSpirit += _comboMultiplier * 1.5;
-      if (houseKey == 'topaz') _topazSpirit += _comboMultiplier * 1.5;
+      if (houseKey == 'ruby') _rubySpirit += tapGain;
+      if (houseKey == 'sapphire') _sapphireSpirit += tapGain;
+      if (houseKey == 'emerald') _emeraldSpirit += tapGain;
+      if (houseKey == 'topaz') _topazSpirit += tapGain;
     });
 
-    // Debounced persist to Firestore
-    if (_localTapCount % 5 == 0) {
-      FirebaseFirestore.instance
-          .collection('system_config')
-          .doc('house_spirit_reactor')
-          .set({
-        'ruby': _rubySpirit,
-        'sapphire': _sapphireSpirit,
-        'emerald': _emeraldSpirit,
-        'topaz': _topazSpirit,
-        'last_contributor': widget.userName,
-        'last_updated': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+    // Debounced persist to Firestore: atomic FieldValue.increment for caller's house only
+    if (_localTapCount % 5 == 0 && _unflushedSpiritDelta > 0) {
+      final deltaToCommit = _unflushedSpiritDelta;
+      _unflushedSpiritDelta = 0.0;
+      final validHouses = const ['ruby', 'sapphire', 'emerald', 'topaz'];
+      if (validHouses.contains(houseKey)) {
+        try {
+          final effectiveCaller = widget.scholarNo.trim().isNotEmpty
+              ? widget.scholarNo.trim()
+              : widget.userName.trim();
+          FirebaseFirestore.instance
+              .collection('system_config')
+              .doc('house_spirit_reactor')
+              .set({
+            houseKey: FieldValue.increment(deltaToCommit),
+            'last_contributor': effectiveCaller,
+            'last_updated': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true)).catchError((_) {});
+        } catch (_) {}
+      }
     }
   }
 

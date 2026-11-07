@@ -1025,12 +1025,45 @@ class AuthService {
       // 1. Update Firestore document if live, failing truthfully on server denial
       if (_isFirebaseLive) {
         try {
-          await _firestore
-              .collection('classes')
-              .doc(cLevel)
-              .collection('assignments')
-              .doc(assignmentId)
-              .update(updateData);
+          final userRole = getCachedRole() ?? currentUser?.displayName ?? '';
+          final currentScholar = (scholarNo != null && scholarNo.trim().isNotEmpty)
+              ? scholarNo.trim()
+              : (getCachedScholarNo() ?? '');
+          final canGrade = HierarchyService.canGradeAcademics(role: userRole, scholarNo: currentScholar);
+
+          if (canGrade) {
+            // Staff / Council: update the authoritative class-level assignment record
+            await _firestore
+                .collection('classes')
+                .doc(cLevel)
+                .collection('assignments')
+                .doc(assignmentId)
+                .update(updateData);
+          }
+
+          // Isolated per-scholar submission tracking prevents one student from flipping class-wide status
+          if (sNo.isNotEmpty) {
+            final subDoc = <String, dynamic>{
+              'scholar_no': sNo,
+              'status': newStatus.name,
+              'class_level': cLevel,
+              'house_name': effectiveHouse,
+              'last_updated': FieldValue.serverTimestamp(),
+            };
+            if (newStatus == AssignmentStatus.submitted) {
+              subDoc['submitted_at'] = now.toIso8601String();
+            } else if (newStatus == AssignmentStatus.graded) {
+              subDoc['graded_at'] = now.toIso8601String();
+            }
+            await _firestore
+                .collection('classes')
+                .doc(cLevel)
+                .collection('assignments')
+                .doc(assignmentId)
+                .collection('submissions')
+                .doc(sNo)
+                .set(subDoc, SetOptions(merge: true));
+          }
         } catch (e) {
           if (!_isNoAppException(e)) {
             debugPrint('Firestore updateAssignmentStatus write rejected: $e');
@@ -4115,6 +4148,59 @@ class AuthService {
     );
   }
 
+  /// Pure deterministic helper to merge legacy contributor data into target canonical record.
+  /// Sums total_contributed, keeps maximum merits_count, preserves existing demerits and identities.
+  static Map<String, dynamic> mergeContributorData({
+    Map<String, dynamic>? existingData,
+    required Map<String, dynamic> legacyData,
+    required String scholarNo,
+    required String defaultHouse,
+  }) {
+    final legacyPts = (legacyData['total_contributed'] as num?)?.toInt() ??
+        (legacyData['total_points'] as num?)?.toInt() ?? 0;
+    final legacyMerits = (legacyData['merits_count'] as num?)?.toInt() ?? 0;
+    final studentName = (legacyData['student_name']?.toString().isNotEmpty == true &&
+            !legacyData['student_name'].toString().startsWith('Scholar '))
+        ? legacyData['student_name'].toString()
+        : (existingData?['student_name']?.toString() ?? 'Scholar $scholarNo');
+    final houseName = (legacyData['house_name']?.toString().isNotEmpty == true
+            ? legacyData['house_name'].toString()
+            : (existingData?['house_name']?.toString() ?? defaultHouse))
+        .toLowerCase();
+    final classLevel = legacyData['class_level']?.toString() ??
+        existingData?['class_level']?.toString() ??
+        'Senior Tier';
+
+    if (existingData == null || existingData.isEmpty) {
+      return {
+        'scholar_no': scholarNo,
+        'student_name': studentName,
+        'house_name': houseName,
+        'class_level': classLevel,
+        'total_contributed': legacyPts,
+        'merits_count': legacyMerits,
+        'demerits_count': 0,
+      };
+    }
+
+    final curPts = (existingData['total_contributed'] as num?)?.toInt() ?? 0;
+    final curMerits = (existingData['merits_count'] as num?)?.toInt() ?? 0;
+    final curDemerits = (existingData['demerits_count'] as num?)?.toInt() ?? 0;
+
+    return {
+      'scholar_no': scholarNo,
+      'student_name': (existingData['student_name']?.toString().isNotEmpty == true &&
+              !existingData['student_name'].toString().startsWith('Scholar '))
+          ? existingData['student_name'].toString()
+          : studentName,
+      'house_name': existingData['house_name']?.toString().toLowerCase() ?? houseName,
+      'class_level': existingData['class_level']?.toString() ?? classLevel,
+      'total_contributed': curPts + legacyPts,
+      'merits_count': curMerits > legacyMerits ? curMerits : legacyMerits,
+      'demerits_count': curDemerits,
+    };
+  }
+
   /// One-time migration helper to merge legacy `{house}_{scholarNo}` contributor documents
   /// into the unified `{scholarNo}` scheme.
   /// Sums total_contributed, keeps max merits_count, and deletes the legacy documents.
@@ -4136,33 +4222,25 @@ class AuthService {
         if (sNo.isEmpty) continue;
 
         final targetRef = db.collection('house_contributors').doc(sNo);
-        final legacyPts = (data['total_contributed'] as num?)?.toInt() ??
-            (data['total_points'] as num?)?.toInt() ?? 0;
-        final legacyMerits = (data['merits_count'] as num?)?.toInt() ?? 0;
-        final studentName = data['student_name']?.toString() ?? 'Scholar $sNo';
-        final houseName = (data['house_name']?.toString() ?? idParts[0]).toLowerCase();
-        final classLevel = data['class_level']?.toString() ?? 'Senior Tier';
 
         await db.runTransaction((tx) async {
           final targetSnap = await tx.get(targetRef);
+          final merged = mergeContributorData(
+            existingData: targetSnap.exists ? targetSnap.data() : null,
+            legacyData: data,
+            scholarNo: sNo,
+            defaultHouse: idParts[0],
+          );
+
           if (!targetSnap.exists) {
             tx.set(targetRef, {
-              'scholar_no': sNo,
-              'student_name': studentName,
-              'house_name': houseName,
-              'class_level': classLevel,
-              'total_contributed': legacyPts,
-              'merits_count': legacyMerits,
-              'demerits_count': 0,
+              ...merged,
               'last_updated': FieldValue.serverTimestamp(),
             });
           } else {
-            final curData = targetSnap.data() ?? {};
-            final curPts = (curData['total_contributed'] as num?)?.toInt() ?? 0;
-            final curMerits = (curData['merits_count'] as num?)?.toInt() ?? 0;
             tx.update(targetRef, {
-              'total_contributed': curPts + legacyPts,
-              'merits_count': curMerits > legacyMerits ? curMerits : legacyMerits,
+              'total_contributed': merged['total_contributed'],
+              'merits_count': merged['merits_count'],
               'last_updated': FieldValue.serverTimestamp(),
             });
           }

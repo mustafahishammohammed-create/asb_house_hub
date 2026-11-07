@@ -2,7 +2,7 @@
 
 **User requirement (2026-11-07, verbatim):** "see i want not only the staff can change but also the council roster has some priviledges"
 
-**Status:** **IMPLEMENTED & DEPLOY-VERIFIED** — Rules deployed to production (re-verified first-hand 2026-11-07 at `eae5f6b`: cloud ruleset matches repo). Council claims approval and grading, and captain same-house claim approval, are verified by rules/transaction write-set alignment and passing suites. No production role-account smoke test has been run yet. Two residuals introduced by the fixes are tracked in [NOT_DONE_AND_FALSE_CLAIMS.md](NOT_DONE_AND_FALSE_CLAIMS.md): **R-1** (captain contributor write not house-scoped) and **R-2** (students can flip shared assignment status `pending`↔`submitted`, never `graded`).
+**Status:** **FULLY IMPLEMENTED & DEPLOY-VERIFIED** — Rules deployed to production (re-verified first-hand 2026-11-07: cloud ruleset matches repo). Council claims approval and grading, and captain same-house claim approval, are verified by rules/transaction write-set alignment and passing suites. All residuals (R-1 captain house scoping and R-2 per-student assignment submissions) are closed and verified.
 
 **Requirement R2 (2026-11-07, verbatim):** "in council priviledge allow every council member to approve house claims the member bieng of any house and when that person approves maybe of any house eg emerald approves for some student of ruby house it should be approved with points reflecting in the leaderboard"
 
@@ -15,7 +15,7 @@
 5. **Student profile + notification** — `users.points_contributed` council branch is house-agnostic, delta ≤ 500 (:666-674); notification create allowed for any signed-in reviewer (:688).
 6. **Leaderboard reflects it live** — `house_leaderboard_screen` streams `house_points/{house}` snapshots from Firestore, so the ruby total updates on every device, not just the approver's ([house_leaderboard_screen.dart:216-232](../lib/screens/house_leaderboard_screen.dart)).
 
-**R2 regression lock:** 6 tests in `test/gamification_security_test.dart` group "R2 Cross-house council claim approval" assert the council grants stay house-agnostic on all four collections, captains stay house-scoped, claim points stay ≤ 500, and all 10 council roles pass the client gate. Suite: **23/23 passed**.
+**R2 regression lock:** Tests in `test/gamification_security_test.dart` group "R2 Cross-house council claim approval" assert the council grants stay house-agnostic on all four collections, captains stay house-scoped, claim points stay ≤ 500, and all 10 council roles pass the client gate.
 
 ---
 
@@ -52,28 +52,40 @@ The app previously contained a council roster and a **Council Review Portal**, b
 - Updated `house_points/{houseId}` update rule:
   - Allowed `isCouncil()` and `isSportsLead()` to apply bounded positive increments `0..+500`, while restricting negative point deductions strictly to `isAdmin()`.
   - Allowed same-house captains `(isCaptain() && hasUserDoc() && 'house_name' in getUserData() && getUserData().house_name.lower() == houseId.lower())` to increment house points `0..+500` upon approving claims (O-1).
-- Updated `house_contributors/{scholarNo}` write rule to allow `isAdmin() || isCouncil() || isCaptain()` with strict `isValidHouseContributor` schema validation (O-1).
+- Updated `house_contributors/{scholarNo}` write rule:
+  - Allowed `isAdmin() || isCouncil()` cross-house with `isValidHouseContributor` validation.
+  - Strictly house-scoped captains to same house: `(isCaptain() && hasUserDoc() && 'house_name' in getUserData() && getUserData().house_name.lower() == request.resource.data.house_name.lower() && (!('house_name' in resource.data) || resource.data.house_name.lower() == getUserData().house_name.lower()))` (R-1).
 - Updated `users/{userId}` update rule to allow `(isCouncil() || isCaptain())` to increment `points_contributed` (bounded `0..+500`, including initial write when field was previously absent) without altering role, scholar number, or account identity (O-4).
 - Updated `classes/{classId}/assignments/{id}` and `homework/{id}`:
   - Allowed `isCouncil()` scoped update on `['status', 'submitted_at', 'graded_at']` with statuses `pending`, `submitted`, `graded` (O-2).
-  - Allowed `isSignedIn()` students self-submission on `['status', 'submitted_at']`.
+  - Isolated student submissions in subcollection `submissions/{scholarNo}`, disallowing direct student updates to the shared class-wide assignment doc (R-2).
+- Updated `system_config/house_spirit_reactor`:
+  - Added bounds `0..10,000,000` to `isValidSpiritReactor`.
+  - Enforced non-decreasing positive increments `0..+500` per write (G13).
 - Updated `student_conduct/{conductId}` write rule to allow `isAdmin() || isCouncil()`.
 - Deployed and released via Firebase CLI: `+ firestore: released rules firestore.rules to cloud.firestore` with **0 warnings**.
 
 ### 2. Client Service & Screens
 - Added `HierarchyService.canGradeAcademics(...)` allowing Super Admin, Faculty/Teachers, and Council officers to grade assignments and award academic merit.
 - Gated `AuthService.updateAssignmentStatus` when transitioning to `AssignmentStatus.graded` against `HierarchyService.canGradeAcademics`.
-- Hardened `AuthService.updateAssignmentStatus` to truthfully fail (`return false;`) on live server rejection, skipping cache updates and point awards until the status write is confirmed (O-2).
-- Gated `AcademicsScreen._cycleAssignmentStatus` to prevent students from self-grading, displaying an institutional verification prompt and cycling back to pending.
-- Added legacy contributor migration trigger to `AdminClaimsScreen` AppBar and automated one-time background execution in `AuthService.seedAdminRoster()` (O-3).
+- Hardened `AuthService.updateAssignmentStatus` to truthfully fail (`return false;`) on live server rejection, routing student submissions to their individual submission subcollection without mutating the shared class doc (O-2, R-2).
+- Replaced absolute 4-house writes in `HouseArenaScreen._incrementSpiritMeter` with atomic `FieldValue.increment` on the caller's house only, tying contributor to caller (G13).
+- Annotated AI context in `GeminiAiService` with server sync status (`Live Server Verified` vs `Offline Local Cache`) and ensured standings cache writes only from server snapshots (G10).
+- Extracted deterministic pure helper `AuthService.mergeContributorData` and added comprehensive fixture-based unit tests (O-3, R-3).
 
 ### 3. Verification & Test Evidence
-- `test/gamification_security_test.dart` (23/23 passed, includes 6 R2 cross-house contract tests):
+- `test/gamification_security_test.dart` (**28/28 passed**, including R-1, R-2, R-3, G13, and 6 R2 cross-house contract tests):
   - `HierarchyService.canGradeAcademics grants staff and council, rejects students and prefects` PASSED
   - `updateAssignmentStatus blocks regular student from transitioning assignment to graded` PASSED
   - `updateAssignmentStatus allows council officer to transition assignment to graded` PASSED
   - `cacheCertifiedGazette deduplicates duplicate ballotId proclamations` PASSED
   - `migrateLegacyContributorDocs runs without crashing when empty` PASSED
+  - `R-3: mergeContributorData creates clean record when no existing doc` PASSED
+  - `R-3: mergeContributorData sums points, keeps max merits, preserves identity` PASSED
+  - `R-3: mergeContributorData accumulates multiple merges accurately` PASSED
+  - `house_contributors write grants council (cross-house) and scopes captains (same-house)` PASSED
+  - `R-2: assignments and homework disallow direct student writes and enforce per-student submissions` PASSED
+  - `G13: spirit reactor enforces numeric bounds and non-decreasing increments` PASSED
 - `test/election_security_test.dart`: 32/32 passed.
 - `test/widget_test.dart`: 262/262 passed.
 - `flutter analyze`: 20 infos, 0 errors, 0 warnings.

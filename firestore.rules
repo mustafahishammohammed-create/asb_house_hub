@@ -570,12 +570,28 @@ service cloud.firestore {
 
     function isValidSpiritReactor(data) {
       return hasOnlyAllowedFields(['ruby', 'sapphire', 'emerald', 'topaz', 'last_contributor', 'last_updated']) &&
-        (!('ruby' in data) || data.ruby is number) &&
-        (!('sapphire' in data) || data.sapphire is number) &&
-        (!('emerald' in data) || data.emerald is number) &&
-        (!('topaz' in data) || data.topaz is number) &&
+        (!('ruby' in data) || (data.ruby is number && data.ruby >= 0 && data.ruby <= 10000000)) &&
+        (!('sapphire' in data) || (data.sapphire is number && data.sapphire >= 0 && data.sapphire <= 10000000)) &&
+        (!('emerald' in data) || (data.emerald is number && data.emerald >= 0 && data.emerald <= 10000000)) &&
+        (!('topaz' in data) || (data.topaz is number && data.topaz >= 0 && data.topaz <= 10000000)) &&
         (!('last_contributor' in data) || (data.last_contributor is string && data.last_contributor.size() <= 100)) &&
         (!('last_updated' in data) || data.last_updated is timestamp);
+    }
+
+    function isValidSubmission(scholarNo, data) {
+      return hasOnlyAllowedFields([
+        'scholar_no', 'status', 'submitted_at', 'graded_at',
+        'student_name', 'house_name', 'class_level', 'last_updated'
+      ]) &&
+      hasRequiredFields(['scholar_no', 'status']) &&
+      data.scholar_no == scholarNo &&
+      data.status is string && data.status in ['pending', 'submitted', 'graded'] &&
+      (!('submitted_at' in data) || data.submitted_at is string) &&
+      (!('graded_at' in data) || data.graded_at is string) &&
+      (!('student_name' in data) || (data.student_name is string && data.student_name.size() <= 100)) &&
+      (!('house_name' in data) || (data.house_name is string && data.house_name.size() <= 50)) &&
+      (!('class_level' in data) || (data.class_level is string && data.class_level.size() <= 50)) &&
+      (!('last_updated' in data) || data.last_updated is timestamp);
     }
 
     function isValidTicker(data) {
@@ -718,14 +734,14 @@ service cloud.firestore {
             isCouncil() &&
             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'submitted_at', 'graded_at']) &&
             request.resource.data.status in ['pending', 'submitted', 'graded']
-          ) ||
-          (
-            isSignedIn() &&
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'submitted_at']) &&
-            request.resource.data.status in ['pending', 'submitted']
           )
         );
         allow delete: if isAdmin();
+
+        match /submissions/{scholarNo} {
+          allow read: if isScholarOwner(scholarNo) || isCouncil() || isAdmin();
+          allow write: if (isScholarOwner(scholarNo) || isCouncil() || isAdmin()) && isValidSubmission(scholarNo, request.resource.data);
+        }
       }
 
       match /midterm_exams/{examId} {
@@ -759,14 +775,14 @@ service cloud.firestore {
           isCouncil() &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'submitted_at', 'graded_at']) &&
           request.resource.data.status in ['pending', 'submitted', 'graded']
-        ) ||
-        (
-          isSignedIn() &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'submitted_at']) &&
-          request.resource.data.status in ['pending', 'submitted']
         )
       );
       allow delete: if isAdmin();
+
+      match /submissions/{scholarNo} {
+        allow read: if isScholarOwner(scholarNo) || isCouncil() || isAdmin();
+        allow write: if (isScholarOwner(scholarNo) || isCouncil() || isAdmin()) && isValidSubmission(scholarNo, request.resource.data);
+      }
     }
 
     // 5. house_claims/{claimId}
@@ -940,7 +956,17 @@ service cloud.firestore {
 
     match /house_contributors/{scholarNo} {
       allow read: if isSignedIn();
-      allow write: if (isAdmin() || isCouncil() || isCaptain()) && isValidHouseContributor(scholarNo, request.resource.data);
+      allow write: if (
+        isAdmin() ||
+        isCouncil() ||
+        (
+          isCaptain() &&
+          hasUserDoc() &&
+          'house_name' in getUserData() &&
+          getUserData().house_name.lower() == request.resource.data.house_name.lower() &&
+          (!('house_name' in resource.data) || resource.data.house_name.lower() == getUserData().house_name.lower())
+        )
+      ) && isValidHouseContributor(scholarNo, request.resource.data);
     }
 
     match /student_conduct/{conductId} {
@@ -960,10 +986,20 @@ service cloud.firestore {
     // 15. system_config/{configId}
     match /system_config/{configId} {
       allow read: if isSignedIn();
-      allow create, update: if isAdmin() || (
+      allow create: if isAdmin() || (
         configId == 'house_spirit_reactor' &&
         isSignedIn() &&
         isValidSpiritReactor(request.resource.data)
+      );
+      allow update: if isAdmin() || (
+        configId == 'house_spirit_reactor' &&
+        isSignedIn() &&
+        isValidSpiritReactor(request.resource.data) &&
+        // Non-admins can only apply non-decreasing positive increments up to 500 per update
+        (!('ruby' in resource.data) || (request.resource.data.ruby >= resource.data.ruby && request.resource.data.ruby - resource.data.ruby <= 500)) &&
+        (!('sapphire' in resource.data) || (request.resource.data.sapphire >= resource.data.sapphire && request.resource.data.sapphire - resource.data.sapphire <= 500)) &&
+        (!('emerald' in resource.data) || (request.resource.data.emerald >= resource.data.emerald && request.resource.data.emerald - resource.data.emerald <= 500)) &&
+        (!('topaz' in resource.data) || (request.resource.data.topaz >= resource.data.topaz && request.resource.data.topaz - resource.data.topaz <= 500))
       );
       allow delete: if isAdmin();
     }
