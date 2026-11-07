@@ -12,6 +12,7 @@ typedef ScoreProofVerificationResult = ({
   int points,
   String? scholarNo,
   String? activityId,
+  String? nonce,
   String? error,
 });
 
@@ -29,6 +30,29 @@ class GamificationSecurityService {
   @visibleForTesting
   static void setTestSecret(String? secret) {
     _testOverrideSecret = secret;
+  }
+
+  static final Set<String> _consumedNonces = <String>{};
+
+  /// Check whether a cryptographic nonce has already been consumed (replay prevention).
+  static bool isNonceConsumed(String nonce) {
+    final clean = nonce.trim();
+    if (clean.isEmpty) return true;
+    final prefKey = 'gamification_consumed_nonce_$clean';
+    return _consumedNonces.contains(clean) || (_prefs?.getBool(prefKey) ?? false);
+  }
+
+  /// Mark a cryptographic nonce as consumed to invalidate future token replay attempts.
+  static Future<void> consumeNonce(String nonce) async {
+    final clean = nonce.trim();
+    if (clean.isEmpty) return;
+    _consumedNonces.add(clean);
+    await _prefs?.setBool('gamification_consumed_nonce_$clean', true);
+  }
+
+  @visibleForTesting
+  static void resetConsumedNoncesForTesting() {
+    _consumedNonces.clear();
   }
 
   /// Secure fail-closed getter for institution HMAC secret.
@@ -148,6 +172,7 @@ class GamificationSecurityService {
         points: 0,
         scholarNo: null,
         activityId: null,
+        nonce: null,
         error: 'Token is empty',
       );
     }
@@ -165,30 +190,23 @@ class GamificationSecurityService {
           points: 0,
           scholarNo: null,
           activityId: null,
+          nonce: null,
           error: 'Malformed token payload format',
         );
       }
       data = parsed;
-    } catch (_) {
-      // In case raw JSON string was passed instead of base64Url
-      try {
-        final parsed = jsonDecode(token);
-        if (parsed is! Map<String, dynamic>) {
-          throw const FormatException();
-        }
-        data = parsed;
-      } catch (e) {
-        return (
-          isValid: false,
-          isTampered: true,
-          isExpired: false,
-          isCeilingExceeded: false,
-          points: 0,
-          scholarNo: null,
-          activityId: null,
-          error: 'Invalid token encoding: $e',
-        );
-      }
+    } catch (e) {
+      return (
+        isValid: false,
+        isTampered: true,
+        isExpired: false,
+        isCeilingExceeded: false,
+        points: 0,
+        scholarNo: null,
+        activityId: null,
+        nonce: null,
+        error: 'Invalid token encoding: $e',
+      );
     }
 
     final scholarNo = data['scholar_no']?.toString() ?? '';
@@ -197,6 +215,35 @@ class GamificationSecurityService {
     final timestamp = (data['timestamp'] as num?)?.toInt() ?? 0;
     final nonce = data['nonce']?.toString() ?? '';
     final signature = data['sig']?.toString() ?? '';
+
+    // Anti-replay: nonce must be present and unconsumed
+    if (nonce.trim().isEmpty) {
+      return (
+        isValid: false,
+        isTampered: true,
+        isExpired: false,
+        isCeilingExceeded: false,
+        points: points,
+        scholarNo: scholarNo,
+        activityId: activityId,
+        nonce: nonce,
+        error: 'Missing or empty cryptographic nonce in token',
+      );
+    }
+
+    if (isNonceConsumed(nonce)) {
+      return (
+        isValid: false,
+        isTampered: true,
+        isExpired: false,
+        isCeilingExceeded: false,
+        points: points,
+        scholarNo: scholarNo,
+        activityId: activityId,
+        nonce: nonce,
+        error: 'Token replay detected: nonce has already been consumed',
+      );
+    }
 
     // 1. Hard Mathematical Ceiling Clamp Check
     if (points < 0 || points > maxCeiling) {
@@ -208,6 +255,7 @@ class GamificationSecurityService {
         points: points,
         scholarNo: scholarNo,
         activityId: activityId,
+        nonce: nonce,
         error: 'Score exceeds authorized ceiling of $maxCeiling points (attempted: $points)',
       );
     }
@@ -223,6 +271,7 @@ class GamificationSecurityService {
         points: points,
         scholarNo: scholarNo,
         activityId: activityId,
+        nonce: nonce,
         error: 'Scholar number mismatch: expected $expectedScholarNo, got $scholarNo',
       );
     }
@@ -237,6 +286,7 @@ class GamificationSecurityService {
         points: points,
         scholarNo: scholarNo,
         activityId: activityId,
+        nonce: nonce,
         error: 'Activity ID mismatch: expected $expectedActivityId, got $activityId',
       );
     }
@@ -259,6 +309,7 @@ class GamificationSecurityService {
         points: points,
         scholarNo: scholarNo,
         activityId: activityId,
+        nonce: nonce,
         error: 'Cryptographic signature verification failed. Token payload has been altered.',
       );
     }
@@ -275,6 +326,7 @@ class GamificationSecurityService {
         points: points,
         scholarNo: scholarNo,
         activityId: activityId,
+        nonce: nonce,
         error: 'Score proof token expired outside 5-minute sliding window (drift: ${(diff / 1000).round()}s)',
       );
     }
@@ -287,6 +339,7 @@ class GamificationSecurityService {
       points: points,
       scholarNo: scholarNo,
       activityId: activityId,
+      nonce: nonce,
       error: null,
     );
   }
@@ -324,7 +377,16 @@ class GamificationSecurityService {
     final elapsed = currentTime.difference(lastCompletion);
     const cooldownWindow = Duration(hours: 24);
 
-    if (elapsed < cooldownWindow && !elapsed.isNegative) {
+    if (elapsed.isNegative) {
+      // Clock rollback detected: fail closed to prevent cooldown manipulation
+      return (
+        allowed: false,
+        remainingCooldown: cooldownWindow,
+        formattedRemaining: 'Clock rollback detected (rejected)',
+      );
+    }
+
+    if (elapsed < cooldownWindow) {
       final remaining = cooldownWindow - elapsed;
       return (
         allowed: false,
@@ -372,7 +434,16 @@ class GamificationSecurityService {
     final elapsed = currentTime.difference(lastAttempt);
     const throttleWindow = Duration(seconds: 60);
 
-    if (elapsed < throttleWindow && !elapsed.isNegative) {
+    if (elapsed.isNegative) {
+      // Clock rollback detected: fail closed to prevent spam debounce bypass
+      return (
+        allowed: false,
+        remainingCooldown: throttleWindow,
+        formattedRemaining: 'Clock rollback detected',
+      );
+    }
+
+    if (elapsed < throttleWindow) {
       final remaining = throttleWindow - elapsed;
       return (
         allowed: false,
@@ -402,9 +473,12 @@ class GamificationSecurityService {
   /// Clears all gamification cooldowns and throttles (for tests/reset).
   static Future<void> clearCooldowns() async {
     _memoryTimestamps.clear();
+    _consumedNonces.clear();
     final keys = _prefs?.getKeys() ?? {};
     for (final k in keys) {
-      if (k.startsWith('gamification_cd_') || k.startsWith('gamification_throttle_')) {
+      if (k.startsWith('gamification_cd_') ||
+          k.startsWith('gamification_throttle_') ||
+          k.startsWith('gamification_consumed_nonce_')) {
         await _prefs?.remove(k);
       }
     }

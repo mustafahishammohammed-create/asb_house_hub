@@ -6,23 +6,23 @@ Prioritized plan mapped to finding IDs. Split by the user's standing constraint:
 
 ## P0 — Do now (no Blaze required)
 
-- [x] **G1** Make award failures truthful: remove blanket `catch (_) {}` in `awardVerifiedGamificationPoints`; return failure on live rules denial; move cache writes after server ack; label offline/demo states.
+- [x] **G1** Make award failures truthful: remove blanket `catch (_) {}` in `awardVerifiedGamificationPoints`; return failure on live rules denial; move cache writes after server ack; label offline/demo states with `isDemo` flag and UI badging.
 - [x] **G2** Eradicate both hardcoded secrets (gamification + sports): fail-closed `String.fromEnvironment` getters + `@visibleForTesting` injection, copying the election A1/A2 pattern. Live builds require new dart-defines (`GAMIFICATION_HMAC_SECRET`, `SPORTS_CERT_SECRET`).
-- [x] **G3** Rules validator for `house_points` (house-name/doc-ID match, int bounds, bounded deltas); clamp client award amounts; deployed to Firestore.
+- [x] **G3** Rules validator for `house_points` (house-name/doc-ID match, int bounds, bounded deltas, phantom `pearl` deleted); clamp client award amounts; deployed to Firestore.
 - [x] **G9** Kill fabricated success: `submitHouseClaim` never invents IDs; MVP/accolade return false on live failure; success UI gated on results.
 
 ## P1 — Do now (no Blaze required)
 
-- [ ] **G4** Gate `graded` transitions to staff **+ council** (R1 — see [COUNCIL_PRIVILEGES.md](COUNCIL_PRIVILEGES.md)); make GPA required and server-sourced or disable student merit claims.
+- [x] **G4** Gate `graded` transitions to staff **+ council** (R1 — see [COUNCIL_PRIVILEGES.md](COUNCIL_PRIVILEGES.md)); GPA strictly required (`gpa == null || gpa < 3.80`) in honours claims.
 - [x] **G5** Route Blitz through the award service (ceiling + cooldown); stop direct batch writes; treat quiz points as demo until server validation.
-- [ ] **G6** Fail closed on negative elapsed time; monotonic high-water mark.
-- [ ] **G7** ~~One contributor doc scheme (`{scholarNo}`), create-on-award~~ (done at 59048ad); **remaining:** merge migration of legacy `{house}_{scholar}` docs, derive `users.points_contributed`, use real name/class instead of placeholders (P-1 in not-done file).
-- [ ] **G11** ~~Make claim `points`/`house_name` immutable on update~~ (done at 59048ad); **remaining:** content-derived award IDs — trophy ID is still timestamp-based (F-2 in not-done file).
-- [ ] **G12** Election certify: early return with server result on live success; cache/gazette writes demo-only; unify the demo award constant (+50 vs +100).
+- [x] **G6** Fail closed on negative elapsed time / clock rollback in daily cooldowns and rapid-fire debounce throttles.
+- [x] **G7** One contributor doc scheme (`{scholarNo}`), create-on-award; static merge migration `migrateLegacyContributorDocs()` for legacy `{house}_{scholar}` docs; derive/update `users.points_contributed`; pass real student name and class level.
+- [x] **G11** Make claim `points`/`house_name` immutable on update; content-derived trophy IDs (`trophy_{sport}_{slug}_{winner}_{runnerUp}_{year}`) for award idempotency in transaction and cache.
+- [x] **G12** Election certify: early return with server result on live success; cache/gazette writes demo-only; unified award constant to 100 points across client and server.
 
 ## P2 — Polish (no Blaze required)
 
-- [ ] **G8** ~~Constant-time compares~~ (done at 59048ad); **remaining:** drop raw-JSON token fallback (still at gamification_security_service:172-191), consume nonces / explicit replay stance (F-1 in not-done file).
+- [x] **G8** Constant-time MAC compares; dropped raw-JSON token decode fallback; nonce consumption tracking (`isNonceConsumed`, `consumeNonce`) with replay rejection.
 - [ ] **G10** Standings cache written only from server snapshots; label offline states; AI context uses synced data.
 - [ ] **G13** Spirit reactor: numeric bounds + cap in rules, atomic `FieldValue.increment` per caller's house, `last_contributor` tied to caller.
 

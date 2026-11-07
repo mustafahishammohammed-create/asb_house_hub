@@ -2202,7 +2202,24 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
   }
 
   void _cycleAssignmentStatus(AcademicAssignment assignment) {
-    final nextStatus = assignment.status.nextStatus;
+    var nextStatus = assignment.status.nextStatus;
+
+    // G4 & R1: Gating graded status to staff + council
+    if (nextStatus == AssignmentStatus.graded) {
+      final role = AuthService.getCachedRole() ?? '';
+      final sNo = AuthService.getCachedScholarNo() ?? '';
+      if (!HierarchyService.canGradeAcademics(role: role, scholarNo: sNo)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Grading and merit points require teacher or council verification.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        // Student cannot advance to graded; cycle back to pending (unsubmit)
+        nextStatus = AssignmentStatus.pending;
+      }
+    }
+
     setState(() {
       _optimisticStatus[assignment.id] = nextStatus;
     });

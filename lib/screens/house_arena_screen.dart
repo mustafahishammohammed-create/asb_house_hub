@@ -175,6 +175,7 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
   int _blitzComboStreak = 0;
   bool _blitzActive = false;
   bool _blitzFinished = false;
+  bool _blitzIsDemo = false;
   int? _blitzSelectedOption;
   bool? _blitzAnswerCorrect;
   Timer? _blitzTimer;
@@ -512,9 +513,11 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
             activityId: 'blitz_quiz',
             house: widget.userHouse,
             token: token,
+            studentName: widget.userName,
           ).then((res) {
             if (mounted && res.success) {
               setState(() {
+                _blitzIsDemo = res.isDemo;
                 _showConfetti = _blitzScore >= 40;
               });
             }
@@ -1172,6 +1175,25 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
                 fontSize: 16,
               ),
             ),
+            if (_blitzIsDemo) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.amber.withValues(alpha: 0.5)),
+                ),
+                child: const Text(
+                  'Demo Mode: Points recorded in local standings',
+                  style: TextStyle(
+                    color: Colors.amber,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 24),
             ElevatedButton.icon(
               icon: const Icon(Icons.refresh_rounded),

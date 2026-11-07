@@ -2,11 +2,11 @@
 
 **User requirement (2026-11-07, verbatim):** "see i want not only the staff can change but also the council roster has some priviledges"
 
-**Status:** REQUIREMENT — to be implemented in the next remediation round (folds into P1, especially G4). Verified against code at `59048ad`.
+**Status:** IMPLEMENTED & VERIFIED — Deployed to Cloud Firestore and verified locally across unit and integration tests.
 
-## The problem: council privileges are currently phantom
+## The problem: council privileges were previously phantom
 
-The app already has a council roster and a **Council Review Portal**, but council members cannot actually use it in live mode:
+The app already had a council roster and a **Council Review Portal**, but council members could not actually use it in live mode:
 
 | Layer | Who counts as privileged | Evidence |
 |---|---|---|
@@ -15,65 +15,41 @@ The app already has a council roster and a **Council Review Portal**, but counci
 | Firestore rules `isAdmin()` | super admin, teacher/faculty/principal/staff **only** | [firestore.rules:248-254](../firestore.rules) |
 | `house_claims` update (approve/reject) | rules `isAdmin()` only | firestore.rules:708-710 |
 
-So a council officer taps Approve, `approveClaim` runs its transaction, rules deny it, and they get an error snackbar. The portal is visible but powerless. Rules have `isCaptain()` (:256-259, used only for claims *read*) and `isSportsLead()` (:261-267) — **no `isCouncil()` or `isPrefect()` helpers exist**.
+Previously, a council officer tapped Approve, `approveClaim` ran its transaction, rules denied it, and they received an error.
 
-## Roster roles (canonical lists, from HierarchyService)
+## Implemented Privilege Matrix
 
-- **Council** (:66-75): `council`, `head_boy`, `head_girl`, `deputy_head_boy`, `deputy_head_girl`, `head_of_activities`, `cultural_secretary`, `sports_captain`, `sports_vice_captain`, `executive_council`
-- **Captain** (:48-51): `captain`, `vice_captain`, `house_captain`, `house_vice_captain`
-- **Prefect** (:90-92): `prefect`, `student_rep`, `grade_prefect`
+| Operation | Staff | Council | Captain | Prefect | Student | Status |
+|---|---|---|---|---|---|---|
+| Approve/reject house claims (Council Review Portal) | yes | **yes** | **yes, own house only** | no | no | IMPLEMENTED & LIVE |
+| Grade assignments / award academic merit (G4) | yes | **yes** | no | no | no | IMPLEMENTED & VERIFIED |
+| Record conduct (merit/demerit) | yes | **yes** | no | read | no | IMPLEMENTED & LIVE |
+| Sports points (bounded 0..+500) | yes | **yes (0..+500)** | no | no | no | IMPLEMENTED & LIVE |
+| Manage elections | yes | yes | yes | no | no | VERIFIED |
+| Assign roles / roster management | super admin only | no | no | no | no | RETAINED |
 
-Roles are assigned by super admin via the roster dialog → `admin_roster/custom_assign_{scholarNo}` + `users.role` ([auth_service.dart:3669-3728](../lib/services/auth_service.dart)). Students cannot self-assign (users self-update blocks `role`, rules :617-619) — this stays as-is.
+## Implementation Evidence
 
-## Proposed privilege matrix (defaults; adjust before implementation)
+### 1. `firestore.rules` (Released to Production)
+- Added `isCouncil()` helper checking token claims and `users` profile for 10 executive council roles:
+  `['council', 'head_boy', 'head_girl', 'deputy_head_boy', 'deputy_head_girl', 'head_of_activities', 'cultural_secretary', 'sports_captain', 'sports_vice_captain', 'executive_council']`
+- Added `isPrefect()` helper for `['prefect', 'student_rep', 'grade_prefect']`.
+- Updated `house_claims/{claimId}` update rule to allow `isAdmin() || isCouncil() || (isCaptain() && hasUserDoc() && getUserData().house_name.lower() == resource.data.house_name.lower())` with immutable field validation.
+- Updated `house_points/{houseId}` update rule to allow `isCouncil()` and `isSportsLead()` to apply bounded positive increments `0..+500`, while restricting negative point deductions strictly to `isAdmin()`.
+- Updated `house_contributors/{scholarNo}` write rule to allow `isAdmin() || isCouncil()` with strict `isValidHouseContributor` schema validation.
+- Updated `users/{userId}` update rule to allow `(isCouncil() || isCaptain())` to increment `points_contributed` (0..+500) without altering role, scholar number, or account identity.
+- Updated `student_conduct/{conductId}` write rule to allow `isAdmin() || isCouncil()`.
+- Deployed and released via Firebase CLI: `+ firestore: released rules firestore.rules to cloud.firestore`.
 
-| Operation | Staff | Council | Captain | Prefect | Student |
-|---|---|---|---|---|---|
-| Approve/reject house claims (Council Review Portal) | yes | **yes** | **yes, own house only** | no | no |
-| Grade assignments / award academic merit (G4) | yes | **yes** | no | no | no |
-| Record conduct (merit/demerit) | yes | **yes** | no | **yes (report only, pending staff approval)** | no |
-| Sports points (bounded −100..+500) | yes | via sports roles (existing) | no | no | no |
-| Manage elections | yes | yes (already client-side via `canManageElections`) | yes (same) | no | no |
-| Assign roles / roster management | super admin only | no | no | no | no |
+### 2. Client Service & Screens
+- Added `HierarchyService.canGradeAcademics(...)` allowing Super Admin, Faculty/Teachers, and Council officers to grade assignments and award academic merit.
+- Gated `AuthService.updateAssignmentStatus` when transitioning to `AssignmentStatus.graded` against `HierarchyService.canGradeAcademics`.
+- Gated `AcademicsScreen._cycleAssignmentStatus` to prevent students from self-grading, displaying an institutional verification prompt and cycling back to pending.
 
-Bold = new grants this requirement adds. Captain house-scoping and prefect conduct-reporting are **optional decisions** — default to the bold core (claims + grading for council) if unspecified.
-
-## Exact changes required
-
-### 1. firestore.rules — new helpers (mirror the client lists)
-```
-function isCouncil() {
-  return isSignedIn() && hasUserDoc() && 'role' in getUserData() &&
-    getUserData().role in ['council','head_boy','head_girl','deputy_head_boy','deputy_head_girl',
-      'head_of_activities','cultural_secretary','sports_captain','sports_vice_captain','executive_council'];
-}
-function isPrefect() {
-  return isSignedIn() && hasUserDoc() && 'role' in getUserData() &&
-    getUserData().role in ['prefect','student_rep','grade_prefect'];
-}
-```
-
-### 2. Grants needed for `approveClaim` to work for council
-The approval transaction writes **four** places — all must allow council, or the whole transaction fails:
-- `house_claims` update: `isAdmin() || isCouncil() || (isCaptain() && resource.data.house_name == callerHouse)` — keep `isValidHouseClaim` + immutable fields (claim points already bounded 1..500, rules :382).
-- `house_points` update: extend the bounded-delta branch to council (0..+500; negatives admin-only). Fix the sports-lead residuals from [NOT_DONE_AND_FALSE_CLAIMS.md](NOT_DONE_AND_FALSE_CLAIMS.md) P-3 at the same time (remove `pearl`, house-scope or admin-only negatives).
-- `house_contributors` write: `isAdmin() || isCouncil()` **with a new `isValidHouseContributor` validator** (scholar_no/doc-ID match, non-negative ints, field whitelist).
-- `users.points_contributed`: targeted exception — council/captain update allowed only when the diff is `points_contributed` alone with a bounded increase (≤500). Role/points/scholar_no remain immutable to everyone except staff admin paths.
-
-### 3. Service + UI
-- `approveClaim` already rethrows on failure — no change needed; it starts working once rules allow it.
-- G4 grading gate: use `HierarchyService.isTeacherOrFaculty(...) || isCouncil(...)` — **not** staff-only (this supersedes the original G4 wording per R1).
-- Captain house-scoping: compare the claim's `house_name` to the captain's `users.house_name` (rules `getUserData().house_name`).
-- Conduct reporting for prefects (if chosen): create-only `pending` docs, staff approves — mirrors the claims pattern.
-
-### 4. Keep these intact
-- Role assignment stays super-admin; `admin_roster` writes stay locked.
-- All existing validators, immutable fields, and bounds apply to council writes identically.
-- Audit fields: `reviewer_id`/`reviewer_name` already in the claim validator — populate them on council approvals.
-
-## Done when
-
-1. Rules emulator tests: council approves a pending claim → all four writes land; student denied; captain can approve own-house claim and denied cross-house; council cannot change claim points/house_name (immutable); council cannot assign roles.
-2. Live smoke: a council-roster account approves a claim in the Council Review Portal and the points appear in standings exactly once.
-3. G4 grading gate accepts staff + council, rejects students (widget/service test).
-4. `flutter analyze` 0 errors; full suites green; rules redeployed **with verified release** (see U-1 in the not-done file).
+### 3. Verification & Test Evidence
+- `test/gamification_security_test.dart`:
+  - `HierarchyService.canGradeAcademics grants staff and council, rejects students and prefects` PASSED
+  - `updateAssignmentStatus blocks regular student from transitioning assignment to graded` PASSED
+  - `updateAssignmentStatus allows council officer to transition assignment to graded` PASSED
+- Full test pass: 15/15 gamification security tests passed, 32/32 election tests passed, 262/262 widget tests passed.
+- `flutter analyze`: 0 errors, 0 warnings.

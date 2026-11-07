@@ -109,6 +109,19 @@ class HierarchyService {
         isPrefect(scholarNo: scholarNo, role: role, fullName: fullName);
   }
 
+  /// Canonical check whether an account is authorized to grade assignments and award academic merit points.
+  /// Requirement R1 & Audit G4: Staff, Teachers, Principal, and Council officers have grading authority.
+  /// Strictly Prohibited: Regular Students and non-council student accounts.
+  static bool canGradeAcademics({
+    String? scholarNo,
+    String? role,
+    String? fullName,
+  }) {
+    return isSuperAdmin(scholarNo: scholarNo, role: role, fullName: fullName) ||
+        isTeacherOrFaculty(scholarNo: scholarNo, role: role, fullName: fullName) ||
+        isCouncil(scholarNo: scholarNo, role: role, fullName: fullName);
+  }
+
   /// Canonical check whether an account is authorized to manage elections
   /// (create drafts, configure candidate slates, publish ballots, certify outcomes).
   /// Authorized: Super Admin, Administrators, Principal, Faculty/Teachers, Staff, Council, House Captains.

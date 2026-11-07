@@ -254,8 +254,38 @@ service cloud.firestore {
     }
 
     function isCaptain() {
-      return isSignedIn() && hasUserDoc() && 'role' in getUserData() &&
-        getUserData().role in ['captain', 'vice_captain', 'house_captain', 'house_vice_captain'];
+      return isSignedIn() && (
+        (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in [
+          'captain', 'vice_captain', 'house_captain', 'house_vice_captain'
+        ]) ||
+        (hasUserDoc() && 'role' in getUserData() && getUserData().role in [
+          'captain', 'vice_captain', 'house_captain', 'house_vice_captain'
+        ])
+      );
+    }
+
+    function isCouncil() {
+      return isSignedIn() && (
+        (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in [
+          'council', 'head_boy', 'head_girl', 'deputy_head_boy', 'deputy_head_girl',
+          'head_of_activities', 'cultural_secretary', 'sports_captain', 'sports_vice_captain', 'executive_council'
+        ]) ||
+        (hasUserDoc() && 'role' in getUserData() && getUserData().role in [
+          'council', 'head_boy', 'head_girl', 'deputy_head_boy', 'deputy_head_girl',
+          'head_of_activities', 'cultural_secretary', 'sports_captain', 'sports_vice_captain', 'executive_council'
+        ])
+      );
+    }
+
+    function isPrefect() {
+      return isSignedIn() && (
+        (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in [
+          'prefect', 'student_rep', 'grade_prefect'
+        ]) ||
+        (hasUserDoc() && 'role' in getUserData() && getUserData().role in [
+          'prefect', 'student_rep', 'grade_prefect'
+        ])
+      );
     }
 
     function isSportsLead() {
@@ -521,7 +551,7 @@ service cloud.firestore {
     }
 
     function isValidHousePoints(houseId, data) {
-      return houseId in ['ruby', 'sapphire', 'emerald', 'topaz', 'pearl'] &&
+      return houseId in ['ruby', 'sapphire', 'emerald', 'topaz'] &&
         hasOnlyAllowedFields(['house_name', 'total_points', 'last_updated', 'updated_at']) &&
         hasRequiredFields(['house_name', 'total_points']) &&
         data.house_name.lower() == houseId &&
@@ -530,6 +560,27 @@ service cloud.firestore {
         data.total_points <= 1000000 &&
         (!('last_updated' in data) || data.last_updated is timestamp) &&
         (!('updated_at' in data) || data.updated_at is timestamp);
+    }
+
+    function isValidHouseContributor(scholarNo, data) {
+      return hasOnlyAllowedFields([
+        'scholar_no', 'student_name', 'house_name', 'class_level',
+        'total_contributed', 'total_points', 'merits_count', 'demerits_count', 'last_updated'
+      ]) &&
+      hasRequiredFields(['scholar_no', 'house_name', 'total_contributed']) &&
+      data.scholar_no is string &&
+      data.scholar_no == scholarNo &&
+      data.house_name is string &&
+      data.house_name.lower() in ['ruby', 'sapphire', 'emerald', 'topaz'] &&
+      (!('student_name' in data) || (data.student_name is string && data.student_name.size() <= 100)) &&
+      (!('class_level' in data) || (data.class_level is string && data.class_level.size() <= 50)) &&
+      data.total_contributed is int &&
+      data.total_contributed >= 0 &&
+      data.total_contributed <= 1000000 &&
+      (!('total_points' in data) || (data.total_points is int && data.total_points >= 0 && data.total_points <= 1000000)) &&
+      (!('merits_count' in data) || (data.merits_count is int && data.merits_count >= 0 && data.merits_count <= 10000)) &&
+      (!('demerits_count' in data) || (data.demerits_count is int && data.demerits_count >= 0 && data.demerits_count <= 10000)) &&
+      (!('last_updated' in data) || data.last_updated is timestamp);
     }
 
     function isValidSpiritReactor(data) {
@@ -617,6 +668,7 @@ service cloud.firestore {
       // Update:
       // - super_admin can update any field including role and points
       // - faculty/teacher/admin can update points (e.g. claim approval or conduct marks)
+      // - council/captain can update student points_contributed (bounded 0..+500 delta) on claim approvals
       // - self-update: owner can update basic profile fields, but CANNOT modify role, points, or scholar_no
       allow update: if isValidUser(request.resource.data) && (
         isSuperAdmin() ||
@@ -624,6 +676,16 @@ service cloud.firestore {
           isAdmin() &&
           request.resource.data.role == resource.data.role &&
           areImmutableFieldsUnchanged(['scholar_no', 'created_at', 'uid'])
+        ) ||
+        (
+          (isCouncil() || isCaptain()) &&
+          request.resource.data.role == resource.data.role &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['points_contributed']) &&
+          (!('points_contributed' in resource.data) ||
+            (request.resource.data.points_contributed >= resource.data.points_contributed &&
+             request.resource.data.points_contributed - resource.data.points_contributed <= 500)) &&
+          request.resource.data.points_contributed <= 1000000 &&
+          areImmutableFieldsUnchanged(['role', 'points', 'scholar_no', 'created_at', 'uid'])
         ) ||
         (
           isOwner(userId) &&
@@ -695,8 +757,8 @@ service cloud.firestore {
 
     // 5. house_claims/{claimId}
     match /house_claims/{claimId} {
-      // Read: owner of the claim OR admin OR house captains
-      allow read: if isScholarOwner(resource.data.scholar_no) || isAdmin() || isCaptain();
+      // Read: owner of the claim OR admin OR council OR house captains
+      allow read: if isScholarOwner(resource.data.scholar_no) || isAdmin() || isCouncil() || isCaptain();
 
       // Create: authenticated user with initial status == 'pending'
       allow create: if isSignedIn() &&
@@ -704,8 +766,12 @@ service cloud.firestore {
         request.resource.data.status == 'pending' &&
         (isScholarOwner(request.resource.data.scholar_no) || isAdmin());
 
-      // Update: strictly admin (approving/rejecting claim and awarding points)
-      allow update: if isAdmin() &&
+      // Update: staff admin, executive council, or captain of the same house (approving/rejecting claim and awarding points)
+      allow update: if (
+        isAdmin() ||
+        isCouncil() ||
+        (isCaptain() && hasUserDoc() && 'house_name' in getUserData() && getUserData().house_name.lower() == resource.data.house_name.lower())
+      ) &&
         isValidHouseClaim(request.resource.data) &&
         areImmutableFieldsUnchanged(['scholar_no', 'activity_title', 'cert_url', 'points', 'house_name']);
 
@@ -831,12 +897,18 @@ service cloud.firestore {
     // Additional Supporting Collections
     match /house_points/{houseId} {
       allow read: if isSignedIn();
-      allow create: if isAdmin() && isValidHousePoints(houseId, request.resource.data);
+      allow create: if isValidHousePoints(houseId, request.resource.data) && (
+        isAdmin() || (
+          (isSportsLead() || isCouncil()) &&
+          request.resource.data.total_points >= 0 &&
+          request.resource.data.total_points <= 500
+        )
+      );
       allow update: if isValidHousePoints(houseId, request.resource.data) && (
         isAdmin() || (
-          isSportsLead() &&
-          // Sports leads may only modify points within bounded delta (-100 to +500)
-          (request.resource.data.total_points - resource.data.total_points >= -100) &&
+          (isSportsLead() || isCouncil()) &&
+          // Sports leads and council may only apply positive bounded increments (0 to +500); negative deductions are admin only
+          (request.resource.data.total_points >= resource.data.total_points) &&
           (request.resource.data.total_points - resource.data.total_points <= 500)
         )
       );
@@ -845,12 +917,12 @@ service cloud.firestore {
 
     match /house_contributors/{scholarNo} {
       allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow write: if (isAdmin() || isCouncil()) && isValidHouseContributor(scholarNo, request.resource.data);
     }
 
     match /student_conduct/{conductId} {
-      allow read: if (('scholar_no' in resource.data && isScholarOwner(resource.data.scholar_no)) || isAdmin());
-      allow write: if isAdmin();
+      allow read: if (('scholar_no' in resource.data && isScholarOwner(resource.data.scholar_no)) || isAdmin() || isCouncil() || isPrefect());
+      allow write: if isAdmin() || isCouncil();
     }
 
     match /medical_leaves/{leaveId} {
