@@ -759,5 +759,297 @@ void main() {
       expect(AuthService.getReceiptForBallot('ballot_isolation_check', scholarNo: '12428'), isNotNull);
     });
   });
+
+  group('v2 Certification State Persistence Across App Restarts', () {
+    test('Certified ballot maintains certified status in cache and is not overwritten by published status', () async {
+      final now = DateTime.now();
+      final ballot = ElectionBallot(
+        id: 'poll_v2_cert_persist',
+        title: 'Vice Head Girl Election',
+        position: BallotPosition.headGirl,
+        candidates: [
+          ElectionCandidate(
+            scholarNo: '14101',
+            fullName: 'Amina Al-Ansari',
+            houseName: 'sapphire',
+            runningPosition: 'Vice Head Girl',
+            manifesto: 'Progress with Purpose',
+            votesCount: 22,
+            isVerified: true,
+          ),
+          ElectionCandidate(
+            scholarNo: '14102',
+            fullName: 'Fatima Malik',
+            houseName: 'emerald',
+            runningPosition: 'Vice Head Girl',
+            manifesto: 'Innovation & Inclusivity',
+            votesCount: 15,
+            isVerified: true,
+          ),
+        ],
+        startTime: now.subtract(const Duration(hours: 2)),
+        endTime: now.add(const Duration(hours: 2)),
+        status: BallotStatus.open,
+        totalVotesCast: 37,
+        houseScope: 'all',
+      );
+
+      // Initially cached as open
+      await AuthService.cacheBallot(ballot);
+      expect(AuthService.getCachedBallots().firstWhere((b) => b.id == 'poll_v2_cert_persist').status, equals(BallotStatus.open));
+
+      // Certify and conclude the ballot
+      final certifiedBallot = ballot.copyWith(
+        status: BallotStatus.certified,
+        isCertified: true,
+      );
+      await AuthService.cacheBallot(certifiedBallot);
+
+      // Verify certified state in cache
+      final cachedAfterCertify = AuthService.getCachedBallots();
+      final found = cachedAfterCertify.firstWhere((b) => b.id == 'poll_v2_cert_persist');
+      expect(found.status, equals(BallotStatus.certified));
+      expect(found.isCertified, isTrue);
+
+      // Verify that parsing Firestore-like map with 'status': 'published' but 'is_certified': true yields certified
+      final simulatedFirestoreMap = {
+        'id': 'poll_v2_cert_persist',
+        'title': 'Vice Head Girl Election',
+        'position': 'head_girl',
+        'status': 'published',
+        'is_certified': true,
+        'candidates': [
+          {'scholar_no': '14101', 'full_name': 'Amina Al-Ansari', 'house_name': 'sapphire', 'running_position': 'Vice Head Girl', 'votes_count': 22},
+        ],
+        'start_time': now.subtract(const Duration(hours: 2)).toIso8601String(),
+        'end_time': now.add(const Duration(hours: 2)).toIso8601String(),
+        'total_votes_cast': 37,
+      };
+      final parsed = ElectionBallot.fromMap(simulatedFirestoreMap, docId: 'poll_v2_cert_persist');
+      expect(parsed.status, equals(BallotStatus.certified));
+      expect(parsed.isCertified, isTrue);
+
+      // Verify BallotStatusExt string mappings for certified variations
+      expect(BallotStatusExt.fromString('certified'), equals(BallotStatus.certified));
+      expect(BallotStatusExt.fromString('concluded'), equals(BallotStatus.certified));
+      expect(BallotStatusExt.fromString('finished'), equals(BallotStatus.certified));
+      expect(BallotStatusExt.fromString('published'), equals(BallotStatus.open));
+      expect(BallotStatusExt.fromString('open'), equals(BallotStatus.open));
+    });
+  });
+
+  group('Election Chamber Direct Certification Flow', () {
+    test('Certifying from Election Chamber awards 100 points, creates gazette proclamation, and updates ballot status', () async {
+      final now = DateTime.now();
+      final chamberBallot = ElectionBallot(
+        id: 'ballot_chamber_direct_cert',
+        title: 'Ruby House Captain Chamber Race',
+        position: BallotPosition.houseCaptain,
+        candidates: [
+          ElectionCandidate(
+            scholarNo: '12428',
+            fullName: 'Ali Reza',
+            houseName: 'ruby',
+            runningPosition: 'Ruby House Captain',
+            manifesto: 'Lead the flame to victory',
+            votesCount: 45,
+            isVerified: true,
+          ),
+          ElectionCandidate(
+            scholarNo: '12429',
+            fullName: 'Bilal Khan',
+            houseName: 'ruby',
+            runningPosition: 'Ruby House Captain',
+            manifesto: 'Together for Ruby',
+            votesCount: 20,
+            isVerified: true,
+          ),
+        ],
+        startTime: now.subtract(const Duration(hours: 4)),
+        endTime: now.subtract(const Duration(minutes: 10)),
+        status: BallotStatus.closed,
+        totalVotesCast: 65,
+        houseScope: 'ruby',
+      );
+
+      await AuthService.cacheBallot(chamberBallot);
+
+      // Verify that administrator (11209) has authority to certify
+      expect(
+        HierarchyService.canManageElections(
+          scholarNo: '11209',
+          role: 'super_admin',
+        ),
+        isTrue,
+      );
+      expect(
+        HierarchyService.canManageElections(
+          scholarNo: 'admin',
+          role: 'administrator',
+        ),
+        isTrue,
+      );
+
+      // Certify from Chamber with 100 house points
+      final winner = chamberBallot.candidates.first; // Ali Reza with 45 votes
+      final result = await AuthService().certifyElectionAndAwardPoints(
+        ballotId: chamberBallot.id,
+        ballotTitle: chamberBallot.title,
+        winner: winner,
+        victoryMargin: 25,
+        commissionerName: 'Returning Officer #11209',
+        housePoints: 100,
+      );
+
+      expect(result.success, isTrue);
+      expect(result.result, isNotNull);
+      expect(result.result!.housePointsAwarded, equals(100));
+      expect(result.result!.winnerScholarNo, equals('12428'));
+      expect(result.result!.winnerHouse, equals('ruby'));
+
+      // Check that proclamation is in cached gazette
+      final gazette = AuthService.getCachedCertifiedGazette();
+      expect(gazette.any((g) => g.ballotId == 'ballot_chamber_direct_cert'), isTrue);
+
+      // Check that ballot status is now certified
+      final updatedBallot = AuthService.getCachedBallots().firstWhere((b) => b.id == 'ballot_chamber_direct_cert');
+      expect(updatedBallot.status, equals(BallotStatus.certified));
+      expect(updatedBallot.isCertified, isTrue);
+    });
+  });
+
+  group('Voting on Published Draft Ballots by Administrator & Scholars', () {
+    test('Draft with cnd_ candidate IDs published by admin allows admin and students to vote without rejection', () async {
+      final now = DateTime.now();
+
+      // 1. Create a draft ballot with generated candidate IDs
+      const draftId = 'draft_head_boy_2026';
+      final cand1Id = 'cnd_${now.millisecondsSinceEpoch}_0';
+      final cand2Id = 'cnd_${now.millisecondsSinceEpoch}_1';
+
+      final draftData = {
+        'id': draftId,
+        'title': 'Head Boy General Election 2026',
+        'position': 'head_boy',
+        'house_scope': 'all',
+        'min_grade': 9,
+        'max_grade': 12,
+        'status': 'draft',
+        'candidates': [
+          {
+            'id': cand1Id,
+            'name': 'Hamza Yusuf',
+            'scholar_no': '12428',
+            'house': 'ruby',
+            'running_position': 'Head Boy',
+            'statement': 'Integrity and leadership for all.',
+            'votes_count': 0,
+          },
+          {
+            'id': cand2Id,
+            'name': 'Dev Patel',
+            'scholar_no': '11209',
+            'house': 'topaz',
+            'running_position': 'Head Boy',
+            'statement': 'Every scholar matters.',
+            'votes_count': 0,
+          },
+        ],
+        'created_at': now.toIso8601String(),
+        'opens_at': now.subtract(const Duration(minutes: 5)).toIso8601String(),
+        'closes_at': now.add(const Duration(days: 3)).toIso8601String(),
+      };
+
+      await AuthService.cacheDraftBallot(draftData);
+      final cachedDrafts = AuthService.getCachedDraftBallots();
+      expect(cachedDrafts.any((d) => d['id'] == draftId), isTrue);
+
+      // 2. Publish draft into active ballot
+      final publishedBallot = ElectionBallot(
+        id: draftId,
+        title: draftData['title'] as String,
+        position: BallotPosition.headBoy,
+        candidates: (draftData['candidates'] as List).map((c) {
+          final cMap = Map<String, dynamic>.from(c as Map);
+          return ElectionCandidate.fromMap(cMap);
+        }).toList(),
+        startTime: now.subtract(const Duration(minutes: 5)),
+        endTime: now.add(const Duration(days: 3)),
+        status: BallotStatus.open,
+        totalVotesCast: 0,
+        houseScope: 'all',
+        eligibleGrades: ['Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'],
+      );
+
+      await AuthService.cacheBallot(publishedBallot);
+
+      // Verify candidates parsed correctly with scholar_no and id
+      expect(publishedBallot.candidates.length, equals(2));
+      expect(publishedBallot.candidates[0].scholarNo, equals('12428'));
+      expect(publishedBallot.candidates[0].fullName, equals('Hamza Yusuf'));
+      expect(publishedBallot.candidates[1].scholarNo, equals('11209'));
+      expect(publishedBallot.candidates[1].fullName, equals('Dev Patel'));
+
+      // 3. Admin (11209) casts vote for candidate 1
+      final adminAccount = SavedAccount(
+        scholarNo: '11209',
+        fullName: 'Administrator',
+        houseName: 'ruby',
+        uid: 'uid_admin_test',
+        role: 'super_admin',
+      );
+      await AuthService().switchAccount(adminAccount);
+
+      final voteResAdmin = await AuthService().castDigitalVote(
+        ballotId: publishedBallot.id,
+        ballotTitle: publishedBallot.title,
+        candidate: publishedBallot.candidates[0],
+        scholarNo: '11209',
+      );
+
+      expect(voteResAdmin.success, isTrue);
+      expect(voteResAdmin.receipt, isNotNull);
+      expect(voteResAdmin.receipt!.candidateScholarNo, equals('12428'));
+      expect(AuthService.hasVotedInBallotCached(draftId, scholarNo: '11209'), isTrue);
+
+      // 4. Student (13500) casts vote for candidate 2
+      final studentAccount = SavedAccount(
+        scholarNo: '13500',
+        fullName: 'Omar Tariq',
+        houseName: 'emerald',
+        uid: 'uid_student_13500',
+        role: 'student',
+      );
+      await AuthService().switchAccount(studentAccount);
+
+      final voteResStudent = await AuthService().castDigitalVote(
+        ballotId: publishedBallot.id,
+        ballotTitle: publishedBallot.title,
+        candidate: publishedBallot.candidates[1],
+        scholarNo: '13500',
+      );
+
+      expect(voteResStudent.success, isTrue);
+      expect(voteResStudent.receipt, isNotNull);
+      expect(voteResStudent.receipt!.candidateScholarNo, equals('11209'));
+      expect(AuthService.hasVotedInBallotCached(draftId, scholarNo: '13500'), isTrue);
+
+      // 5. Verify double-voting is rejected for student
+      final doubleVote = await AuthService().castDigitalVote(
+        ballotId: publishedBallot.id,
+        ballotTitle: publishedBallot.title,
+        candidate: publishedBallot.candidates[0],
+        scholarNo: '13500',
+      );
+      expect(doubleVote.success, isFalse);
+      expect(doubleVote.error?.toLowerCase(), contains('already cast'));
+
+      // 6. Verify total tally on cached ballot reflects both votes
+      final currentBallot = AuthService.getCachedBallots().firstWhere((b) => b.id == draftId);
+      expect(currentBallot.totalVotesCast, equals(2));
+      expect(currentBallot.candidates.firstWhere((c) => c.scholarNo == '12428').votesCount, equals(1));
+      expect(currentBallot.candidates.firstWhere((c) => c.scholarNo == '11209').votesCount, equals(1));
+    });
+  });
 }
 

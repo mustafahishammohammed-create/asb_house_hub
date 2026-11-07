@@ -470,29 +470,50 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: ballot.isOpen
-                            ? Colors.green.withValues(alpha: 0.15)
-                            : Colors.grey.withValues(alpha: 0.15),
+                        color: ballot.status == BallotStatus.certified
+                            ? Colors.amber.withValues(alpha: 0.15)
+                            : (ballot.isOpen
+                                ? Colors.green.withValues(alpha: 0.15)
+                                : Colors.grey.withValues(alpha: 0.15)),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
                         ballot.status.displayName.toUpperCase(),
                         style: TextStyle(
-                          color: ballot.isOpen ? Colors.green : Colors.grey,
+                          color: ballot.status == BallotStatus.certified
+                              ? Colors.amber.shade800
+                              : (ballot.isOpen ? Colors.green : Colors.grey),
                           fontWeight: FontWeight.w800,
                           fontSize: 10,
                         ),
                       ),
                     ),
                     const Spacer(),
-                    Text(
-                      ballot.formattedRemaining,
-                      style: TextStyle(
-                        color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
+                    if (_canManageElections && ballot.status != BallotStatus.certified && ballot.candidates.isNotEmpty)
+                      FilledButton.tonalIcon(
+                        style: FilledButton.styleFrom(
+                          foregroundColor: Colors.amber.shade900,
+                          backgroundColor: Colors.amber.withValues(alpha: 0.15),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          visualDensity: VisualDensity.compact,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        icon: const Icon(Icons.workspace_premium_rounded, size: 14),
+                        label: const Text(
+                          'Certify & End',
+                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11),
+                        ),
+                        onPressed: () => _certifyBallotWinner(ballot, houseColor),
+                      )
+                    else
+                      Text(
+                        ballot.formattedRemaining,
+                        style: TextStyle(
+                          color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
                       ),
-                    ),
                   ],
                 ),
                 const SizedBox(height: 10),
@@ -539,23 +560,49 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                 return _buildCandidateRow(ballot, candidate, houseColor, isDark);
               },
             ),
-          if (ballot.isOpen && ballot.candidates.isNotEmpty)
+          if (_canManageElections && ballot.status != BallotStatus.certified && ballot.candidates.isNotEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-              child: OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.amber.shade800,
-                  side: BorderSide(color: Colors.amber.shade800.withValues(alpha: 0.5)),
-                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.amber.shade700,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  minimumSize: const Size.fromHeight(44),
+                  minimumSize: const Size.fromHeight(46),
                 ),
-                icon: const Icon(Icons.workspace_premium_rounded, size: 18),
-                label: const Text(
-                  'Close & Certify Election Proclamation',
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                icon: const Icon(Icons.workspace_premium_rounded, size: 20),
+                label: Text(
+                  ballot.isOpen ? 'Certify Election & Conclude Voting' : 'Certify Election Proclamation',
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
                 ),
                 onPressed: () => _certifyBallotWinner(ballot, houseColor),
+              ),
+            )
+          else if (ballot.status == BallotStatus.certified)
+            Container(
+              margin: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+              decoration: BoxDecoration(
+                color: Colors.amber.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.workspace_premium_rounded, color: Colors.amber, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Election Certified & Concluded. Official results recorded in Campus Gazette.',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                        color: isDark ? Colors.amber.shade200 : Colors.amber.shade900,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
         ],
@@ -1750,6 +1797,7 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
         winner: winner,
         victoryMargin: (winner.votesCount - (sortedCandidates.length > 1 ? sortedCandidates[1].votesCount : 0)),
         commissionerName: _effectiveScholarNo.isNotEmpty ? 'Scholar #$_effectiveScholarNo' : 'Returning Officer',
+        housePoints: 100,
       );
 
       if (mounted) {

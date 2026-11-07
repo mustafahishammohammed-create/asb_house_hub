@@ -60,6 +60,15 @@ extension BallotStatusExt on BallotStatus {
 
   static BallotStatus fromString(String? val) {
     final clean = (val ?? '').trim().toLowerCase();
+    if (clean == 'published' || clean == 'active' || clean == 'open') {
+      return BallotStatus.open;
+    }
+    if (clean == 'certified' || clean == 'concluded' || clean == 'finished') {
+      return BallotStatus.certified;
+    }
+    if (clean == 'closed' || clean == 'ended' || clean == 'expired') {
+      return BallotStatus.closed;
+    }
     for (final s in BallotStatus.values) {
       if (s.name.toLowerCase() == clean) return s;
     }
@@ -106,15 +115,15 @@ class ElectionCandidate {
 
   factory ElectionCandidate.fromMap(Map<String, dynamic> map) {
     return ElectionCandidate(
-      scholarNo: (map['scholar_no'] ?? '').toString().trim(),
-      fullName: (map['full_name'] ?? 'Candidate').toString().trim(),
-      houseName: (map['house_name'] ?? 'ruby').toString().trim().toLowerCase(),
-      runningPosition: (map['running_position'] ?? 'House Captain').toString(),
-      manifesto: (map['manifesto'] ?? '').toString(),
-      avatarUrl: (map['avatar_url'] ?? '').toString(),
-      classLevel: (map['class_level'] ?? 'Grade 11').toString(),
-      votesCount: (map['votes_count'] as num?)?.toInt() ?? 0,
-      isVerified: map['is_verified'] != false,
+      scholarNo: (map['scholar_no'] ?? map['scholarNo'] ?? map['id'] ?? '').toString().trim(),
+      fullName: (map['full_name'] ?? map['fullName'] ?? map['name'] ?? 'Candidate').toString().trim(),
+      houseName: (map['house_name'] ?? map['houseName'] ?? map['house'] ?? 'ruby').toString().trim().toLowerCase(),
+      runningPosition: (map['running_position'] ?? map['runningPosition'] ?? map['position'] ?? 'House Captain').toString(),
+      manifesto: (map['manifesto'] ?? map['statement'] ?? '').toString(),
+      avatarUrl: (map['avatar_url'] ?? map['avatarUrl'] ?? '').toString(),
+      classLevel: (map['class_level'] ?? map['classLevel'] ?? 'Grade 11').toString(),
+      votesCount: (map['votes_count'] ?? map['votesCount'] ?? map['count'] as num?)?.toInt() ?? 0,
+      isVerified: map['is_verified'] != false && map['isVerified'] != false,
     );
   }
 }
@@ -150,6 +159,35 @@ class ElectionBallot implements Comparable<ElectionBallot> {
     return now.isAfter(startTime) && now.isBefore(endTime);
   }
 
+  bool get isCertified => status == BallotStatus.certified;
+
+  ElectionBallot copyWith({
+    String? id,
+    String? title,
+    BallotPosition? position,
+    String? houseScope,
+    List<String>? eligibleGrades,
+    BallotStatus? status,
+    DateTime? startTime,
+    DateTime? endTime,
+    List<ElectionCandidate>? candidates,
+    int? totalVotesCast,
+    bool? isCertified,
+  }) {
+    return ElectionBallot(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      position: position ?? this.position,
+      houseScope: houseScope ?? this.houseScope,
+      eligibleGrades: eligibleGrades ?? this.eligibleGrades,
+      status: (isCertified == true) ? BallotStatus.certified : (status ?? this.status),
+      startTime: startTime ?? this.startTime,
+      endTime: endTime ?? this.endTime,
+      candidates: candidates ?? this.candidates,
+      totalVotesCast: totalVotesCast ?? this.totalVotesCast,
+    );
+  }
+
   Duration get timeRemaining => endTime.difference(DateTime.now());
 
   String get formattedRemaining {
@@ -177,6 +215,8 @@ class ElectionBallot implements Comparable<ElectionBallot> {
   factory ElectionBallot.fromMap(Map<String, dynamic> map, {String? docId}) {
     DateTime parseDate(dynamic v) {
       if (v is Timestamp) return v.toDate();
+      if (v is DateTime) return v;
+      if (v is num) return DateTime.fromMillisecondsSinceEpoch(v.toInt());
       if (v is String) return DateTime.tryParse(v) ?? DateTime.now();
       return DateTime.now();
     }
@@ -199,17 +239,22 @@ class ElectionBallot implements Comparable<ElectionBallot> {
       }
     }
 
+    final isCertifiedBool = map['is_certified'] == true || map['isCertified'] == true;
+    final parsedStatus = isCertifiedBool
+        ? BallotStatus.certified
+        : BallotStatusExt.fromString(map['status']?.toString());
+
     return ElectionBallot(
       id: docId ?? map['id']?.toString() ?? '',
       title: map['title']?.toString() ?? 'Election',
-      position: BallotPositionExt.fromString(map['position']?.toString()),
-      houseScope: map['house_scope']?.toString() ?? 'All',
+      position: BallotPositionExt.fromString(map['position']?.toString() ?? map['running_position']?.toString()),
+      houseScope: map['house_scope']?.toString() ?? map['house']?.toString() ?? 'All',
       eligibleGrades: gradeList.isNotEmpty
           ? gradeList
           : const ['Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'],
-      status: BallotStatusExt.fromString(map['status']?.toString()),
-      startTime: parseDate(map['start_time']),
-      endTime: parseDate(map['end_time']),
+      status: parsedStatus,
+      startTime: parseDate(map['start_time'] ?? map['opensAt'] ?? map['startMs']),
+      endTime: parseDate(map['end_time'] ?? map['closesAt'] ?? map['endMs']),
       candidates: candList,
       totalVotesCast: (map['total_votes_cast'] as num?)?.toInt() ?? 0,
     );

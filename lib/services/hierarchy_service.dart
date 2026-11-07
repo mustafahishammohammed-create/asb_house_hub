@@ -12,7 +12,7 @@ class HierarchyService {
     final rStr = (role ?? '').trim().toLowerCase();
 
     if (sNo == 'admin' || sNo == '11209') return true;
-    if (rStr == 'super_admin' || rStr == 'admin') return true;
+    if (rStr == 'super_admin' || rStr == 'admin' || rStr == 'administrator') return true;
 
     return false;
   }
@@ -124,7 +124,7 @@ class HierarchyService {
     final em = (email ?? '').trim().toLowerCase();
 
     if (sNo == 'admin' || sNo == '11209') return true;
-    if (rStr == 'admin' || rStr == 'super_admin' || rStr == 'principal') return true;
+    if (rStr == 'admin' || rStr == 'super_admin' || rStr == 'principal' || rStr == 'administrator') return true;
     if (em.contains('admin@asianschool.bh') ||
         em.contains('superadmin@asianschool.bh') ||
         em.contains('principal@asianschool.bh')) {

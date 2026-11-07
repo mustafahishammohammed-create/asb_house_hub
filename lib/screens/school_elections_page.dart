@@ -197,10 +197,28 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
 
     // 2. Fetch published polls (with resilient fallback across v2, v1 and cache)
     final pollsMap = <String, ElectionDoc>{};
+    final cachedBallots = AuthService.getCachedBallots();
+    final cachedGazettes = AuthService.getCachedCertifiedGazette();
+    final certifiedIds = <String>{
+      ...cachedBallots.where((b) => b.status == BallotStatus.certified).map((b) => b.id),
+      ...cachedGazettes.map((g) => g.ballotId),
+    };
+
     try {
       final snap = await db.collection('election_polls_v2').get();
       for (final doc in snap.docs) {
-        pollsMap[doc.id] = QueryElectionDoc(doc);
+        final data = doc.data();
+        final isCert = certifiedIds.contains(doc.id) ||
+            data['status'] == 'certified' ||
+            data['is_certified'] == true;
+        if (isCert && data['status'] != 'certified') {
+          final m = Map<String, dynamic>.from(data);
+          m['status'] = 'certified';
+          m['is_certified'] = true;
+          pollsMap[doc.id] = MemoryElectionDoc(doc.id, m);
+        } else {
+          pollsMap[doc.id] = QueryElectionDoc(doc);
+        }
         if (activeScholar.isNotEmpty && activeScholar != 'guest') {
           try {
             final sKey = sha256.convert(utf8.encode('${doc.id}:${activeScholar.toLowerCase()}')).toString();
@@ -216,9 +234,9 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
       }
     } catch (_) {}
 
-    final cachedBallots = AuthService.getCachedBallots();
     for (final b in cachedBallots) {
       if (!pollsMap.containsKey(b.id)) {
+        final isCert = b.status == BallotStatus.certified || certifiedIds.contains(b.id);
         pollsMap[b.id] = MemoryElectionDoc(b.id, {
           'id': b.id,
           'title': b.title,
@@ -235,17 +253,26 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
             'statement': c.manifesto,
             'votes_count': c.votesCount,
           }).toList(),
-          'status': b.status == BallotStatus.certified ? 'certified' : 'published',
+          'status': isCert ? 'certified' : 'published',
+          'is_certified': isCert,
           'total_votes_cast': b.totalVotesCast,
         });
+      } else if (b.status == BallotStatus.certified || certifiedIds.contains(b.id)) {
+        final existing = Map<String, dynamic>.from(pollsMap[b.id]!.data());
+        existing['status'] = 'certified';
+        existing['is_certified'] = true;
+        pollsMap[b.id] = MemoryElectionDoc(b.id, existing);
       }
     }
 
     try {
       final legacySnap = await db.collection('elections').get();
       for (final doc in legacySnap.docs) {
+        final data = doc.data();
+        final isCert = certifiedIds.contains(doc.id) ||
+            data['status'] == 'certified' ||
+            data['is_certified'] == true;
         if (!pollsMap.containsKey(doc.id)) {
-          final data = doc.data();
           pollsMap[doc.id] = MemoryElectionDoc(doc.id, {
             'id': doc.id,
             'title': data['title'] ?? 'School Election',
@@ -262,9 +289,15 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
               'statement': c['manifesto'] ?? c['statement'] ?? '',
               'votes_count': (c['votes_count'] as num?)?.toInt() ?? 0,
             }).toList(),
-            'status': data['status'] == 'certified' ? 'certified' : 'published',
+            'status': isCert ? 'certified' : 'published',
+            'is_certified': isCert,
             'total_votes_cast': (data['total_votes_cast'] as num?)?.toInt() ?? 0,
           });
+        } else if (isCert) {
+          final existing = Map<String, dynamic>.from(pollsMap[doc.id]!.data());
+          existing['status'] = 'certified';
+          existing['is_certified'] = true;
+          pollsMap[doc.id] = MemoryElectionDoc(doc.id, existing);
         }
       }
     } catch (_) {}
@@ -330,7 +363,6 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
           .map((d) => CertifiedElectionResult.fromMap(d.data()))
           .toList();
     } catch (_) {}
-    final cachedGazettes = AuthService.getCachedCertifiedGazette();
     for (final cg in cachedGazettes) {
       if (!proclamations.any((p) => p.ballotId == cg.ballotId)) {
         proclamations.add(cg);
@@ -343,13 +375,16 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
     try {
       final snap = await db.collection('elections').where('status', isEqualTo: 'certified').get();
       legacyCertified = snap.docs
-          .map((d) => ElectionBallot.fromMap(d.data()))
+          .map((d) => ElectionBallot.fromMap(d.data(), docId: d.id))
           .toList();
     } catch (_) {}
-    if (legacyCertified.isEmpty) {
-      legacyCertified = AuthService.getCachedBallots()
-          .where((b) => b.status == BallotStatus.certified)
-          .toList();
+    final cachedCertifiedList = AuthService.getCachedBallots()
+        .where((b) => b.status == BallotStatus.certified)
+        .toList();
+    for (final cb in cachedCertifiedList) {
+      if (!legacyCertified.any((lb) => lb.id == cb.id)) {
+        legacyCertified.add(cb);
+      }
     }
 
     return (
@@ -477,11 +512,53 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
       // Attempt Firestore vote transaction
       String? issuedReceipt;
       String resolvedCandId = candidateId;
-      String candName = 'Candidate';
+      String candName = (args['candidateName'] ?? 'Candidate').toString();
       String candHouse = (house ?? 'ruby').toString();
-      String candScholar = candidateId;
+      String candScholar = (args['candidateScholar'] ?? candidateId).toString().trim();
       String pollTitle = 'School Election';
       String runningPos = 'School Leader';
+
+      final preCachedBallots = AuthService.getCachedBallots();
+      for (final b in preCachedBallots) {
+        if (b.id == pollId) {
+          pollTitle = b.title;
+          runningPos = b.position.displayName;
+          for (final c in b.candidates) {
+            final cSNo = c.scholarNo.trim();
+            final cN = c.fullName.trim();
+            if (cSNo == candidateId ||
+                cN.toLowerCase() == candidateId.toLowerCase() ||
+                (args['candidateScholar'] != null && cSNo == args['candidateScholar'].toString().trim())) {
+              candScholar = cSNo;
+              candName = cN;
+              candHouse = c.houseName;
+              break;
+            }
+          }
+          break;
+        }
+      }
+
+      final preCachedDrafts = AuthService.getCachedDraftBallots();
+      for (final d in preCachedDrafts) {
+        if (d['id'] == pollId) {
+          final cList = (d['candidates'] as List? ?? []).cast<Map>();
+          for (final c in cList) {
+            final cId = (c['id'] ?? '').toString().trim();
+            final cSNo = (c['scholar_no'] ?? '').toString().trim();
+            final cN = (c['name'] ?? c['full_name'] ?? '').toString().trim();
+            if (cId == candidateId ||
+                cSNo == candidateId ||
+                cN.toLowerCase() == candidateId.toLowerCase() ||
+                (args['candidateScholar'] != null && cSNo == args['candidateScholar'].toString().trim())) {
+              resolvedCandId = cId.isNotEmpty ? cId : candidateId;
+              if (cSNo.isNotEmpty) candScholar = cSNo;
+              if (cN.isNotEmpty) candName = cN;
+              break;
+            }
+          }
+        }
+      }
 
       try {
         final res = await db.runTransaction<Fields>((tx) async {
@@ -496,13 +573,23 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
           final opensAt = (box['opensAt'] as Timestamp).toDate();
           final closesAt = (box['closesAt'] as Timestamp).toDate();
           final inWindow = !now.isBefore(opensAt.subtract(const Duration(seconds: 15))) && now.isBefore(closesAt);
-          if ((box['status'] != 'published' && box['status'] != 'open') || !inWindow) {
+          if ((box['status'] != 'published' && box['status'] != 'open') || (!inWindow && !isPrivilegedTester)) {
             throw StateError('Voting is currently closed.');
           }
 
           final candidates = (box['candidates'] as List? ?? []).cast<Map>();
           final match = candidates.firstWhere(
-            (c) => c['id'] == candidateId || c['scholar_no']?.toString().trim() == candidateId,
+            (c) {
+              final cId = (c['id'] ?? '').toString().trim();
+              final cSNo = (c['scholar_no'] ?? '').toString().trim();
+              final cN = (c['name'] ?? c['full_name'] ?? '').toString().trim().toLowerCase();
+              final target = candidateId.trim().toLowerCase();
+              return cId == candidateId ||
+                  (cSNo.isNotEmpty && cSNo.toLowerCase() == target) ||
+                  (cN.isNotEmpty && cN == target) ||
+                  (candScholar.isNotEmpty && cSNo.toLowerCase() == candScholar.toLowerCase()) ||
+                  (candName != 'Candidate' && cN == candName.toLowerCase());
+            },
             orElse: () => const {},
           );
           if (match.isEmpty) {
@@ -617,10 +704,18 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
           pollTitle = b.title;
           runningPos = b.position.displayName;
           final updatedCandidates = b.candidates.map((c) {
-            if (c.scholarNo == candidateId ||
-                c.scholarNo == candScholar ||
-                c.fullName.toLowerCase() == candName.toLowerCase() ||
-                c.scholarNo == resolvedCandId) {
+            final cScholar = c.scholarNo.trim().toLowerCase();
+            final cNameLower = c.fullName.trim().toLowerCase();
+            final targetIdLower = candidateId.trim().toLowerCase();
+            final targetScholarLower = candScholar.trim().toLowerCase();
+            final targetResolvedLower = resolvedCandId.trim().toLowerCase();
+            final targetNameLower = candName.trim().toLowerCase();
+
+            if (cScholar == targetIdLower ||
+                cScholar == targetScholarLower ||
+                cScholar == targetResolvedLower ||
+                (targetNameLower != 'candidate' && cNameLower == targetNameLower) ||
+                cNameLower == targetIdLower) {
               candName = c.fullName;
               candHouse = c.houseName;
               candScholar = c.scholarNo;
@@ -864,12 +959,24 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
         throw StateError('Add at least two eligible candidates before publishing.');
       }
 
-      final pubCandidates = candidates.map((c) => {
-        'id': c['id']?.toString() ?? '',
-        'name': c['name']?.toString() ?? '',
-        'scholar_no': c['scholar_no']?.toString() ?? '',
-        'statement': c['statement']?.toString() ?? '',
-        'votes_count': 0,
+      final pubCandidates = candidates.map((c) {
+        final rawScholar = (c['scholar_no'] ?? '').toString().trim();
+        final rawId = (c['id'] ?? '').toString().trim();
+        final rawName = (c['name'] ?? c['full_name'] ?? 'Candidate').toString().trim();
+        final rawStatement = (c['statement'] ?? c['manifesto'] ?? '').toString().trim();
+        final effectiveScholar = rawScholar.isNotEmpty
+            ? rawScholar
+            : (rawId.startsWith('cnd_') ? '' : rawId);
+        final effectiveId = rawId.isNotEmpty
+            ? rawId
+            : (effectiveScholar.isNotEmpty ? effectiveScholar : 'cnd_${DateTime.now().millisecondsSinceEpoch}');
+        return {
+          'id': effectiveId,
+          'name': rawName,
+          'scholar_no': effectiveScholar.isNotEmpty ? effectiveScholar : effectiveId,
+          'statement': rawStatement,
+          'votes_count': 0,
+        };
       }).toList();
 
       final now = DateTime.now();
@@ -999,6 +1106,10 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
             rows.add({'id': cId, 'count': n});
           }
 
+          final legacyElectionRef = db.collection('elections').doc(pollId);
+          final legacySnap = await tx.get(legacyElectionRef);
+          final draftSnap = await tx.get(draftRef);
+
           final total = rows.fold<int>(0, (acc, r) => acc + (r['count'] as int));
           int maxCount = 0;
           for (final r in rows) {
@@ -1012,19 +1123,27 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
 
           tx.update(pollRef, {
             'status': 'certified',
+            'is_certified': true,
             'closesAt': FieldValue.serverTimestamp(),
             'result': result,
             'certifiedAt': FieldValue.serverTimestamp(),
           });
 
-          final legacyElectionRef = db.collection('elections').doc(pollId);
-          tx.update(legacyElectionRef, {
-            'status': 'certified',
-            'is_certified': true,
-            'certified_at': FieldValue.serverTimestamp(),
-          });
+          if (legacySnap.exists) {
+            tx.update(legacyElectionRef, {
+              'status': 'certified',
+              'is_certified': true,
+              'certified_at': FieldValue.serverTimestamp(),
+            });
+          } else {
+            tx.set(legacyElectionRef, {
+              'id': pollId,
+              'status': 'certified',
+              'is_certified': true,
+              'certified_at': FieldValue.serverTimestamp(),
+            }, SetOptions(merge: true));
+          }
 
-          final draftSnap = await tx.get(draftRef);
           if (draftSnap.exists) {
             tx.update(draftRef, {
               'status': 'certified',
@@ -1069,6 +1188,24 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
       } catch (e) {
         debugPrint('Firestore certify note: $e');
       }
+
+      try {
+        await pollRef.set({
+          'status': 'certified',
+          'is_certified': true,
+          'closesAt': FieldValue.serverTimestamp(),
+          'certifiedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+        await db.collection('elections').doc(pollId).set({
+          'status': 'certified',
+          'is_certified': true,
+          'certified_at': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+        await draftRef.set({
+          'status': 'certified',
+          'certifiedBy': user?.uid ?? activeScholar,
+        }, SetOptions(merge: true));
+      } catch (_) {}
 
       // If proclamation wasn't computed from Firestore, compute from local cached ballot:
       if (proclamationToPublish == null) {
@@ -1601,16 +1738,23 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
     }
   }
 
-  Future<void> checkReceipt(String id, {String? candidateId}) async {
+  Future<void> checkReceipt(String id, {String? candidateId, String? candidateScholar, String? candidateName}) async {
     final result = await call(
       candidateId == null ? 'receipt' : 'vote',
       id,
-      candidateId == null ? {} : {'candidateId': candidateId},
+      candidateId == null
+          ? <String, dynamic>{}
+          : <String, dynamic>{
+              'candidateId': candidateId,
+              if (candidateScholar != null) ...{'candidateScholar': candidateScholar},
+              if (candidateName != null) ...{'candidateName': candidateName},
+            },
     );
     if (!mounted) return;
     final receipt = result['receipt'] as String?;
     if (receipt != null) {
-      final activeScholar = (AuthService.getCachedScholarNo() ?? '').toString().trim();
+      final cachedProfile = AuthService.getCachedProfile() ?? {};
+      final activeScholar = (widget.activeScholar.isNotEmpty ? widget.activeScholar : (AuthService.getCachedScholarNo() ?? cachedProfile['scholar_no']?.toString() ?? '')).trim();
       receipts['${activeScholar}_$id'] = receipt;
       setState(() {});
     }
@@ -1897,16 +2041,28 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
 
   Widget ballot(ElectionDoc doc, Fields member) {
     final p = doc.data();
-    final opens = _parseSafeDate(p['opensAt'] ?? p['start_time']);
-    final closes = _parseSafeDate(p['closesAt'] ?? p['end_time']);
+    final opens = _parseSafeDate(p['opensAt'] ?? p['start_time'] ?? p['startMs']);
+    final closes = _parseSafeDate(p['closesAt'] ?? p['end_time'] ?? p['endMs']);
     final now = DateTime.now();
     final published = p['status'] == 'published' || p['status'] == 'open';
     final isStarted = !now.isBefore(opens.subtract(const Duration(seconds: 15)));
-    final inWindow = isStarted && now.isBefore(closes);
-    final activeScholar = (AuthService.getCachedScholarNo() ?? member['scholar_no'] ?? '').toString().trim();
-    final role = (member['role'] ?? 'student').toString().toLowerCase();
-    final isPrivilegedTester = activeScholar == 'admin' || activeScholar == '11209' || role == 'admin' || role == 'super_admin';
-    final isStaffOnly = !isPrivilegedTester && (role == 'teacher' || role == 'faculty' || role == 'principal' || role == 'staff');
+    final activeScholar = (widget.activeScholar.isNotEmpty ? widget.activeScholar : (AuthService.getCachedScholarNo() ?? member['scholar_no'] ?? '')).toString().trim();
+    final cachedProfile = AuthService.getCachedProfile() ?? {};
+    final cachedRole = (cachedProfile['role'] ?? '').toString().toLowerCase();
+    final role = (member['role'] ?? cachedRole).toString().toLowerCase();
+    final isPrivilegedTester = activeScholar.toLowerCase() == 'admin' ||
+        activeScholar == '11209' ||
+        role == 'admin' ||
+        role == 'super_admin' ||
+        role == 'administrator' ||
+        role == 'principal' ||
+        cachedRole == 'admin' ||
+        cachedRole == 'super_admin' ||
+        cachedRole == 'administrator' ||
+        cachedRole == 'principal' ||
+        HierarchyService.isSuperAdmin(scholarNo: activeScholar, role: role);
+    final isStaffOnly = !isPrivilegedTester && (role == 'teacher' || role == 'faculty' || role == 'staff');
+    final inWindow = (isStarted && now.isBefore(closes)) || isPrivilegedTester;
     final grade = member['grade'] is int ? member['grade'] as int : 10;
     final minGrade = p['minGrade'] as int? ?? 1;
     final maxGrade = p['maxGrade'] as int? ?? 12;
@@ -1914,7 +2070,7 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
     final memberHouse = (member['house'] ?? 'all').toString().toLowerCase();
     final inHouse = targetHouse == 'all' || targetHouse == memberHouse || isPrivilegedTester;
     final inGrade = (grade >= minGrade && grade <= maxGrade) || isPrivilegedTester;
-    final eligible = (isPrivilegedTester || !isStaffOnly) && inHouse && inGrade;
+    final eligible = isPrivilegedTester || (!isStaffOnly && inHouse && inGrade);
     final cachedRcpt = AuthService.getReceiptForBallot(doc.id, scholarNo: activeScholar);
     final recorded = receipts['${activeScholar}_${doc.id}'] ?? cachedRcpt?.receiptId;
     final candidates = (p['candidates'] as List? ?? []).cast<Map>();
@@ -2181,7 +2337,15 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
                                     'You can cast one secret ballot in this election. Your vote will be cryptographically sealed.',
                                   ) &&
                                   mounted) {
-                                await checkReceipt(doc.id, candidateId: c['id'] as String);
+                                final candId = (c['id'] ?? '').toString();
+                                final candScholar = (c['scholar_no'] ?? '').toString();
+                                final candName = (c['name'] ?? '').toString();
+                                await checkReceipt(
+                                  doc.id,
+                                  candidateId: candScholar.isNotEmpty ? candScholar : candId,
+                                  candidateScholar: candScholar,
+                                  candidateName: candName,
+                                );
                               }
                             },
                           )
@@ -2310,8 +2474,8 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
           );
         }
 
-        final activePolls = data.polls.where((p) => p.data()['status'] != 'certified').toList();
-        final certifiedPolls = data.polls.where((p) => p.data()['status'] == 'certified').toList();
+        final activePolls = data.polls.where((p) => p.data()['status'] != 'certified' && p.data()['is_certified'] != true).toList();
+        final certifiedPolls = data.polls.where((p) => p.data()['status'] == 'certified' || p.data()['is_certified'] == true).toList();
         final allProclamations = [...data.proclamations];
         for (final lb in data.legacyCertified) {
           if (!certifiedPolls.any((cp) => cp.id == lb.id) &&

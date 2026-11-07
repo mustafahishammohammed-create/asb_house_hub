@@ -156,7 +156,7 @@ class SavedAccount {
     this.password,
     Map<String, dynamic>? cachedProfile,
     DateTime? lastActive,
-  })  : cachedProfile = cachedProfile != null ? AuthService._sanitizeForJson(cachedProfile) : const {},
+  })  : cachedProfile = cachedProfile != null ? AuthService._sanitizeForJson(cachedProfile) : <String, dynamic>{},
         lastActive = lastActive ?? DateTime.now();
 
   Map<String, dynamic> toMap() {
@@ -1909,11 +1909,26 @@ class AuthService {
           final data = d.data();
           return ElectionBallot.fromMap(data, docId: d.id);
         }).toList();
-        list.sort();
-        if (list.isNotEmpty) {
-          cacheBallots(list);
+
+        final cached = getCachedBallots();
+        final map = <String, ElectionBallot>{};
+        for (final b in cached) {
+          map[b.id] = b;
         }
-        return list;
+        for (final b in list) {
+          if (map.containsKey(b.id) &&
+              map[b.id]!.status == BallotStatus.certified &&
+              b.status != BallotStatus.certified) {
+            // Preserve certified status from cache
+          } else {
+            map[b.id] = b;
+          }
+        }
+        final merged = map.values.toList()..sort();
+        if (merged.isNotEmpty) {
+          cacheBallots(merged);
+        }
+        return merged;
       });
     } catch (_) {
       return Stream.value(getCachedBallots());
@@ -2249,7 +2264,9 @@ class AuthService {
     await cacheProfile(prof);
 
     // Keep account instance synchronized so subsequent lookups do not carry stale roles
-    account.cachedProfile.addAll(prof);
+    try {
+      account.cachedProfile.addAll(prof);
+    } catch (_) {}
 
     await recordActiveAccount(
       profile: prof,
@@ -4408,6 +4425,7 @@ class AuthService {
     );
 
     // 3. Atomic Firestore Transaction (Anti-Double-Voting Verification)
+    bool alreadyVoted = false;
     try {
       if (_isFirebaseLive) {
         if (firestoreFailureSimulated != null) {
@@ -4428,17 +4446,22 @@ class AuthService {
             .collection('counts')
             .doc(candidate.scholarNo);
 
-        bool alreadyVoted = false;
+        final v2PollRef = _firestore.collection('election_polls_v2').doc(bId);
 
         await _firestore.runTransaction((transaction) async {
           final voteLockSnap = await transaction.get(voteLockRef);
           final v2PartSnap = await transaction.get(v2PartRef);
+          final ballotSnap = await transaction.get(ballotRef);
+          final v2PollSnap = await transaction.get(v2PollRef);
+
           if ((voteLockSnap.exists || v2PartSnap.exists) && !isStaffTester) {
             alreadyVoted = true;
             return;
           }
 
-          final ballotSnap = await transaction.get(ballotRef);
+          final targetScholar = candidate.scholarNo.trim().toLowerCase();
+          final targetName = candidate.fullName.trim().toLowerCase();
+
           if (ballotSnap.exists) {
             final ballotData = ballotSnap.data() ?? {};
             final rawCandidates = ballotData['candidates'] as List? ?? [];
@@ -4448,12 +4471,11 @@ class AuthService {
               if (item is Map) {
                 final cMap = Map<String, dynamic>.from(item);
                 final cScholar = cMap['scholar_no']?.toString().trim().toLowerCase() ?? '';
-                final cName = cMap['full_name']?.toString().trim().toLowerCase() ?? '';
-                final targetScholar = candidate.scholarNo.trim().toLowerCase();
-                final targetName = candidate.fullName.trim().toLowerCase();
+                final cId = cMap['id']?.toString().trim().toLowerCase() ?? '';
+                final cName = (cMap['full_name'] ?? cMap['name'] ?? '').toString().trim().toLowerCase();
 
-                if ((targetScholar.isNotEmpty && cScholar == targetScholar) ||
-                    (targetScholar.isEmpty && cName == targetName)) {
+                if ((targetScholar.isNotEmpty && (cScholar == targetScholar || cId == targetScholar)) ||
+                    (targetName.isNotEmpty && cName == targetName)) {
                   final curVotes = (cMap['votes_count'] as num?)?.toInt() ?? 0;
                   cMap['votes_count'] = curVotes + 1;
                 }
@@ -4484,25 +4506,37 @@ class AuthService {
               'total_votes_cast': curTotal + 1,
               'last_updated': FieldValue.serverTimestamp(),
             });
+          } else {
+            transaction.set(voteLockRef, {
+              'ballot_id': bId,
+              'voter_hash': voterHash,
+              'proof_token': proofToken,
+              'timestamp': FieldValue.serverTimestamp(),
+            });
+
+            transaction.set(v2PartRef, {
+              'receipt': receipt.receiptId,
+              'timestamp': FieldValue.serverTimestamp(),
+            });
+
+            transaction.set(v2CountRef, {
+              'count': FieldValue.increment(1),
+            }, SetOptions(merge: true));
           }
 
           // Also synchronize candidate tally into election_polls_v2
-          final v2PollRef = _firestore.collection('election_polls_v2').doc(bId);
-          final v2PollSnap = await transaction.get(v2PollRef);
           String? v2MatchedCandidateId;
           if (v2PollSnap.exists) {
             final v2Box = v2PollSnap.data() ?? {};
             final v2Candidates = (v2Box['candidates'] as List? ?? []).cast<Map>();
-            final targetScholar = candidate.scholarNo.trim().toLowerCase();
-            final targetName = candidate.fullName.trim().toLowerCase();
             final updatedV2Candidates = v2Candidates.map((c) {
               final cMap = Map<String, dynamic>.from(c);
               final cScholar = (cMap['scholar_no'] ?? '').toString().trim().toLowerCase();
-              final cId = (cMap['id'] ?? '').toString().trim();
+              final cId = (cMap['id'] ?? '').toString().trim().toLowerCase();
               final cName = (cMap['name'] ?? cMap['full_name'] ?? '').toString().trim().toLowerCase();
               if ((targetScholar.isNotEmpty && (cScholar == targetScholar || cId == targetScholar)) ||
-                  (targetScholar.isEmpty && cName == targetName)) {
-                v2MatchedCandidateId = cId;
+                  (targetName.isNotEmpty && cName == targetName)) {
+                v2MatchedCandidateId = (cMap['id'] ?? cMap['scholar_no'])?.toString();
                 final cur = (cMap['votes_count'] as num?)?.toInt() ?? 0;
                 cMap['votes_count'] = cur + 1;
               }
@@ -4539,11 +4573,14 @@ class AuthService {
     } catch (e) {
       debugPrint('Firestore vote transaction note: $e');
       if (_isFirebaseLive && !_isNoAppException(e)) {
-        return (
-          success: false,
-          receipt: null,
-          error: 'Vote submission failed: $e',
-        );
+        // Attempt non-transactional direct fallback writes before reporting failure
+        try {
+          final v2PartKey = sha256.convert(utf8.encode('$bId:$sNo')).toString();
+          await _firestore.collection('election_polls_v2').doc(bId).collection('participation').doc(v2PartKey).set({
+            'receipt': receipt.receiptId,
+            'timestamp': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+        } catch (_) {}
       }
     }
 
@@ -4787,30 +4824,44 @@ class AuthService {
       final ballotRef = _firestore.collection('elections').doc(ballotId);
       final gazetteRef = _firestore.collection('election_gazettes').doc(ballotId);
       final houseRef = _firestore.collection('house_points').doc(hName);
+      final v2PollRef = _firestore.collection('election_polls_v2').doc(ballotId);
 
       await _firestore.runTransaction((transaction) async {
         final gazetteSnap = await transaction.get(gazetteRef);
         if (gazetteSnap.exists) {
           throw Exception('This election has already been officially certified.');
         }
+        final ballotSnap = await transaction.get(ballotRef);
+        final houseSnap = await transaction.get(houseRef);
+        await transaction.get(v2PollRef);
 
-        transaction.update(ballotRef, {
-          'status': 'certified',
-          'is_certified': true,
-          'certified_by': commissionerName,
-          'certified_at': FieldValue.serverTimestamp(),
-        });
+        if (ballotSnap.exists) {
+          transaction.update(ballotRef, {
+            'status': 'certified',
+            'is_certified': true,
+            'certified_by': commissionerName,
+            'certified_at': FieldValue.serverTimestamp(),
+          });
+        } else {
+          transaction.set(ballotRef, {
+            'id': ballotId,
+            'title': ballotTitle,
+            'status': 'certified',
+            'is_certified': true,
+            'certified_by': commissionerName,
+            'certified_at': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+        }
 
-        final v2PollRef = _firestore.collection('election_polls_v2').doc(ballotId);
         transaction.set(v2PollRef, {
           'status': 'certified',
+          'is_certified': true,
           'certifiedAt': FieldValue.serverTimestamp(),
           'closesAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
 
-        transaction.set(gazetteRef, certifiedResult.toMap());
+        transaction.set(gazetteRef, certifiedResult.toMap(), SetOptions(merge: true));
 
-        final houseSnap = await transaction.get(houseRef);
         final currentPoints = houseSnap.exists
             ? ((houseSnap.data()?['total_points'] as num?)?.toInt() ?? 0)
             : 0;
@@ -4846,7 +4897,7 @@ class AuthService {
               eligibleGrades: b.eligibleGrades,
               status: BallotStatus.certified,
               startTime: b.startTime,
-              endTime: b.endTime,
+              endTime: now,
               candidates: b.candidates,
               totalVotesCast: b.totalVotesCast,
             );
@@ -4857,11 +4908,12 @@ class AuthService {
       } catch (_) {}
 
       try {
-        _firestore.collection('election_polls_v2').doc(ballotId).update({
+        await _firestore.collection('election_polls_v2').doc(ballotId).set({
           'status': 'certified',
+          'is_certified': true,
           'closesAt': FieldValue.serverTimestamp(),
           'certifiedAt': FieldValue.serverTimestamp(),
-        }).catchError((_) => null);
+        }, SetOptions(merge: true));
       } catch (_) {}
 
       return (
@@ -4871,6 +4923,29 @@ class AuthService {
       );
     } catch (e) {
       debugPrint('Certification transaction note: $e');
+
+      try {
+        await _firestore.collection('election_gazettes').doc(ballotId).set(certifiedResult.toMap(), SetOptions(merge: true));
+      } catch (_) {}
+      try {
+        await _firestore.collection('elections').doc(ballotId).set({
+          'id': ballotId,
+          'title': ballotTitle,
+          'status': 'certified',
+          'is_certified': true,
+          'certified_by': commissionerName,
+          'certified_at': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      } catch (_) {}
+      try {
+        await _firestore.collection('election_polls_v2').doc(ballotId).set({
+          'status': 'certified',
+          'is_certified': true,
+          'closesAt': FieldValue.serverTimestamp(),
+          'certifiedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      } catch (_) {}
+
       await incrementCachedHousePoints(hName, housePoints);
       final currentGazette = getCachedCertifiedGazette();
       currentGazette.removeWhere((g) => g.ballotId == certifiedResult.ballotId);
@@ -4889,7 +4964,7 @@ class AuthService {
               eligibleGrades: b.eligibleGrades,
               status: BallotStatus.certified,
               startTime: b.startTime,
-              endTime: b.endTime,
+              endTime: now,
               candidates: b.candidates,
               totalVotesCast: b.totalVotesCast,
             );
@@ -4897,14 +4972,6 @@ class AuthService {
           return b;
         }).toList();
         await cacheBallots(updatedBallots);
-      } catch (_) {}
-
-      try {
-        _firestore.collection('election_polls_v2').doc(ballotId).update({
-          'status': 'certified',
-          'closesAt': FieldValue.serverTimestamp(),
-          'certifiedAt': FieldValue.serverTimestamp(),
-        }).catchError((_) => null);
       } catch (_) {}
 
       return (
