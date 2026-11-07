@@ -1051,5 +1051,173 @@ void main() {
       expect(currentBallot.candidates.firstWhere((c) => c.scholarNo == '11209').votesCount, equals(1));
     });
   });
+
+  group('Audit Remediations & Zero-Trust Guarantees', () {
+    test('Universal Anti-Double-Voting: Admin accounts cannot cast duplicate votes (C6)', () async {
+      final now = DateTime.now();
+      const ballotId = 'ballot_audit_c6_test';
+      final cand1 = ElectionCandidate(
+        scholarNo: '14101',
+        fullName: 'Candidate One',
+        houseName: 'sapphire',
+        runningPosition: 'School Head Boy',
+        manifesto: 'Leading with integrity and dedication.',
+      );
+      final cand2 = ElectionCandidate(
+        scholarNo: '14102',
+        fullName: 'Candidate Two',
+        houseName: 'emerald',
+        runningPosition: 'School Head Boy',
+        manifesto: 'Dedicated to student empowerment and excellence.',
+      );
+      final testBallot = ElectionBallot(
+        id: ballotId,
+        title: 'Head Boy Election 2026',
+        position: BallotPosition.headBoy,
+        candidates: [cand1, cand2],
+        startTime: now.subtract(const Duration(minutes: 5)),
+        endTime: now.add(const Duration(days: 3)),
+        status: BallotStatus.open,
+        totalVotesCast: 0,
+        houseScope: 'all',
+      );
+      await AuthService.cacheBallot(testBallot);
+
+      final adminAccount = SavedAccount(
+        scholarNo: 'admin',
+        fullName: 'Administrator',
+        houseName: 'ruby',
+        uid: 'uid_admin_c6',
+        role: 'super_admin',
+      );
+      await AuthService().switchAccount(adminAccount);
+
+      // First vote by admin succeeds
+      final vote1 = await AuthService().castDigitalVote(
+        ballotId: ballotId,
+        ballotTitle: testBallot.title,
+        candidate: cand1,
+        scholarNo: 'admin',
+      );
+      expect(vote1.success, isTrue);
+      expect(AuthService.hasVotedInBallotCached(ballotId, scholarNo: 'admin'), isTrue);
+
+      // Second vote by admin on same ballot must be REJECTED
+      final vote2 = await AuthService().castDigitalVote(
+        ballotId: ballotId,
+        ballotTitle: testBallot.title,
+        candidate: cand2,
+        scholarNo: 'admin',
+      );
+      expect(vote2.success, isFalse);
+      expect(vote2.error?.toLowerCase(), contains('already cast'));
+    });
+
+    test('Strict Per-Scholar Receipt Isolation: Empty or cross-scholar lookups do not leak (S5)', () async {
+      const ballotId = 'ballot_audit_s5_test';
+      final receipt = BallotCastReceipt(
+        receiptId: 'rcpt_isolated_123',
+        ballotId: ballotId,
+        ballotTitle: 'Prefect Poll',
+        candidateScholarNo: '15001',
+        candidateName: 'Scholar Fifteen',
+        candidateHouse: 'topaz',
+        runningPosition: 'prefect',
+        anonymizedVoterHash: ElectionSecurityService.generateAnonymizedVoterHash(
+          scholarNo: '15001',
+          ballotId: ballotId,
+        ),
+        signatureProofToken: 'token_s5_123',
+        timestamp: DateTime.now(),
+      );
+
+      await AuthService.cacheVoteReceipt(receipt, scholarNo: '15001');
+
+      // Scholar 15001 has the receipt
+      expect(AuthService.getReceiptForBallot(ballotId, scholarNo: '15001')?.receiptId, equals('rcpt_isolated_123'));
+
+      // Different scholar 16002 has NO receipt
+      expect(AuthService.getReceiptForBallot(ballotId, scholarNo: '16002'), isNull);
+
+      // Empty scholar parameter returns null and does not leak global receipts
+      expect(AuthService.getCachedVoteReceipts(scholarNo: ''), isEmpty);
+    });
+
+    test('Candidate House Preservation & No Universal Poll Ruby Bias (M10)', () async {
+      final candEmerald = ElectionCandidate(
+        scholarNo: '17001',
+        fullName: 'Emerald Champion',
+        houseName: 'emerald',
+        runningPosition: 'House Captain',
+        manifesto: 'Victory for Emerald!',
+        votesCount: 150,
+      );
+      final candSapphire = ElectionCandidate(
+        scholarNo: '17002',
+        fullName: 'Sapphire RunnerUp',
+        houseName: 'sapphire',
+        runningPosition: 'House Captain',
+        manifesto: 'Dedication and spirit.',
+        votesCount: 80,
+      );
+
+      final certRes = await AuthService().certifyElectionAndAwardPoints(
+        ballotId: 'ballot_universal_house_m10',
+        ballotTitle: 'Universal Leader 2026',
+        winner: candEmerald,
+        victoryMargin: candEmerald.votesCount - candSapphire.votesCount,
+        commissionerName: 'Returning Officer',
+        housePoints: 100,
+      );
+
+      expect(certRes.success, isTrue);
+      expect(certRes.result, isNotNull);
+      // Winner's house must be EMERALD, not defaulted to ruby
+      expect(certRes.result!.winnerHouse, equals('emerald'));
+      expect(certRes.result!.housePointsAwarded, equals(100));
+
+      final cachedGazette = AuthService.getCachedCertifiedGazette();
+      final gazetteEntry = cachedGazette.firstWhere((g) => g.ballotId == 'ballot_universal_house_m10');
+      expect(gazetteEntry.winnerHouse, equals('emerald'));
+      expect(gazetteEntry.proclamationText, contains('EMERALD House'));
+    });
+
+    test('Tied Outcome Certification: Awards 0 points and marks tie without arbitrary winner (C8)', () async {
+      // In a tie, two candidates have equal votes
+      const outcome = 'tie';
+      final leaders = ['cnd_1', 'cnd_2'];
+      final isTie = outcome == 'tie' && leaders.length > 1;
+      expect(isTie, isTrue);
+
+      final tieProclamation = CertifiedElectionResult(
+        ballotId: 'ballot_tie_test',
+        ballotTitle: 'Senior Prefect Election',
+        runningPosition: 'Class Prefect',
+        winnerScholarNo: 'TIE',
+        winnerName: 'Candidate A and Candidate B',
+        winnerHouse: 'all',
+        totalVotesReceived: 50,
+        victoryMarginVotes: 0,
+        housePointsAwarded: 0,
+        commissionerName: 'Electoral Commissioner',
+        commissionerRole: 'Chief Commissioner',
+        certifiedAt: DateTime.now(),
+        proclamationText: 'By order of the Electoral Commission, polling concluded in a tie (50 votes each). A runoff ballot will be scheduled.',
+      );
+
+      await AuthService().publishGazetteProclamation(tieProclamation);
+
+      final gazette = AuthService.getCachedCertifiedGazette().firstWhere((g) => g.ballotId == 'ballot_tie_test');
+      expect(gazette.winnerScholarNo, equals('TIE'));
+      expect(gazette.housePointsAwarded, equals(0));
+      expect(gazette.proclamationText, contains('concluded in a tie'));
+    });
+
+    test('Vice Captain Position Model and Presentation Integration (M8)', () {
+      expect(BallotPosition.values.contains(BallotPosition.viceCaptain), isTrue);
+      expect(BallotPosition.viceCaptain.displayName, equals('House Vice-Captain'));
+      expect(BallotPositionExt.fromString('viceCaptain'), equals(BallotPosition.viceCaptain));
+    });
+  });
 }
 

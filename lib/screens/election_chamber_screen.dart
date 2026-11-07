@@ -824,127 +824,140 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
     required String scholarNo,
     required Color houseColor,
   }) {
+    bool isVoting = false;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (modalCtx) => Container(
-        padding: const EdgeInsets.all(28),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Center(
-              child: Container(
-                width: 44,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 22,
-                  backgroundColor: houseColor.withValues(alpha: 0.15),
-                  child: Icon(Icons.how_to_vote_rounded, color: houseColor),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Confirm Official Vote',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      Text(
-                        ballot.title,
-                        style: const TextStyle(fontSize: 13, color: Colors.grey),
-                      ),
-                    ],
+      builder: (modalCtx) => StatefulBuilder(
+        builder: (ctx, setModalState) => Container(
+          padding: const EdgeInsets.all(28),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 44,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: houseColor.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: houseColor.withValues(alpha: 0.3)),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              const SizedBox(height: 20),
+              Row(
                 children: [
-                  Text(
-                    'Candidate: ${candidate.fullName}',
-                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                  CircleAvatar(
+                    radius: 22,
+                    backgroundColor: houseColor.withValues(alpha: 0.15),
+                    child: Icon(Icons.how_to_vote_rounded, color: houseColor),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${candidate.runningPosition} • ${candidate.houseName.toUpperCase()} House',
-                    style: TextStyle(color: houseColor, fontWeight: FontWeight.w700, fontSize: 13),
-                  ),
-                  const SizedBox(height: 10),
-                  const Text(
-                    '🔒 Ballot Secrecy Protection: Your voter identity is cryptographically hashed with HMAC-SHA256. This ballot choice is completely anonymous and cannot be changed once cast.',
-                    style: TextStyle(fontSize: 11, color: Colors.grey),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Confirm Official Vote',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        Text(
+                          ballot.title,
+                          style: const TextStyle(fontSize: 13, color: Colors.grey),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: houseColor,
-                foregroundColor: Colors.white,
-                minimumSize: const Size.fromHeight(48),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: houseColor.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: houseColor.withValues(alpha: 0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Candidate: ${candidate.fullName}',
+                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${candidate.runningPosition} • ${candidate.houseName.toUpperCase()} House',
+                      style: TextStyle(color: houseColor, fontWeight: FontWeight.w700, fontSize: 13),
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      '🔒 Ballot Secrecy Protection: Your voter identity is cryptographically hashed with HMAC-SHA256. This ballot choice is completely anonymous and cannot be changed once cast.',
+                      style: TextStyle(fontSize: 11, color: Colors.grey),
+                    ),
+                  ],
+                ),
               ),
-              onPressed: () async {
-                Navigator.pop(modalCtx);
-                final res = await AuthService().castDigitalVote(
-                  ballotId: ballot.id,
-                  ballotTitle: ballot.title,
-                  candidate: candidate,
-                  scholarNo: _effectiveScholarNo,
-                );
+              const SizedBox(height: 24),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: houseColor,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size.fromHeight(48),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                onPressed: isVoting ? null : () async {
+                  setModalState(() => isVoting = true);
+                  final res = await AuthService().castDigitalVote(
+                    ballotId: ballot.id,
+                    ballotTitle: ballot.title,
+                    candidate: candidate,
+                    scholarNo: _effectiveScholarNo,
+                  );
 
-                if (mounted) {
-                  if (res.success && res.receipt != null) {
-                    setState(() {});
-                    _showReceiptModal(context, res.receipt!, houseColor);
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(res.error ?? 'Voting transaction failed'),
-                        backgroundColor: Colors.redAccent,
-                      ),
-                    );
+                  if (modalCtx.mounted) {
+                    Navigator.pop(modalCtx);
                   }
-                }
-              },
-              child: const Text('Confirm & Cast My Ballot', style: TextStyle(fontWeight: FontWeight.w800)),
-            ),
-            const SizedBox(height: 10),
-            TextButton(
-              style: TextButton.styleFrom(minimumSize: const Size.fromHeight(48)),
-              onPressed: () => Navigator.pop(modalCtx),
-              child: const Text('Cancel'),
-            ),
-          ],
+
+                  if (mounted) {
+                    if (res.success && res.receipt != null) {
+                      setState(() {});
+                      _showReceiptModal(context, res.receipt!, houseColor);
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(res.error ?? 'Voting transaction failed'),
+                          backgroundColor: Colors.redAccent,
+                        ),
+                      );
+                    }
+                  }
+                },
+                child: isVoting
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                      )
+                    : const Text('Confirm & Cast My Ballot', style: TextStyle(fontWeight: FontWeight.w800)),
+              ),
+              const SizedBox(height: 10),
+              TextButton(
+                style: TextButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                onPressed: isVoting ? null : () => Navigator.pop(modalCtx),
+                child: const Text('Cancel'),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1757,7 +1770,22 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
 
     final sortedCandidates = List<ElectionCandidate>.from(ballot.candidates)
       ..sort((a, b) => b.votesCount.compareTo(a.votesCount));
-    final winner = sortedCandidates.first;
+    final rawWinner = sortedCandidates.first;
+    String winnerHouse = rawWinner.houseName.trim().toLowerCase();
+    if (winnerHouse.isEmpty || !['ruby', 'sapphire', 'emerald', 'topaz'].contains(winnerHouse)) {
+      winnerHouse = AuthService.inferHouseFromScholarNo(rawWinner.scholarNo) ?? 'emerald';
+    }
+    final winner = ElectionCandidate(
+      scholarNo: rawWinner.scholarNo,
+      fullName: rawWinner.fullName,
+      houseName: winnerHouse,
+      runningPosition: rawWinner.runningPosition,
+      manifesto: rawWinner.manifesto,
+      avatarUrl: rawWinner.avatarUrl,
+      votesCount: rawWinner.votesCount,
+      isVerified: rawWinner.isVerified,
+      classLevel: rawWinner.classLevel,
+    );
 
     final confirm = await showDialog<bool>(
       context: context,
@@ -1790,8 +1818,10 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
       ),
     );
 
-    if (confirm == true) {
-      final res = await _authService.certifyElectionAndAwardPoints(
+    if (!mounted || confirm != true) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    final res = await _authService.certifyElectionAndAwardPoints(
         ballotId: ballot.id,
         ballotTitle: ballot.title,
         winner: winner,
@@ -1802,15 +1832,34 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
 
       if (mounted) {
         if (res.success) {
+          final cached = AuthService.getCachedBallots();
+          final updated = cached.map((b) {
+            if (b.id == ballot.id) {
+              return ElectionBallot(
+                id: b.id,
+                title: b.title,
+                position: b.position,
+                houseScope: b.houseScope,
+                eligibleGrades: b.eligibleGrades,
+                status: BallotStatus.certified,
+                startTime: b.startTime,
+                endTime: DateTime.now(),
+                candidates: b.candidates,
+                totalVotesCast: b.totalVotesCast,
+              );
+            }
+            return b;
+          }).toList();
+          await AuthService.cacheBallots(updated);
           setState(() {});
-          ScaffoldMessenger.of(context).showSnackBar(
+          messenger.showSnackBar(
             SnackBar(
               content: Text('🏆 ${winner.fullName} officially certified! +100 House Points awarded.'),
               backgroundColor: Colors.green,
             ),
           );
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
+          messenger.showSnackBar(
             SnackBar(
               content: Text(res.error ?? 'Certification failed.'),
               backgroundColor: Colors.redAccent,
@@ -1820,4 +1869,3 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
       }
     }
   }
-}

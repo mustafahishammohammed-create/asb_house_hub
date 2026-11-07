@@ -42,6 +42,15 @@ class MemoryElectionDoc implements ElectionDoc {
   Fields data() => _data;
 }
 
+User? get _safeCurrentUser {
+  try {
+    if (Firebase.apps.isNotEmpty) {
+      return FirebaseAuth.instance.currentUser;
+    }
+  } catch (_) {}
+  return null;
+}
+
 class SchoolElectionsPage extends StatelessWidget {
   const SchoolElectionsPage({super.key});
 
@@ -49,7 +58,8 @@ class SchoolElectionsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final cachedProfile = AuthService.getCachedProfile() ?? {};
     final activeScholar = (AuthService.getCachedScholarNo() ?? cachedProfile['scholar_no']?.toString() ?? 'guest').trim();
-    final activeUid = (cachedProfile['uid'] ?? AuthService.getCachedUid() ?? FirebaseAuth.instance.currentUser?.uid ?? 'guest').toString().trim();
+    final firebaseUid = _safeCurrentUser?.uid;
+    final activeUid = (cachedProfile['uid'] ?? AuthService.getCachedUid() ?? firebaseUid ?? 'guest').toString().trim();
 
     return _ElectionDesk(
       key: ValueKey('${activeScholar}_$activeUid'),
@@ -72,8 +82,8 @@ class _ElectionDesk extends StatefulWidget {
   State<_ElectionDesk> createState() => _ElectionDeskState();
 }
 
-class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderStateMixin {
-  final db = FirebaseFirestore.instance;
+class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMixin {
+  FirebaseFirestore get db => FirebaseFirestore.instance;
   final _authService = AuthService();
   TabController? _tabController;
   bool _isManager = false;
@@ -102,7 +112,7 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
     final cached = AuthService.getCachedProfile() ?? {};
     final scholarNo = (widget.activeScholar.isNotEmpty ? widget.activeScholar : (AuthService.getCachedScholarNo() ?? cached['scholar_no']?.toString() ?? '')).trim();
     final role = (cached['role'] ?? '').toString().trim().toLowerCase();
-    final email = FirebaseAuth.instance.currentUser?.email;
+    final email = _safeCurrentUser?.email;
     _isManager = HierarchyService.canManageElections(
       scholarNo: scholarNo,
       role: role,
@@ -129,7 +139,7 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
     final cached = AuthService.getCachedProfile() ?? {};
     final activeScholar = (widget.activeScholar.isNotEmpty ? widget.activeScholar : (AuthService.getCachedScholarNo() ?? cached['scholar_no']?.toString() ?? '')).trim();
     final cachedRole = (cached['role'] ?? '').toString().trim().toLowerCase();
-    final email = FirebaseAuth.instance.currentUser?.email;
+    final email = _safeCurrentUser?.email;
     final isPrivilegedAdmin = HierarchyService.canManageElections(
       scholarNo: activeScholar,
       role: cachedRole,
@@ -399,7 +409,7 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
   void refresh() => setState(() => feed = load());
 
   Future<Fields> call(String action, String id, [Fields args = const {}]) async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = _safeCurrentUser;
     final activeUid = widget.uid.trim();
 
     // Step A: Attempt server-authoritative Cloud Function invocation only if active session matches auth identity
@@ -438,7 +448,7 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
     final cached = AuthService.getCachedProfile() ?? {};
     final activeScholar = (widget.activeScholar.isNotEmpty ? widget.activeScholar : (AuthService.getCachedScholarNo() ?? cached['scholar_no']?.toString() ?? '')).trim();
     final cachedRole = (cached['role'] ?? '').toString().trim().toLowerCase();
-    final email = FirebaseAuth.instance.currentUser?.email;
+    final email = _safeCurrentUser?.email;
     final isStaff = HierarchyService.canManageElections(
       scholarNo: activeScholar,
       role: cachedRole,
@@ -563,7 +573,7 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
       try {
         final res = await db.runTransaction<Fields>((tx) async {
           final priorSnap = await tx.get(partRef);
-          if (priorSnap.exists && !isPrivilegedTester) {
+          if (priorSnap.exists) {
             return {'receipt': priorSnap.data()?['receipt'], 'alreadyRecorded': true};
           }
           final pollSnap = await tx.get(pollRef);
@@ -573,7 +583,7 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
           final opensAt = (box['opensAt'] as Timestamp).toDate();
           final closesAt = (box['closesAt'] as Timestamp).toDate();
           final inWindow = !now.isBefore(opensAt.subtract(const Duration(seconds: 15))) && now.isBefore(closesAt);
-          if ((box['status'] != 'published' && box['status'] != 'open') || (!inWindow && !isPrivilegedTester)) {
+          if ((box['status'] != 'published' && box['status'] != 'open') || !inWindow) {
             throw StateError('Voting is currently closed.');
           }
 
@@ -599,7 +609,7 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
           final minGrade = box['minGrade'] as int? ?? 1;
           final maxGrade = box['maxGrade'] as int? ?? 12;
           final pollHouse = (box['house'] ?? 'all').toString();
-          if (!isPrivilegedTester && (gradeVal < minGrade || gradeVal > maxGrade || (pollHouse != 'all' && pollHouse != house))) {
+          if (gradeVal < minGrade || gradeVal > maxGrade || (pollHouse != 'all' && pollHouse != house)) {
             throw StateError('Outside the eligible electorate for this ballot.');
           }
 
@@ -663,13 +673,11 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
             tx.set(legCountRef, {'count': FieldValue.increment(1)}, SetOptions(merge: true));
           }
 
-          // Write-through to legacy election_votes
+          // Write-through to legacy election_votes preserving voter secrecy (C7)
           final legVoteRef = db.collection('election_votes').doc('${pollId}_$key');
           tx.set(legVoteRef, {
             'ballot_id': pollId,
             'anonymized_voter_hash': key,
-            'candidate_scholar_no': candScholarNo.isNotEmpty ? candScholarNo : cId,
-            'candidate_name': match['name'] ?? 'Candidate',
             'receipt_id': receipt,
             'timestamp': FieldValue.serverTimestamp(),
           }, SetOptions(merge: true));
@@ -693,9 +701,15 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
         if (res['position'] != null) runningPos = res['position'].toString();
       } catch (e) {
         debugPrint('Firestore vote transaction note: $e');
+        if (issuedReceipt == null) {
+          rethrow;
+        }
       }
 
-      final receipt = issuedReceipt ?? 'rcpt_${DateTime.now().millisecondsSinceEpoch}_${key.substring(0, 8)}';
+      if (issuedReceipt == null) {
+        throw StateError('Your vote could not be recorded in Firestore.');
+      }
+      final receipt = issuedReceipt;
 
       // Always update local cached ballot
       final cachedBallots = AuthService.getCachedBallots();
@@ -842,19 +856,27 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
         }
       }
 
+      String candHouse = (args['house'] ?? '').toString().trim().toLowerCase();
       if (matches != null && matches.docs.isNotEmpty) {
         final candDoc = matches.docs.first;
         candUid = candDoc.id;
         final dName = (candDoc.data()['display_name'] ?? '').toString().trim();
         if (candName.isEmpty && dName.isNotEmpty) candName = dName;
+        final dHouse = (candDoc.data()['house'] ?? '').toString().trim().toLowerCase();
+        if (dHouse.isNotEmpty) candHouse = dHouse;
       } else {
         final saved = AuthService.getSavedAccounts();
         for (final a in saved) {
           if (a.scholarNo.trim().toLowerCase() == scholar.toLowerCase()) {
             if (candName.isEmpty) candName = a.fullName;
+            if (candHouse.isEmpty) candHouse = a.houseName.toLowerCase();
             break;
           }
         }
+      }
+
+      if (candHouse.isEmpty || !['ruby', 'sapphire', 'emerald', 'topaz'].contains(candHouse)) {
+        candHouse = AuthService.inferHouseFromScholarNo(scholar) ?? 'emerald';
       }
 
       if (candName.isEmpty) {
@@ -890,6 +912,8 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
         'name': candName,
         'scholar_no': scholar,
         'statement': statement,
+        'house': candHouse,
+        'house_name': candHouse,
       });
 
       dData['candidates'] = filtered;
@@ -959,11 +983,29 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
         throw StateError('Add at least two eligible candidates before publishing.');
       }
 
+      // Prevent republish/reset attack on live or certified polls (C9)
+      try {
+        final existingSnap = await pollRef.get();
+        if (existingSnap.exists) {
+          final existingData = existingSnap.data() ?? {};
+          final existingStatus = existingData['status']?.toString();
+          if (existingStatus == 'published' || existingStatus == 'open' || existingStatus == 'certified' || existingData['is_certified'] == true) {
+            throw StateError('Cannot republish: Election ballot is already $existingStatus.');
+          }
+        }
+      } catch (e) {
+        if (e is StateError) rethrow;
+      }
+
       final pubCandidates = candidates.map((c) {
         final rawScholar = (c['scholar_no'] ?? '').toString().trim();
         final rawId = (c['id'] ?? '').toString().trim();
         final rawName = (c['name'] ?? c['full_name'] ?? 'Candidate').toString().trim();
         final rawStatement = (c['statement'] ?? c['manifesto'] ?? '').toString().trim();
+        final rawHouse = (c['house'] ?? c['house_name'] ?? '').toString().trim().toLowerCase();
+        final effectiveHouse = ['ruby', 'sapphire', 'emerald', 'topaz'].contains(rawHouse)
+            ? rawHouse
+            : (AuthService.inferHouseFromScholarNo(rawScholar) ?? 'emerald');
         final effectiveScholar = rawScholar.isNotEmpty
             ? rawScholar
             : (rawId.startsWith('cnd_') ? '' : rawId);
@@ -975,16 +1017,20 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
           'name': rawName,
           'scholar_no': effectiveScholar.isNotEmpty ? effectiveScholar : effectiveId,
           'statement': rawStatement,
+          'house': effectiveHouse,
+          'house_name': effectiveHouse,
           'votes_count': 0,
         };
       }).toList();
 
       final now = DateTime.now();
       final nowMs = now.millisecondsSinceEpoch;
-      final originalDuration = (draft['endMs'] as num? ?? (nowMs + 7 * 86400000)).toInt() - (draft['startMs'] as num? ?? nowMs).toInt();
-      final durationMs = originalDuration > 0 ? originalDuration : (7 * 86400000);
-      final effectiveOpensAt = Timestamp.fromDate(now.subtract(const Duration(seconds: 2)));
-      final effectiveClosesAt = Timestamp.fromMillisecondsSinceEpoch(nowMs + durationMs);
+      final startMs = (draft['startMs'] as num?)?.toInt() ?? nowMs;
+      final endMs = (draft['endMs'] as num?)?.toInt() ?? (nowMs + 7 * 86400000);
+      final effectiveOpensAt = startMs > nowMs
+          ? Timestamp.fromMillisecondsSinceEpoch(startMs)
+          : Timestamp.fromDate(now.subtract(const Duration(seconds: 2)));
+      final effectiveClosesAt = Timestamp.fromMillisecondsSinceEpoch(endMs > startMs ? endMs : (nowMs + 7 * 86400000));
 
       try {
         await pollRef.set({
@@ -1018,14 +1064,14 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
         candidates: pubCandidates.map((c) => ElectionCandidate(
           scholarNo: (c['scholar_no']?.toString().isNotEmpty == true ? c['scholar_no'] : c['id'] ?? '').toString(),
           fullName: (c['name'] ?? 'Candidate').toString(),
-          houseName: (draft['house'] == 'all' ? 'ruby' : (draft['house'] ?? 'ruby')).toString().toLowerCase(),
+          houseName: (c['house'] ?? c['house_name'] ?? (draft['house'] == 'all' ? 'emerald' : draft['house'] ?? 'emerald')).toString().toLowerCase(),
           runningPosition: ballotPosition.displayName,
           manifesto: (c['statement'] ?? '').toString(),
           votesCount: 0,
           isVerified: true,
         )).toList(),
-        startTime: now.subtract(const Duration(seconds: 2)),
-        endTime: DateTime.fromMillisecondsSinceEpoch(nowMs + durationMs),
+        startTime: effectiveOpensAt.toDate(),
+        endTime: effectiveClosesAt.toDate(),
         status: BallotStatus.open,
         totalVotesCast: 0,
         houseScope: (draft['house'] ?? 'all').toString(),
@@ -1040,7 +1086,7 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
           'id': c['id'],
           'scholar_no': c['scholar_no'] ?? c['id'],
           'full_name': c['name'],
-          'house_name': (draft['house'] == 'all' ? 'ruby' : (draft['house'] ?? 'ruby')).toString().toLowerCase(),
+          'house_name': (c['house'] ?? c['house_name'] ?? (draft['house'] == 'all' ? 'emerald' : draft['house'] ?? 'emerald')).toString().toLowerCase(),
           'running_position': draft['position'],
           'manifesto': c['statement'] ?? '',
           'votes_count': 0,
@@ -1053,8 +1099,8 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
           'position': draft['position'],
           'house_scope': draft['house'],
           'status': 'open',
-          'start_time': now.toIso8601String(),
-          'end_time': DateTime.fromMillisecondsSinceEpoch(nowMs + durationMs).toIso8601String(),
+          'start_time': effectiveOpensAt.toDate().toIso8601String(),
+          'end_time': effectiveClosesAt.toDate().toIso8601String(),
           'candidates': legacyCandidates,
           'total_votes_cast': 0,
         }, SetOptions(merge: true));
@@ -1151,14 +1197,19 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
             });
           }
 
-          if (leaders.isNotEmpty) {
+          if (outcome == 'winner' && leaders.length == 1) {
             final winningCand = candidates.firstWhere(
               (c) => c['id'] == leaders.first,
               orElse: () => candidates.first,
             );
             final winnerName = (winningCand['name'] ?? 'Candidate').toString();
-            final house = (box['house'] ?? 'ruby').toString().toLowerCase();
-            final winnerHouse = ['ruby', 'sapphire', 'emerald', 'topaz'].contains(house) ? house : 'ruby';
+            final candH = (winningCand['house'] ?? winningCand['house_name'] ?? '').toString().toLowerCase();
+            final pollH = (box['house'] ?? 'all').toString().toLowerCase();
+            final winnerHouse = ['ruby', 'sapphire', 'emerald', 'topaz'].contains(candH)
+                ? candH
+                : (['ruby', 'sapphire', 'emerald', 'topaz'].contains(pollH)
+                    ? pollH
+                    : (AuthService.inferHouseFromScholarNo(winningCand['scholar_no']?.toString() ?? '') ?? 'emerald'));
             winningHouseToCredit = winnerHouse;
 
             final sortedRows = List<Map<String, dynamic>>.from(rows)
@@ -1181,6 +1232,24 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
               certifiedAt: DateTime.now(),
               proclamationText:
                   'By order of the Electoral Commission, $winnerName is duly elected and sworn as ${box['position']}, conferring +100 championship points to ${winnerHouse.toUpperCase()} House.',
+            );
+          } else if (outcome == 'tie') {
+            final tiedCands = candidates.where((c) => leaders.contains(c['id'])).map((c) => c['name'] ?? 'Candidate').join(' and ');
+            proclamationToPublish = CertifiedElectionResult(
+              ballotId: pollId,
+              ballotTitle: (box['title'] ?? 'School Election').toString(),
+              runningPosition: (box['position'] ?? 'Council Representative').toString(),
+              winnerScholarNo: 'TIE',
+              winnerName: tiedCands,
+              winnerHouse: 'all',
+              totalVotesReceived: maxCount,
+              victoryMarginVotes: 0,
+              housePointsAwarded: 0,
+              commissionerName: user?.displayName ?? (cached['full_name'] as String?) ?? "Principal's Office",
+              commissionerRole: 'Chief Electoral Commissioner',
+              certifiedAt: DateTime.now(),
+              proclamationText:
+                  'By order of the Electoral Commission, polling concluded in a tie between $tiedCands ($maxCount votes each). A runoff ballot will be scheduled.',
             );
           }
           return {'pollId': pollId, 'result': result};
@@ -1221,7 +1290,8 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
               }
             }
             final winnerName = winner?.fullName ?? 'Duly Certified Officer';
-            final winnerHouse = winner?.houseName.toLowerCase() ?? 'ruby';
+            final candH = winner?.houseName.toLowerCase() ?? '';
+            final winnerHouse = ['ruby', 'sapphire', 'emerald', 'topaz'].contains(candH) ? candH : 'emerald';
             winningHouseToCredit = winnerHouse;
             proclamationToPublish = CertifiedElectionResult(
               ballotId: b.id,
@@ -1247,7 +1317,14 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
       // Always publish proclamation and award points
       if (proclamationToPublish != null) {
         await _authService.publishGazetteProclamation(proclamationToPublish!);
-        if (winningHouseToCredit != null) {
+        if (winningHouseToCredit != null && proclamationToPublish!.housePointsAwarded > 0) {
+          try {
+            await db.collection('house_points').doc(winningHouseToCredit!).set({
+              'house_name': winningHouseToCredit!,
+              'total_points': FieldValue.increment(100),
+              'last_updated': FieldValue.serverTimestamp(),
+            }, SetOptions(merge: true));
+          } catch (_) {}
           await AuthService.incrementCachedHousePoints(winningHouseToCredit!, 100);
         }
       }
@@ -1372,6 +1449,7 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
                     ),
                     items: const [
                       DropdownMenuItem(value: 'houseCaptain', child: Text('🛡️ House Captain')),
+                      DropdownMenuItem(value: 'viceCaptain', child: Text('🥈 House Vice-Captain')),
                       DropdownMenuItem(value: 'headBoy', child: Text('👑 School Head Boy')),
                       DropdownMenuItem(value: 'headGirl', child: Text('👑 School Head Girl')),
                       DropdownMenuItem(value: 'prefect', child: Text('🎖️ Class Prefect')),
@@ -2342,7 +2420,7 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
                                 final candName = (c['name'] ?? '').toString();
                                 await checkReceipt(
                                   doc.id,
-                                  candidateId: candScholar.isNotEmpty ? candScholar : candId,
+                                  candidateId: candId.isNotEmpty ? candId : candScholar,
                                   candidateScholar: candScholar,
                                   candidateName: candName,
                                 );
@@ -2369,7 +2447,7 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
                       scholarNo: member['scholar_no']?.toString(),
                       role: member['role']?.toString(),
                       capabilities: member['capabilities'] is Map ? Map<String, dynamic>.from(member['capabilities']) : null,
-                      email: FirebaseAuth.instance.currentUser?.email,
+                      email: _safeCurrentUser?.email,
                     )) ...[
                   const SizedBox(height: 12),
                   FilledButton.icon(
@@ -2460,7 +2538,7 @@ class _ElectionDeskState extends State<_ElectionDesk> with SingleTickerProviderS
           scholarNo: scholarNo,
           role: role,
           capabilities: data.member['capabilities'] is Map ? Map<String, dynamic>.from(data.member['capabilities']) : null,
-          email: FirebaseAuth.instance.currentUser?.email,
+          email: _safeCurrentUser?.email,
         );
 
         final expectedLength = manage ? 3 : 2;

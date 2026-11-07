@@ -280,7 +280,7 @@ class _ElectionAuditScreenState extends State<ElectionAuditScreen> {
                                       if (_verifiedReceipt != null) ...[
                                         const SizedBox(height: 4),
                                         Text(
-                                          'Recorded for ${_verifiedReceipt!.candidateName} (${_verifiedReceipt!.runningPosition})',
+                                          'Ballot Verified: ${_verifiedReceipt!.ballotTitle} (${_verifiedReceipt!.runningPosition})',
                                           style: TextStyle(
                                             fontWeight: FontWeight.w600,
                                             color: isDark ? Colors.grey[300] : Colors.grey[800],

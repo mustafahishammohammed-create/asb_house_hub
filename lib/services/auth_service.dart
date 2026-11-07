@@ -2227,10 +2227,12 @@ class AuthService {
       );
 
       await saveAccount(updated);
-      AuthService().ensureSchoolMemberRecord(
-        uid: updated.uid,
-        profile: updated.cachedProfile,
-      ).catchError((_) => <String, dynamic>{});
+      if (Firebase.apps.isNotEmpty && FirebaseAuth.instance.currentUser?.uid == updated.uid) {
+        AuthService().ensureSchoolMemberRecord(
+          uid: updated.uid,
+          profile: updated.cachedProfile,
+        ).catchError((_) => <String, dynamic>{});
+      }
     } catch (e) {
       debugPrint('Error recording active account: $e');
     }
@@ -2238,9 +2240,32 @@ class AuthService {
 
   /// Switch the active student session on this device.
   Future<UserCredential?> switchAccount(SavedAccount account) async {
+    final cleanScholar = account.scholarNo.trim();
+    UserCredential? liveCred;
+
+    // Step 1: Re-authenticate Firebase Auth first when credentials are provided
+    if (_isFirebaseLive && account.password != null && account.password!.isNotEmpty) {
+      if (currentUser?.uid != account.uid) {
+        final pwd = account.password!;
+        try {
+          if (cleanScholar.toLowerCase() == 'admin') {
+            liveCred = await signInAdmin(password: pwd).timeout(const Duration(seconds: 10));
+          } else {
+            liveCred = await signIn(scholarNo: cleanScholar, password: pwd).timeout(const Duration(seconds: 10));
+          }
+        } catch (e) {
+          debugPrint('switchAccount live auth sync note: $e');
+          if (!_isNoAppException(e)) {
+            // In live environment, rethrow to prevent unauthenticated session corruption
+            rethrow;
+          }
+        }
+      }
+    }
+
+    // Step 2: Swap local storage session cache atomically
     GlobalWalletStore.resetSession();
     _prefs ??= await SharedPreferences.getInstance();
-    final cleanScholar = account.scholarNo.trim();
     await _prefs?.setString('cached_scholar_no', cleanScholar);
     await _prefs?.setString('cached_uid', account.uid.trim());
     await cacheHouse(account.houseName);
@@ -2273,21 +2298,7 @@ class AuthService {
       password: account.password,
     );
 
-    if (_isFirebaseLive && account.password != null && account.password!.isNotEmpty) {
-      if (currentUser?.uid != account.uid) {
-        final pwd = account.password!;
-        try {
-          if (cleanScholar.toLowerCase() == 'admin') {
-            await signInAdmin(password: pwd).timeout(const Duration(seconds: 4), onTimeout: () => null);
-          } else {
-            await signIn(scholarNo: cleanScholar, password: pwd).timeout(const Duration(seconds: 4), onTimeout: () => null as dynamic);
-          }
-        } catch (e) {
-          debugPrint('switchAccount live auth sync note: $e');
-        }
-      }
-    }
-    return null;
+    return liveCred;
   }
 
   /// Check whether a scholar account exists in Firestore without triggering permission errors or timeouts.
@@ -4139,23 +4150,6 @@ class AuthService {
       }
       final jsonStr = jsonEncode(receipts.map((r) => r.toMap()).toList());
       await _prefs?.setString(key, jsonStr);
-
-      // Also persist to global receipts list for backward compatibility and test suites
-      if (key != _kCachedVoteReceiptsKey) {
-        final globalReceipts = getCachedVoteReceipts(scholarNo: '');
-        final gIndex = globalReceipts.indexWhere(
-          (r) => r.ballotId == receipt.ballotId && r.anonymizedVoterHash == receipt.anonymizedVoterHash,
-        );
-        if (gIndex >= 0) {
-          globalReceipts[gIndex] = receipt;
-        } else {
-          globalReceipts.add(receipt);
-        }
-        await _prefs?.setString(
-          _kCachedVoteReceiptsKey,
-          jsonEncode(globalReceipts.map((r) => r.toMap()).toList()),
-        );
-      }
     } catch (_) {}
   }
 
@@ -4194,24 +4188,15 @@ class AuthService {
   static BallotCastReceipt? getReceiptForBallot(String ballotId, {String? scholarNo}) {
     try {
       final sNo = (scholarNo ?? getCachedScholarNo() ?? '').trim().toLowerCase();
+      if (sNo.isEmpty) return null;
       final receipts = getCachedVoteReceipts(scholarNo: sNo);
-      final expectedHash = sNo.isNotEmpty
-          ? ElectionSecurityService.generateAnonymizedVoterHash(
-              scholarNo: sNo,
-              ballotId: ballotId,
-            )
-          : null;
+      final expectedHash = ElectionSecurityService.generateAnonymizedVoterHash(
+        scholarNo: sNo,
+        ballotId: ballotId,
+      );
       for (final r in receipts) {
-        if (r.ballotId == ballotId && (expectedHash == null || r.anonymizedVoterHash == expectedHash)) {
+        if (r.ballotId == ballotId && r.anonymizedVoterHash == expectedHash) {
           return r;
-        }
-      }
-
-      // If no scholar-specific receipt was found or scholarNo is unspecified, check global receipts
-      if (sNo.isEmpty) {
-        final globalReceipts = getCachedVoteReceipts(scholarNo: '');
-        for (final r in globalReceipts) {
-          if (r.ballotId == ballotId) return r;
         }
       }
     } catch (_) {}
@@ -4321,9 +4306,9 @@ class AuthService {
         if (a.scholarNo.trim().toLowerCase() == clean.toLowerCase()) {
           final isSuper = HierarchyService.isSuperAdmin(scholarNo: a.scholarNo, role: a.role);
           final rawName = a.fullName.trim();
-          final name = isSuper
-              ? 'Administrator'
-              : (isPlaceholderName(rawName) ? '' : rawName);
+          final name = (isPlaceholderName(rawName) || rawName.isEmpty)
+              ? (isSuper ? 'Administrator' : '')
+              : rawName;
           if (name.isNotEmpty) {
             return {
               'scholarNo': a.scholarNo,
@@ -4381,16 +4366,12 @@ class AuthService {
     final activeScholar = (AuthService.getCachedScholarNo() ?? '').trim();
     final sNo = (scholarNo.trim().isNotEmpty ? scholarNo.trim() : activeScholar).toLowerCase();
     final bId = ballotId.trim();
+    if (activeScholar.isEmpty && sNo.isNotEmpty) {
+      await _prefs?.setString('cached_scholar_no', sNo);
+    }
 
-    final cachedRole = (AuthService.getCachedProfile()?['role'] ?? '').toString().toLowerCase();
-    final isStaffTester = sNo == 'admin' ||
-        sNo == '11209' ||
-        cachedRole == 'admin' ||
-        cachedRole == 'super_admin' ||
-        HierarchyService.isSuperAdmin(scholarNo: sNo, role: cachedRole);
-
-    // 1. Local Cache Pre-Check (strict anti-double-voting for scholars, bypassed for administrative testers)
-    if (!isStaffTester && hasVotedInBallotCached(bId, scholarNo: sNo)) {
+    // 1. Local Cache Pre-Check (strict anti-double-voting enforced for all accounts)
+    if (hasVotedInBallotCached(bId, scholarNo: sNo)) {
       return (
         success: false,
         receipt: null,
@@ -4454,7 +4435,7 @@ class AuthService {
           final ballotSnap = await transaction.get(ballotRef);
           final v2PollSnap = await transaction.get(v2PollRef);
 
-          if ((voteLockSnap.exists || v2PartSnap.exists) && !isStaffTester) {
+          if (voteLockSnap.exists || v2PartSnap.exists) {
             alreadyVoted = true;
             return;
           }
@@ -4573,14 +4554,11 @@ class AuthService {
     } catch (e) {
       debugPrint('Firestore vote transaction note: $e');
       if (_isFirebaseLive && !_isNoAppException(e)) {
-        // Attempt non-transactional direct fallback writes before reporting failure
-        try {
-          final v2PartKey = sha256.convert(utf8.encode('$bId:$sNo')).toString();
-          await _firestore.collection('election_polls_v2').doc(bId).collection('participation').doc(v2PartKey).set({
-            'receipt': receipt.receiptId,
-            'timestamp': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
-        } catch (_) {}
+        return (
+          success: false,
+          receipt: null,
+          error: 'Vote submission failed: could not record in Firestore ($e)',
+        );
       }
     }
 
@@ -4800,7 +4778,10 @@ class AuthService {
     required String commissionerName,
     int housePoints = 50,
   }) async {
-    final hName = winner.houseName.trim().toLowerCase();
+    String hName = winner.houseName.trim().toLowerCase();
+    if (hName.isEmpty || !['ruby', 'sapphire', 'emerald', 'topaz'].contains(hName)) {
+      hName = inferHouseFromScholarNo(winner.scholarNo) ?? 'emerald';
+    }
     final now = DateTime.now();
 
     final certifiedResult = CertifiedElectionResult(
@@ -4923,6 +4904,13 @@ class AuthService {
       );
     } catch (e) {
       debugPrint('Certification transaction note: $e');
+      if (_isFirebaseLive && !_isNoAppException(e)) {
+        return (
+          success: false,
+          result: null,
+          error: 'Certification failed: $e',
+        );
+      }
 
       try {
         await _firestore.collection('election_gazettes').doc(ballotId).set(certifiedResult.toMap(), SetOptions(merge: true));

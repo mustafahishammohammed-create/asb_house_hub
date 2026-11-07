@@ -197,7 +197,7 @@ exports.schoolElection = onCall(async (request) => {
       requireState(eligible(candidate, current), "Candidate is not eligible for this ballot.");
       const name = boundedText(candidate.display_name, 120, "roster display name");
       const existing = current.candidates.find((c) => c.uid === doc.id);
-      const next = { id: existing?.id ?? randomUUID(), uid: doc.id, name, statement };
+      const next = { id: existing?.id ?? randomUUID(), uid: doc.id, name, statement, house: candidate.house };
       const list = current.candidates.filter((c) => c.uid !== doc.id);
       requireState(list.length < 20, "This ballot supports up to 20 candidates.");
       tx.update(draft, { candidates: [...list, next] });
@@ -215,7 +215,7 @@ exports.schoolElection = onCall(async (request) => {
         requireState(eligible(registered, current), "Review a candidate whose membership changed.");
         const name = boundedText(registered.display_name, 120, "roster display name");
         requireState(name === c.name, "A candidate changed name. Refresh their draft entry.");
-        return { id: c.id, name, statement: c.statement };
+        return { id: c.id, name, statement: c.statement, house: registered.house };
       });
       tx.create(poll, {
         ...publicHeader(current),
