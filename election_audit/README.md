@@ -58,6 +58,7 @@ Each finding below follows the format: **Problem → What breaks → Solution**.
 
 ## Companion documents
 
+- [REMAINING_FIXES.md](REMAINING_FIXES.md) — **current status**: what is partially done (with residuals) and not done, each with its fix. Verified 2026-11-07 after commits `b66fc47`/`efa671d`.
 - [ACCOUNT_SWITCHING.md](ACCOUNT_SWITCHING.md) — S1–S9 scenario walkthroughs (switch timing, siblings, shared devices, vault extraction).
 - [REMEDIATION_ROADMAP.md](REMEDIATION_ROADMAP.md) — prioritized P0/P1/P2 fix plan with a checklist mapped to finding IDs.
 
