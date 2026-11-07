@@ -2,7 +2,7 @@
 
 Prioritized plan mapped to finding IDs. Split by the user's standing constraint: **no Blaze plan for now** — server work is deferred exactly like elections.
 
-**Verification update (2026-11-07, `59048ad`):** P0 core verified TRUE; G7/G8/G11 closures were overclaimed and are marked partial below. Details and solutions: [NOT_DONE_AND_FALSE_CLAIMS.md](NOT_DONE_AND_FALSE_CLAIMS.md). New requirement R1 (council roster privileges, supersedes staff-only G4 wording): [COUNCIL_PRIVILEGES.md](COUNCIL_PRIVILEGES.md).
+**Verification update (2026-11-07, round 2 at `cf1a1ac`):** G8/G11/G6/G12 and most round-1 open items verified TRUE; rules release verified first-hand. Still open: **O-1** captain approval broken, **O-2** council grading split-brain (both block R1), **O-3** migration helper never called (blocks G7). Full verdicts: [NOT_DONE_AND_FALSE_CLAIMS.md](NOT_DONE_AND_FALSE_CLAIMS.md). Requirement R1: [COUNCIL_PRIVILEGES.md](COUNCIL_PRIVILEGES.md).
 
 ## P0 — Do now (no Blaze required)
 
@@ -13,10 +13,10 @@ Prioritized plan mapped to finding IDs. Split by the user's standing constraint:
 
 ## P1 — Do now (no Blaze required)
 
-- [x] **G4** Gate `graded` transitions to staff **+ council** (R1 — see [COUNCIL_PRIVILEGES.md](COUNCIL_PRIVILEGES.md)); GPA strictly required (`gpa == null || gpa < 3.80`) in honours claims.
+- [ ] **G4** Gate `graded` transitions to staff **+ council** (R1); GPA strictly required ✓ (cf1a1ac). **Remaining (O-2):** council grading is client-only — rules grant council scoped status writes on class assignments, and the swallowed status-write failure must become truthful before points are awarded.
 - [x] **G5** Route Blitz through the award service (ceiling + cooldown); stop direct batch writes; treat quiz points as demo until server validation.
 - [x] **G6** Fail closed on negative elapsed time / clock rollback in daily cooldowns and rapid-fire debounce throttles.
-- [x] **G7** One contributor doc scheme (`{scholarNo}`), create-on-award; static merge migration `migrateLegacyContributorDocs()` for legacy `{house}_{scholar}` docs; derive/update `users.points_contributed`; pass real student name and class level.
+- [ ] **G7** One contributor doc scheme (`{scholarNo}`), create-on-award ✓; real name/class ✓; `users.points_contributed` in transaction ✓ (cf1a1ac). **Remaining (O-3):** `migrateLegacyContributorDocs()` has zero callers — wire it to an admin action or run it once with evidence.
 - [x] **G11** Make claim `points`/`house_name` immutable on update; content-derived trophy IDs (`trophy_{sport}_{slug}_{winner}_{runnerUp}_{year}`) for award idempotency in transaction and cache.
 - [x] **G12** Election certify: early return with server result on live success; cache/gazette writes demo-only; unified award constant to 100 points across client and server.
 

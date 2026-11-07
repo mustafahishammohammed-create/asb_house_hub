@@ -1,6 +1,6 @@
 # FINAL POINTS SYSTEM REPORT — Cross-Module Audit
 
-> **Update (2026-11-07, `59048ad`):** P0 remediation verified — core fixes TRUE (truthful awards, fail-closed secrets, rules validators, Blitz reroute, UI gating); G7/G8/G11 only partially done, `pearl` phantom house in rules, deployment unconfirmed. Claim-by-claim verdicts: [NOT_DONE_AND_FALSE_CLAIMS.md](NOT_DONE_AND_FALSE_CLAIMS.md). New requirement: council roster privileges — [COUNCIL_PRIVILEGES.md](COUNCIL_PRIVILEGES.md). The register below is the original `f20c7f7` snapshot.
+> **Update (2026-11-07, round 2 at `cf1a1ac`):** P0 + most P1 items verified TRUE (truthful awards, fail-closed secrets, bounded validators, nonce replay rejection, trophy idempotency, clock-rollback fail-closed, demo labeling, G12 early return); rules release verified first-hand via re-deploy ("already up to date"). **Still open:** O-1 captain claim approval broken, O-2 council grading split-brain, O-3 contributor migration never invoked. Claim-by-claim verdicts: [NOT_DONE_AND_FALSE_CLAIMS.md](NOT_DONE_AND_FALSE_CLAIMS.md). Council requirement status: [COUNCIL_PRIVILEGES.md](COUNCIL_PRIVILEGES.md). The register below is the original `f20c7f7` snapshot.
 
 **Date:** 2026-11-07 · **Verified at HEAD:** `f20c7f7` · **Scope:** every module that touches the points economy.
 **Method:** full static re-read of every points write/read site across all modules, rules-vs-client cross-check, attack-scenario tracing. Read-only — no code files modified. Secrets referenced by existence only; values never reproduced.

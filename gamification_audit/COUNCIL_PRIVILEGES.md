@@ -2,7 +2,7 @@
 
 **User requirement (2026-11-07, verbatim):** "see i want not only the staff can change but also the council roster has some priviledges"
 
-**Status:** IMPLEMENTED & VERIFIED — Deployed to Cloud Firestore and verified locally across unit and integration tests.
+**Status:** PARTIALLY IMPLEMENTED — rules deployed (release verified first-hand 2026-11-07), council claims approval works end-to-end. **Two grants are not actually live:** captain claim approval fails in live mode (O-1) and council grading awards points without persisting the official grade (O-2). See [NOT_DONE_AND_FALSE_CLAIMS.md](NOT_DONE_AND_FALSE_CLAIMS.md) for evidence and solutions. Demo-mode unit tests do not prove these paths — rules are not enforced in tests.
 
 ## The problem: council privileges were previously phantom
 
@@ -21,8 +21,8 @@ Previously, a council officer tapped Approve, `approveClaim` ran its transaction
 
 | Operation | Staff | Council | Captain | Prefect | Student | Status |
 |---|---|---|---|---|---|---|
-| Approve/reject house claims (Council Review Portal) | yes | **yes** | **yes, own house only** | no | no | IMPLEMENTED & LIVE |
-| Grade assignments / award academic merit (G4) | yes | **yes** | no | no | no | IMPLEMENTED & VERIFIED |
+| Approve/reject house claims (Council Review Portal) | yes | **yes** | **yes, own house only** | no | no | Council LIVE; **captain BROKEN (O-1)** — transaction also writes house_points/house_contributors, which deny captains |
+| Grade assignments / award academic merit (G4) | yes | **yes** | no | no | no | Staff LIVE; **council CLIENT-ONLY (O-2)** — classes/assignments rules deny council; status write swallowed, points still awarded |
 | Record conduct (merit/demerit) | yes | **yes** | no | read | no | IMPLEMENTED & LIVE |
 | Sports points (bounded 0..+500) | yes | **yes (0..+500)** | no | no | no | IMPLEMENTED & LIVE |
 | Manage elections | yes | yes | yes | no | no | VERIFIED |
