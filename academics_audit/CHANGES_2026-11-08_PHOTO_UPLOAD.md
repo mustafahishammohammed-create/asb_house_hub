@@ -118,3 +118,9 @@ Timetable / midterm_exams / report_cards rules are admin-write-only with no fiel
 - Exam-window and leave-form pickers (already existed).
 - `exam_schedule_item.dart`, `publishExamScheduleRange`, attendance/leave submit/approve/reject logic.
 - All other modules (elections, gamification, sports, wallet, etc.).
+
+---
+
+## Verification log
+
+**2026-11-08 — independent verification: 100% TRUE.** An external verifier re-checked every claim in this document (commit stat, all file:line citations, widget API, rules lines, test counts, deploy state) and found no discrepancies. Spot-re-confirmed first-hand the same day: `HEAD == origin/mustafa1 == 6885924`, clean tree; `git show c07c946 --stat` = 15 files, +643/−24; `firebase deploy --only firestore:rules` → "already up to date, skipping upload" (cloud == repo). No not-done or false claims to record.
