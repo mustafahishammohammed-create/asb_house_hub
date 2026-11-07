@@ -2,7 +2,7 @@
 
 Prioritized plan mapped to finding IDs. Split by the user's standing constraint: **no Blaze plan for now** — server work is deferred exactly like elections.
 
-**Verification update (2026-11-07, round 3 at `eae5f6b`):** O-1/O-2/O-3/O-4 verified TRUE first-hand (code + rules + suites + deploy match + push). G4 and G7 now closed. Still open: **G10** (standings cache/AI context) and **G13** (spirit reactor) — never remediated; plus new residuals **R-1** (captain contributor write unscoped), **R-2** (student shared-doc status flips), **R-3** (migration test depth). Full verdicts: [NOT_DONE_AND_FALSE_CLAIMS.md](NOT_DONE_AND_FALSE_CLAIMS.md). Requirement R1: [COUNCIL_PRIVILEGES.md](COUNCIL_PRIVILEGES.md).
+**Verification update (2026-11-07, round 4 at `c78ddd8`):** G13, R-1, R-2, R-3 verified TRUE first-hand (diffs + suites + deploy match + push). **G10 PARTIAL** — AI provenance tags and home snapshot ingestion exist, but the tag is mode-based not freshness-based and cache writes are not strictly snapshot-only (R-4). New residuals: R-5 (submission owners can self-mark `graded`), R-6 (grader-keyed submission docs). Full verdicts: [NOT_DONE_AND_FALSE_CLAIMS.md](NOT_DONE_AND_FALSE_CLAIMS.md). Requirement R1: [COUNCIL_PRIVILEGES.md](COUNCIL_PRIVILEGES.md).
 
 ## P0 — Do now (no Blaze required)
 
@@ -23,8 +23,8 @@ Prioritized plan mapped to finding IDs. Split by the user's standing constraint:
 ## P2 — Polish (no Blaze required)
 
 - [x] **G8** Constant-time MAC compares; dropped raw-JSON token decode fallback; nonce consumption tracking (`isNonceConsumed`, `consumeNonce`) with replay rejection.
-- [ ] **G10** Standings cache written only from server snapshots; label offline states; AI context uses synced data.
-- [ ] **G13** Spirit reactor: numeric bounds + cap in rules, atomic `FieldValue.increment` per caller's house, `last_contributor` tied to caller.
+- [ ] **G10** Standings cache written only from server snapshots; label offline states; AI context uses synced data. **Partial (c78ddd8):** provenance tags + snapshot ingestion + offline banner done; tag is mode-based not freshness-based, and write-through/demo cache writes remain (R-4).
+- [x] **G13** Spirit reactor: numeric bounds + cap in rules, atomic `FieldValue.increment` per caller's house, `last_contributor` tied to caller ✓ (c78ddd8). Cosmetic nits remain: create-time seeding ≤10M, spoofable `last_contributor` via API, swallowed client denials.
 
 ## Deferred — requires Blaze (add to the Blaze completion list)
 
