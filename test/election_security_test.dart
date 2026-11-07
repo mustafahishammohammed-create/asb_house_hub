@@ -12,6 +12,11 @@ import 'package:asb_house_hub/services/hierarchy_service.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  setUpAll(() {
+    ElectionSecurityService.setTestSalt('EPHEMERAL_TEST_HARNESS_SALT_2026');
+    CredentialVaultService.setTestSecret('TEST_VAULT_SECRET_2026');
+  });
+
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     await AuthService.initPreferences();

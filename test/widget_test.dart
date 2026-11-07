@@ -73,6 +73,11 @@ import 'package:asb_house_hub/screens/admin_claims_screen.dart';
 import 'package:asb_house_hub/l10n/app_localizations.dart';
 
 void main() {
+  setUpAll(() {
+    ElectionSecurityService.setTestSalt('EPHEMERAL_TEST_HARNESS_SALT_2026');
+    CredentialVaultService.setTestSecret('TEST_VAULT_SECRET_2026');
+  });
+
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     await AuthService.initPreferences();
@@ -10263,21 +10268,22 @@ void main() {
     final rawStored = prefs.getString('saved_accounts_list');
     expect(rawStored, isNotNull);
     expect(rawStored!.contains(plainPassword), isFalse, reason: 'Plaintext password must NEVER be persisted in SharedPreferences');
-    expect(rawStored.contains('enc:v1:'), isTrue, reason: 'Stored account must contain encrypted credential token');
+    expect(rawStored.contains('enc:v1:'), isFalse, reason: 'Passwords must not be stored on disk (neither plain nor encrypted) per A3');
+    expect(rawStored.contains('"password":null'), isTrue, reason: 'Password is null on disk for zero-persistence security');
 
-    // Verify transparent in-memory decryption for runtime session switching
+    // Verify in-memory session switching from disk does not resurrect passwords
     final accounts = AuthService.getSavedAccounts();
     expect(accounts.length, equals(1));
     expect(accounts.first.scholarNo, equals('2310910'));
-    expect(accounts.first.password, equals(plainPassword));
+    expect(accounts.first.password, isNull, reason: 'Passwords are memory-only and not persisted on disk');
 
-    // Verify recordActiveAccount preserves credentials
+    // Verify recordActiveAccount writes account with null password on disk
     await AuthService.recordActiveAccount(
       profile: {'scholar_no': '2310910', 'full_name': 'Zaid Al-Husseini', 'house_name': 'ruby'},
       password: plainPassword,
     );
     final updatedAccounts = AuthService.getSavedAccounts();
-    expect(updatedAccounts.first.password, equals(plainPassword));
+    expect(updatedAccounts.first.password, isNull);
 
     await AuthService.clearAllSavedAccounts();
     expect(AuthService.getSavedAccounts(), isEmpty);

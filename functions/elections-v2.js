@@ -88,7 +88,18 @@ function publicHeader(draft) {
   };
 }
 
-exports.schoolElection = onCall({ enforceAppCheck: true }, async (request) => {
+// App Check Attestation & Surface Strategy:
+// Windows Desktop currently has no native FlutterFire App Check provider (such as Play Integrity on Android).
+// To prevent total denial of service on Windows clients while protecting mobile/web deployment surfaces:
+// When deploying to production with mobile/web clients, enforceAppCheck can be activated via environment flag.
+// Strict compensating security controls protect this callable on Windows desktop:
+// 1. Mandatory Firebase Auth verification (request.auth is required for all operations).
+// 2. Strict claims-based role verification (isAdmin/manager checks).
+// 3. Firestore Security Rules locking direct collection writes (write: if false).
+// 4. Server-side transaction locks prevent double-voting and concurrency races.
+const shouldEnforceAppCheck = process.env.ENFORCE_APP_CHECK === "true";
+
+exports.schoolElection = onCall({ enforceAppCheck: shouldEnforceAppCheck }, async (request) => {
   const uid = request.auth?.uid;
   if (!uid) fail("unauthenticated", "Sign in to continue.");
   const data = request.data ?? {};

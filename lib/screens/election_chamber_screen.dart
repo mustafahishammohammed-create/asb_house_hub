@@ -1826,7 +1826,18 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
     final rawWinner = sortedCandidates.first;
     String winnerHouse = rawWinner.houseName.trim().toLowerCase();
     if (winnerHouse.isEmpty || !['ruby', 'sapphire', 'emerald', 'topaz'].contains(winnerHouse)) {
-      winnerHouse = AuthService.inferHouseFromScholarNo(rawWinner.scholarNo) ?? 'emerald';
+      winnerHouse = AuthService.inferHouseFromScholarNo(rawWinner.scholarNo) ?? '';
+    }
+    if (winnerHouse.isEmpty || !['ruby', 'sapphire', 'emerald', 'topaz'].contains(winnerHouse)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cannot certify election: Winner house is unknown or not in school roster.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+      return;
     }
     final winner = ElectionCandidate(
       scholarNo: rawWinner.scholarNo,

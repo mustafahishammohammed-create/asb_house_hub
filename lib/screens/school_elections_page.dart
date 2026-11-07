@@ -667,39 +667,16 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
           final countRef = pollRef.collection('counts').doc(cId);
           tx.set(countRef, {'count': FieldValue.increment(1)}, SetOptions(merge: true));
 
-          final updatedList = candidates.map((c) {
-            final cMap = Map<String, dynamic>.from(c);
-            if (c['id'] == cId || c['scholar_no']?.toString().trim() == candidateId) {
-              final cur = (cMap['votes_count'] as num?)?.toInt() ?? 0;
-              cMap['votes_count'] = cur + 1;
-            }
-            return cMap;
-          }).toList();
-
           final curTotal = (box['total_votes_cast'] as num?)?.toInt() ?? 0;
           tx.update(pollRef, {
-            'candidates': updatedList,
             'total_votes_cast': curTotal + 1,
           });
 
           // Write-through to legacy election document
           if (legSnap != null && legSnap.exists) {
             final legData = legSnap.data() ?? {};
-            final legCandidates = (legData['candidates'] as List? ?? []).cast<Map>();
-            final updatedLegCandidates = legCandidates.map((c) {
-              final cMap = Map<String, dynamic>.from(c);
-              final sNo = (cMap['scholar_no'] ?? '').toString().trim().toLowerCase();
-              final n = (cMap['name'] ?? cMap['full_name'] ?? '').toString().trim().toLowerCase();
-              if ((candScholarNo.isNotEmpty && sNo == candScholarNo.toLowerCase()) ||
-                  n == (match['name'] ?? '').toString().trim().toLowerCase()) {
-                final cur = (cMap['votes_count'] as num?)?.toInt() ?? 0;
-                cMap['votes_count'] = cur + 1;
-              }
-              return cMap;
-            }).toList();
             final curLegTotal = (legData['total_votes_cast'] as num?)?.toInt() ?? 0;
             tx.update(legElectionRef, {
-              'candidates': updatedLegCandidates,
               'total_votes_cast': curLegTotal + 1,
             });
           }
@@ -894,7 +871,10 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
       }
 
       if (candHouse.isEmpty || !['ruby', 'sapphire', 'emerald', 'topaz'].contains(candHouse)) {
-        candHouse = AuthService.inferHouseFromScholarNo(scholar) ?? 'emerald';
+        candHouse = AuthService.inferHouseFromScholarNo(scholar) ?? '';
+      }
+      if (candHouse.isEmpty || !['ruby', 'sapphire', 'emerald', 'topaz'].contains(candHouse)) {
+        throw StateError('Candidate must have a valid house on the school roster.');
       }
 
       if (candName.isEmpty) {
@@ -1030,7 +1010,7 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
         final rawHouse = (c['house'] ?? c['house_name'] ?? '').toString().trim().toLowerCase();
         final effectiveHouse = ['ruby', 'sapphire', 'emerald', 'topaz'].contains(rawHouse)
             ? rawHouse
-            : (AuthService.inferHouseFromScholarNo(rawScholar) ?? 'emerald');
+            : (AuthService.inferHouseFromScholarNo(rawScholar) ?? '');
         final effectiveScholar = rawScholar.isNotEmpty
             ? rawScholar
             : (rawId.startsWith('cnd_') ? '' : rawId);
@@ -1092,7 +1072,7 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
         candidates: pubCandidates.map((c) => ElectionCandidate(
           scholarNo: (c['scholar_no']?.toString().isNotEmpty == true ? c['scholar_no'] : c['id'] ?? '').toString(),
           fullName: (c['name'] ?? 'Candidate').toString(),
-          houseName: (c['house'] ?? c['house_name'] ?? (draft['house'] == 'all' ? 'emerald' : draft['house'] ?? 'emerald')).toString().toLowerCase(),
+          houseName: (c['house'] ?? c['house_name'] ?? (draft['house'] == 'all' ? '' : draft['house'] ?? '')).toString().toLowerCase(),
           runningPosition: ballotPosition.displayName,
           manifesto: (c['statement'] ?? '').toString(),
           votesCount: 0,
@@ -1114,7 +1094,7 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
           'id': c['id'],
           'scholar_no': c['scholar_no'] ?? c['id'],
           'full_name': c['name'],
-          'house_name': (c['house'] ?? c['house_name'] ?? (draft['house'] == 'all' ? 'emerald' : draft['house'] ?? 'emerald')).toString().toLowerCase(),
+          'house_name': (c['house'] ?? c['house_name'] ?? (draft['house'] == 'all' ? '' : draft['house'] ?? '')).toString().toLowerCase(),
           'running_position': draft['position'],
           'manifesto': c['statement'] ?? '',
           'votes_count': 0,
@@ -1237,7 +1217,10 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
                 ? candH
                 : (['ruby', 'sapphire', 'emerald', 'topaz'].contains(pollH)
                     ? pollH
-                    : (AuthService.inferHouseFromScholarNo(winningCand['scholar_no']?.toString() ?? '') ?? 'emerald'));
+                    : (AuthService.inferHouseFromScholarNo(winningCand['scholar_no']?.toString() ?? '') ?? ''));
+            if (!['ruby', 'sapphire', 'emerald', 'topaz'].contains(winnerHouse)) {
+              throw StateError('Cannot certify election: Winner house is unknown or missing from roster.');
+            }
             winningHouseToCredit = winnerHouse;
 
             final sortedRows = List<Map<String, dynamic>>.from(rows)
@@ -2751,20 +2734,26 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
                                   ),
                                 ),
                                 const SizedBox(width: 6),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: HouseColors.getHouseColor(data.member['house'] ?? 'ruby'),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    (data.member['house'] ?? 'ruby').toString().toUpperCase(),
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
+                                Builder(
+                                  builder: (context) {
+                                    final mHouse = (data.member['house'] ?? '').toString().toLowerCase();
+                                    final hasValidHouse = ['ruby', 'sapphire', 'emerald', 'topaz'].contains(mHouse);
+                                    return Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: hasValidHouse ? HouseColors.getHouseColor(mHouse) : Colors.grey.shade700,
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        hasValidHouse ? mHouse.toUpperCase() : 'UNKNOWN',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    );
+                                  },
                                 ),
                               ],
                             ),

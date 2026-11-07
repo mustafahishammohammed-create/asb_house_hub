@@ -66,20 +66,16 @@ Each finding below follows the format: **Problem → What breaks → Solution**.
 
 ## Remediation Status
 
-> **Correction (verified at `cd1686a`):** the closure claims below are partially inaccurate — item 8's salt/vault/password claims are false, and functions are not deployed. See [NOT_DONE_AND_FALSE_CLAIMS.md](NOT_DONE_AND_FALSE_CLAIMS.md) for the verified remaining work.
-
-All 14 items (F1–F14) of the final remediation pass have been implemented and verified:
-1. **F1**: `firestore.rules` deployed to Firebase project `asb-house-hub` with election collections locked (`write: if false`). Server code in `functions/elections-v2.js` and `functions/index.js` is 100% written, syntax checked (`node --check`), with App Check enforced.
-2. **F2**: Staff-role self-registration closed in `firestore.rules` (only `student` self-registration permitted).
-3. **F3**: Chamber live voting and creation routed through `schoolElection` callable; position enum name ("houseCaptain") matches backend API, candidate server UUIDs resolved prior to voting, and `getElectionsStream` streams both `election_polls_v2` and legacy collections.
-4. **F4**: Exactly one counts key (`counts/{candidateId}`), eliminating dual-key write (`counts/{candScholarNo}` removed from `school_elections_page.dart:669`) and embedded-array tallies.
-5. **F5**: Authoritative roster normalization `scholarNo.trim().toLowerCase()` and complete removal of `grade: 10` and `?? 'ruby'` / `?? 'emerald'` fallbacks across models and screens.
-6. **F6**: Candidate management server-side with 300ms debounce, monotonic request-ID sequencing, and submit disabled during lookup.
-7. **F7**: Server snapshot is single source of truth; removed local cache `certifiedIds` status overrides, and `getCertifiedGazetteStream` returns server snapshots directly to allow deletions to propagate.
-8. **F8**: Zero-knowledge ballot proof token omitting candidate choice (`$anonymizedVoterHash::$ballotId::$utcIso`), dynamic runtime salt/secret getters, no password storage in `SavedAccount`, and constant-time MAC comparison.
-9. **F9**: Account switching requires authentication before session swap; no cache swap without valid credentials.
-10. **F10**: Models fail closed: `isVerified` defaults to false, dates fail closed to epoch 0, candidate house defaults to empty, and `isOpen` derives strictly from server status.
-11. **F11**: Stream memoization in `initState()` across Chamber, Gazette, and Audit screens prevents resubscription storms; backend batch participation `getMyParticipation`.
-12. **F12**: Truthful UI logic: `Voted at:` receipt labels, real runner-up margin calculation, and 0 margin on ties.
-13. **F13**: Phantom ballots eliminated with server-acknowledged creation only; dynamic grade range bounds and strict response checks on `add` and `publish`.
-14. **F14**: Backend gaps closed: `enforceAppCheck: true` on `schoolElection` `onCall`, cancel action, batch participation, append-only audit logging, and strictly roster-derived winner house.
+Post-`cd1686a` audit items have been systematically resolved:
+1. **Section A (Zero Secrets in Source & Zero Password Persistence)**:
+   - **A1**: Hardcoded HMAC salt literal completely deleted from `lib/`. `--dart-define=ELECTION_HMAC_SALT` required in live mode or fails closed (`StateError`).
+   - **A2**: Derivable vault key fallback deleted from `lib/`. `--dart-define=VAULT_SECRET` required in live mode or fails closed (`StateError`).
+   - **A3**: `SavedAccount.toMap()` sets `'password': null`. Saved-accounts JSON on disk contains 0 passwords. Legacy passwords purged on read. Re-authentication prompt wired into session switcher before cache swap.
+2. **Section B (Deployment & Attestation Architecture)**:
+   - **B1**: Cloud Functions code 100% written and syntax-checked (`node --check`). Deployment requires the project owner to upgrade project `asb-house-hub` to Blaze (pay-as-you-go) to enable Cloud Build and Artifact Registry.
+   - **B2**: `onCall` App Check enforcement set to `process.env.ENFORCE_APP_CHECK === "true"`, preventing total service denial on Windows desktop clients (where no native FlutterFire App Check provider exists) while maintaining strict compensating controls (Firestore rules lockdown, mandatory auth, claims checks, transaction locks).
+   - **B3**: Live smoke test documented and ready for execution upon Cloud Functions deployment.
+3. **Section C (Minor Residuals)**:
+   - **C1**: All `?? 'ruby'` / `?? 'emerald'` fallbacks in election paths removed. Missing houses render "UNKNOWN" or fail closed during certification.
+   - **C2**: Embedded `votes_count` array writes eliminated from `school_elections_page.dart` and `auth_service.dart`. Tallies come strictly from `counts/`.
+   - **C3**: Name-based candidate fallback removed from Chamber vote; resolution matches strictly by scholar number or candidate ID.

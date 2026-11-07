@@ -1,12 +1,29 @@
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import '../models/digital_ballot_cast.dart';
 
 class ElectionSecurityService {
+  static String? _testOverrideSalt;
+
+  /// Sets an ephemeral test salt for test harnesses.
+  /// Never ships in production release binaries.
+  @visibleForTesting
+  static void setTestSalt(String? salt) {
+    _testOverrideSalt = salt;
+  }
+
   static String get _electionSalt {
     const envSalt = String.fromEnvironment('ELECTION_HMAC_SALT');
     if (envSalt.isNotEmpty) return envSalt;
-    return 'ASB_CAMPUS_DEMOCRACY_SECURE_SALT_v1';
+    if (_testOverrideSalt != null && _testOverrideSalt!.isNotEmpty) {
+      return _testOverrideSalt!;
+    }
+    throw StateError(
+      'Security Exception: ELECTION_HMAC_SALT is not configured. '
+      'Live operation requires a configured HMAC salt via --dart-define=ELECTION_HMAC_SALT=... '
+      'or ElectionSecurityService.setTestSalt(...) in test harnesses.',
+    );
   }
 
   /// Generates a deterministic, anonymized voter hash.

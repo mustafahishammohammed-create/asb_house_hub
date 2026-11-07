@@ -319,7 +319,80 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
+  Future<String?> _promptForSwitchPassword(String scholarNo) async {
+    final controller = TextEditingController();
+    bool obscure = true;
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          backgroundColor: const Color(0xFF1E222D),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text(
+            'Re-authenticate Session',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Enter password for Scholar #$scholarNo to verify session switch:',
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 13),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                obscureText: obscure,
+                autofocus: true,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  labelText: 'Password',
+                  labelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
+                  filled: true,
+                  fillColor: Colors.black.withValues(alpha: 0.3),
+                  suffixIcon: IconButton(
+                    icon: Icon(obscure ? Icons.visibility_off : Icons.visibility, color: Colors.white70),
+                    onPressed: () => setDialogState(() => obscure = !obscure),
+                  ),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                onSubmitted: (val) => Navigator.of(ctx).pop(val.trim()),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(null),
+              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFD4AF37),
+                foregroundColor: Colors.black,
+              ),
+              onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+              child: const Text('Verify & Switch', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _switchActiveSession(SavedAccount account) async {
+    SavedAccount accountToSwitch = account;
+    if (AuthService.isFirebaseLive &&
+        _authService.currentUser?.uid != account.uid &&
+        (account.password == null || account.password!.isEmpty)) {
+      final pwd = await _promptForSwitchPassword(account.scholarNo);
+      if (pwd == null || pwd.isEmpty) {
+        return; // User cancelled prompt, no session switch occurs
+      }
+      accountToSwitch = account.copyWith(password: pwd);
+    }
+
     setState(() {
       _loading = true;
       if (!_pulseController.isAnimating) {
@@ -328,7 +401,7 @@ class _HomeScreenState extends State<HomeScreen>
     });
 
     try {
-      await _authService.switchAccount(account);
+      await _authService.switchAccount(accountToSwitch);
       await AuthService.cacheHouse(account.houseName);
 
       if (mounted) {

@@ -39,10 +39,26 @@ const String kSchoolDomain = 'asianschool.bh';
 /// stored in local device preferences (replaces plaintext serialization in SharedPreferences).
 class CredentialVaultService {
   static const String tokenPrefix = 'enc:v1:';
+  static String? _testOverrideSecret;
+
+  /// Sets an ephemeral test secret for test harnesses.
+  /// Never ships in production release binaries.
+  @visibleForTesting
+  static void setTestSecret(String? secret) {
+    _testOverrideSecret = secret;
+  }
+
   static String get _vaultSecret {
     const envSecret = String.fromEnvironment('VAULT_SECRET');
     if (envSecret.isNotEmpty) return envSecret;
-    return 'ASB_RUNTIME_VAULT_KEY_${kSchoolDomain.hashCode}';
+    if (_testOverrideSecret != null && _testOverrideSecret!.isNotEmpty) {
+      return _testOverrideSecret!;
+    }
+    throw StateError(
+      'Security Exception: VAULT_SECRET is not configured. '
+      'Live operation requires a configured secret via --dart-define=VAULT_SECRET=... '
+      'or CredentialVaultService.setTestSecret(...) in test harnesses.',
+    );
   }
 
   /// Encrypts a plaintext credential string into an authenticated tamper-evident token.
@@ -164,6 +180,32 @@ class SavedAccount {
   })  : cachedProfile = cachedProfile != null ? AuthService._sanitizeForJson(cachedProfile) : <String, dynamic>{},
         lastActive = lastActive ?? DateTime.now();
 
+  SavedAccount copyWith({
+    String? scholarNo,
+    String? fullName,
+    String? houseName,
+    String? uid,
+    String? role,
+    String? classLevel,
+    String? division,
+    String? password,
+    Map<String, dynamic>? cachedProfile,
+    DateTime? lastActive,
+  }) {
+    return SavedAccount(
+      scholarNo: scholarNo ?? this.scholarNo,
+      fullName: fullName ?? this.fullName,
+      houseName: houseName ?? this.houseName,
+      uid: uid ?? this.uid,
+      role: role ?? this.role,
+      classLevel: classLevel ?? this.classLevel,
+      division: division ?? this.division,
+      password: password ?? this.password,
+      cachedProfile: cachedProfile ?? this.cachedProfile,
+      lastActive: lastActive ?? this.lastActive,
+    );
+  }
+
   Map<String, dynamic> toMap() {
     final sanitizedProfile = AuthService._sanitizeForJson(cachedProfile)
       ..remove('password');
@@ -175,7 +217,7 @@ class SavedAccount {
       'role': role,
       'class_level': classLevel,
       'division': division,
-      'password': CredentialVaultService.encrypt(password),
+      'password': null, // Zero password persistence on disk; memory-session only
       'cached_profile': sanitizedProfile,
       'last_active': lastActive.toIso8601String(),
     };
@@ -197,7 +239,9 @@ class SavedAccount {
 
     final rawPassword = map['password']?.toString() ?? profile['password']?.toString();
     profile.remove('password');
-    final decryptedPassword = CredentialVaultService.decrypt(rawPassword) ?? rawPassword;
+    final decryptedPassword = rawPassword != null
+        ? (CredentialVaultService.decrypt(rawPassword) ?? rawPassword)
+        : null;
 
     final isSuper = HierarchyService.isSuperAdmin(
       scholarNo: scholar,
@@ -243,6 +287,9 @@ class AuthService {
       return false;
     }
   }
+
+  /// Whether Firebase is initialized and live in this runtime environment.
+  static bool get isFirebaseLive => _isFirebaseLive;
 
   static bool _isNoAppException(Object e) {
     final s = e.toString().toLowerCase();
@@ -2195,6 +2242,18 @@ class AuthService {
               cachedProfile: profile ?? {},
               lastActive: DateTime.now(),
             );
+          }
+
+          bool hadPersistedPassword = false;
+          for (final rawItem in decoded) {
+            if (rawItem is Map && rawItem['password'] != null) {
+              hadPersistedPassword = true;
+              break;
+            }
+          }
+          if (hadPersistedPassword) {
+            final sanitizedJson = jsonEncode(deduped.values.map((a) => a.toMap()).toList());
+            _prefs?.setString(_kSavedAccountsKey, sanitizedJson);
           }
 
           return deduped.values.toList();
@@ -4325,8 +4384,8 @@ class AuthService {
       return {
         'scholarNo': clean,
         'fullName': '',
-        'houseName': 'ruby',
-        'classLevel': 'Grade 10',
+        'houseName': '',
+        'classLevel': '',
         'manifesto': '',
         'isFound': false,
       };
@@ -4349,7 +4408,7 @@ class AuthService {
       return {
         'scholarNo': clean,
         'fullName': 'Administrator',
-        'houseName': 'ruby',
+        'houseName': '',
         'classLevel': 'Staff / Faculty',
         'manifesto': generateDefaultManifesto(
           position: runningPosition ?? 'Staff Advisor',
@@ -4370,8 +4429,8 @@ class AuthService {
         final d = snap.docs.first.data();
         final rawName = (d['display_name'] ?? d['full_name'] ?? '').toString().trim();
         final name = isPlaceholderName(rawName) ? '' : rawName;
-        final house = (d['house'] ?? 'ruby').toString().toLowerCase();
-        final grade = d['grade'] != null ? 'Grade ${d['grade']}' : 'Grade 11';
+        final house = (d['house'] ?? '').toString().toLowerCase();
+        final grade = d['grade'] != null ? 'Grade ${d['grade']}' : '';
         if (name.isNotEmpty) {
           return {
             'scholarNo': clean,
@@ -4396,8 +4455,8 @@ class AuthService {
         final d = uSnap.docs.first.data();
         final rawName = (d['full_name'] ?? d['name'] ?? '').toString().trim();
         final name = isPlaceholderName(rawName) ? '' : rawName;
-        final house = (d['house_name'] ?? 'ruby').toString().toLowerCase();
-        final grade = (d['class_level'] ?? 'Grade 11').toString();
+        final house = (d['house_name'] ?? '').toString().toLowerCase();
+        final grade = (d['class_level'] ?? '').toString();
         if (name.isNotEmpty) {
           return {
             'scholarNo': clean,
@@ -4429,7 +4488,7 @@ class AuthService {
               'scholarNo': a.scholarNo,
               'fullName': name,
               'houseName': a.houseName.toLowerCase(),
-              'classLevel': a.classLevel ?? 'Grade 11',
+              'classLevel': a.classLevel ?? '',
               'manifesto': generateDefaultManifesto(
                 position: runningPosition ?? 'Council Representative',
                 candidateName: name,
@@ -4443,12 +4502,12 @@ class AuthService {
 
     // 4. Fallback: Scholar not found in records or only has synthetic ID.
     // Return empty fullName and manifesto so the user can enter genuine details manually.
-    final inferredHouse = inferHouseFromScholarNo(clean) ?? 'ruby';
+    final inferredHouse = inferHouseFromScholarNo(clean) ?? '';
     return {
       'scholarNo': clean,
       'fullName': '',
       'houseName': inferredHouse,
-      'classLevel': 'Grade 11',
+      'classLevel': '',
       'manifesto': '',
       'isFound': false,
     };
@@ -4541,9 +4600,9 @@ class AuthService {
                   final cList = (pData?['candidates'] as List? ?? []).cast<Map>();
                   for (final c in cList) {
                     final cSNo = (c['scholar_no'] ?? c['scholarNo'] ?? '').toString().trim().toLowerCase();
-                    final cName = (c['name'] ?? c['full_name'] ?? '').toString().trim().toLowerCase();
+                    final cIdMatch = (c['id'] ?? '').toString().trim().toLowerCase();
                     if ((cSNo.isNotEmpty && cSNo == candidate.scholarNo.trim().toLowerCase()) ||
-                        (cName.isNotEmpty && cName == candidate.fullName.trim().toLowerCase())) {
+                        (candidate.id.isNotEmpty && cIdMatch == candidate.id.trim().toLowerCase())) {
                       final foundId = (c['id'] ?? '').toString().trim();
                       if (foundId.isNotEmpty) {
                         candId = foundId;
@@ -4553,6 +4612,13 @@ class AuthService {
                   }
                 }
               } catch (_) {}
+            }
+            if (candId.isEmpty || candId == candidate.scholarNo) {
+              return (
+                success: false,
+                receipt: null,
+                error: 'Candidate is not on this ballot.',
+              );
             }
             final reply = await http.post(
               url,
@@ -4648,25 +4714,6 @@ class AuthService {
               throw StateError('The voting window has closed for this election.');
             }
 
-            final rawCandidates = ballotData['candidates'] as List? ?? [];
-            final updatedCandidates = <Map<String, dynamic>>[];
-            bool matched = false;
-
-            for (final item in rawCandidates) {
-              if (item is Map) {
-                final cMap = Map<String, dynamic>.from(item);
-                final cScholar = cMap['scholar_no']?.toString().trim().toLowerCase() ?? '';
-                final cId = cMap['id']?.toString().trim().toLowerCase() ?? '';
-
-                if (!matched && targetScholar.isNotEmpty && (cScholar == targetScholar || cId == targetScholar)) {
-                  matched = true;
-                  final curVotes = (cMap['votes_count'] as num?)?.toInt() ?? 0;
-                  cMap['votes_count'] = curVotes + 1;
-                }
-                updatedCandidates.add(cMap);
-              }
-            }
-
             final curTotal = (ballotData['total_votes_cast'] as num?)?.toInt() ?? 0;
 
             transaction.set(voteLockRef, {
@@ -4682,7 +4729,6 @@ class AuthService {
             });
 
             transaction.update(ballotRef, {
-              'candidates': updatedCandidates,
               'total_votes_cast': curTotal + 1,
               'last_updated': FieldValue.serverTimestamp(),
             });
@@ -4697,22 +4743,16 @@ class AuthService {
               throw StateError('This election is closed or certified.');
             }
             final v2Candidates = (v2Box['candidates'] as List? ?? []).cast<Map>();
-            bool v2Matched = false;
-            final updatedV2Candidates = v2Candidates.map((c) {
-              final cMap = Map<String, dynamic>.from(c);
-              final cScholar = (cMap['scholar_no'] ?? '').toString().trim().toLowerCase();
-              final cId = (cMap['id'] ?? '').toString().trim().toLowerCase();
-              if (!v2Matched && targetScholar.isNotEmpty && (cScholar == targetScholar || cId == targetScholar)) {
-                v2Matched = true;
-                v2MatchedCandidateId = (cMap['id'] ?? cMap['scholar_no'])?.toString();
-                final cur = (cMap['votes_count'] as num?)?.toInt() ?? 0;
-                cMap['votes_count'] = cur + 1;
+            for (final c in v2Candidates) {
+              final cScholar = (c['scholar_no'] ?? '').toString().trim().toLowerCase();
+              final cId = (c['id'] ?? '').toString().trim().toLowerCase();
+              if (targetScholar.isNotEmpty && (cScholar == targetScholar || cId == targetScholar)) {
+                v2MatchedCandidateId = (c['id'] ?? c['scholar_no'])?.toString();
+                break;
               }
-              return cMap;
-            }).toList();
+            }
             final v2Total = (v2Box['total_votes_cast'] as num?)?.toInt() ?? 0;
             transaction.update(v2PollRef, {
-              'candidates': updatedV2Candidates,
               'total_votes_cast': v2Total + 1,
               'last_updated': FieldValue.serverTimestamp(),
             });
@@ -4965,7 +5005,14 @@ class AuthService {
   }) async {
     String hName = winner.houseName.trim().toLowerCase();
     if (hName.isEmpty || !['ruby', 'sapphire', 'emerald', 'topaz'].contains(hName)) {
-      hName = inferHouseFromScholarNo(winner.scholarNo) ?? 'emerald';
+      hName = inferHouseFromScholarNo(winner.scholarNo) ?? '';
+    }
+    if (hName.isEmpty || !['ruby', 'sapphire', 'emerald', 'topaz'].contains(hName)) {
+      return (
+        success: false,
+        result: null,
+        error: 'Cannot certify election: Winner house is unknown or not on school roster. Roster house is required.',
+      );
     }
     final now = DateTime.now();
 
