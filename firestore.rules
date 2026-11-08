@@ -256,11 +256,43 @@ service cloud.firestore {
       );
     }
 
+    function isSeniorAdmin() {
+      return isSignedIn() && (
+        isSuperAdmin() ||
+        (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in ['principal', 'super_admin', 'admin', 'administrator']) ||
+        (hasUserDoc() && 'role' in getUserData() && getUserData().role in ['principal', 'super_admin', 'admin', 'administrator'])
+      );
+    }
+
     function isAdmin() {
       return isSignedIn() && (
         isSuperAdmin() ||
         (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in ['teacher', 'faculty', 'principal', 'staff', 'faculty_advisor', 'teacher_lead']) ||
         (hasUserDoc() && 'role' in getUserData() && getUserData().role in ['teacher', 'faculty', 'principal', 'staff', 'faculty_advisor', 'teacher_lead'])
+      );
+    }
+
+    function getClassData(classId) {
+      return get(/databases/$(database)/documents/academic_classes/$(classId)).data;
+    }
+
+    function isTimetableEditor(classId) {
+      return isSeniorAdmin() || (
+        isAdmin() &&
+        exists(/databases/$(database)/documents/academic_classes/$(classId)) &&
+        (!('timetable_editing_enabled' in getClassData(classId)) || getClassData(classId).timetable_editing_enabled == true) &&
+        (
+          ('class_teacher_uid' in getClassData(classId) && getClassData(classId).class_teacher_uid == request.auth.uid) ||
+          ('timetable_editor_uids' in getClassData(classId) && request.auth.uid in getClassData(classId).timetable_editor_uids)
+        )
+      );
+    }
+
+    function canPublishTimetable(classId) {
+      return isSeniorAdmin() || (
+        isTimetableEditor(classId) &&
+        exists(/databases/$(database)/documents/academic_classes/$(classId)) &&
+        (!('timetable_requires_approval' in getClassData(classId)) || getClassData(classId).timetable_requires_approval != true)
       );
     }
 
@@ -379,6 +411,7 @@ service cloud.firestore {
     function isValidAcademicClass(data) {
       return hasOnlyAllowedFields([
         'class_id', 'grade', 'section', 'active', 'class_teacher',
+        'class_teacher_uid', 'timetable_editor_uids', 'timetable_editing_enabled', 'timetable_requires_approval',
         'academic_year', 'created_at', 'updated_at'
       ]) &&
       hasRequiredFields(['class_id', 'grade', 'section', 'active']) &&
@@ -390,9 +423,74 @@ service cloud.firestore {
       data.section is string && data.section.size() >= 1 && data.section.size() <= 3 &&
       data.active is bool &&
       (!('class_teacher' in data) || (data.class_teacher is string && data.class_teacher.size() <= 100)) &&
+      (!('class_teacher_uid' in data) || (data.class_teacher_uid is string && data.class_teacher_uid.size() <= 128)) &&
+      (!('timetable_editor_uids' in data) || (data.timetable_editor_uids is list && data.timetable_editor_uids.size() <= 20)) &&
+      (!('timetable_editing_enabled' in data) || data.timetable_editing_enabled is bool) &&
+      (!('timetable_requires_approval' in data) || data.timetable_requires_approval is bool) &&
       (!('academic_year' in data) || (data.academic_year is string && data.academic_year.size() <= 20)) &&
       (!('created_at' in data) || data.created_at is timestamp) &&
       (!('updated_at' in data) || data.updated_at is timestamp);
+    }
+
+    function isValidTimetableSlot(slot) {
+      return slot is map &&
+        slot.keys().hasOnly(['period_number', 'subject', 'teacher_name', 'teacher_uid', 'room', 'start_minute', 'image_url', 'notes']) &&
+        slot.period_number is int && slot.period_number >= 1 && slot.period_number <= 8 &&
+        slot.start_minute is int && slot.start_minute >= 0 && slot.start_minute < 1440 &&
+        (!('subject' in slot) || (slot.subject is string && slot.subject.size() <= 80)) &&
+        (!('teacher_name' in slot) || (slot.teacher_name is string && slot.teacher_name.size() <= 100)) &&
+        (!('teacher_uid' in slot) || (slot.teacher_uid is string && slot.teacher_uid.size() <= 128)) &&
+        (!('room' in slot) || (slot.room is string && slot.room.size() <= 50)) &&
+        (!('image_url' in slot) || (slot.image_url is string && slot.image_url.size() <= 500000)) &&
+        (!('notes' in slot) || (slot.notes is string && slot.notes.size() <= 500));
+    }
+
+    function isValidTimetableVersion(data, classId) {
+      return hasOnlyAllowedFields([
+        'id', 'class_id', 'day_of_week', 'status', 'effective_from', 'version',
+        'break_after_period', 'break_start_minute', 'slots',
+        'created_by_uid', 'created_by_name', 'published_at',
+        'approved_by_uid', 'approved_by_name', 'supersedes_id',
+        'created_at', 'updated_at'
+      ]) &&
+      hasRequiredFields(['class_id', 'day_of_week', 'status', 'effective_from', 'version', 'break_after_period', 'break_start_minute', 'slots']) &&
+      data.class_id is string && data.class_id == classId &&
+      data.day_of_week is string && data.day_of_week in ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday'] &&
+      data.status is string && data.status in ['draft', 'submitted', 'published', 'rejected'] &&
+      data.effective_from is timestamp &&
+      data.version is int && data.version >= 1 && data.version <= 10000 &&
+      data.break_after_period is int && data.break_after_period >= 1 && data.break_after_period <= 8 &&
+      data.break_start_minute is int && data.break_start_minute >= 0 && data.break_start_minute < 1440 &&
+      data.slots is list && data.slots.size() == 8 &&
+      isValidTimetableSlot(data.slots[0]) &&
+      isValidTimetableSlot(data.slots[7]) &&
+      (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
+      (!('created_by_uid' in data) || (data.created_by_uid is string && data.created_by_uid.size() <= 128)) &&
+      (!('created_by_name' in data) || (data.created_by_name is string && data.created_by_name.size() <= 100)) &&
+      (!('approved_by_uid' in data) || (data.approved_by_uid is string && data.approved_by_uid.size() <= 128)) &&
+      (!('approved_by_name' in data) || (data.approved_by_name is string && data.approved_by_name.size() <= 100)) &&
+      (!('supersedes_id' in data) || (data.supersedes_id is string && data.supersedes_id.size() <= 128)) &&
+      (!('published_at' in data) || data.published_at is timestamp) &&
+      (!('created_at' in data) || data.created_at is timestamp) &&
+      (!('updated_at' in data) || data.updated_at is timestamp);
+    }
+
+    function isValidTimetableAudit(data) {
+      return hasOnlyAllowedFields([
+        'id', 'action', 'version_id', 'class_id', 'day_of_week', 'version',
+        'actor_uid', 'actor_name', 'details', 'timestamp'
+      ]) &&
+      hasRequiredFields(['action', 'class_id', 'actor_uid', 'timestamp']) &&
+      data.action is string && data.action in ['create', 'edit', 'submit', 'publish', 'reject', 'restore', 'override'] &&
+      data.class_id is string && data.class_id.size() >= 2 && data.class_id.size() <= 10 &&
+      data.actor_uid is string && data.actor_uid == request.auth.uid &&
+      data.timestamp is timestamp &&
+      (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
+      (!('version_id' in data) || (data.version_id is string && data.version_id.size() <= 128)) &&
+      (!('day_of_week' in data) || (data.day_of_week is string && data.day_of_week in ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday'])) &&
+      (!('version' in data) || (data.version is int && data.version >= 1)) &&
+      (!('actor_name' in data) || (data.actor_name is string && data.actor_name.size() <= 100)) &&
+      (!('details' in data) || (data.details is string && data.details.size() <= 1000));
     }
 
     function isValidAdminRoster(data) {
@@ -861,6 +959,50 @@ service cloud.firestore {
         request.resource.data.class_id == classId &&
         areImmutableFieldsUnchanged(['grade', 'section', 'created_at']);
       allow delete: if isAdmin();
+    }
+
+    // 3c. timetable_versions/{versionId} — recurring weekly timetable versions (M2)
+    match /timetable_versions/{versionId} {
+      allow read: if isSeniorAdmin() ||
+        (isSignedIn() && hasUserDoc() && 'class_id' in getUserData() &&
+          (resource == null || resource.data.class_id == getUserData().class_id) &&
+          (resource == null || resource.data.status == 'published' || isTimetableEditor(resource.data.class_id))) ||
+        (resource != null && isTimetableEditor(resource.data.class_id));
+
+      allow create: if isSignedIn() &&
+        isValidTimetableVersion(request.resource.data, request.resource.data.class_id) &&
+        isTimetableEditor(request.resource.data.class_id) &&
+        (
+          (request.resource.data.status in ['draft', 'submitted']) ||
+          (request.resource.data.status == 'published' && canPublishTimetable(request.resource.data.class_id))
+        );
+
+      allow update: if isSignedIn() &&
+        isValidTimetableVersion(request.resource.data, resource.data.class_id) &&
+        request.resource.data.class_id == resource.data.class_id &&
+        areImmutableFieldsUnchanged(['class_id', 'day_of_week', 'version', 'created_at']) &&
+        (
+          (isSeniorAdmin()) ||
+          (
+            isTimetableEditor(resource.data.class_id) &&
+            resource.data.status != 'published' &&
+            (
+              (request.resource.data.status in ['draft', 'submitted']) ||
+              (request.resource.data.status == 'published' && canPublishTimetable(resource.data.class_id))
+            )
+          )
+        );
+
+      allow delete: if isSeniorAdmin() && resource.data.status != 'published';
+    }
+
+    // 3d. timetable_audit/{auditId} — append-only audit log for timetable operations
+    match /timetable_audit/{auditId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn() &&
+        isTimetableEditor(request.resource.data.class_id) &&
+        isValidTimetableAudit(request.resource.data);
+      allow update, delete: if false; // strictly immutable and append-only
     }
 
     // 4. homework/{assignmentId}

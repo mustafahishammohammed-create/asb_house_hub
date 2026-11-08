@@ -27,6 +27,7 @@ import '../models/player_sports_stats.dart';
 import '../models/sports_trophy.dart';
 import '../models/medical_leave_request.dart';
 import '../models/academic_class.dart';
+import 'timetable_service.dart';
 import 'election_security_service.dart';
 import 'sports_security_service.dart';
 import 'hierarchy_service.dart';
@@ -273,12 +274,21 @@ class SavedAccount {
 class AuthService {
   FirebaseAuth get _auth => FirebaseAuth.instance;
   FirebaseFirestore get _firestore => FirebaseFirestore.instance;
+  TimetableService get timetableService => TimetableService(firestore: _firestore);
 
   @visibleForTesting
   static bool? isFirebaseLiveOverride;
 
+  static Exception? _firestoreFailureSimulated;
+
   @visibleForTesting
-  static Exception? firestoreFailureSimulated;
+  static Exception? get firestoreFailureSimulated => _firestoreFailureSimulated;
+
+  @visibleForTesting
+  static set firestoreFailureSimulated(Exception? value) {
+    _firestoreFailureSimulated = value;
+    TimetableService.firestoreFailureSimulated = value;
+  }
 
   static bool get _isFirebaseLive {
     if (isFirebaseLiveOverride != null) return isFirebaseLiveOverride!;
@@ -303,6 +313,7 @@ class AuthService {
   static Future<void> initPreferences() async {
     try {
       _prefs = await SharedPreferences.getInstance();
+      await TimetableService.initPreferences(_prefs);
     } catch (_) {}
   }
 
@@ -6866,6 +6877,54 @@ class AuthService {
     final idx = cached.indexWhere((c) => c.classId == id);
     if (idx != -1) {
       cached[idx] = cached[idx].copyWith(active: active);
+      await cacheAcademicClasses(cached);
+    }
+    return true;
+  }
+
+  /// Updates timetable editing permissions, assigned editors, and approval requirements (admin only).
+  Future<bool> updateClassTimetablePermissions({
+    required String classId,
+    String? classTeacherUid,
+    List<String>? timetableEditorUids,
+    bool? timetableEditingEnabled,
+    bool? timetableRequiresApproval,
+  }) async {
+    final id = classId.trim();
+    if (id.isEmpty) return false;
+
+    final updates = <String, dynamic>{
+      'updated_at': FieldValue.serverTimestamp(),
+    };
+    if (classTeacherUid != null) updates['class_teacher_uid'] = classTeacherUid;
+    if (timetableEditorUids != null) updates['timetable_editor_uids'] = timetableEditorUids;
+    if (timetableEditingEnabled != null) updates['timetable_editing_enabled'] = timetableEditingEnabled;
+    if (timetableRequiresApproval != null) updates['timetable_requires_approval'] = timetableRequiresApproval;
+
+    if (_isFirebaseLive) {
+      try {
+        if (firestoreFailureSimulated != null) {
+          throw firestoreFailureSimulated!;
+        }
+        await _firestore.collection('academic_classes').doc(id).update(updates);
+      } catch (e) {
+        if (!_isNoAppException(e)) {
+          debugPrint('Firestore updateClassTimetablePermissions failure: $e');
+          return false;
+        }
+      }
+    }
+
+    final cached = getCachedAcademicClasses();
+    final idx = cached.indexWhere((c) => c.classId == id);
+    if (idx != -1) {
+      final current = cached[idx];
+      cached[idx] = current.copyWith(
+        classTeacherUid: classTeacherUid ?? current.classTeacherUid,
+        timetableEditorUids: timetableEditorUids ?? current.timetableEditorUids,
+        timetableEditingEnabled: timetableEditingEnabled ?? current.timetableEditingEnabled,
+        timetableRequiresApproval: timetableRequiresApproval ?? current.timetableRequiresApproval,
+      );
       await cacheAcademicClasses(cached);
     }
     return true;

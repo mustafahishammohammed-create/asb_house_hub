@@ -335,6 +335,7 @@ class ClassTimetableVersion {
   }
 
   Map<String, dynamic> toMap() => {
+        if (id.isNotEmpty) 'id': id,
         'class_id': classId,
         'day_of_week': dayOfWeek,
         'status': status,
@@ -351,6 +352,15 @@ class ClassTimetableVersion {
         if (supersedesId.isNotEmpty) 'supersedes_id': supersedesId,
         if (createdAt != null) 'created_at': Timestamp.fromDate(createdAt!),
       };
+
+  /// JSON-safe serialization for SharedPreferences cache (converts Timestamps to ISO strings).
+  Map<String, dynamic> toJsonMap() {
+    final map = Map<String, dynamic>.from(toMap());
+    map['effective_from'] = effectiveFrom.toIso8601String();
+    if (publishedAt != null) map['published_at'] = publishedAt!.toIso8601String();
+    if (createdAt != null) map['created_at'] = createdAt!.toIso8601String();
+    return map;
+  }
 
   factory ClassTimetableVersion.fromMap(Map<String, dynamic> map, [String? docId]) {
     DateTime parseDate(dynamic v, [DateTime? fallback]) {

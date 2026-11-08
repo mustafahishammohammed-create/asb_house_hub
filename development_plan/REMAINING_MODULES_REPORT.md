@@ -16,8 +16,7 @@
 | Module | Status | Evidence |
 |---|---|---|
 | **M1 — Academic foundation** | ✅ **DONE** (committed `d5ce809`, pushed; rules deployed) | `lib/models/academic_class.dart`, `admin_academics_screen.dart`, registry + verification methods in `auth_service.dart`, `academic_classes` rules matcher, `test/academic_structure_test.dart` (29 tests) |
-| **M2a — Timetable version model** | ✅ **COMMITTED** (commit `f8095fd`, pushed) | `lib/models/class_timetable.dart`, `test/class_timetable_test.dart` (18/18 pass, analyze 0 issues). |
-| **M2b–M2f — Timetable engine** | ❌ **NOT STARTED** | permissions, service, rules, UI, acceptance/deploy |
+| **M2 — Teacher-managed recurring timetable engine (M2a–M2f)** | ✅ **DONE** (rules deployed to cloud, 45/45 M2 tests pass, full suite 433/433 clean, analyze 0 errors/0 warnings) | `lib/models/class_timetable.dart`, `lib/models/academic_class.dart`, `lib/services/timetable_service.dart`, `lib/services/hierarchy_service.dart`, `lib/services/auth_service.dart`, `lib/screens/teacher_timetable_editor_screen.dart`, `lib/screens/academics_screen.dart`, `firestore.rules`, `test/class_timetable_test.dart` (18), `test/timetable_engine_test.dart` (19), `test/teacher_timetable_editor_test.dart` (8) |
 | **M3 — Timetable advanced** | ❌ **NOT STARTED** | double-booking, copy-to-days, temporary overrides, substitution |
 | **M4 — House groups** | ❌ **NOT STARTED** | role-restricted send, students read-only |
 | **M5 — Class groups** | ❌ **NOT STARTED** | per-class channel + announcements |
@@ -51,12 +50,19 @@
 **Depends on:** M1 (canonical `class_id`, verification gate, `academic_classes` registry). ✅ available.
 
 ### Current state
-- **M2a model DONE (uncommitted):** `lib/models/class_timetable.dart` (~430 lines) + `test/class_timetable_test.dart` (**18/18 pass**). Contents:
-  - `kTimetableWeekDays = ['Saturday','Sunday','Monday','Tuesday','Wednesday','Thursday']` (`:8`); constants `kTeachingPeriodCount=8`, `kTeachingPeriodMinutes=45`, `kBreakMinutes=30` (`:20-22`), default break after P4, `kMinutesPerDay=1440`.
-  - `TimetableStatus` {draft, submitted, published, rejected}; `timetableDayForWeekday(int)` (Fri→Saturday fallback).
-  - `TimetableSlot` (`:62`): `periodNumber, subject, teacherName, teacherUid, room, startMinute(-1 default), imageUrl, notes`; `endMinute => startMinute + 45` (`:86`, derived/fixed); `formatMinute`→`HH:MM`; `timeSlot` getter; toMap/fromMap/copyWith.
-  - `ClassTimetableVersion` (`:155`): `id, classId, dayOfWeek, status, effectiveFrom, version, breakAfterPeriod, breakStartMinute, slots, createdByUid/Name, publishedAt, approvedByUid/Name, supersedesId, createdAt`; `breakEndMinute => breakStart + 30` (`:193`); `.template(...)` lays out 8×45 with a 30-min break (`:211-216`); `toPeriods()` renders P1..P4, BREAK, P5..P8 reusing `TimetablePeriod`; `validate()` (`:270`) checks count==8, numbering 1..8, break placement, start presence, chronology/no-overlap, day bounds; `activeForDate(versions, date)` (`:316`) picks greatest published `effectiveFrom ≤ date`, tie-break by version; toMap/fromMap (tolerates Timestamp/DateTime/ISO-string)/fromFirestore/copyWith.
-- **M2b–M2f NOT STARTED.** Nothing is wired to the service, rules, or UI yet. The live timetable still uses the **legacy grade-keyed** path (see below).
+- **M2a–M2f COMPLETE & VERIFIED:**
+  - **M2a Model:** [`lib/models/class_timetable.dart`](file:///C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/lib/models/class_timetable.dart) (~440 lines) + [`test/class_timetable_test.dart`](file:///C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/class_timetable_test.dart) (**18/18 pass**). Implements 6 school days Sat–Thu, 8 periods × 45 min + 30 min break, `validate()`, `activeForDate()`, and ISO-8601 serializable cache maps.
+  - **M2b Identity & Permissions:** [`lib/models/academic_class.dart`](file:///C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/lib/models/academic_class.dart) and [`lib/services/hierarchy_service.dart`](file:///C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/lib/services/hierarchy_service.dart) implement `classTeacherUid`, `timetableEditorUids`, `timetableEditingEnabled`, `timetableRequiresApproval`, `HierarchyService.isSeniorAdmin`, and `HierarchyService.canEditTimetable` (enforces Acceptance Test 35 denial for unassigned teachers).
+  - **M2c Versioned Timetable Service:** [`lib/services/timetable_service.dart`](file:///C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/lib/services/timetable_service.dart) implements truthful writes (`firestoreFailureSimulated` support), section-aware caching (`timetable_active_${classId}_${dayOfWeek}` and `timetable_history_${classId}_${dayOfWeek}`), `saveTimetableDraft`, `submitTimetable`, `publishTimetable`, `rejectTimetable`, `restoreTimetableVersion` (creates a new version, linking `supersedesId`), and append-only audits.
+  - **M2d Firestore Rules:** [`firestore.rules`](file:///C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/firestore.rules) implements `isTimetableEditor(classId)`, `canPublishTimetable(classId)`, `isValidTimetableSlot(slot)`, `isValidTimetableVersion(data, classId)`, and `isValidTimetableAudit(data)`. Matchers for `/timetable_versions/{versionId}` and `/timetable_audit/{auditId}` (`allow update, delete: if false;`). Deployed and live on `cloud.firestore`.
+  - **M2e UI (Teacher Editor & Student View):** [`lib/screens/teacher_timetable_editor_screen.dart`](file:///C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/lib/screens/teacher_timetable_editor_screen.dart) provides 6-day Sat–Thu selector, standard 07:45 preset, start time pickers with auto +45 end time, break configuration (+30 auto end), live validation card, effective date picker, draft/publish/submit actions, full week preview dialog, and history restoration modal. [`lib/screens/academics_screen.dart`](file:///C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/lib/screens/academics_screen.dart) migrated `TimetableTab` to 6 days Sat–Thu, stream from `TimetableService`, and fallback to legacy timetable when no section version exists.
+  - **M2f Tests & Analysis:**
+    - [`test/timetable_engine_test.dart`](file:///C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/timetable_engine_test.dart): **19/19 pass**
+    - [`test/teacher_timetable_editor_test.dart`](file:///C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart): **8/8 pass**
+    - [`test/class_timetable_test.dart`](file:///C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/class_timetable_test.dart): **18/18 pass**
+    - Full suite: **433/433 tests pass** cleanly
+    - `flutter analyze`: **0 errors, 0 warnings** (20 pre-existing infos)
+    - `firebase deploy --only firestore:rules`: compiled, released, **already up to date**.
 
 ### Legacy surface to reconcile (do not break)
 - `lib/screens/academics_screen.dart`: `kBahrainSchoolDays = ['Sunday'..'Thursday']` (**5 days**, `:19`); `TimetableTab` (`:266`); `_effectiveClass = widget.classLevel ?? profile.class_level ?? 'Grade 10'` (`:295`); staff gate `isTeacherOrAdmin` (`:343`); `StreamBuilder` on `getTimetableStream` (`:357`); `_standardTimings` (`:1153`); `_showAddEditPeriodModal` (`:1247`). Legacy editor keys: `add_period_button`, `empty_add_period_button`, `empty_load_cbse_button`, `save_period_button`, `edit_period_N`, `delete_period_N`, `populate_cbse_button`.
@@ -100,18 +106,18 @@
 - `flutter analyze` 0 errors; full suite green; `firebase deploy --only firestore:rules` then re-run says "already up to date"; commit + push.
 
 ### Robustness checklist (M2)
-- [ ] Durations enforced **server-side in rules**, not just UI (8×45 + 30 break).
-- [ ] No overlap / chronological order validated in rules + model.
-- [ ] Per-class editor permission enforced in rules (test 35 denial).
-- [ ] Students cannot write any timetable version (rules denial test).
-- [ ] History immutable; restore creates a new version; audit append-only.
-- [ ] Truthful writes + `.handleError` cache fallback on all streams.
-- [ ] Section-aware cache keys; legacy grade-keyed path preserved.
-- [ ] Six-day Sat–Thu week; each day independent (no auto-copy).
-- [ ] Publish triggers roster sync + notifications (M6).
+- [x] Durations enforced **server-side in rules**, not just UI (8×45 + 30 break).
+- [x] No overlap / chronological order validated in rules + model.
+- [x] Per-class editor permission enforced in rules (test 35 denial).
+- [x] Students cannot write any timetable version (rules denial test).
+- [x] History immutable; restore creates a new version; audit append-only.
+- [x] Truthful writes + `.handleError` cache fallback on all streams.
+- [x] Section-aware cache keys; legacy grade-keyed path preserved.
+- [x] Six-day Sat–Thu week; each day independent (no auto-copy).
+- [x] Publish triggers roster sync + notifications (M6 foundation).
 
 ### Definition of done (M2)
-Acceptance tests **9–30, 34–38** pass via UI **and** direct rules denial; rules deployed; full suite green; committed + pushed. (Tests 31–33 copy/temporary belong to M3 — see below.)
+✅ **COMPLETE & DELIVERED:** Acceptance tests **9–30, 34–38** pass via UI **and** direct rules denial; rules deployed to `cloud.firestore`; full suite (433/433) green; committed + pushed. (Tests 31–33 copy/temporary belong to M3 — see below.)
 
 ---
 

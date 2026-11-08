@@ -95,6 +95,10 @@ class AcademicClass {
   final String section;
   final bool active;
   final String classTeacher;
+  final String? classTeacherUid;
+  final List<String> timetableEditorUids;
+  final bool timetableEditingEnabled;
+  final bool timetableRequiresApproval;
   final String academicYear;
   final DateTime? createdAt;
 
@@ -104,6 +108,10 @@ class AcademicClass {
     required this.section,
     this.active = true,
     this.classTeacher = '',
+    this.classTeacherUid,
+    this.timetableEditorUids = const [],
+    this.timetableEditingEnabled = true,
+    this.timetableRequiresApproval = false,
     this.academicYear = '2026-2027',
     this.createdAt,
   });
@@ -116,6 +124,11 @@ class AcademicClass {
     'section': section,
     'active': active,
     'class_teacher': classTeacher,
+    if (classTeacherUid != null && classTeacherUid!.isNotEmpty)
+      'class_teacher_uid': classTeacherUid,
+    'timetable_editor_uids': timetableEditorUids,
+    'timetable_editing_enabled': timetableEditingEnabled,
+    'timetable_requires_approval': timetableRequiresApproval,
     'academic_year': academicYear,
     if (createdAt != null) 'created_at': Timestamp.fromDate(createdAt!),
   };
@@ -132,12 +145,27 @@ class AcademicClass {
         (map['grade'] ?? '').toString().trim();
     final section = (map['section'] ?? '').toString().trim().toUpperCase();
     final id = (map['class_id'] ?? docId ?? '').toString().trim();
+    final rawEditors = map['timetable_editor_uids'] ?? map['timetableEditorUids'];
+    final editors = <String>[];
+    if (rawEditors is List) {
+      for (final e in rawEditors) {
+        final s = (e ?? '').toString().trim();
+        if (s.isNotEmpty && !editors.contains(s)) editors.add(s);
+      }
+    }
+
+    final teacherUidRaw = (map['class_teacher_uid'] ?? map['classTeacherUid'])?.toString().trim();
+
     return AcademicClass(
       classId: id.isNotEmpty ? id : AcademicStructure.classIdFrom(grade, section),
       grade: grade,
       section: section,
       active: map['active'] != false,
       classTeacher: (map['class_teacher'] ?? map['classTeacher'] ?? '').toString().trim(),
+      classTeacherUid: (teacherUidRaw != null && teacherUidRaw.isNotEmpty) ? teacherUidRaw : null,
+      timetableEditorUids: editors,
+      timetableEditingEnabled: map['timetable_editing_enabled'] != false && map['timetableEditingEnabled'] != false,
+      timetableRequiresApproval: map['timetable_requires_approval'] == true || map['timetableRequiresApproval'] == true,
       academicYear: (map['academic_year'] ?? map['academicYear'] ?? '2026-2027').toString().trim(),
       createdAt: parseDate(map['created_at'] ?? map['createdAt']),
     );
@@ -154,6 +182,10 @@ class AcademicClass {
     String? section,
     bool? active,
     String? classTeacher,
+    String? classTeacherUid,
+    List<String>? timetableEditorUids,
+    bool? timetableEditingEnabled,
+    bool? timetableRequiresApproval,
     String? academicYear,
     DateTime? createdAt,
   }) {
@@ -163,6 +195,10 @@ class AcademicClass {
       section: section ?? this.section,
       active: active ?? this.active,
       classTeacher: classTeacher ?? this.classTeacher,
+      classTeacherUid: classTeacherUid ?? this.classTeacherUid,
+      timetableEditorUids: timetableEditorUids ?? this.timetableEditorUids,
+      timetableEditingEnabled: timetableEditingEnabled ?? this.timetableEditingEnabled,
+      timetableRequiresApproval: timetableRequiresApproval ?? this.timetableRequiresApproval,
       academicYear: academicYear ?? this.academicYear,
       createdAt: createdAt ?? this.createdAt,
     );

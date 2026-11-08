@@ -11,12 +11,17 @@ import '../models/attendance_record.dart';
 import '../models/medical_leave_request.dart';
 import '../services/auth_service.dart';
 import '../services/hierarchy_service.dart';
+import '../services/timetable_service.dart';
+import '../models/academic_class.dart';
+import '../models/class_timetable.dart';
 import '../widgets/managed_modal_scope.dart';
 import '../widgets/academic_image.dart';
 import 'home_screen.dart';
+import 'teacher_timetable_editor_screen.dart';
 
-/// School days in The Asian School Bahrain (Sunday through Thursday).
+/// School days in The Asian School Bahrain (Saturday through Thursday, 6 days, no Friday per M2 spec).
 const List<String> kBahrainSchoolDays = [
+  'Saturday',
   'Sunday',
   'Monday',
   'Tuesday',
@@ -283,6 +288,7 @@ class TimetableTab extends StatefulWidget {
 
 class _TimetableTabState extends State<TimetableTab> {
   final AuthService _authService = AuthService();
+  final TimetableService _timetableService = TimetableService();
   late String _selectedDay;
   late String _effectiveClass;
   Timer? _tickerTimer;
@@ -315,6 +321,8 @@ class _TimetableTabState extends State<TimetableTab> {
 
   static String _getCurrentOrNextSchoolDay(DateTime now) {
     switch (now.weekday) {
+      case DateTime.saturday:
+        return 'Saturday';
       case DateTime.sunday:
         return 'Sunday';
       case DateTime.monday:
@@ -326,7 +334,8 @@ class _TimetableTabState extends State<TimetableTab> {
       case DateTime.thursday:
         return 'Thursday';
       default:
-        return 'Sunday';
+        // Friday is the weekend; next school day is Saturday
+        return 'Saturday';
     }
   }
 
@@ -343,27 +352,49 @@ class _TimetableTabState extends State<TimetableTab> {
     final isTeacherOrAdmin = HierarchyService.isTeacherOrFaculty(role: role, scholarNo: scholarNo) ||
         HierarchyService.isSuperAdmin(role: role, scholarNo: scholarNo);
 
+    final rawClassId = profile?['class_id']?.toString().trim() ?? '';
+    final parsedClass = AcademicStructure.parseClassId(rawClassId) ?? AcademicStructure.parseClassId(_effectiveClass);
+    final canonicalClassId = rawClassId.isNotEmpty ? rawClassId : (parsedClass != null ? AcademicStructure.classIdFrom(parsedClass.$1, parsedClass.$2) : '');
+
+    final activeSectionVersion = canonicalClassId.isNotEmpty
+        ? _timetableService.getCachedActiveVersion(canonicalClassId, _selectedDay, now)
+        : null;
+
     final cachedPeriods = (widget.initialPeriods != null && widget.initialPeriods!.isNotEmpty)
         ? widget.initialPeriods!
-        : AuthService.getCachedTimetable(
-            classLevel: _effectiveClass,
-            dayOfWeek: _selectedDay,
-          );
+        : (activeSectionVersion != null
+            ? activeSectionVersion.toPeriods()
+            : AuthService.getCachedTimetable(
+                classLevel: _effectiveClass,
+                dayOfWeek: _selectedDay,
+              ));
 
     return Column(
       children: [
         _buildWeekdaySelector(isDark),
         Expanded(
-          child: StreamBuilder<List<TimetablePeriod>>(
-            stream: _authService.getTimetableStream(
-              classLevel: _effectiveClass,
-              dayOfWeek: _selectedDay,
-            ),
-            initialData: cachedPeriods.isNotEmpty ? cachedPeriods : null,
-            builder: (context, snapshot) {
-              final periods = (snapshot.hasData && snapshot.data != null && snapshot.data!.isNotEmpty)
-                  ? snapshot.data!
-                  : cachedPeriods;
+          child: StreamBuilder<ClassTimetableVersion?>(
+            stream: canonicalClassId.isNotEmpty
+                ? _timetableService.getActiveTimetableStream(canonicalClassId, _selectedDay, now)
+                : const Stream.empty(),
+            initialData: activeSectionVersion,
+            builder: (context, versionSnapshot) {
+              final activeVer = versionSnapshot.data ?? activeSectionVersion;
+              final sectionPeriods = activeVer?.toPeriods();
+
+              return StreamBuilder<List<TimetablePeriod>>(
+                stream: sectionPeriods == null
+                    ? _authService.getTimetableStream(
+                        classLevel: _effectiveClass,
+                        dayOfWeek: _selectedDay,
+                      )
+                    : const Stream.empty(),
+                initialData: cachedPeriods.isNotEmpty ? cachedPeriods : null,
+                builder: (context, snapshot) {
+                  final periods = sectionPeriods ??
+                      ((snapshot.hasData && snapshot.data != null && snapshot.data!.isNotEmpty)
+                          ? snapshot.data!
+                          : cachedPeriods);
 
               TimetablePeriod? activePeriod;
               TimetablePeriod? nextUpcomingPeriod;
@@ -449,7 +480,31 @@ class _TimetableTabState extends State<TimetableTab> {
                                   ),
                                 ),
                               ),
-                            if (isTeacherOrAdmin)
+                            if (isTeacherOrAdmin) ...[
+                              FilledButton.icon(
+                                key: const Key('manage_recurring_timetable_button'),
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => TeacherTimetableEditorScreen(
+                                        classId: canonicalClassId.isNotEmpty ? canonicalClassId : '10A',
+                                        initialDay: _selectedDay,
+                                      ),
+                                    ),
+                                  ).then((_) {
+                                    if (mounted) setState(() {});
+                                  });
+                                },
+                                icon: const Icon(Icons.edit_calendar_rounded, size: 16),
+                                label: const Text('Edit Timetable', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: isDark ? const Color(0xFF38BDF8) : const Color(0xFF4338CA),
+                                  foregroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                ),
+                              ),
                               FilledButton.icon(
                                 key: const Key('add_period_button'),
                                 onPressed: () => _showAddEditPeriodModal(),
@@ -462,6 +517,7 @@ class _TimetableTabState extends State<TimetableTab> {
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                 ),
                               ),
+                            ],
                           ],
                         ),
                       ],
@@ -482,11 +538,13 @@ class _TimetableTabState extends State<TimetableTab> {
                 ),
               );
             },
-          ),
-        ),
-      ],
-    );
-  }
+          );
+        },
+      ),
+    ),
+  ],
+);
+}
 
   Widget _buildWeekdaySelector(bool isDark) {
     return Container(

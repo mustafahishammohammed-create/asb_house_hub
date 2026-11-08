@@ -1,3 +1,5 @@
+import '../models/academic_class.dart';
+
 /// Centralized Hierarchy and Role Verification Engine for ASB House Hub.
 /// Enforces strict role isolation, prevents privilege escalation vulnerabilities,
 /// and securely validates officers, faculty, council, and students.
@@ -149,6 +151,76 @@ class HierarchyService {
     if (isCaptain(scholarNo: sNo, role: rStr)) return true;
     if (capabilities != null &&
         (capabilities['manage_elections'] == true || capabilities['is_admin'] == true)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /// Check if user is a Senior Admin (Super Admin, Principal, or Administrator).
+  static bool isSeniorAdmin({
+    String? scholarNo,
+    String? role,
+    String? fullName,
+  }) {
+    final sNo = (scholarNo ?? '').trim().toLowerCase();
+    final rStr = (role ?? '').trim().toLowerCase();
+    if (sNo == 'admin' || sNo == '11209') return true;
+    if (rStr == 'super_admin' || rStr == 'admin' || rStr == 'administrator' || rStr == 'principal') {
+      return true;
+    }
+    return false;
+  }
+
+  /// Canonical check whether an account is authorized to edit a class timetable (M2b).
+  ///
+  /// Authorized:
+  /// - Super Admin is always authorized.
+  /// - A teacher/faculty member who is assigned as [academicClass.classTeacherUid] or
+  ///   listed in [academicClass.timetableEditorUids], provided [academicClass.timetableEditingEnabled] is true.
+  ///
+  /// Prohibited (Spec §9.2, Acceptance Test 35):
+  /// - Regular students, council officers, house captains (timetables are teacher-managed).
+  /// - Teachers not assigned to this class section (no global teacher access).
+  /// - Any teacher when timetable editing is explicitly disabled for the class by administration.
+  static bool canEditTimetable({
+    required Map<String, dynamic>? profile,
+    required String classId,
+    AcademicClass? academicClass,
+  }) {
+    if (profile == null) return false;
+    final sNo = (profile['scholar_no'] ?? profile['scholarNo'] ?? '').toString();
+    final role = (profile['role'] ?? '').toString();
+    final uid = (profile['uid'] ?? profile['id'] ?? '').toString().trim();
+
+    if (isSuperAdmin(scholarNo: sNo, role: role)) return true;
+
+    // Must be verified faculty/teacher
+    if (!isTeacherOrFaculty(scholarNo: sNo, role: role)) return false;
+
+    // If no academicClass is passed or classId doesn't match, deny
+    if (academicClass == null) return false;
+    if (academicClass.classId.toUpperCase() != classId.trim().toUpperCase()) return false;
+
+    // Administration locked editing for this section
+    if (!academicClass.timetableEditingEnabled) return false;
+
+    // Check teacher UID authority
+    if (uid.isNotEmpty) {
+      if (academicClass.classTeacherUid != null && academicClass.classTeacherUid == uid) {
+        return true;
+      }
+      if (academicClass.timetableEditorUids.contains(uid)) {
+        return true;
+      }
+    }
+
+    // Name-based fallback for legacy entries where classTeacherUid is not yet set
+    final fullName = (profile['full_name'] ?? profile['name'] ?? profile['displayName'] ?? '').toString().trim();
+    if (academicClass.classTeacherUid == null &&
+        academicClass.classTeacher.isNotEmpty &&
+        fullName.isNotEmpty &&
+        academicClass.classTeacher.toLowerCase() == fullName.toLowerCase()) {
       return true;
     }
 
