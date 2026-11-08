@@ -24,11 +24,12 @@ Legend: **EXISTS** (keep) · **PARTIAL** (extend) · **MISSING** (build) · **CO
 - **MISSING** — Auto end-time calculation from a start time; chronological/overlap validation; teacher & room double-booking detection; draft→publish + approval modes; per-day copy/apply-to-week; temporary one-day overrides; version history/restore; substitution; change notifications; school operating-hours config; transition gaps.
 - **EXISTS to reuse** — `saveTimetablePeriod`/`deleteTimetablePeriod` are truthful (server-first); rules `classes/{id}/timetable` admin-write only (`firestore.rules:758-761`); staff UI gates now aligned (A5/A6 fixed).
 
-## 3. House communication groups (spec §3)
+## 3. House communication groups (spec §3) — ✅ DELIVERED (M4, 2026-11-08)
 
-- **MISSING** — No house group/channel. `chat_service.dart` is **1-to-1 private rooms** (`chats` collection, `participants arrayContains uid`, `getOrCreateChatRoom(otherUserId)`), council/admin oriented. `house_ai_chat_screen.dart` is an AI bot, not a group.
-- **EXISTS to reuse** — chat infrastructure (`chat_service`, `chat_room_screen`, `chat_list_screen`), house membership on profile (`AuthService.extractHouse`), role engine (`HierarchyService`).
-- **MISSING** — auto-membership by house; role-restricted send (captains/vice/sports/head-boy/head-girl/staff send, students read-only); categories; pin/moderate; backend send rules. Roles for senders already exist in `HierarchyService.isCaptain`/`isCouncil` (head_boy, head_girl, sports_captain, sports_vice_captain).
+- **DELIVERED** — `house_groups/{houseId}` + `messages` subcollection, rendered by `HouseGroupScreen` and reachable from Home. The pre-existing `chat_service.dart` remains **1-to-1 private rooms** (`chats` collection, `participants arrayContains uid`, `getOrCreateChatRoom(otherUserId)`), council/admin oriented; `house_ai_chat_screen.dart` remains an AI bot, not the group.
+- **DELIVERED** — auto-membership from the verified profile house (no self-asserted join/membership document); role-restricted send (captains/vice/sports/head-boy/head-girl/council/staff send; regular students and prefects read-only); categories (`general`, `announcement`, `event`, `sports`); pin/hide/delete moderation; backend send/read isolation in `firestore.rules`.
+- **DELIVERED** — cross-house isolation and transfer semantics are profile-derived: changing `house_name` revokes the old group and grants the new one while preserving the academic `class_id`.
+- **KNOWN LIMITS** — attachments are compressed image data URLs in the `attachment_url` field (no Storage pipeline); notification fan-out for house announcements stays M6/test 61; rules tests are source-contract assertions. See `M4_VERIFICATION.md`.
 
 ## 4. Class groups / academic communication (spec §4)
 
@@ -47,7 +48,7 @@ Legend: **EXISTS** (keep) · **PARTIAL** (extend) · **MISSING** (build) · **CO
 
 ## 7. Roles / RBAC (spec §9.3)
 
-- **EXISTS** — `hierarchy_service.dart`: super_admin; teacher/faculty/principal/staff/faculty_advisor/teacher_lead; captain/vice_captain/house_captain/house_vice_captain; council (head_boy, head_girl, deputy_*, sports_captain, sports_vice_captain, cultural_secretary, head_of_activities); prefect/student_rep/grade_prefect. Rules helpers mirror these.
+- **EXISTS** — `hierarchy_service.dart`: super_admin; teacher/faculty/principal/staff/faculty_advisor/teacher_lead; captain/vice_captain/house_captain/house_vice_captain; council (head_boy, head_girl, deputy_*, sports_captain, sports_vice_captain, cultural_secretary, head_of_activities); prefect/student_rep/grade_prefect. Rules helpers mirror these, and M4 extended the `isValidUser` role whitelist with the council/head/deputy/activity roles used by house-group senders.
 - **PARTIAL** — head_boy/head_girl/sports_captain exist (as council). **MISSING** distinct class_teacher / subject_teacher / class_representative / vice_class_representative / parent roles and per-class teaching assignments.
 - **CONFLICT (known, fixed for academics)** — client `isTeacherOrFaculty` admits faculty_advisor/teacher_lead; rules historically didn't (A6 — addressed in `1f426c2`; keep lists synced).
 
@@ -79,7 +80,7 @@ Each module: model + service + rules + UI + tests, deployed and verified before 
   - Files: `lib/models/academic_class.dart`, `lib/services/auth_service.dart` (registry + verification methods), `lib/screens/signup_screen.dart` (LKG–12, age 4+), `lib/screens/admin_academics_screen.dart` (Verify/Classes/Rosters tabs, entry via Admin Portal → Administrative Tools), `firestore.rules` (isValidUser extension, signup `class_verified=false` gate, owner-immutable class fields, `academic_classes` matcher + validator), `test/academic_structure_test.dart` (29 tests).
 - **M2 — Mandated timetable engine. ✅ DELIVERED 2026-11-08.** 8×45 + 30-min break structure; start-time editor with auto end-time; validation (count/duration/overlap/chronology); per-section + per-day; publish/draft; rules scoped to verified class. *(Spec centerpiece; depends on M1.)* V1–V4 fixed; V5 notification fan-out stays M6; V6/V7 non-blocking; rules tests are source contract (V8). See `M2_VERIFICATION.md`.
 - **M3 — Timetable advanced. ✅ DELIVERED FOR SCOPE 2026-11-08.** Client-side double-booking detection (teacher/room, tests 18–19), copy-to-selected-days (31–32), temporary one-day overrides (33), substitution markers, version history/restore already in M2. Server-side conflict validation at scale stays Blaze-deferred; substitution notification fan-out stays M6; admin approval queue stays M7. See `M3_VERIFICATION.md`.
-- **M4 — House communication groups.** Auto-membership; role-restricted send (students read-only) enforced in rules; categories; pin/moderate; reuse chat infra. *(Depends on M1 house identity; independent of M2/M3.)*
+- **M4 — House communication groups. ✅ DELIVERED 2026-11-08.** Profile-derived auto-membership; role-restricted send (students/prefects read-only) enforced in rules; categories; pin/hide/delete moderation; cross-house isolation and transfer semantics. *(Depends on M1 house identity; independent of M2/M3.)* See `M4_VERIFICATION.md`.
 - **M5 — Class groups & academic communication.** Per-class channel; teacher/subject-teacher/class-rep permissions; configurable student send; class announcements. *(Depends on M1 + M4 machinery.)*
 - **M6 — Notification engine (in-app, Spark).** `notifications` collection + stream; read/unread; priority; dedupe; timetable/class/house change alerts. Blaze server fan-out deferred. *(Depends on M2/M4/M5 events.)*
 - **M7 — Admin Command Center expansion.** Academic/teacher/house/group/user management, timetable approval queue, audit logs, promotion. *(Depends on M1–M6.)*

@@ -150,7 +150,7 @@ Verified 2026-11-08 after V1–V4 remediation: **complete for scope**. The origi
 
 **Goal:** per-house group where **authorised leaders + staff send** and **students read-only** (cannot send, cannot upload attachments). Auto-membership by house; cross-house access denied; transfer revokes old / grants new.
 **Depends on:** M1 house identity (profile `house`), existing chat infra. Independent of M2/M3.
-**Current state:** ❌ not started. `chat_service.dart` is **1-to-1 private rooms** (`chats`, `participants arrayContains uid`); `house_ai_chat_screen.dart` is an AI bot, not a group.
+**Current state:** ✅ **Done for its scope (2026-11-08).** See [`M4_VERIFICATION.md`](M4_VERIFICATION.md). A dedicated `house_groups/{houseId}/messages` channel now sits alongside the existing 1-to-1 chat; `house_ai_chat_screen.dart` remains an AI bot, not the group.
 
 **Requirements (spec §3, tests 39–49):**
 - Auto-join the house group on verified house assignment (Ruby → Ruby House Group).
@@ -164,6 +164,8 @@ Verified 2026-11-08 after V1–V4 remediation: **complete for scope**. The origi
 **Tests (39–49):** each via UI **and** direct rules denial — student send denied, student attachment denied, cross-house read denied, each authorised role can send, transfer revokes/grants.
 **Robustness:** send restriction in rules (the core security property); house membership read from verified profile, never self-asserted; truthful sends; no frontend-only gating.
 **Definition of done:** tests 39–49 pass UI + rules; deployed; committed.
+
+✅ **Done for its scope (2026-11-08).** Membership is derived entirely from the verified `users/{uid}.house_name` (no join or membership collection), so a house transfer revokes the old group and grants the new one without migration. Tests 39–47 cover auto-join, same-house read, student/prefect read-only, attachment denial, captain/vice/sports/head/council send, and staff/faculty send. Test 48 is enforced in `firestore.rules` via `isSameHouse`; test 49 is profile-derived and preserves `class_id`. Categories are the closed set `general`/`announcement`/`event`/`sports`; moderators can pin/hide/delete, and rules make message text/authorship immutable. **Caveats kept honest:** attachments are compressed image data URLs stored in the `attachment_url` Firestore field (no Storage path change); house announcements do not fan out notifications until M6/test 61; message streams are capped at 200; rules tests remain source-contract assertions. Verification: M4 suite **37/37**, full suite **500/500**, `flutter analyze` 0 errors / 0 warnings (20 pre-existing infos), rules deployed, commit on `mustafa1`.
 
 ---
 

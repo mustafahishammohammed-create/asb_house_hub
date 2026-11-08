@@ -339,6 +339,27 @@ service cloud.firestore {
       );
     }
 
+    // House group membership is derived from the verified profile, never a
+    // self-asserted join document. A house transfer therefore revokes the old
+    // group and grants the new one atomically at the profile level.
+    function isSameHouse(houseId) {
+      return isSignedIn() && hasUserDoc() &&
+        'house_name' in getUserData() &&
+        getUserData().house_name is string &&
+        getUserData().house_name.lower() == houseId.lower();
+    }
+
+    // Authorised senders: house captains/vice-captains, council officers
+    // (sports captains, head boy/girl, etc.), and staff/faculty.
+    // Regular students and prefects remain read-only.
+    function isHouseSender(houseId) {
+      return isSameHouse(houseId) && (isAdmin() || isCaptain() || isCouncil());
+    }
+
+    function isHouseModerator(houseId) {
+      return isSeniorAdmin() || isHouseSender(houseId);
+    }
+
     // Resolves student identity against current authenticated user (via email prefix or users profile)
     function isScholarOwner(scholarNo) {
       return isSignedIn() && (
@@ -380,7 +401,10 @@ service cloud.firestore {
         'student', 'prefect', 'captain', 'vice_captain',
         'house_captain', 'house_vice_captain', 'council',
         'sports_captain', 'sports_vice_captain', 'sports_lead',
-        'teacher', 'faculty', 'principal', 'staff', 'admin', 'super_admin'
+        'head_boy', 'head_girl', 'deputy_head_boy', 'deputy_head_girl',
+        'head_of_activities', 'cultural_secretary', 'executive_council',
+        'teacher', 'faculty', 'faculty_advisor', 'teacher_lead',
+        'principal', 'staff', 'administrator', 'admin', 'super_admin'
       ] &&
       data.house_name is string && data.house_name.lower() in ['ruby', 'sapphire', 'emerald', 'topaz'] &&
       (!('class_level' in data) || (data.class_level is string && data.class_level.size() <= 50)) &&
@@ -684,6 +708,56 @@ service cloud.firestore {
         (!('sender_name' in data) || (data.sender_name is string && data.sender_name.size() <= 100)) &&
         data.text is string && data.text.size() >= 1 && data.text.size() <= 2000 &&
         data.is_read is bool &&
+        data.timestamp is timestamp;
+    }
+
+    function isValidHouseGroup(houseId, data) {
+      return hasOnlyAllowedFields([
+          'house_id', 'name', 'description', 'last_message',
+          'last_message_at', 'created_at', 'updated_at'
+        ]) &&
+        hasRequiredFields(['house_id', 'name']) &&
+        data.house_id is string && data.house_id.lower() == houseId.lower() &&
+        data.name is string && data.name.size() >= 3 && data.name.size() <= 80 &&
+        (!('description' in data) || (data.description is string && data.description.size() <= 300)) &&
+        (!('last_message' in data) || (data.last_message is string && data.last_message.size() <= 500)) &&
+        (!('last_message_at' in data) || data.last_message_at is timestamp) &&
+        (!('created_at' in data) || data.created_at is timestamp) &&
+        (!('updated_at' in data) || data.updated_at is timestamp);
+    }
+
+    // House group messages are writable only by authorised senders. A message
+    // with an attachment is still a message create, so a student cannot upload
+    // an attachment by writing a document directly.
+    function isValidHouseGroupMessage(houseId, data) {
+      return hasOnlyAllowedFields([
+          'sender_id', 'sender_name', 'sender_role', 'sender_house',
+          'text', 'category', 'attachment_url', 'timestamp',
+          'is_pinned', 'is_hidden', 'moderated_by', 'moderated_at'
+        ]) &&
+        hasRequiredFields([
+          'sender_id', 'sender_name', 'sender_role', 'sender_house',
+          'text', 'category', 'is_pinned', 'is_hidden', 'timestamp'
+        ]) &&
+        data.sender_id is string && data.sender_id.size() >= 1 && data.sender_id.size() <= 128 &&
+        data.sender_name is string && data.sender_name.size() >= 1 && data.sender_name.size() <= 100 &&
+        data.sender_role is string && data.sender_role.size() <= 100 &&
+        data.sender_house is string && data.sender_house.lower() == houseId.lower() &&
+        data.text is string && data.text.size() <= 2000 &&
+        (data.text.size() >= 1 || (
+          'attachment_url' in data &&
+          data.attachment_url is string &&
+          data.attachment_url.size() >= 1
+        )) &&
+        (!('attachment_url' in data) ||
+          (data.attachment_url is string && data.attachment_url.size() <= 900000)) &&
+        data.category is string && data.category in [
+          'general', 'announcement', 'event', 'sports'
+        ] &&
+        data.is_pinned is bool &&
+        data.is_hidden is bool &&
+        (!('moderated_by' in data) || (data.moderated_by is string && data.moderated_by.size() <= 128)) &&
+        (!('moderated_at' in data) || data.moderated_at is timestamp) &&
         data.timestamp is timestamp;
     }
 
@@ -1193,6 +1267,34 @@ service cloud.firestore {
     match /events/{eventId} {
       allow read: if isSignedIn();
       allow write: if isAdmin() && isValidAnnouncement(request.resource.data);
+    }
+
+    // 9b. house_groups/{houseId} and messages/{messageId}
+    // Membership is derived from users/{uid}.house_name; there is no join
+    // document. Same-house members read; only authorised leaders/staff write.
+    match /house_groups/{houseId} {
+      allow read: if isSignedIn() && (isSameHouse(houseId) || isSeniorAdmin());
+      allow create: if isHouseSender(houseId) &&
+        isValidHouseGroup(houseId, request.resource.data);
+      allow update: if isHouseModerator(houseId) &&
+        isValidHouseGroup(houseId, request.resource.data);
+      allow delete: if isSeniorAdmin();
+
+      match /messages/{messageId} {
+        allow read: if isSignedIn() && (isSameHouse(houseId) || isSeniorAdmin());
+        allow create: if isHouseSender(houseId) &&
+          request.resource.data.sender_id == request.auth.uid &&
+          isValidHouseGroupMessage(houseId, request.resource.data);
+        // Moderation only: pin/hide (and audit who did it). Message text and
+        // authorship are immutable.
+        allow update: if isHouseModerator(houseId) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'is_pinned', 'is_hidden', 'moderated_by', 'moderated_at'
+          ]) &&
+          request.resource.data.is_pinned is bool &&
+          request.resource.data.is_hidden is bool;
+        allow delete: if isHouseModerator(houseId);
+      }
     }
 
     // 10. chats/{channelId} and chats/{channelId}/messages/{messageId}

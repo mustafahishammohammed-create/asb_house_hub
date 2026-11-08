@@ -12,6 +12,7 @@ import 'admin_claims_screen.dart';
 import 'merch_store_tab.dart';
 import '../widgets/camera_capture_dialog.dart';
 import 'chat_list_screen.dart';
+import 'house_group_screen.dart';
 import 'digital_wallet_screen.dart';
 import 'house_leaderboard_screen.dart';
 import 'id_scanner_screen.dart';
@@ -3397,6 +3398,13 @@ class _HomeScreenState extends State<HomeScreen>
         'color': const Color(0xFF2563EB),
       },
       {
+        'title': '🏠 My House Group',
+        'sub':
+            'Read house announcements and updates from your captains, council, and staff.',
+        'icon': Icons.groups_rounded,
+        'color': HouseColors.getHouseColor(houseName),
+      },
+      {
         'title': 'Attendance Record',
         'sub': 'View your term attendance summary and status.',
         'icon': Icons.fact_check_rounded,
@@ -3452,6 +3460,11 @@ class _HomeScreenState extends State<HomeScreen>
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const ChatListScreen()),
+              );
+            } else if (item['title'] == '🏠 My House Group') {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const HouseGroupScreen()),
               );
             } else if (item['title'] == 'Attendance Record') {
               Navigator.push(
@@ -5076,6 +5089,20 @@ class _HomeScreenState extends State<HomeScreen>
                         context,
                         MaterialPageRoute(
                           builder: (_) => const ChatListScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildDrawerTile(
+                    Icons.groups_rounded,
+                    '🏠 House Group',
+                    color,
+                    () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const HouseGroupScreen(),
                         ),
                       );
                     },
