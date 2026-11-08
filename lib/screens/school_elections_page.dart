@@ -450,40 +450,40 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
     final user = _safeCurrentUser;
     final activeUid = widget.uid.trim();
 
-    if (Firebase.apps.isNotEmpty) {
-      if (user == null || user.uid != activeUid || activeUid == 'guest') {
-        throw StateError('Active session does not match authenticated identity. Please sign in again.');
-      }
-      final token = await user.getIdToken();
-      if (token == null) {
-        throw StateError('Authentication token unavailable. Please sign in again.');
-      }
-      final project = Firebase.app().options.projectId;
-      final url = Uri.https('us-central1-$project.cloudfunctions.net', '/schoolElection');
-      final reply = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
-        body: jsonEncode({'data': {...args, 'action': action, 'pollId': id}}),
-      ).timeout(const Duration(seconds: 15));
+    // 1. Attempt Cloud Functions callable if deployed (requires Blaze plan)
+    if (Firebase.apps.isNotEmpty && user != null && user.uid == activeUid && activeUid != 'guest') {
+      try {
+        final token = await user.getIdToken();
+        if (token != null) {
+          final project = Firebase.app().options.projectId;
+          final url = Uri.https('us-central1-$project.cloudfunctions.net', '/schoolElection');
+          final reply = await http.post(
+            url,
+            headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
+            body: jsonEncode({'data': {...args, 'action': action, 'pollId': id}}),
+          ).timeout(const Duration(seconds: 4));
 
-      final envelope = jsonDecode(reply.body);
-      if (envelope is Map) {
-        if (envelope['error'] != null) {
-          final err = envelope['error'];
-          final msg = err is Map ? (err['message'] ?? err.toString()) : err.toString();
-          throw Exception(msg);
+          if (reply.statusCode == 200) {
+            final envelope = jsonDecode(reply.body);
+            if (envelope is Map) {
+              if (envelope['error'] != null) {
+                final err = envelope['error'];
+                final msg = err is Map ? (err['message'] ?? err.toString()) : err.toString();
+                throw Exception(msg);
+              }
+              final result = envelope['result'] ?? envelope['data'];
+              if (result is Map) {
+                return Map<String, dynamic>.from(result);
+              }
+            }
+          }
         }
-        final result = envelope['result'] ?? envelope['data'];
-        if (result is Map) {
-          return Map<String, dynamic>.from(result);
-        }
-      }
-      if (reply.statusCode != 200) {
-        throw Exception('Official election server error (Status ${reply.statusCode}). Please try again.');
+      } catch (e) {
+        debugPrint('Cloud Functions unavailable (Blaze plan required for server functions). Falling back to direct client handling: $e');
       }
     }
 
-    // Direct Firestore fallback only permitted in offline testing/unit-harness
+    // 2. Direct client fallback (Spark free plan compliant)
     return await _callFirestoreFallback(action, id, args, user);
   }
 

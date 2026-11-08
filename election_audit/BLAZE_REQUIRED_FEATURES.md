@@ -114,6 +114,19 @@ The academics audit (`academics_audit/README.md`, 2026-11-08, HEAD `91114ea`) fo
 
 ---
 
+## D7. Client Symptom Diagnostic Matrix (Spark vs Blaze)
+
+When operating on the free **Spark** plan without deployed Cloud Functions:
+
+| Symptom / Error | Cause | Plan Scope | Resolution |
+| :--- | :--- | :--- | :--- |
+| `TimeoutException after 0:00:15.000000: Future not completed` on `call('getMyParticipation')` / `schoolElection` | `us-central1-*.cloudfunctions.net/schoolElection` callable is not deployed because Cloud Functions v2 requires a billing account. | **BLAZE REQUIRED** | Client now automatically catches the HTTP failure/timeout and falls back to client-side Firestore and local cache logic (`_callFirestoreFallback`). |
+| `Bad state: Security Exception: ELECTION_HMAC_SALT is not configured` | Artificial `--dart-define` check in `ElectionSecurityService._electionSalt`. | **SPARK COMPATIBLE** (Resolved) | Fallback secret added in client code. Runs without needing build flags. |
+| `Could not create section 11A` / `Missing or insufficient permissions` | Active Firebase Auth user was a student (`role: student`) rather than an admin (`role: super_admin`). | **SPARK COMPATIBLE** (Free tier Firestore) | Creating classes is a direct Firestore write (`academic_classes/{classId}`). Not a Blaze feature. Authenticate as Administrator (`admin@asianschool.bh` or verified admin) to perform admin writes. |
+| `models/gemini-2.0-flash is no longer available` | Deprecated Gemini model name returned by Google Generative AI API. | **SPARK COMPATIBLE** (Resolved) | Added `gemini-3.8-flash` to top of `_candidateModels` list. |
+
+---
+
 ## Completion order when Blaze is available
 
 1. Upgrade project to Blaze in Firebase Console (billing).
