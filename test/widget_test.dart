@@ -495,8 +495,8 @@ void main() {
     expect(find.text('Academic Details'), findsOneWidget);
 
     // Select Grade 10 and Section B
-    await tester.ensureVisible(find.text('10'));
-    await tester.tap(find.text('10'));
+    await tester.ensureVisible(find.text('Grade 10'));
+    await tester.tap(find.text('Grade 10'));
     await tester.pump();
     await tester.ensureVisible(find.text('B'));
     await tester.tap(find.text('B'));
@@ -605,8 +605,8 @@ void main() {
     await tester.pumpAndSettle();
 
     // Select Grade 11 and Section A
-    await tester.ensureVisible(find.text('11'));
-    await tester.tap(find.text('11'));
+    await tester.ensureVisible(find.text('Grade 11'));
+    await tester.tap(find.text('Grade 11'));
     await tester.pump();
     await tester.ensureVisible(find.text('A'));
     await tester.tap(find.text('A'));

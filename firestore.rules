@@ -15,6 +15,8 @@ rules_version = '2';
 //    - house_name: string ('ruby', 'sapphire', 'emerald', 'topaz')
 //    - class_level: string (optional, <= 50 chars)
 //    - division: string (optional, <= 10 chars)
+//    - class_id: string (optional, <= 10 chars; canonical e.g. '11D', 'LKG-A'; owner-immutable)
+//    - class_verified: bool (optional; admin-only after signup, defaults false)
 //    - points: int (optional, 0-1,000,000)
 //    - points_contributed: int (optional, -100,000 to 1,000,000)
 //    - age: int (optional, 4-25)
@@ -207,6 +209,15 @@ rules_version = '2';
 //     - publishedBy: string (optional, uid)
 //     - certifiedBy: string (optional, uid)
 //
+// 22. academic_classes/{classId} (M1 canonical class/section registry)
+//     - class_id: string (2-10 chars, must equal document id; e.g. '11D', 'LKG-A')
+//     - grade: string ('LKG', 'UKG', 'Grade 1'..'Grade 12')
+//     - section: string (1-3 chars)
+//     - active: bool
+//     - class_teacher: string (optional, <= 100 chars)
+//     - academic_year: string (optional, <= 20 chars)
+//     - created_at / updated_at: timestamp (optional)
+//
 // ===============================================================
 
 service cloud.firestore {
@@ -324,7 +335,8 @@ service cloud.firestore {
     function isValidUser(data) {
       return hasOnlyAllowedFields([
         'uid', 'scholar_no', 'full_name', 'role', 'house_name',
-        'class_level', 'division', 'points', 'points_contributed',
+        'class_level', 'division', 'class_id', 'class_verified',
+        'points', 'points_contributed',
         'created_at', 'updated_at', 'age', 'position_title', 'designation'
       ]) &&
       hasRequiredFields(['scholar_no', 'full_name', 'role', 'house_name']) &&
@@ -341,6 +353,8 @@ service cloud.firestore {
       data.house_name is string && data.house_name.lower() in ['ruby', 'sapphire', 'emerald', 'topaz'] &&
       (!('class_level' in data) || (data.class_level is string && data.class_level.size() <= 50)) &&
       (!('division' in data) || (data.division is string && data.division.size() <= 10)) &&
+      (!('class_id' in data) || (data.class_id is string && data.class_id.size() <= 10)) &&
+      (!('class_verified' in data) || data.class_verified is bool) &&
       (!('points' in data) || (data.points is int && data.points >= 0 && data.points <= 1000000)) &&
       (!('points_contributed' in data) || (data.points_contributed is int && data.points_contributed >= -100000 && data.points_contributed <= 1000000)) &&
       (!('age' in data) || (data.age is int && data.age >= 4 && data.age <= 25)) &&
@@ -360,6 +374,25 @@ service cloud.firestore {
         data.timestamp is timestamp &&
         (!('type' in data) || (data.type is string && data.type.size() <= 50)) &&
         (!('room_id' in data) || (data.room_id is string && data.room_id.size() <= 128));
+    }
+
+    function isValidAcademicClass(data) {
+      return hasOnlyAllowedFields([
+        'class_id', 'grade', 'section', 'active', 'class_teacher',
+        'academic_year', 'created_at', 'updated_at'
+      ]) &&
+      hasRequiredFields(['class_id', 'grade', 'section', 'active']) &&
+      data.class_id is string && data.class_id.size() >= 2 && data.class_id.size() <= 10 &&
+      data.grade is string && data.grade in [
+        'LKG', 'UKG', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5',
+        'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'
+      ] &&
+      data.section is string && data.section.size() >= 1 && data.section.size() <= 3 &&
+      data.active is bool &&
+      (!('class_teacher' in data) || (data.class_teacher is string && data.class_teacher.size() <= 100)) &&
+      (!('academic_year' in data) || (data.academic_year is string && data.academic_year.size() <= 20)) &&
+      (!('created_at' in data) || data.created_at is timestamp) &&
+      (!('updated_at' in data) || data.updated_at is timestamp);
     }
 
     function isValidAdminRoster(data) {
@@ -699,6 +732,7 @@ service cloud.firestore {
         ) &&
         (!('points' in request.resource.data) || request.resource.data.points == 0 || isSuperAdmin()) &&
         (!('points_contributed' in request.resource.data) || request.resource.data.points_contributed == 0 || isSuperAdmin()) &&
+        (!('class_verified' in request.resource.data) || request.resource.data.class_verified == false || isSuperAdmin()) &&
         (!('uid' in request.resource.data) || request.resource.data.uid == userId);
 
       // Update:
@@ -727,7 +761,7 @@ service cloud.firestore {
         (
           isOwner(userId) &&
           request.resource.data.role == resource.data.role &&
-          areImmutableFieldsUnchanged(['role', 'points', 'points_contributed', 'scholar_no', 'created_at', 'uid'])
+          areImmutableFieldsUnchanged(['role', 'points', 'points_contributed', 'scholar_no', 'created_at', 'uid', 'class_id', 'class_verified'])
         )
       );
 
@@ -811,6 +845,22 @@ service cloud.firestore {
         allow read: if isSignedIn();
         allow write: if isAdmin();
       }
+    }
+
+    // 3b. academic_classes/{classId} — canonical class/section registry (M1)
+    // Students may only read their own assigned class; all writes are admin-only.
+    // Grade/section identity is immutable after creation (transfer students instead).
+    match /academic_classes/{classId} {
+      allow read: if isAdmin() ||
+        (isSignedIn() && hasUserDoc() && 'class_id' in getUserData() && getUserData().class_id == classId);
+      allow create: if isAdmin() &&
+        isValidAcademicClass(request.resource.data) &&
+        request.resource.data.class_id == classId;
+      allow update: if isAdmin() &&
+        isValidAcademicClass(request.resource.data) &&
+        request.resource.data.class_id == classId &&
+        areImmutableFieldsUnchanged(['grade', 'section', 'created_at']);
+      allow delete: if isAdmin();
     }
 
     // 4. homework/{assignmentId}

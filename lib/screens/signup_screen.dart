@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/auth_service.dart';
+import '../models/academic_class.dart';
 import '../theme/app_theme.dart';
 import '../widgets/house_card.dart';
 import '../widgets/pill_selector.dart';
@@ -35,7 +36,7 @@ class _SignupScreenState extends State<SignupScreen> {
   bool _isLoading = false;
   String? _errorMessage;
 
-  final List<String> _grades = ['6', '7', '8', '9', '10', '11', '12'];
+  final List<String> _grades = AcademicStructure.gradeLevels;
   final List<String> _divisions = ['A', 'B', 'C', 'D', 'E', 'F'];
 
   @override
@@ -797,7 +798,7 @@ class _SignupScreenState extends State<SignupScreen> {
                     Material(
                       color: Colors.transparent,
                       child: InkWell(
-                        onTap: _age > 10
+                        onTap: _age > 4
                             ? () {
                                 AppHaptics.selectionClick();
                                 setState(() => _age--);
@@ -809,7 +810,7 @@ class _SignupScreenState extends State<SignupScreen> {
                           height: 34,
                           decoration: BoxDecoration(
                             color: activeColor.withValues(
-                              alpha: _age > 10 ? 0.15 : 0.05,
+                              alpha: _age > 4 ? 0.15 : 0.05,
                             ),
                             borderRadius: BorderRadius.circular(10),
                           ),
@@ -817,7 +818,7 @@ class _SignupScreenState extends State<SignupScreen> {
                           child: Icon(
                             Icons.remove_rounded,
                             size: 18,
-                            color: _age > 10
+                            color: _age > 4
                                 ? activeColor
                                 : (isDark ? Colors.white30 : Colors.black26),
                           ),
@@ -1125,6 +1126,10 @@ class _SignupScreenState extends State<SignupScreen> {
       case 3:
       default:
         final house = _houseName ?? 'ruby';
+        final classId = AcademicStructure.classIdFrom(
+          _classLevel ?? '',
+          _division ?? '',
+        );
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1241,7 +1246,7 @@ class _SignupScreenState extends State<SignupScreen> {
                         ),
                         const SizedBox(height: 3),
                         Text(
-                          'Scholar #${_scholarController.text.trim().isEmpty ? "Pending" : _scholarController.text.trim()} • Grade ${_classLevel ?? "?"}-${_division ?? "?"} • $_age yrs',
+                          'Scholar #${_scholarController.text.trim().isEmpty ? "Pending" : _scholarController.text.trim()} • Class ${classId.isEmpty ? '?' : classId} • $_age yrs',
                           style: TextStyle(
                             fontSize: 12.5,
                             fontWeight: FontWeight.w600,

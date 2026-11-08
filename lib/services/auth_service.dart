@@ -26,6 +26,7 @@ import '../models/match_telemetry.dart';
 import '../models/player_sports_stats.dart';
 import '../models/sports_trophy.dart';
 import '../models/medical_leave_request.dart';
+import '../models/academic_class.dart';
 import 'election_security_service.dart';
 import 'sports_security_service.dart';
 import 'hierarchy_service.dart';
@@ -2385,6 +2386,7 @@ class AuthService {
       await _prefs?.remove(_kCachedEventsKey);
       await _prefs?.remove(_kCachedBallotsKey);
       await _prefs?.remove(_kCachedVoteReceiptsKey);
+      await _prefs?.remove(_kCachedAcademicClassesKey);
       GlobalWalletStore.resetSession();
     } catch (_) {}
   }
@@ -3147,12 +3149,16 @@ class AuthService {
     // Step 2 — Save profile to Firestore `users` collection
     final uid = user.uid;
     final cleanHouse = houseName.trim().toLowerCase();
+    final cleanGrade = AcademicStructure.normalizeGrade(classLevel) ?? classLevel.trim();
+    final cleanSection = division.trim().toUpperCase();
     final profileData = {
       'full_name': fullName,
       'scholar_no': scholarNo,
       'age': age,
-      'class_level': classLevel,
-      'division': division,
+      'class_level': cleanGrade,
+      'division': cleanSection,
+      'class_id': AcademicStructure.classIdFrom(cleanGrade, cleanSection),
+      'class_verified': false,
       'house_name': cleanHouse,
       'created_at': FieldValue.serverTimestamp(),
       'role': 'student',
@@ -6714,5 +6720,324 @@ class AuthService {
       await cacheMedicalLeaves(cached);
     }
     return true;
+  }
+
+  // ===============================================================
+  // Academic Structure — class registry & classification gate (M1)
+  // ===============================================================
+
+  static const String _kCachedAcademicClassesKey = 'cached_academic_classes';
+
+  static const List<String> _staffRoles = [
+    'teacher', 'faculty', 'principal', 'staff', 'admin', 'super_admin',
+    'faculty_advisor', 'teacher_lead',
+  ];
+
+  /// Persist the academic class registry to disk for offline rendering.
+  static Future<void> cacheAcademicClasses(List<AcademicClass> classes) async {
+    try {
+      _prefs ??= await SharedPreferences.getInstance();
+      final list = classes.map((c) => _sanitizeForJson(c.toMap())).toList();
+      await _prefs?.setString(_kCachedAcademicClassesKey, jsonEncode(list));
+    } catch (_) {}
+  }
+
+  /// Retrieves the academic class registry from local cache. Returns [] when unseeded.
+  static List<AcademicClass> getCachedAcademicClasses() {
+    try {
+      final raw = _prefs?.getString(_kCachedAcademicClassesKey);
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          final list = decoded
+              .whereType<Map<String, dynamic>>()
+              .map((m) => AcademicClass.fromMap(m))
+              .toList();
+          list.sort(compareAcademicClasses);
+          return list;
+        }
+      }
+    } catch (_) {}
+    return <AcademicClass>[];
+  }
+
+  /// Sorts classes by grade level (LKG first) then section letter.
+  static int compareAcademicClasses(AcademicClass a, AcademicClass b) {
+    int rank(String grade) {
+      final i = AcademicStructure.gradeLevels.indexOf(grade);
+      return i == -1 ? 99 : i;
+    }
+
+    final r = rank(a.grade).compareTo(rank(b.grade));
+    return r != 0 ? r : a.section.compareTo(b.section);
+  }
+
+  /// Stream of the managed class/section registry. Admin-facing; students may
+  /// only read their own class document per Firestore rules, so a full
+  /// collection query falls back to cache for non-admin callers.
+  Stream<List<AcademicClass>> getAcademicClassesStream({bool activeOnly = false}) {
+    List<AcademicClass> applyFilter(List<AcademicClass> list) =>
+        activeOnly ? list.where((c) => c.active).toList() : list;
+    try {
+      Query query = _firestore.collection('academic_classes');
+      if (activeOnly) query = query.where('active', isEqualTo: true);
+      return query.snapshots().map((snap) {
+        final list = snap.docs.map((d) => AcademicClass.fromFirestore(d)).toList();
+        list.sort(compareAcademicClasses);
+        cacheAcademicClasses(list);
+        return applyFilter(list);
+      }).handleError((e) {
+        debugPrint('Academic classes stream error: $e');
+        return applyFilter(getCachedAcademicClasses());
+      });
+    } catch (_) {
+      return Stream.value(applyFilter(getCachedAcademicClasses()));
+    }
+  }
+
+  /// Creates or updates a class/section entry (admin only per rules).
+  /// Grade and section are immutable once created; deactivate instead of deleting.
+  Future<bool> saveAcademicClass(AcademicClass cls) async {
+    final parsed = AcademicStructure.parseClassId(cls.classId);
+    if (parsed == null) return false;
+    final entry = cls.copyWith(grade: parsed.$1, section: parsed.$2);
+
+    if (_isFirebaseLive) {
+      try {
+        if (firestoreFailureSimulated != null) {
+          throw firestoreFailureSimulated!;
+        }
+        final ref = _firestore.collection('academic_classes').doc(entry.classId);
+        final existing = await ref.get();
+        final data = entry.toMap();
+        data.remove('created_at');
+        data['updated_at'] = FieldValue.serverTimestamp();
+        if (existing.exists) {
+          await ref.update(data);
+        } else {
+          data['created_at'] = FieldValue.serverTimestamp();
+          await ref.set(data);
+        }
+      } catch (e) {
+        if (!_isNoAppException(e)) {
+          debugPrint('Firestore saveAcademicClass failure: $e');
+          return false;
+        }
+      }
+    }
+
+    final cached = getCachedAcademicClasses();
+    final idx = cached.indexWhere((c) => c.classId == entry.classId);
+    final local = entry.copyWith(
+      createdAt: idx != -1 ? cached[idx].createdAt : DateTime.now(),
+    );
+    if (idx != -1) {
+      cached[idx] = local;
+    } else {
+      cached.add(local);
+    }
+    await cacheAcademicClasses(cached);
+    return true;
+  }
+
+  /// Activates or deactivates a class/section without deleting it (admin only).
+  Future<bool> setClassActive(String classId, bool active) async {
+    final id = classId.trim();
+    if (id.isEmpty) return false;
+
+    if (_isFirebaseLive) {
+      try {
+        if (firestoreFailureSimulated != null) {
+          throw firestoreFailureSimulated!;
+        }
+        await _firestore.collection('academic_classes').doc(id).update({
+          'active': active,
+          'updated_at': FieldValue.serverTimestamp(),
+        });
+      } catch (e) {
+        if (!_isNoAppException(e)) {
+          debugPrint('Firestore setClassActive failure: $e');
+          return false;
+        }
+      }
+    }
+
+    final cached = getCachedAcademicClasses();
+    final idx = cached.indexWhere((c) => c.classId == id);
+    if (idx != -1) {
+      cached[idx] = cached[idx].copyWith(active: active);
+      await cacheAcademicClasses(cached);
+    }
+    return true;
+  }
+
+  /// Admin approves a scholar's class placement. Optionally assigns a specific
+  /// canonical classId; otherwise confirms the class claimed at signup.
+  Future<bool> verifyStudentClass({
+    required String scholarNo,
+    String? classId,
+  }) async {
+    final sNo = scholarNo.trim();
+    if (sNo.isEmpty) return false;
+    final targetId = classId?.trim() ?? '';
+    if (targetId.isNotEmpty && AcademicStructure.parseClassId(targetId) == null) {
+      return false;
+    }
+
+    final updates = <String, dynamic>{
+      'class_verified': true,
+      'updated_at': FieldValue.serverTimestamp(),
+    };
+    if (targetId.isNotEmpty) {
+      final (grade, section) = AcademicStructure.parseClassId(targetId)!;
+      updates['class_id'] = targetId;
+      updates['class_level'] = grade;
+      updates['division'] = section;
+    }
+    return _applyStudentClassUpdate(
+      scholarNo: sNo,
+      updates: updates,
+      notificationTitle: 'Class Placement Verified',
+      notificationBody: targetId.isNotEmpty
+          ? 'Your class placement has been verified as $targetId by the school administration.'
+          : 'Your class placement has been verified by the school administration.',
+      notificationType: 'class_verified',
+    );
+  }
+
+  /// Admin transfers a scholar to a different canonical class (auto-verified).
+  Future<bool> transferStudentClass({
+    required String scholarNo,
+    required String classId,
+  }) async {
+    final sNo = scholarNo.trim();
+    final id = classId.trim();
+    final parsed = AcademicStructure.parseClassId(id);
+    if (sNo.isEmpty || parsed == null) return false;
+    final (grade, section) = parsed;
+
+    return _applyStudentClassUpdate(
+      scholarNo: sNo,
+      updates: {
+        'class_id': id,
+        'class_level': grade,
+        'division': section,
+        'class_verified': true,
+        'updated_at': FieldValue.serverTimestamp(),
+      },
+      notificationTitle: 'Class Transferred',
+      notificationBody: 'You have been transferred to $id (${AcademicStructure.displayClass(grade, section)}) by the school administration.',
+      notificationType: 'class_transferred',
+    );
+  }
+
+  Future<bool> _applyStudentClassUpdate({
+    required String scholarNo,
+    required Map<String, dynamic> updates,
+    required String notificationTitle,
+    required String notificationBody,
+    required String notificationType,
+  }) async {
+    if (_isFirebaseLive) {
+      try {
+        if (firestoreFailureSimulated != null) {
+          throw firestoreFailureSimulated!;
+        }
+        final query = await _firestore
+            .collection('users')
+            .where('scholar_no', isEqualTo: scholarNo)
+            .limit(1)
+            .get();
+        if (query.docs.isEmpty) return false;
+        final userDoc = query.docs.first;
+        await userDoc.reference.update(updates);
+        await userDoc.reference.collection('notifications').add({
+          'title': notificationTitle,
+          'body': notificationBody,
+          'timestamp': FieldValue.serverTimestamp(),
+          'is_read': false,
+          'type': notificationType,
+        });
+      } catch (e) {
+        if (!_isNoAppException(e)) {
+          debugPrint('Firestore class assignment failure: $e');
+          return false;
+        }
+      }
+    }
+
+    final cached = getCachedProfile();
+    if (cached != null &&
+        cached['scholar_no']?.toString().trim() == scholarNo) {
+      final merged = Map<String, dynamic>.from(cached);
+      updates.forEach((k, v) {
+        if (v is! FieldValue) merged[k] = v;
+      });
+      await cacheProfile(merged);
+    }
+    return true;
+  }
+
+  /// Stream of scholars awaiting class verification (legacy profiles without
+  /// the flag are included). Staff/admin accounts are excluded.
+  Stream<List<Map<String, dynamic>>> getPendingClassVerificationsStream() {
+    try {
+      return _firestore.collection('users').snapshots().map((snap) {
+        final pending = <Map<String, dynamic>>[];
+        for (final doc in snap.docs) {
+          final data = doc.data();
+          final role = (data['role'] ?? '').toString().trim().toLowerCase();
+          if (_staffRoles.contains(role)) continue;
+          if (data['class_verified'] == true) continue;
+          pending.add({...data, 'uid': doc.id});
+        }
+        pending.sort((a, b) => (a['full_name'] ?? '')
+            .toString()
+            .compareTo((b['full_name'] ?? '').toString()));
+        return pending;
+      }).handleError((e) {
+        debugPrint('Pending class verifications stream error: $e');
+        return <Map<String, dynamic>>[];
+      });
+    } catch (_) {
+      return Stream.value(<Map<String, dynamic>>[]);
+    }
+  }
+
+  /// Stream of scholars belonging to a canonical class. Matches the canonical
+  /// class_id first and falls back to legacy class_level + division for
+  /// profiles created before the registry existed.
+  Stream<List<Map<String, dynamic>>> getClassRosterStream(String classId) {
+    final id = classId.trim();
+    final parsed = AcademicStructure.parseClassId(id);
+    if (parsed == null) return Stream.value(<Map<String, dynamic>>[]);
+    final (grade, section) = parsed;
+    try {
+      return _firestore.collection('users').snapshots().map((snap) {
+        final roster = <Map<String, dynamic>>[];
+        for (final doc in snap.docs) {
+          final data = doc.data();
+          final role = (data['role'] ?? '').toString().trim().toLowerCase();
+          if (_staffRoles.contains(role)) continue;
+          final cid = (data['class_id'] ?? '').toString().trim();
+          final legacyMatch =
+              (data['class_level'] ?? '').toString().trim() == grade &&
+                  (data['division'] ?? '').toString().trim().toUpperCase() ==
+                      section;
+          if (cid == id || (cid.isEmpty && legacyMatch)) {
+            roster.add({...data, 'uid': doc.id});
+          }
+        }
+        roster.sort((a, b) => (a['full_name'] ?? '')
+            .toString()
+            .compareTo((b['full_name'] ?? '').toString()));
+        return roster;
+      }).handleError((e) {
+        debugPrint('Class roster stream error: $e');
+        return <Map<String, dynamic>>[];
+      });
+    } catch (_) {
+      return Stream.value(<Map<String, dynamic>>[]);
+    }
   }
 }

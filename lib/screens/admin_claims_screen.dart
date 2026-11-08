@@ -8,6 +8,7 @@ import '../theme/app_theme.dart';
 import '../widgets/student_profile_modal.dart';
 import 'chat_list_screen.dart';
 import 'approved_claims_screen.dart';
+import 'admin_academics_screen.dart';
 
 class AdminClaimsScreen extends StatefulWidget {
   final bool isSuperAdmin;
@@ -528,6 +529,15 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             icon: const Icon(Icons.more_vert_rounded),
             onSelected: (value) async {
+              if (value == 'academic_management') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const AdminAcademicsScreen(),
+                  ),
+                );
+                return;
+              }
               if (value == 'migrate_contributors') {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Starting legacy contributor migration...')),
@@ -544,6 +554,17 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
               }
             },
             itemBuilder: (context) => [
+              if (_canReviewMedical)
+                const PopupMenuItem(
+                  value: 'academic_management',
+                  child: Row(
+                    children: [
+                      Icon(Icons.school_rounded, size: 20, color: Colors.indigo),
+                      SizedBox(width: 10),
+                      Text('Academic Management', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
               const PopupMenuItem(
                 value: 'migrate_contributors',
                 child: Row(
