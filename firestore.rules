@@ -434,7 +434,7 @@ service cloud.firestore {
 
     function isValidTimetableSlot(slot) {
       return slot is map &&
-        slot.keys().hasOnly(['period_number', 'subject', 'teacher_name', 'teacher_uid', 'room', 'start_minute', 'image_url', 'notes']) &&
+        slot.keys().hasOnly(['period_number', 'subject', 'teacher_name', 'teacher_uid', 'room', 'start_minute', 'image_url', 'notes', 'substitute_teacher_name', 'substitute_teacher_uid']) &&
         slot.period_number is int && slot.period_number >= 1 && slot.period_number <= 8 &&
         slot.start_minute is int && slot.start_minute >= 0 && slot.start_minute < 1440 &&
         (!('subject' in slot) || (slot.subject is string && slot.subject.size() <= 80)) &&
@@ -442,7 +442,9 @@ service cloud.firestore {
         (!('teacher_uid' in slot) || (slot.teacher_uid is string && slot.teacher_uid.size() <= 128)) &&
         (!('room' in slot) || (slot.room is string && slot.room.size() <= 50)) &&
         (!('image_url' in slot) || (slot.image_url is string && slot.image_url.size() <= 500000)) &&
-        (!('notes' in slot) || (slot.notes is string && slot.notes.size() <= 500));
+        (!('notes' in slot) || (slot.notes is string && slot.notes.size() <= 500)) &&
+        (!('substitute_teacher_name' in slot) || (slot.substitute_teacher_name is string && slot.substitute_teacher_name.size() <= 100)) &&
+        (!('substitute_teacher_uid' in slot) || (slot.substitute_teacher_uid is string && slot.substitute_teacher_uid.size() <= 128));
     }
 
     // Periods must be exactly 1..8 in order and must not overlap. Gaps are
@@ -489,7 +491,7 @@ service cloud.firestore {
         'break_after_period', 'break_start_minute', 'slots',
         'created_by_uid', 'created_by_name', 'published_at',
         'approved_by_uid', 'approved_by_name', 'supersedes_id',
-        'rejection_reason', 'created_at', 'updated_at'
+        'rejection_reason', 'created_at', 'updated_at', 'override_date'
       ]) &&
       hasRequiredFields(['class_id', 'day_of_week', 'status', 'effective_from', 'version', 'break_after_period', 'break_start_minute', 'slots']) &&
       data.class_id is string && data.class_id == classId &&
@@ -517,6 +519,7 @@ service cloud.firestore {
       (!('approved_by_name' in data) || (data.approved_by_name is string && data.approved_by_name.size() <= 100)) &&
       (!('supersedes_id' in data) || (data.supersedes_id is string && data.supersedes_id.size() <= 128)) &&
       (!('rejection_reason' in data) || (data.rejection_reason is string && data.rejection_reason.size() <= 500)) &&
+      (!('override_date' in data) || data.override_date is timestamp) &&
       (!('published_at' in data) || data.published_at is timestamp) &&
       (!('created_at' in data) || data.created_at is timestamp) &&
       (!('updated_at' in data) || data.updated_at is timestamp);
@@ -528,7 +531,7 @@ service cloud.firestore {
         'actor_uid', 'actor_name', 'details', 'timestamp'
       ]) &&
       hasRequiredFields(['action', 'class_id', 'actor_uid', 'timestamp']) &&
-      data.action is string && data.action in ['create', 'edit', 'submit', 'publish', 'reject', 'restore', 'override'] &&
+      data.action is string && data.action in ['create', 'edit', 'submit', 'publish', 'reject', 'restore', 'override', 'copy', 'substitute'] &&
       data.class_id is string && data.class_id.size() >= 2 && data.class_id.size() <= 10 &&
       data.actor_uid is string && data.actor_uid == request.auth.uid &&
       data.timestamp is timestamp &&
@@ -1009,8 +1012,12 @@ service cloud.firestore {
     }
 
     // 3c. timetable_versions/{versionId} — recurring weekly timetable versions (M2)
+    // Published schedules are readable by any signed-in user so the M3
+    // client-side teacher/room conflict check can query other classes. Drafts,
+    // submitted and rejected versions remain class/editor/admin scoped.
     match /timetable_versions/{versionId} {
       allow read: if isSeniorAdmin() ||
+        (isSignedIn() && resource != null && resource.data.status == 'published') ||
         (isSignedIn() && hasUserDoc() && 'class_id' in getUserData() &&
           (resource == null || resource.data.class_id == getUserData().class_id) &&
           (resource == null || resource.data.status == 'published' || isTimetableEditor(resource.data.class_id))) ||

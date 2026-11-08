@@ -17,7 +17,7 @@
 |---|---|---|
 | **M1 — Academic foundation** | ✅ **DONE** (committed `d5ce809`, pushed; rules deployed) | `lib/models/academic_class.dart`, `admin_academics_screen.dart`, registry + verification methods in `auth_service.dart`, `academic_classes` rules matcher, `test/academic_structure_test.dart` (29 tests) |
 | **M2 — Teacher-managed recurring timetable engine (M2a–M2f)** | ✅ **DONE for scope** (V1–V4 fixed 2026-11-08). V5 is owned by M6; V6/V7 are non-blocking follow-ups; V8 remains a source-contract caveat. | Engine + UI + rules. V1: all 8 slots, period order, overlap, break placement validated in rules. V2: `rejection_reason` round-trips and is whitelisted; reject is truthful. V3: published versions are immutable for everyone. V4: editor button is gated by `canEditTimetable`, no `'10A'` fallback, editor blocks unauthorized writes. See [`M2_VERIFICATION.md`](M2_VERIFICATION.md). |
-| **M3 — Timetable advanced** | ❌ **NOT STARTED** | double-booking, copy-to-days, temporary overrides, substitution |
+| **M3 — Timetable advanced** | ✅ **DONE for scope** (2026-11-08). Client-side double-booking, copy-to-selected-days, one-day overrides, substitution markers. Notification fan-out stays in M6. See [`M3_VERIFICATION.md`](M3_VERIFICATION.md). | double-booking, copy-to-days, temporary overrides, substitution |
 | **M4 — House groups** | ❌ **NOT STARTED** | role-restricted send, students read-only |
 | **M5 — Class groups** | ❌ **NOT STARTED** | per-class channel + announcements |
 | **M6 — Notification engine** | ❌ **NOT STARTED** | in-app notifications (Spark) |
@@ -128,7 +128,7 @@ Verified 2026-11-08 after V1–V4 remediation: **complete for scope**. The origi
 
 **Goal:** scheduling conveniences + conflict detection on top of the M2 engine.
 **Depends on:** M2.
-**Current state:** ❌ not started.
+**Current state:** ✅ **Done for its scope (2026-11-08).** See [`M3_VERIFICATION.md`](M3_VERIFICATION.md).
 
 **Requirements:**
 - **Double-booking detection** (spec §11.2 tests 18–19): detect a teacher assigned to two classes at overlapping times, and a room double-booked. On Spark this is a **client-side cross-class query + validation** at edit/publish time (server-side conflict validation at scale is Blaze-deferred). Surface clear errors; block publish on conflict.
@@ -141,6 +141,8 @@ Verified 2026-11-08 after V1–V4 remediation: **complete for scope**. The origi
 **Tests:** double-booking denial (teacher + room); copy-to-selected-days leaves other days untouched; temporary override resolves for its date only and leaves the recurring version intact; substitution indicator + notification.
 **Robustness:** conflicts blocked server-side where rules can express them; copy/override never mutate unrelated days (immutability tests); all writes truthful.
 **Definition of done:** tests **18–19, 31–33** + substitution pass via UI and rules; suite green; deployed; committed.
+
+✅ **Done for its scope (2026-11-08).** Tests 18–19 are enforced client-side in `TimetableService.findTimetableConflicts` and block `publishTimetable` by default (pure detector + publish-denial tests). Tests 31–32 copy only selected target days into new drafts and never mutate the source day. Test 33 is a date-specific override version (`override_date`) that wins only on its exact date; the recurring version is untouched. Substitution is stored on the override version only, shown in the teacher editor and student banner, and audited as `substitute`. Transition gaps are still permitted by the M2 validator (`accepts transition gaps between periods`). **Caveats kept honest:** conflict detection is a client-side query at publish (no transaction; concurrent publishes can race, and server-side validation at scale stays Blaze-deferred); rules tests are source-contract assertions, not emulator denials; substitution notification fan-out is M6/test 60, so M3 only writes the audit entry. Verification: M3 suite **23/23**, full suite **463/463**, `flutter analyze` 0 errors / 0 warnings (20 pre-existing infos), rules deployed, commit on `mustafa1`.
 
 ---
 

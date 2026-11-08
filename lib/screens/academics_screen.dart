@@ -507,6 +507,10 @@ class _TimetableTabState extends State<TimetableTab> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    if (activeVer != null && activeVer.isTemporary) ...[
+                      _buildTemporaryScheduleBanner(activeVer, isDark),
+                      const SizedBox(height: 12),
+                    ],
                     if (activePeriod != null)
                       _buildActivePeriodCard(activePeriod, now, isDark)
                     else if (nextUpcomingPeriod != null)
@@ -680,6 +684,52 @@ class _TimetableTabState extends State<TimetableTab> {
     );
   }
 
+  Widget _buildTemporaryScheduleBanner(
+    ClassTimetableVersion version,
+    bool isDark,
+  ) {
+    final date = version.overrideDate;
+    final label = date == null
+        ? 'Temporary schedule'
+        : 'Temporary schedule for ${date.year.toString().padLeft(4, '0')}-'
+            '${date.month.toString().padLeft(2, '0')}-'
+            '${date.day.toString().padLeft(2, '0')}';
+    return Container(
+      key: const Key('temporary_timetable_banner'),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: isDark ? 0.18 : 0.12),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.orange.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.event_busy_rounded, color: Colors.orange, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const Text(
+                  'This one-day schedule does not change the recurring weekly timetable.',
+                  style: TextStyle(fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildActivePeriodCard(TimetablePeriod period, DateTime now, bool isDark) {
     final remainingStr = period.formattedRemaining(now);
 
@@ -688,7 +738,7 @@ class _TimetableTabState extends State<TimetableTab> {
       container: true,
       readOnly: true,
       label:
-          'Period ${period.periodNumber}: ${period.subject} with ${period.teacherName} in Room ${period.room}. ${period.timeSlot}. Currently in progress. $remainingStr',
+          'Period ${period.periodNumber}: ${period.subject} with ${period.isSubstitute ? 'substitute teacher ${period.teacherName}${period.originalTeacherName.isNotEmpty ? ', regular teacher ${period.originalTeacherName}' : ''}' : period.teacherName} in Room ${period.room}. ${period.timeSlot}. Currently in progress. $remainingStr',
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.all(18),
@@ -742,6 +792,37 @@ class _TimetableTabState extends State<TimetableTab> {
                     ),
                   ),
                 ),
+                if (period.isSubstitute)
+                  Container(
+                    key: const Key('active_substitute_badge'),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: Colors.orange),
+                    ),
+                    child: const FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.swap_horiz_rounded,
+                              size: 14, color: Colors.orange),
+                          SizedBox(width: 5),
+                          Text(
+                            'SUBSTITUTE',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.orange,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
@@ -835,9 +916,13 @@ class _TimetableTabState extends State<TimetableTab> {
                 ),
                 _buildInfoBadge(
                   icon: Icons.person_rounded,
-                  label: period.teacherName,
+                  label: period.isSubstitute
+                      ? '${period.teacherName} (Substitute)'
+                      : period.teacherName,
                   isDark: isDark,
-                  badgeColor: const Color(0xFF059669),
+                  badgeColor: period.isSubstitute
+                      ? Colors.orange
+                      : const Color(0xFF059669),
                 ),
               ],
             ),
@@ -952,7 +1037,7 @@ class _TimetableTabState extends State<TimetableTab> {
         container: true,
         readOnly: true,
         label:
-            'Period ${period.periodNumber}: ${period.subject} with ${period.teacherName} in Room ${period.room}. ${period.timeSlot}.${isCurrent ? " Currently in progress" : ""}',
+            'Period ${period.periodNumber}: ${period.subject} with ${period.isSubstitute ? 'substitute teacher ${period.teacherName}${period.originalTeacherName.isNotEmpty ? ', regular teacher ${period.originalTeacherName}' : ''}' : period.teacherName} in Room ${period.room}. ${period.timeSlot}.${isCurrent ? " Currently in progress" : ""}',
         child: Container(
           width: double.infinity,
           padding: const EdgeInsets.all(16),
@@ -1041,15 +1126,49 @@ class _TimetableTabState extends State<TimetableTab> {
                             ),
                           ),
                         ],
+                        if (period.isSubstitute) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            key: Key(
+                              'substitute_badge_p${period.periodNumber}',
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.withValues(alpha: 0.18),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: Colors.orange.withValues(alpha: 0.6),
+                              ),
+                            ),
+                            child: const Text(
+                              'SUBSTITUTE',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.orange,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Teacher: ${period.teacherName}',
+                      period.isSubstitute
+                          ? 'Substitute: ${period.teacherName}'
+                              '${period.originalTeacherName.isNotEmpty ? ' (regular: ${period.originalTeacherName})' : ''}'
+                          : 'Teacher: ${period.teacherName}',
                       style: TextStyle(
                         fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: isDark ? Colors.white70 : const Color(0xFF475569),
+                        fontWeight: period.isSubstitute
+                            ? FontWeight.w800
+                            : FontWeight.w600,
+                        color: period.isSubstitute
+                            ? Colors.orange
+                            : (isDark ? Colors.white70 : const Color(0xFF475569)),
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,

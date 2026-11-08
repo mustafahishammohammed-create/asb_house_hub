@@ -69,6 +69,11 @@ class TimetableSlot {
   final String imageUrl;
   final String notes;
 
+  /// Date-specific substitution (M3). These fields are only meaningful on a
+  /// temporary override version; recurring versions must leave them empty.
+  final String substituteTeacherName;
+  final String substituteTeacherUid;
+
   const TimetableSlot({
     required this.periodNumber,
     this.subject = '',
@@ -78,9 +83,22 @@ class TimetableSlot {
     this.startMinute = -1,
     this.imageUrl = '',
     this.notes = '',
+    this.substituteTeacherName = '',
+    this.substituteTeacherUid = '',
   });
 
   bool get hasStart => startMinute >= 0 && startMinute < kMinutesPerDay;
+
+  bool get hasSubstitute =>
+      substituteTeacherName.trim().isNotEmpty ||
+      substituteTeacherUid.trim().isNotEmpty;
+
+  /// Who actually teaches this slot. When a substitute is marked, students see
+  /// the substitute while [teacherName] remains the regular teacher.
+  String get effectiveTeacherName =>
+      hasSubstitute && substituteTeacherName.trim().isNotEmpty
+          ? substituteTeacherName.trim()
+          : teacherName;
 
   int get endMinute =>
       startMinute < 0 ? -1 : startMinute + kTeachingPeriodMinutes;
@@ -105,6 +123,10 @@ class TimetableSlot {
         'start_minute': startMinute,
         if (imageUrl.isNotEmpty) 'image_url': imageUrl,
         if (notes.isNotEmpty) 'notes': notes,
+        if (substituteTeacherName.isNotEmpty)
+          'substitute_teacher_name': substituteTeacherName,
+        if (substituteTeacherUid.isNotEmpty)
+          'substitute_teacher_uid': substituteTeacherUid,
       };
 
   factory TimetableSlot.fromMap(Map<String, dynamic> map) {
@@ -122,6 +144,14 @@ class TimetableSlot {
       startMinute: parseInt(map['start_minute'] ?? map['startMinute'], -1),
       imageUrl: (map['image_url'] ?? map['imageUrl'] ?? '').toString().trim(),
       notes: (map['notes'] ?? '').toString().trim(),
+      substituteTeacherName:
+          (map['substitute_teacher_name'] ?? map['substituteTeacherName'] ?? '')
+              .toString()
+              .trim(),
+      substituteTeacherUid:
+          (map['substitute_teacher_uid'] ?? map['substituteTeacherUid'] ?? '')
+              .toString()
+              .trim(),
     );
   }
 
@@ -134,6 +164,8 @@ class TimetableSlot {
     int? startMinute,
     String? imageUrl,
     String? notes,
+    String? substituteTeacherName,
+    String? substituteTeacherUid,
   }) {
     return TimetableSlot(
       periodNumber: periodNumber ?? this.periodNumber,
@@ -144,8 +176,47 @@ class TimetableSlot {
       startMinute: startMinute ?? this.startMinute,
       imageUrl: imageUrl ?? this.imageUrl,
       notes: notes ?? this.notes,
+      substituteTeacherName:
+          substituteTeacherName ?? this.substituteTeacherName,
+      substituteTeacherUid:
+          substituteTeacherUid ?? this.substituteTeacherUid,
     );
   }
+}
+
+/// Cross-class double-booking categories (M3, acceptance tests 18–19).
+enum TimetableConflictType { teacher, room }
+
+/// A single double-booking found between the candidate class schedule and an
+/// already-published schedule of another class on the same day.
+class TimetableConflict {
+  final TimetableConflictType type;
+  final String resourceName;
+  final String otherClassId;
+  final int periodNumber;
+  final int otherPeriodNumber;
+  final int startMinute;
+  final int endMinute;
+
+  const TimetableConflict({
+    required this.type,
+    required this.resourceName,
+    required this.otherClassId,
+    required this.periodNumber,
+    required this.otherPeriodNumber,
+    required this.startMinute,
+    required this.endMinute,
+  });
+
+  String get resourceLabel =>
+      type == TimetableConflictType.teacher ? 'Teacher' : 'Room';
+
+  String get timeLabel =>
+      '${TimetableSlot.formatMinute(startMinute)} - ${TimetableSlot.formatMinute(endMinute)}';
+
+  String get message =>
+      '$resourceLabel $resourceName is already booked by $otherClassId '
+      'Period $otherPeriodNumber ($timeLabel); this class uses Period $periodNumber.';
 }
 
 /// A full, self-contained day schedule for one canonical class. Versions are
@@ -171,6 +242,10 @@ class ClassTimetableVersion {
   final String supersedesId;
   final DateTime? createdAt;
 
+  /// When non-null this version is a one-day override that applies only to
+  /// this calendar date. Recurring versions leave it null (M3 test 33).
+  final DateTime? overrideDate;
+
   const ClassTimetableVersion({
     this.id = '',
     required this.classId,
@@ -189,12 +264,23 @@ class ClassTimetableVersion {
     this.rejectionReason = '',
     this.supersedesId = '',
     this.createdAt,
+    this.overrideDate,
   });
 
   int get breakEndMinute =>
       breakStartMinute < 0 ? -1 : breakStartMinute + kBreakMinutes;
 
   bool get isPublished => status == TimetableStatus.published;
+
+  bool get isTemporary => overrideDate != null;
+
+  bool appliesOn(DateTime date) {
+    final override = overrideDate;
+    if (override == null) return true;
+    return override.year == date.year &&
+        override.month == date.month &&
+        override.day == date.day;
+  }
 
   /// A valid default day laid out sequentially from [dayStartMinute] with the
   /// break after [breakAfterPeriod]. Teachers adjust individual start times.
@@ -239,15 +325,18 @@ class ClassTimetableVersion {
       ..sort((a, b) => a.periodNumber.compareTo(b.periodNumber));
     final result = <TimetablePeriod>[];
     for (final slot in ordered) {
+      final hasSubstitute = slot.hasSubstitute;
       result.add(TimetablePeriod(
         periodNumber: slot.periodNumber,
         timeSlot: slot.timeSlot,
         subject: slot.subject.isEmpty ? 'Period ${slot.periodNumber}' : slot.subject,
-        teacherName: slot.teacherName,
+        teacherName: slot.effectiveTeacherName,
         room: slot.room,
         dayOfWeek: dayOfWeek,
         classLevel: classId,
         imageUrl: slot.imageUrl.isEmpty ? null : slot.imageUrl,
+        isSubstitute: hasSubstitute,
+        originalTeacherName: hasSubstitute ? slot.teacherName : '',
       ));
       if (slot.periodNumber == breakAfterPeriod) {
         result.add(TimetablePeriod(
@@ -307,23 +396,134 @@ class ClassTimetableVersion {
       if (end > kMinutesPerDay) errors.add('$name extends beyond midnight.');
       prevEnd = end;
     }
+
+    final override = overrideDate;
+    if (override != null) {
+      if (override.weekday == DateTime.friday) {
+        errors.add('A one-day override cannot fall on Friday.');
+      } else if (timetableDayForWeekday(override.weekday) != dayOfWeek) {
+        errors.add('The override date must fall on $dayOfWeek.');
+      }
+    }
     return errors.toList();
   }
 
   bool get isValid => validate().isEmpty;
 
-  /// Resolves the recurring active version for [date]: the published version
-  /// with the greatest effective date on or before [date] (ties broken by
-  /// version number). Returns null when nothing is published yet.
+  /// Finds teacher/room double-bookings between [candidate] and already
+  /// published schedules of other classes. Pure and deterministic so it can be
+  /// unit-tested without Firestore (M3 tests 18–19). Same-class versions and
+  /// unpublished versions are ignored by this helper.
+  static List<TimetableConflict> detectConflicts({
+    required ClassTimetableVersion candidate,
+    required Iterable<ClassTimetableVersion> otherVersions,
+  }) {
+    final conflicts = <TimetableConflict>[];
+    final candidateClass = candidate.classId.trim().toUpperCase();
+    final candidateSlots = candidate.slots.where((s) => s.hasStart).toList();
+
+    for (final other in otherVersions) {
+      if (!other.isPublished) continue;
+      if (other.id.isNotEmpty && other.id == candidate.id) continue;
+      if (other.classId.trim().toUpperCase() == candidateClass) continue;
+
+      for (final a in candidateSlots) {
+        for (final b in other.slots.where((s) => s.hasStart)) {
+          final overlaps = a.startMinute < b.endMinute && b.startMinute < a.endMinute;
+          if (!overlaps) continue;
+
+          final teacherMatches = _sameTeacher(a, b);
+          final roomMatches = _sameRoom(a, b);
+
+          if (teacherMatches) {
+            conflicts.add(TimetableConflict(
+              type: TimetableConflictType.teacher,
+              resourceName: _effectiveTeacherName(a),
+              otherClassId: other.classId,
+              periodNumber: a.periodNumber,
+              otherPeriodNumber: b.periodNumber,
+              startMinute: a.startMinute,
+              endMinute: a.endMinute,
+            ));
+          }
+          if (roomMatches) {
+            conflicts.add(TimetableConflict(
+              type: TimetableConflictType.room,
+              resourceName: a.room.trim(),
+              otherClassId: other.classId,
+              periodNumber: a.periodNumber,
+              otherPeriodNumber: b.periodNumber,
+              startMinute: a.startMinute,
+              endMinute: a.endMinute,
+            ));
+          }
+        }
+      }
+    }
+
+    conflicts.sort((a, b) {
+      final byStart = a.startMinute.compareTo(b.startMinute);
+      if (byStart != 0) return byStart;
+      return a.type.index.compareTo(b.type.index);
+    });
+    return conflicts;
+  }
+
+  static String _effectiveTeacherUid(TimetableSlot slot) =>
+      slot.hasSubstitute && slot.substituteTeacherUid.trim().isNotEmpty
+          ? slot.substituteTeacherUid.trim()
+          : slot.teacherUid.trim();
+
+  static String _effectiveTeacherName(TimetableSlot slot) =>
+      slot.hasSubstitute && slot.substituteTeacherName.trim().isNotEmpty
+          ? slot.substituteTeacherName.trim()
+          : slot.teacherName.trim();
+
+  static bool _sameTeacher(TimetableSlot a, TimetableSlot b) {
+    final aUid = _effectiveTeacherUid(a);
+    final bUid = _effectiveTeacherUid(b);
+    if (aUid.isNotEmpty && bUid.isNotEmpty) return aUid == bUid;
+    final aName = _effectiveTeacherName(a).toLowerCase();
+    final bName = _effectiveTeacherName(b).toLowerCase();
+    return aName.isNotEmpty && bName.isNotEmpty && aName == bName;
+  }
+
+  static bool _sameRoom(TimetableSlot a, TimetableSlot b) {
+    final aRoom = a.room.trim().toLowerCase();
+    final bRoom = b.room.trim().toLowerCase();
+    return aRoom.isNotEmpty && bRoom.isNotEmpty && aRoom == bRoom;
+  }
+
+  /// Resolves the active schedule for [date]. A published temporary override
+  /// whose [overrideDate] matches [date] always wins. Otherwise the published
+  /// recurring version with the greatest effective date on or before [date] is
+  /// used (ties broken by version number). Returns null when nothing is
+  /// published for the date.
   static ClassTimetableVersion? activeForDate(
     List<ClassTimetableVersion> versions,
     DateTime date,
   ) {
     final target = DateTime(date.year, date.month, date.day);
+    ClassTimetableVersion? override;
     ClassTimetableVersion? best;
     DateTime? bestEff;
     for (final v in versions) {
       if (!v.isPublished) continue;
+
+      final overrideDate = v.overrideDate;
+      if (overrideDate != null) {
+        final day = DateTime(
+          overrideDate.year,
+          overrideDate.month,
+          overrideDate.day,
+        );
+        if (day == target &&
+            (override == null || v.version > override.version)) {
+          override = v;
+        }
+        continue;
+      }
+
       final eff = DateTime(v.effectiveFrom.year, v.effectiveFrom.month, v.effectiveFrom.day);
       if (eff.isAfter(target)) continue;
       if (best == null ||
@@ -333,7 +533,7 @@ class ClassTimetableVersion {
         bestEff = eff;
       }
     }
-    return best;
+    return override ?? best;
   }
 
   Map<String, dynamic> toMap() => {
@@ -354,6 +554,7 @@ class ClassTimetableVersion {
         if (rejectionReason.isNotEmpty) 'rejection_reason': rejectionReason,
         if (supersedesId.isNotEmpty) 'supersedes_id': supersedesId,
         if (createdAt != null) 'created_at': Timestamp.fromDate(createdAt!),
+        if (overrideDate != null) 'override_date': Timestamp.fromDate(overrideDate!),
       };
 
   /// JSON-safe serialization for SharedPreferences cache (converts Timestamps to ISO strings).
@@ -362,6 +563,7 @@ class ClassTimetableVersion {
     map['effective_from'] = effectiveFrom.toIso8601String();
     if (publishedAt != null) map['published_at'] = publishedAt!.toIso8601String();
     if (createdAt != null) map['created_at'] = createdAt!.toIso8601String();
+    if (overrideDate != null) map['override_date'] = overrideDate!.toIso8601String();
     return map;
   }
 
@@ -411,6 +613,7 @@ class ClassTimetableVersion {
       rejectionReason: (map['rejection_reason'] ?? map['rejectionReason'] ?? '').toString().trim(),
       supersedesId: (map['supersedes_id'] ?? map['supersedesId'] ?? '').toString().trim(),
       createdAt: parseNullableDate(map['created_at'] ?? map['createdAt']),
+      overrideDate: parseNullableDate(map['override_date'] ?? map['overrideDate']),
     );
   }
 
@@ -437,6 +640,8 @@ class ClassTimetableVersion {
     String? rejectionReason,
     String? supersedesId,
     DateTime? createdAt,
+    DateTime? overrideDate,
+    bool clearOverrideDate = false,
   }) {
     return ClassTimetableVersion(
       id: id ?? this.id,
@@ -456,6 +661,7 @@ class ClassTimetableVersion {
       rejectionReason: rejectionReason ?? this.rejectionReason,
       supersedesId: supersedesId ?? this.supersedesId,
       createdAt: createdAt ?? this.createdAt,
+      overrideDate: clearOverrideDate ? null : (overrideDate ?? this.overrideDate),
     );
   }
 
@@ -463,6 +669,12 @@ class ClassTimetableVersion {
   String get displayLabel {
     final parsed = AcademicStructure.parseClassId(classId);
     final classLabel = parsed != null ? classId : classId;
-    return '$classLabel · $dayOfWeek';
+    final override = overrideDate;
+    final suffix = override == null
+        ? ''
+        : ' · Override ${override.year.toString().padLeft(4, '0')}-'
+            '${override.month.toString().padLeft(2, '0')}-'
+            '${override.day.toString().padLeft(2, '0')}';
+    return '$classLabel · $dayOfWeek$suffix';
   }
 }

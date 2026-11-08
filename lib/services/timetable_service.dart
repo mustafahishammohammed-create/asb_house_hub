@@ -150,7 +150,9 @@ class TimetableService {
       version: draft.version,
       actorUid: draft.createdByUid,
       actorName: draft.createdByName,
-      details: 'Saved draft version ${draft.version}',
+      details: draft.isTemporary
+          ? 'Saved draft one-day override for ${_dateLabel(draft.overrideDate!)}'
+          : 'Saved draft version ${draft.version}',
     );
 
     return true;
@@ -198,17 +200,22 @@ class TimetableService {
       version: submitted.version,
       actorUid: submitted.createdByUid,
       actorName: submitted.createdByName,
-      details: 'Submitted version ${submitted.version} for administrative approval',
+      details: submitted.isTemporary
+          ? 'Submitted one-day override for ${_dateLabel(submitted.overrideDate!)} for administrative approval'
+          : 'Submitted version ${submitted.version} for administrative approval',
     );
 
     return true;
   }
 
   /// Publishes a timetable version. Once published, versions are immutable.
+  /// Cross-class teacher/room conflicts are checked first (M3 tests 18–19);
+  /// callers that are importing legacy data may opt out explicitly.
   Future<bool> publishTimetable(
     ClassTimetableVersion version, {
     required String publisherUid,
     required String publisherName,
+    bool enforceConflicts = true,
   }) async {
     final errors = version.validate();
     if (errors.isNotEmpty) return false;
@@ -226,6 +233,22 @@ class TimetableService {
       approvedByName: publisherName,
       createdAt: version.createdAt ?? now,
     );
+
+    if (enforceConflicts) {
+      try {
+        final conflicts = await findTimetableConflicts(
+          published,
+          date: published.overrideDate ?? published.effectiveFrom,
+        );
+        if (conflicts.isNotEmpty) {
+          debugPrint('Timetable publish blocked: ${conflicts.first.message}');
+          return false;
+        }
+      } catch (e) {
+        debugPrint('Timetable conflict check failed: $e');
+        return false;
+      }
+    }
 
     if (_isLive) {
       try {
@@ -257,7 +280,9 @@ class TimetableService {
       version: published.version,
       actorUid: publisherUid,
       actorName: publisherName,
-      details: 'Published recurring version ${published.version} effective from ${published.effectiveFrom.toIso8601String().split('T').first}',
+      details: published.isTemporary
+          ? 'Published one-day override for ${_dateLabel(published.overrideDate!)}'
+          : 'Published recurring version ${published.version} effective from ${published.effectiveFrom.toIso8601String().split('T').first}',
     );
 
     return true;
@@ -343,7 +368,12 @@ class TimetableService {
       version: nextVersionNum,
       breakAfterPeriod: targetVersion.breakAfterPeriod,
       breakStartMinute: targetVersion.breakStartMinute,
-      slots: targetVersion.slots,
+      slots: targetVersion.slots
+          .map((s) => s.copyWith(
+                substituteTeacherName: '',
+                substituteTeacherUid: '',
+              ))
+          .toList(),
       createdByUid: actorUid,
       createdByName: actorName,
       publishedAt: publishImmediately ? now : null,
@@ -372,6 +402,286 @@ class TimetableService {
 
     return restored;
   }
+
+  // ===============================================================
+  // M3 Advanced Timetable Operations
+  // ===============================================================
+
+  /// Resolves the published recurring schedule for a day, ignoring one-day
+  /// overrides. Useful for weekly previews and editor baselines.
+  ClassTimetableVersion? getCachedRecurringActiveVersion(
+    String classId,
+    String dayOfWeek, [
+    DateTime? date,
+  ]) {
+    final recurring = getCachedVersions(classId, dayOfWeek)
+        .where((v) => !v.isTemporary)
+        .toList();
+    return ClassTimetableVersion.activeForDate(
+      recurring,
+      date ?? DateTime.now(),
+    );
+  }
+
+  /// Finds teacher/room double-bookings between [candidate] and every other
+  /// class's published schedule for the same day (M3 tests 18–19).
+  ///
+  /// On Spark this is a client-side cross-class query: it filters by
+  /// `day_of_week` + `status` (equality only, no new composite index) and then
+  /// resolves each class's active version for [date] locally, including
+  /// date-specific overrides. In offline mode the local cache is used.
+  Future<List<TimetableConflict>> findTimetableConflicts(
+    ClassTimetableVersion candidate, {
+    DateTime? date,
+  }) async {
+    final hasResources = candidate.slots.any((s) =>
+        s.teacherUid.trim().isNotEmpty ||
+        s.teacherName.trim().isNotEmpty ||
+        s.substituteTeacherUid.trim().isNotEmpty ||
+        s.substituteTeacherName.trim().isNotEmpty ||
+        s.room.trim().isNotEmpty);
+    if (!hasResources) return const [];
+
+    final targetDate = date ?? candidate.overrideDate ?? candidate.effectiveFrom;
+    final published = await _publishedVersionsForDay(candidate.dayOfWeek);
+
+    final byClass = <String, List<ClassTimetableVersion>>{};
+    for (final v in published) {
+      byClass.putIfAbsent(v.classId.trim().toUpperCase(), () => []).add(v);
+    }
+
+    final activeOthers = <ClassTimetableVersion>[];
+    for (final entry in byClass.entries) {
+      if (entry.key == candidate.classId.trim().toUpperCase()) continue;
+      final active = ClassTimetableVersion.activeForDate(entry.value, targetDate);
+      if (active != null) activeOthers.add(active);
+    }
+
+    return ClassTimetableVersion.detectConflicts(
+      candidate: candidate,
+      otherVersions: activeOthers,
+    );
+  }
+
+  /// Copies [source]'s full day configuration into new draft versions for
+  /// exactly [targetDays]. Existing versions of other days are never mutated;
+  /// the source day is ignored. Substitute markers are stripped because a
+  /// substitution belongs to one calendar date (M3 tests 31–32).
+  Future<Map<String, bool>> copyTimetableToDays({
+    required ClassTimetableVersion source,
+    required Iterable<String> targetDays,
+    required String actorUid,
+    required String actorName,
+    bool publishImmediately = false,
+    bool enforceConflicts = true,
+  }) async {
+    final results = <String, bool>{};
+    final targets = targetDays
+        .where(kTimetableWeekDays.contains)
+        .where((day) => day != source.dayOfWeek)
+        .toSet();
+
+    final now = DateTime.now();
+    final fallbackEffective = DateTime(now.year, now.month, now.day);
+    final effectiveFrom =
+        source.isTemporary ? fallbackEffective : source.effectiveFrom;
+
+    for (final day in targets) {
+      final nextVersion = _nextVersionNumber(source.classId, day);
+      final copy = ClassTimetableVersion(
+        classId: source.classId,
+        dayOfWeek: day,
+        status: publishImmediately
+            ? TimetableStatus.published
+            : TimetableStatus.draft,
+        effectiveFrom: effectiveFrom,
+        version: nextVersion,
+        breakAfterPeriod: source.breakAfterPeriod,
+        breakStartMinute: source.breakStartMinute,
+        slots: source.slots
+            .map((s) => s.copyWith(
+                  substituteTeacherName: '',
+                  substituteTeacherUid: '',
+                ))
+            .toList(),
+        createdByUid: actorUid,
+        createdByName: actorName,
+        createdAt: now,
+      );
+
+      final ok = publishImmediately
+          ? await publishTimetable(
+              copy,
+              publisherUid: actorUid,
+              publisherName: actorName,
+              enforceConflicts: enforceConflicts,
+            )
+          : await saveTimetableDraft(copy);
+      results[day] = ok;
+
+      if (ok) {
+        await writeTimetableAudit(
+          action: 'copy',
+          classId: source.classId,
+          dayOfWeek: day,
+          version: nextVersion,
+          actorUid: actorUid,
+          actorName: actorName,
+          details:
+              'Copied ${source.dayOfWeek} configuration (version ${source.version}) to $day as version $nextVersion ${publishImmediately ? 'and published it' : 'draft'}.',
+        );
+      }
+    }
+    return results;
+  }
+
+  /// Creates a one-day override for [date] from [version] without changing the
+  /// recurring weekly version. Set [publish] to make it live immediately;
+  /// otherwise a draft is stored. Returns null when the write is rejected.
+  Future<ClassTimetableVersion?> saveTimetableOverride(
+    ClassTimetableVersion version, {
+    required DateTime date,
+    required String actorUid,
+    required String actorName,
+    bool publish = false,
+    bool enforceConflicts = true,
+  }) async {
+    final cleanDate = DateTime(date.year, date.month, date.day);
+    if (cleanDate.weekday == DateTime.friday) return null;
+    if (timetableDayForWeekday(cleanDate.weekday) != version.dayOfWeek) {
+      return null;
+    }
+
+    final now = DateTime.now();
+    final nextVersion = _nextVersionNumber(version.classId, version.dayOfWeek);
+    final id =
+        'tt_${version.classId}_${version.dayOfWeek}_v${nextVersion}_override_${now.millisecondsSinceEpoch}';
+
+    final override = ClassTimetableVersion(
+      id: id,
+      classId: version.classId,
+      dayOfWeek: version.dayOfWeek,
+      status: publish ? TimetableStatus.published : TimetableStatus.draft,
+      effectiveFrom: cleanDate,
+      version: nextVersion,
+      breakAfterPeriod: version.breakAfterPeriod,
+      breakStartMinute: version.breakStartMinute,
+      slots: version.slots,
+      createdByUid: actorUid,
+      createdByName: actorName,
+      publishedAt: publish ? now : null,
+      approvedByUid: publish ? actorUid : '',
+      approvedByName: publish ? actorName : '',
+      createdAt: now,
+      overrideDate: cleanDate,
+    );
+
+    final ok = publish
+        ? await publishTimetable(
+            override,
+            publisherUid: actorUid,
+            publisherName: actorName,
+            enforceConflicts: enforceConflicts,
+          )
+        : await saveTimetableDraft(override);
+    if (!ok) return null;
+
+    await writeTimetableAudit(
+      action: 'override',
+      classId: override.classId,
+      dayOfWeek: override.dayOfWeek,
+      versionId: override.id,
+      version: override.version,
+      actorUid: actorUid,
+      actorName: actorName,
+      details:
+          '${publish ? 'Published' : 'Saved draft'} one-day override for ${_dateLabel(cleanDate)}.',
+    );
+
+    final substitutes =
+        override.slots.where((s) => s.hasSubstitute).length;
+    if (substitutes > 0) {
+      await writeTimetableAudit(
+        action: 'substitute',
+        classId: override.classId,
+        dayOfWeek: override.dayOfWeek,
+        versionId: override.id,
+        version: override.version,
+        actorUid: actorUid,
+        actorName: actorName,
+        details:
+            'Marked $substitutes substitute teacher${substitutes == 1 ? '' : 's'} for ${_dateLabel(cleanDate)}.',
+      );
+    }
+
+    return override;
+  }
+
+  Future<List<ClassTimetableVersion>> _publishedVersionsForDay(
+    String dayOfWeek,
+  ) async {
+    if (_isLive) {
+      try {
+        if (firestoreFailureSimulated != null) {
+          throw firestoreFailureSimulated!;
+        }
+        final snapshot = await _firestore
+            .collection('timetable_versions')
+            .where('day_of_week', isEqualTo: dayOfWeek)
+            .where('status', isEqualTo: TimetableStatus.published)
+            .get();
+        return snapshot.docs
+            .map((doc) => ClassTimetableVersion.fromFirestore(doc))
+            .toList();
+      } catch (e) {
+        if (_isNoAppException(e)) {
+          return _cachedPublishedVersionsForDay(dayOfWeek);
+        }
+        rethrow;
+      }
+    }
+    return _cachedPublishedVersionsForDay(dayOfWeek);
+  }
+
+  List<ClassTimetableVersion> _cachedPublishedVersionsForDay(String dayOfWeek) {
+    final prefs = _safePrefs;
+    if (prefs == null) return <ClassTimetableVersion>[];
+
+    final seen = <String>{};
+    final versions = <ClassTimetableVersion>[];
+    for (final key in prefs.getKeys()) {
+      if (!key.startsWith('timetable_history_')) continue;
+      final raw = prefs.getStringList(key);
+      if (raw == null) continue;
+      for (final encoded in raw) {
+        try {
+          final v = ClassTimetableVersion.fromMap(
+            jsonDecode(encoded) as Map<String, dynamic>,
+          );
+          if (!v.isPublished || v.dayOfWeek != dayOfWeek) continue;
+          final identity = v.id.isNotEmpty
+              ? v.id
+              : '${v.classId}|${v.dayOfWeek}|${v.version}|${v.effectiveFrom.toIso8601String()}|${v.overrideDate?.toIso8601String()}';
+          if (!seen.add(identity)) continue;
+          versions.add(v);
+        } catch (_) {}
+      }
+    }
+    return versions;
+  }
+
+  int _nextVersionNumber(String classId, String dayOfWeek) {
+    var next = 1;
+    for (final v in getCachedVersions(classId, dayOfWeek)) {
+      if (v.version >= next) next = v.version + 1;
+    }
+    return next;
+  }
+
+  static String _dateLabel(DateTime date) =>
+      '${date.year.toString().padLeft(4, '0')}-'
+      '${date.month.toString().padLeft(2, '0')}-'
+      '${date.day.toString().padLeft(2, '0')}';
 
   // ===============================================================
   // Reactive Streams

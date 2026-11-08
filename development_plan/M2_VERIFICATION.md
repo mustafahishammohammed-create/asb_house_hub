@@ -130,9 +130,9 @@ Each item below: **Problem → What breaks → Solution → Done when**.
 
 ---
 
-## Explicitly still M3 (not M2 leftovers)
+## M3 scope (delivered separately)
 
-Double-booking (tests 18–19), copy timings to selected days (31–32), one-day overrides (33), substitute tags. `activeForDate` has no override precedence yet. Do not start these inside the V1–V4 fix.
+Double-booking (tests 18–19), copy timings to selected days (31–32), one-day overrides (33), and substitute tags were delivered in M3 on 2026-11-08. See [`M3_VERIFICATION.md`](M3_VERIFICATION.md). They were intentionally kept out of the V1–V4 fix.
 
 ---
 
@@ -147,4 +147,4 @@ Spark only. No leave-excuses-attendance. Do not regress elections, points, sport
 1. ~~Fix **V1, V2, V3, V4**. Add tests that fail on the old rules/UI.~~ **Done 2026-11-08.**
 2. ~~Correct this report and `REMAINING_MODULES_REPORT.md`: M2 stays **partial** until those four are green. Uncheck V5 until M6.~~ **Done; M2 is complete for its scope, V5 remains unchecked.**
 3. ~~`flutter analyze` and the timetable suites, then the full suite. Deploy `firestore.rules` only. Commit and push to `mustafa1`.~~ **Done: analyze 0 errors/0 warnings; timetable suites 52/52; full suite 440/440; rules deployed; commit pushed.**
-4. **Next:** start M3 from the M3 section of `REMAINING_MODULES_REPORT.md`. Client-side conflict checks only; server-side conflict at scale stays Blaze. Keep V6/V7 on the follow-up list.
+4. ~~**Next:** start M3 from the M3 section of `REMAINING_MODULES_REPORT.md`. Client-side conflict checks only; server-side conflict at scale stays Blaze. Keep V6/V7 on the follow-up list.~~ **Done 2026-11-08 — see [`M3_VERIFICATION.md`](M3_VERIFICATION.md).**

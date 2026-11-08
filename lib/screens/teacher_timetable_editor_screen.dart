@@ -15,11 +15,17 @@ class TeacherTimetableEditorScreen extends StatefulWidget {
   final String? initialDay;
   final AcademicClass? academicClass;
 
+  /// Enables one-day override mode immediately. Production callers leave this
+  /// null and pick a date through the editor; tests use it to avoid driving the
+  /// platform date picker.
+  final DateTime? initialOverrideDate;
+
   const TeacherTimetableEditorScreen({
     super.key,
     required this.classId,
     this.initialDay,
     this.academicClass,
+    this.initialOverrideDate,
   });
 
   @override
@@ -38,17 +44,33 @@ class _TeacherTimetableEditorScreenState
   bool _saving = false;
   AcademicClass? _resolvedClass;
   bool _canEdit = false;
+  DateTime? _overrideDate;
+
+  bool get _isOverrideMode => _overrideDate != null;
 
   @override
   void initState() {
     super.initState();
-    _selectedDay = (widget.initialDay != null &&
-            kTimetableWeekDays.contains(widget.initialDay))
-        ? widget.initialDay!
-        : kTimetableWeekDays.first;
+    final initialOverride = widget.initialOverrideDate;
+    if (initialOverride != null && initialOverride.weekday != DateTime.friday) {
+      _overrideDate = DateTime(
+        initialOverride.year,
+        initialOverride.month,
+        initialOverride.day,
+      );
+    }
+
+    if (_overrideDate != null) {
+      _selectedDay = timetableDayForWeekday(_overrideDate!.weekday);
+    } else if (widget.initialDay != null &&
+        kTimetableWeekDays.contains(widget.initialDay)) {
+      _selectedDay = widget.initialDay!;
+    } else {
+      _selectedDay = kTimetableWeekDays.first;
+    }
 
     final now = DateTime.now();
-    _effectiveFrom = DateTime(now.year, now.month, now.day);
+    _effectiveFrom = _overrideDate ?? DateTime(now.year, now.month, now.day);
     _resolvedClass = widget.academicClass ??
         AuthService.getCachedAcademicClasses().cast<AcademicClass?>().firstWhere(
               (c) => c?.classId.toUpperCase() == widget.classId.toUpperCase(),
@@ -63,27 +85,45 @@ class _TeacherTimetableEditorScreenState
       academicClass: _resolvedClass,
     );
 
-    _loadDayVersion(_selectedDay);
+    _loadDayVersion(_selectedDay, overrideDate: _overrideDate);
   }
 
-  void _loadDayVersion(String day) {
+  void _loadDayVersion(String day, {DateTime? overrideDate}) {
     for (final c in _slotControllers) {
       c.dispose();
     }
     _slotControllers.clear();
 
-    final cachedActive = _timetableService.getCachedActiveVersion(widget.classId, day);
     final history = _timetableService.getCachedVersions(widget.classId, day);
-    final current = (history.isNotEmpty ? history.first : cachedActive) ??
-        ClassTimetableVersion.template(
-          classId: widget.classId,
-          dayOfWeek: day,
-          effectiveFrom: _effectiveFrom,
-        );
+    final recurring = history.where((v) => !v.isTemporary).toList()
+      ..sort((a, b) => b.version.compareTo(a.version));
 
+    ClassTimetableVersion? current;
+    if (overrideDate != null) {
+      final matching = history
+          .where((v) => _isSameDate(v.overrideDate, overrideDate))
+          .toList()
+        ..sort((a, b) => b.version.compareTo(a.version));
+      if (matching.isNotEmpty) {
+        current = matching.first;
+      } else {
+        current = ClassTimetableVersion.activeForDate(recurring, overrideDate) ??
+            (recurring.isNotEmpty ? recurring.first : null);
+      }
+    } else {
+      current = recurring.isNotEmpty ? recurring.first : null;
+    }
+
+    current ??= ClassTimetableVersion.template(
+      classId: widget.classId,
+      dayOfWeek: day,
+      effectiveFrom: overrideDate ?? _effectiveFrom,
+    );
+
+    _overrideDate = overrideDate;
     _breakAfterPeriod = current.breakAfterPeriod;
     _breakStartMinute = current.breakStartMinute >= 0 ? current.breakStartMinute : 645;
-    _effectiveFrom = current.effectiveFrom;
+    _effectiveFrom = overrideDate ?? current.effectiveFrom;
 
     final sortedSlots = [...current.slots]
       ..sort((a, b) => a.periodNumber.compareTo(b.periodNumber));
@@ -103,30 +143,53 @@ class _TeacherTimetableEditorScreenState
         room: existing?.room ?? '',
         imageUrl: existing?.imageUrl ?? '',
         notes: existing?.notes ?? '',
+        substituteTeacherName: existing?.substituteTeacherName ?? '',
+        substituteTeacherUid: existing?.substituteTeacherUid ?? '',
       ));
     }
 
     if (mounted) setState(() {});
   }
 
+  static bool _isSameDate(DateTime? a, DateTime? b) {
+    if (a == null || b == null) return false;
+    return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+
+  static String _dateLabel(DateTime date) =>
+      '${date.year.toString().padLeft(4, '0')}-'
+      '${date.month.toString().padLeft(2, '0')}-'
+      '${date.day.toString().padLeft(2, '0')}';
+
   ClassTimetableVersion _buildCurrentVersion({String status = TimetableStatus.draft, int versionNumber = 1}) {
     final profile = AuthService.getCachedProfile();
     final uid = (profile?['uid'] ?? profile?['id'] ?? '').toString();
     final name = (profile?['full_name'] ?? profile?['name'] ?? 'Class Teacher').toString();
 
-    final slots = _slotControllers.map((c) => c.toSlot()).toList();
+    var slots = _slotControllers.map((c) => c.toSlot()).toList();
+    if (_overrideDate == null) {
+      // Substitutions are date-specific and must never leak into a recurring
+      // weekly version.
+      slots = slots
+          .map((s) => s.copyWith(
+                substituteTeacherName: '',
+                substituteTeacherUid: '',
+              ))
+          .toList();
+    }
 
     return ClassTimetableVersion(
       classId: widget.classId,
       dayOfWeek: _selectedDay,
       status: status,
-      effectiveFrom: _effectiveFrom,
+      effectiveFrom: _overrideDate ?? _effectiveFrom,
       version: versionNumber,
       breakAfterPeriod: _breakAfterPeriod,
       breakStartMinute: _breakStartMinute,
       slots: slots,
       createdByUid: uid,
       createdByName: name,
+      overrideDate: _overrideDate,
     );
   }
 
@@ -191,6 +254,10 @@ class _TeacherTimetableEditorScreenState
   }
 
   Future<void> _pickEffectiveDate() async {
+    if (_isOverrideMode) {
+      await _pickOverrideDate();
+      return;
+    }
     final picked = await showDatePicker(
       context: context,
       initialDate: _effectiveFrom,
@@ -201,6 +268,45 @@ class _TeacherTimetableEditorScreenState
     if (picked != null) {
       setState(() => _effectiveFrom = picked);
     }
+  }
+
+  Future<void> _pickOverrideDate() async {
+    final firstDate = DateTime(2026, 1, 1);
+    final lastDate = DateTime(2030, 12, 31);
+    var initialDate = _overrideDate ?? DateTime.now();
+    if (initialDate.isBefore(firstDate)) initialDate = firstDate;
+    if (initialDate.isAfter(lastDate)) initialDate = lastDate;
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: firstDate,
+      lastDate: lastDate,
+      helpText: 'One-Day Override Date',
+    );
+    if (picked == null || !mounted) return;
+
+    if (picked.weekday == DateTime.friday) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Friday is not a school day. Choose Saturday to Thursday.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    final day = timetableDayForWeekday(picked.weekday);
+    _selectedDay = day;
+    _loadDayVersion(
+      day,
+      overrideDate: DateTime(picked.year, picked.month, picked.day),
+    );
+  }
+
+  void _exitOverrideMode() {
+    _overrideDate = null;
+    _loadDayVersion(_selectedDay);
   }
 
   Future<void> _handleSaveDraft() async {
@@ -225,14 +331,36 @@ class _TeacherTimetableEditorScreenState
       return;
     }
 
+    final profile = AuthService.getCachedProfile();
+    final uid = (profile?['uid'] ?? profile?['id'] ?? '').toString();
+    final name = (profile?['full_name'] ?? profile?['name'] ?? 'Class Teacher').toString();
+
     setState(() => _saving = true);
-    final ok = await _timetableService.saveTimetableDraft(current);
+    bool ok;
+    if (_isOverrideMode) {
+      final saved = await _timetableService.saveTimetableOverride(
+        current,
+        date: _overrideDate!,
+        actorUid: uid,
+        actorName: name,
+        publish: false,
+      );
+      ok = saved != null;
+    } else {
+      ok = await _timetableService.saveTimetableDraft(current);
+    }
+
     if (mounted) {
       setState(() => _saving = false);
+      if (ok) {
+        _loadDayVersion(_selectedDay, overrideDate: _overrideDate);
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(ok
-              ? 'Draft for ${widget.classId} · $_selectedDay saved successfully!'
+              ? _isOverrideMode
+                  ? 'One-day override draft for ${_dateLabel(_overrideDate!)} saved!'
+                  : 'Draft for ${widget.classId} · $_selectedDay saved successfully!'
               : 'Failed to save draft. Check permissions.'),
           backgroundColor: ok ? const Color(0xFF10B981) : Colors.redAccent,
         ),
@@ -284,9 +412,48 @@ class _TeacherTimetableEditorScreenState
       return;
     }
 
+    // Cross-class double-booking preflight (M3 tests 18–19). The service also
+    // enforces this inside publishTimetable, but checking here lets us show the
+    // exact teacher/room conflict before attempting a write.
+    final checkDate = _overrideDate ?? _effectiveFrom;
+    List<TimetableConflict> conflicts;
+    try {
+      conflicts = await _timetableService.findTimetableConflicts(
+        current,
+        date: checkDate,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not verify teacher/room conflicts. Try again.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+      return;
+    }
+    if (conflicts.isNotEmpty) {
+      await _showConflictDialog(conflicts);
+      return;
+    }
+
     setState(() => _saving = true);
     bool ok;
-    if (requiresApproval && !isSenior) {
+    if (_isOverrideMode) {
+      if (requiresApproval && !isSenior) {
+        ok = await _timetableService.submitTimetable(current);
+      } else {
+        final saved = await _timetableService.saveTimetableOverride(
+          current,
+          date: _overrideDate!,
+          actorUid: uid,
+          actorName: name,
+          publish: true,
+        );
+        ok = saved != null;
+      }
+    } else if (requiresApproval && !isSenior) {
       ok = await _timetableService.submitTimetable(current);
     } else {
       ok = await _timetableService.publishTimetable(
@@ -299,11 +466,20 @@ class _TeacherTimetableEditorScreenState
     if (mounted) {
       setState(() => _saving = false);
       if (ok) {
+        _loadDayVersion(_selectedDay, overrideDate: _overrideDate);
+        final String successMessage;
+        if (_isOverrideMode) {
+          successMessage = requiresApproval && !isSenior
+              ? 'One-day override for ${_dateLabel(_overrideDate!)} submitted for principal review.'
+              : 'One-day override for ${_dateLabel(_overrideDate!)} published!';
+        } else {
+          successMessage = requiresApproval && !isSenior
+              ? 'Timetable submitted for principal review.'
+              : 'Version $nextVersionNum published and recurring live!';
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(requiresApproval && !isSenior
-                ? 'Timetable submitted for principal review.'
-                : 'Version $nextVersionNum published and recurring live!'),
+            content: Text(successMessage),
             backgroundColor: const Color(0xFF10B981),
           ),
         );
@@ -316,6 +492,247 @@ class _TeacherTimetableEditorScreenState
         );
       }
     }
+  }
+
+  Future<void> _showConflictDialog(List<TimetableConflict> conflicts) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        key: const Key('timetable_conflict_dialog'),
+        title: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: Colors.redAccent),
+            const SizedBox(width: 8),
+            Text('${conflicts.length} Scheduling Conflict${conflicts.length == 1 ? '' : 's'}'),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Resolve these teacher or room double-bookings before publishing:',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 10),
+                ...conflicts.map(
+                  (c) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text('• ${c.message}', style: const TextStyle(fontSize: 12)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _checkConflicts() async {
+    final current = _buildCurrentVersion();
+    final checkDate = _overrideDate ?? _effectiveFrom;
+    try {
+      final conflicts = await _timetableService.findTimetableConflicts(
+        current,
+        date: checkDate,
+      );
+      if (conflicts.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No teacher or room conflicts found.'),
+              backgroundColor: Color(0xFF10B981),
+            ),
+          );
+        }
+        return;
+      }
+      await _showConflictDialog(conflicts);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not verify teacher/room conflicts. Try again.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _showCopyToDaysDialog() async {
+    if (_isOverrideMode) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Exit one-day override mode before copying a recurring day.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final source = _buildCurrentVersion();
+    final targets = <String>{};
+    final selected = await showDialog<List<String>>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocalState) {
+          final otherDays =
+              kTimetableWeekDays.where((d) => d != _selectedDay).toList();
+          return AlertDialog(
+            key: const Key('copy_timetable_dialog'),
+            title: Text('Copy $_selectedDay Configuration'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Copy all 8 periods and the break to the selected days. '
+                      'Each target receives a new draft; existing schedules are never overwritten.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    const SizedBox(height: 10),
+                    ...otherDays.map((day) {
+                      final existing = _timetableService
+                          .getCachedRecurringActiveVersion(
+                        widget.classId,
+                        day,
+                        _effectiveFrom,
+                      );
+                      return CheckboxListTile(
+                        key: Key('copy_target_$day'),
+                        value: targets.contains(day),
+                        onChanged: (value) {
+                          setLocalState(() {
+                            if (value == true) {
+                              targets.add(day);
+                            } else {
+                              targets.remove(day);
+                            }
+                          });
+                        },
+                        title: Text(
+                          day,
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        subtitle: Text(
+                          existing == null
+                              ? 'No published schedule yet'
+                              : 'Published v${existing.version} stays live until the new draft is published',
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        controlAffinity: ListTileControlAffinity.leading,
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                key: const Key('copy_timetable_confirm_button'),
+                onPressed: targets.isEmpty
+                    ? null
+                    : () => Navigator.pop(ctx, targets.toList()),
+                child: Text(
+                  'Copy to ${targets.length} Day${targets.length == 1 ? '' : 's'}',
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (selected == null || selected.isEmpty || !mounted) return;
+
+    final profile = AuthService.getCachedProfile();
+    final uid = (profile?['uid'] ?? profile?['id'] ?? '').toString();
+    final name = (profile?['full_name'] ?? profile?['name'] ?? 'Class Teacher').toString();
+
+    setState(() => _saving = true);
+    final results = await _timetableService.copyTimetableToDays(
+      source: source,
+      targetDays: selected,
+      actorUid: uid,
+      actorName: name,
+    );
+    if (!mounted) return;
+
+    setState(() => _saving = false);
+    final successes =
+        results.entries.where((e) => e.value).map((e) => e.key).toList();
+    final failures =
+        results.entries.where((e) => !e.value).map((e) => e.key).toList();
+
+    final message = failures.isEmpty
+        ? 'Copied to ${successes.join(', ')} as drafts. Publish each day to make it live.'
+        : successes.isEmpty
+            ? 'Copy failed for ${failures.join(', ')}. Check permissions.'
+            : 'Copied to ${successes.join(', ')}; failed: ${failures.join(', ')}.';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor:
+            successes.isEmpty ? Colors.redAccent : const Color(0xFF10B981),
+      ),
+    );
+  }
+
+  Future<void> _assignSubstitute(_SlotController slotController) async {
+    if (!_isOverrideMode) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Enable One-Day Override to assign a substitute.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final selection = await showDialog<({String name, String uid})>(
+      context: context,
+      builder: (ctx) => _SubstituteDialog(
+        periodNumber: slotController.periodNumber,
+        regularTeacher: slotController.teacherController.text.trim(),
+        initialName: slotController.substituteTeacherName,
+        initialUid: slotController.substituteTeacherUid,
+      ),
+    );
+
+    if (selection != null) {
+      setState(() {
+        slotController.substituteTeacherName = selection.name;
+        slotController.substituteTeacherUid = selection.uid;
+      });
+    }
+  }
+
+  void _clearSubstitute(_SlotController slotController) {
+    setState(() {
+      slotController.substituteTeacherName = '';
+      slotController.substituteTeacherUid = '';
+    });
   }
 
   void _showHistoryModal() {
@@ -364,11 +781,13 @@ class _TeacherTimetableEditorScreenState
                         return ListTile(
                           contentPadding: EdgeInsets.zero,
                           title: Text(
-                            'Version ${v.version} · ${v.status.toUpperCase()}',
+                            'Version ${v.version} · ${v.status.toUpperCase()}'
+                            '${v.isTemporary ? ' · ONE-DAY OVERRIDE' : ''}',
                             style: const TextStyle(fontWeight: FontWeight.w800),
                           ),
                           subtitle: Text(
                             'Effective: ${v.effectiveFrom.toIso8601String().split('T').first} '
+                            '${v.isTemporary ? '• Override ${v.overrideDate != null ? _dateLabel(v.overrideDate!) : ''} ' : ''}'
                             '${v.createdByName.isNotEmpty ? '• By ${v.createdByName}' : ''}',
                           ),
                           trailing: FilledButton.tonal(
@@ -421,7 +840,11 @@ class _TeacherTimetableEditorScreenState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: kTimetableWeekDays.map((day) {
-                final v = _timetableService.getCachedActiveVersion(widget.classId, day);
+                final v = _timetableService.getCachedRecurringActiveVersion(
+                  widget.classId,
+                  day,
+                  _effectiveFrom,
+                );
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 12),
                   child: Column(
@@ -499,6 +922,28 @@ class _TeacherTimetableEditorScreenState
         title: Text('${widget.classId} Timetable Editor'),
         actions: [
           IconButton(
+            key: const Key('copy_timetable_days_button'),
+            tooltip: 'Copy Day to Selected Days',
+            icon: const Icon(Icons.copy_all_rounded),
+            onPressed: _showCopyToDaysDialog,
+          ),
+          IconButton(
+            key: const Key('check_timetable_conflicts_button'),
+            tooltip: 'Check Teacher/Room Conflicts',
+            icon: const Icon(Icons.shield_outlined),
+            onPressed: _checkConflicts,
+          ),
+          IconButton(
+            key: const Key('timetable_override_button'),
+            tooltip: _isOverrideMode ? 'Change Override Date' : 'One-Day Override',
+            icon: Icon(
+              _isOverrideMode
+                  ? Icons.event_available_rounded
+                  : Icons.event_busy_rounded,
+            ),
+            onPressed: _pickOverrideDate,
+          ),
+          IconButton(
             key: const Key('full_week_preview_button'),
             tooltip: 'Preview Full Week',
             icon: const Icon(Icons.calendar_view_week_rounded),
@@ -533,6 +978,7 @@ class _TeacherTimetableEditorScreenState
                             selected: isSelected,
                             onSelected: (val) {
                               if (val) {
+                                _overrideDate = null;
                                 setState(() {
                                   _selectedDay = day;
                                   _loadDayVersion(day);
@@ -545,6 +991,46 @@ class _TeacherTimetableEditorScreenState
                     ),
                   ),
                 ),
+
+                // One-Day Override Banner (M3)
+                if (_isOverrideMode)
+                  Container(
+                    key: const Key('timetable_override_banner'),
+                    width: double.infinity,
+                    color: Colors.orange.withValues(alpha: 0.15),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.event_busy_rounded,
+                            color: Colors.orange, size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'ONE-DAY OVERRIDE · ${_dateLabel(_overrideDate!)}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              Text(
+                                'Only this date changes. The recurring $_selectedDay schedule stays intact.',
+                                style: const TextStyle(fontSize: 11),
+                              ),
+                            ],
+                          ),
+                        ),
+                        TextButton(
+                          key: const Key('timetable_exit_override_button'),
+                          onPressed: _exitOverrideMode,
+                          child: const Text('Exit Override'),
+                        ),
+                      ],
+                    ),
+                  ),
 
                 // Approval Banner
                 if (requiresApproval)
@@ -590,21 +1076,30 @@ class _TeacherTimetableEditorScreenState
                       ),
                       const SizedBox(height: 8),
 
-                      // Effective Date Selector
+                      // Effective Date / One-Day Override Date Selector
                       InkWell(
-                        onTap: _pickEffectiveDate,
+                        key: const Key('timetable_effective_date_selector'),
+                        onTap: _isOverrideMode
+                            ? _pickOverrideDate
+                            : _pickEffectiveDate,
                         borderRadius: BorderRadius.circular(12),
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                           decoration: BoxDecoration(
-                            border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
+                            border: Border.all(
+                              color: _isOverrideMode
+                                  ? Colors.orange.withValues(alpha: 0.6)
+                                  : Colors.grey.withValues(alpha: 0.3),
+                            ),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
-                                'Effective From: ${_effectiveFrom.toIso8601String().split('T').first}',
+                                _isOverrideMode
+                                    ? 'Override Date: ${_dateLabel(_overrideDate!)}'
+                                    : 'Effective From: ${_effectiveFrom.toIso8601String().split('T').first}',
                                 style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
                               ),
                               const Icon(Icons.calendar_today, size: 16),
@@ -848,6 +1343,67 @@ class _TeacherTimetableEditorScreenState
               ],
             ),
 
+            // Date-specific substitution action (M3). Only offered inside
+            // one-day override mode so recurring schedules stay untouched.
+            if (_isOverrideMode) ...[
+              const SizedBox(height: 8),
+              if (controller.hasSubstitute)
+                Container(
+                  key: Key('period_${controller.periodNumber}_substitute_banner'),
+                  width: double.infinity,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: Colors.orange.withValues(alpha: 0.5),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.swap_horiz_rounded,
+                          size: 16, color: Colors.orange),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Substitute: ${controller.substituteTeacherName}'
+                          '${controller.teacherController.text.trim().isNotEmpty ? ' (regular: ${controller.teacherController.text.trim()})' : ''}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        key: Key(
+                          'period_${controller.periodNumber}_clear_substitute_button',
+                        ),
+                        tooltip: 'Clear Substitute',
+                        icon: const Icon(Icons.close_rounded, size: 16),
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => _clearSubstitute(controller),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    key: Key(
+                      'period_${controller.periodNumber}_substitute_button',
+                    ),
+                    onPressed: () => _assignSubstitute(controller),
+                    icon: const Icon(Icons.person_add_alt_1_rounded, size: 16),
+                    label: const Text(
+                      'Assign Substitute',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ),
+            ],
+
             // Attached Photo Field
             const SizedBox(height: 6),
             AcademicImageUploadField(
@@ -922,6 +1478,8 @@ class _SlotController {
   final int periodNumber;
   int startMinute;
   String imageUrl;
+  String substituteTeacherName;
+  String substituteTeacherUid;
   final TextEditingController subjectController;
   final TextEditingController teacherController;
   final TextEditingController roomController;
@@ -937,10 +1495,16 @@ class _SlotController {
     String room = '',
     this.imageUrl = '',
     String notes = '',
+    this.substituteTeacherName = '',
+    this.substituteTeacherUid = '',
   })  : subjectController = TextEditingController(text: subject),
         teacherController = TextEditingController(text: teacherName),
         roomController = TextEditingController(text: room),
         notesController = TextEditingController(text: notes);
+
+  bool get hasSubstitute =>
+      substituteTeacherName.trim().isNotEmpty ||
+      substituteTeacherUid.trim().isNotEmpty;
 
   int get endMinute => startMinute < 0 ? -1 : startMinute + kTeachingPeriodMinutes;
 
@@ -954,6 +1518,8 @@ class _SlotController {
       room: roomController.text.trim(),
       imageUrl: imageUrl.trim(),
       notes: notesController.text.trim(),
+      substituteTeacherName: substituteTeacherName.trim(),
+      substituteTeacherUid: substituteTeacherUid.trim(),
     );
   }
 
@@ -962,5 +1528,105 @@ class _SlotController {
     teacherController.dispose();
     roomController.dispose();
     notesController.dispose();
+  }
+}
+
+/// Dialog that owns its text controllers so they outlive the closing
+/// animation. Disposing them as soon as `showDialog` returns crashes the
+/// still-mounted `EditableText`s during the reverse transition.
+class _SubstituteDialog extends StatefulWidget {
+  const _SubstituteDialog({
+    required this.periodNumber,
+    required this.regularTeacher,
+    required this.initialName,
+    required this.initialUid,
+  });
+
+  final int periodNumber;
+  final String regularTeacher;
+  final String initialName;
+  final String initialUid;
+
+  @override
+  State<_SubstituteDialog> createState() => _SubstituteDialogState();
+}
+
+class _SubstituteDialogState extends State<_SubstituteDialog> {
+  late final TextEditingController _nameController =
+      TextEditingController(text: widget.initialName);
+  late final TextEditingController _uidController =
+      TextEditingController(text: widget.initialUid);
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _uidController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final name = _nameController.text.trim();
+    if (name.isEmpty) return;
+    Navigator.pop(
+      context,
+      (name: name, uid: _uidController.text.trim()),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      key: const Key('substitute_dialog'),
+      title: Text('Substitute for Period ${widget.periodNumber}'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            widget.regularTeacher.isEmpty
+                ? 'Regular teacher is not set.'
+                : 'Regular teacher: ${widget.regularTeacher}',
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            key: const Key('substitute_name_field'),
+            controller: _nameController,
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(
+              labelText: 'Substitute Teacher Name',
+              isDense: true,
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            key: const Key('substitute_uid_field'),
+            controller: _uidController,
+            decoration: const InputDecoration(
+              labelText: 'Substitute UID (optional)',
+              isDense: true,
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'The recurring weekly teacher is unchanged. This substitution applies only to the selected override date.',
+            style: TextStyle(fontSize: 11, color: Colors.grey),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          key: const Key('substitute_confirm_button'),
+          onPressed: _submit,
+          child: const Text('Assign Substitute'),
+        ),
+      ],
+    );
   }
 }
