@@ -522,6 +522,40 @@ service cloud.firestore {
       (!('classLevel' in data) || (data.classLevel is string && data.classLevel.size() <= 50));
     }
 
+    function isValidMedicalLeave(data) {
+      return hasOnlyAllowedFields([
+        'id', 'scholar_no', 'scholarNo', 'student_name', 'studentName', 'house',
+        'class_level', 'classLevel', 'start_date', 'startDate', 'end_date', 'endDate',
+        'reason', 'doctor_name', 'doctorName', 'certificate_photo', 'certificatePhoto',
+        'submitted_at', 'submittedAt', 'status', 'admin_remark', 'adminRemark',
+        'reviewed_by', 'reviewedBy', 'reviewed_at', 'reviewedAt'
+      ]) &&
+      hasRequiredFields(['scholar_no', 'student_name', 'status']) &&
+      data.scholar_no is string && data.scholar_no.size() >= 1 && data.scholar_no.size() <= 30 &&
+      data.student_name is string && data.student_name.size() >= 1 && data.student_name.size() <= 100 &&
+      data.status is string && data.status in ['pending', 'approved', 'rejected'] &&
+      (!('house' in data) || (data.house is string && data.house.lower() in ['ruby', 'sapphire', 'emerald', 'topaz'])) &&
+      (!('class_level' in data) || (data.class_level is string && data.class_level.size() <= 50)) &&
+      (!('classLevel' in data) || (data.classLevel is string && data.classLevel.size() <= 50)) &&
+      (!('reason' in data) || (data.reason is string && data.reason.size() <= 2000)) &&
+      (!('doctor_name' in data) || (data.doctor_name is string && data.doctor_name.size() <= 100)) &&
+      (!('doctorName' in data) || (data.doctorName is string && data.doctorName.size() <= 100)) &&
+      (!('certificate_photo' in data) || (data.certificate_photo is string && data.certificate_photo.size() <= 500000)) &&
+      (!('certificatePhoto' in data) || (data.certificatePhoto is string && data.certificatePhoto.size() <= 500000)) &&
+      (!('admin_remark' in data) || (data.admin_remark is string && data.admin_remark.size() <= 2000)) &&
+      (!('adminRemark' in data) || (data.adminRemark is string && data.adminRemark.size() <= 2000)) &&
+      (!('reviewed_by' in data) || (data.reviewed_by is string && data.reviewed_by.size() <= 100)) &&
+      (!('reviewedBy' in data) || (data.reviewedBy is string && data.reviewedBy.size() <= 100)) &&
+      (!('start_date' in data) || (data.start_date is string && data.start_date.size() <= 50) || data.start_date is timestamp) &&
+      (!('startDate' in data) || (data.startDate is string && data.startDate.size() <= 50) || data.startDate is timestamp) &&
+      (!('end_date' in data) || (data.end_date is string && data.end_date.size() <= 50) || data.end_date is timestamp) &&
+      (!('endDate' in data) || (data.endDate is string && data.endDate.size() <= 50) || data.endDate is timestamp) &&
+      (!('submitted_at' in data) || (data.submitted_at is string && data.submitted_at.size() <= 50) || data.submitted_at is timestamp) &&
+      (!('submittedAt' in data) || (data.submittedAt is string && data.submittedAt.size() <= 50) || data.submittedAt is timestamp) &&
+      (!('reviewed_at' in data) || (data.reviewed_at is string && data.reviewed_at.size() <= 50) || data.reviewed_at is timestamp) &&
+      (!('reviewedAt' in data) || (data.reviewedAt is string && data.reviewedAt.size() <= 50) || data.reviewedAt is timestamp);
+    }
+
     function isValidSportsTrophy(data) {
       return hasOnlyAllowedFields([
         'trophy_id', 'trophyId', 'title', 'sport', 'category',
@@ -763,7 +797,8 @@ service cloud.firestore {
       }
 
       match /report_cards/{reportCardId} {
-        allow read: if isSignedIn();
+        allow read: if isAdmin() ||
+          ('scholar_no' in resource.data && isScholarOwner(resource.data.scholar_no));
         allow write: if isAdmin();
       }
 
@@ -1003,8 +1038,13 @@ service cloud.firestore {
       allow read: if (('scholar_no' in resource.data && isScholarOwner(resource.data.scholar_no)) || isAdmin());
       allow create: if isSignedIn() &&
         ('scholar_no' in request.resource.data && isScholarOwner(request.resource.data.scholar_no)) &&
-        request.resource.data.status == 'pending';
-      allow update: if isAdmin();
+        request.resource.data.status == 'pending' &&
+        isValidMedicalLeave(request.resource.data);
+      allow update: if isAdmin() &&
+        resource.data.status == 'pending' &&
+        request.resource.data.status in ['approved', 'rejected'] &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewed_by', 'reviewed_at', 'admin_remark']) &&
+        isValidMedicalLeave(request.resource.data);
       allow delete: if isAdmin();
     }
 

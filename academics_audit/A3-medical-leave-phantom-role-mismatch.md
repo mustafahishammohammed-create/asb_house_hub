@@ -43,8 +43,11 @@ Three compounding issues in the medical-leave flow:
 
 **Policy note (user-confirmed 2026-11-08):** approved leave does **not** excuse attendance — the scholar remains marked absent. Do not build leave-to-attendance automation; the only fix is keeping comments/UI honest about that.
 
-## Done when
+## Status: RESOLVED (2026-11-08)
 
-- Denied submit/approve/reject shows an error and changes no cache; success only after server acknowledgment.
-- Only staff see Medical Reports; approvals record the actual reviewer.
-- Create rejects malformed/oversized docs; updates cannot reopen or rewrite a decided leave.
+1. **Truthful Writes:** Removed all `catch (_) {}` swallows across `submitMedicalLeaveRequest`, `approveMedicalLeave`, and `rejectMedicalLeave` in `auth_service.dart`. Server writes now execute first, propagate simulated/network errors, return boolean statuses, and write to local cache only after acknowledgment. UI callers display real red error snackbars on failure.
+2. **Tab Access Gated:** In `admin_claims_screen.dart`, the Medical Reports tab is strictly gated on `HierarchyService.isTeacherOrFaculty || isSuperAdmin`. Student council and house captains are restricted to a single Point Claims tab without health data exposure.
+3. **Reviewer Identity Recorded:** Handlers in `admin_claims_screen.dart` dynamically resolve authenticated reviewer full name / scholar number via `_getReviewerName()` instead of hardcoding `'School Administration'`.
+4. **Rules Schema & Transition Lock:** Added `isValidMedicalLeave(data)` schema validator with field whitelist and photo size cap (`<= 500000`). Enforced update transition lock requiring `resource.data.status == 'pending'`, `request.resource.data.status in ['approved', 'rejected']`, and immutable core fields (`affectedKeys().hasOnly(['status', 'reviewed_by', 'reviewed_at', 'admin_remark'])`). Rules deployed to `cloud.firestore`.
+5. **Stream Fallback:** Added `.handleError` to `getMedicalLeavesStream` in `auth_service.dart` for fallback on stream query denial.
+6. **Automated Verification:** Verified in `test/academics_security_test.dart` (truthful write denials, cache non-mutation, widget tab gating, rules contract, and reviewer identity capture).

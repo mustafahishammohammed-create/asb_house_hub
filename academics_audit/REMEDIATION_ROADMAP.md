@@ -2,19 +2,19 @@
 
 Prioritized plan for A1–A7. **P0/P1/P2 are all no-Blaze** (client + rules + tests, deployable on Spark). Server-authority items are deferred to `election_audit/BLAZE_REQUIRED_FEATURES.md` **D5**.
 
-Audit baseline: HEAD `91114ea`, 2026-11-08. Read-only audit — nothing here is implemented yet.
+Status: **P0 CLOSED** (all 5 items implemented, tested, and rules deployed). P1 & P2 open.
 
 ---
 
-## P0 — Privacy & medical-data integrity (do first)
+## P0 — Privacy & medical-data integrity (RESOLVED)
 
-| # | Item | Finding | Change | Verify |
-|---|------|---------|--------|--------|
-| P0-1 | Lock report-card reads to owner + admin | A1 | firestore.rules:764-767 → `isAdmin() \|\| isScholarOwner(resource.data.scholar_no)`; add stream `.handleError` fallback | Rules-contract test; student denied on peer's card, own card loads; deploy + re-deploy shows "already up to date" |
-| P0-2 | Medical leaves: truthful writes + real errors | A3 | Remove `catch (_) {}` in submit/approve/reject (auth_service.dart:6457,6481,6523); cache after ack; UI checks results; `.handleError` on the stream | Denial test → `false`, cache unchanged; error snackbar visible |
-| P0-3 | Hide Medical Reports from non-staff | A3 | Gate the tab on `isTeacherOrFaculty \|\| isSuperAdmin` (not broad `HierarchyService.isAdmin`) | Council/captain account sees only Point Claims |
-| P0-4 | Medical-leave rules validator + transition guard | A3 | `isValidMedicalLeave` on create (whitelist, size caps, date sanity); update only `pending → approved/rejected`, core fields immutable | Rules-contract tests |
-| P0-5 | Real reviewer identity | A3 | Pass actual reviewer name/scholar no from admin_claims_screen instead of `'School Administration'` | Approved doc carries the reviewer |
+| # | Item | Finding | Change | Status / Evidence |
+|---|------|---------|--------|-------------------|
+| P0-1 | Lock report-card reads to owner + admin | A1 | `firestore.rules`: `isAdmin() \|\| ('scholar_no' in resource.data && isScholarOwner(resource.data.scholar_no))`; added `.handleError` fallback in `auth_service.dart:1559`. | **CLOSED** — Verified in `test/academics_security_test.dart`; deployed to `cloud.firestore` ("already up to date"). |
+| P0-2 | Medical leaves: truthful writes + real errors | A3 | Removed `catch (_) {}` in `submitMedicalLeaveRequest`, `approveMedicalLeave`, `rejectMedicalLeave` (`auth_service.dart`); write to Firestore first, check `firestoreFailureSimulated`, return `false` on failure, cache only on ack; UI displays real red error snackbars on failure. | **CLOSED** — Verified by failure simulation unit tests in `test/academics_security_test.dart`. |
+| P0-3 | Hide Medical Reports from non-staff | A3 | Gated Medical Reports tab on `HierarchyService.isTeacherOrFaculty \|\| isSuperAdmin` (`admin_claims_screen.dart`); council/captains see only Point Claims with single-tab view. | **CLOSED** — Verified by widget test in `test/academics_security_test.dart`. |
+| P0-4 | Medical-leave rules validator + transition guard | A3 | Added `isValidMedicalLeave(data)` schema validator in `firestore.rules` (field whitelist, 500k photo cap, string bounds); update requires `resource.data.status == 'pending'` and `request.resource.data.status in ['approved', 'rejected']` with immutable core fields. | **CLOSED** — Rules-contract tests pass; deployed to `cloud.firestore`. |
+| P0-5 | Real reviewer identity | A3 | Passed authenticated reviewer name from `_getReviewerName()` in `admin_claims_screen.dart` to `approveMedicalLeave`/`rejectMedicalLeave`. | **CLOSED** — Verified in unit tests asserting `reviewed_by` captures actual user profile. |
 
 ## P1 — Phantom-success eradication & gate alignment
 

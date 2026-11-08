@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:convert';
 import '../services/auth_service.dart';
+import '../services/hierarchy_service.dart';
 import '../models/medical_leave_request.dart';
 import '../theme/app_theme.dart';
 import '../widgets/student_profile_modal.dart';
@@ -24,11 +25,17 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
   String _searchQuery = '';
   String _medicalStatusFilter = 'all'; // 'all', 'pending', 'approved', 'rejected'
   late TabController _tabController;
+  bool _canReviewMedical = false;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    final profile = AuthService.getCachedProfile();
+    final role = profile?['role']?.toString();
+    final scholarNo = profile?['scholar_no']?.toString() ?? AuthService.getCachedScholarNo();
+    _canReviewMedical = HierarchyService.isTeacherOrFaculty(role: role, scholarNo: scholarNo) ||
+        HierarchyService.isSuperAdmin(role: role, scholarNo: scholarNo);
+    _tabController = TabController(length: _canReviewMedical ? 2 : 1, vsync: this);
   }
 
   @override
@@ -110,22 +117,43 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
     }
   }
 
+  String _getReviewerName() {
+    final profile = AuthService.getCachedProfile();
+    final name = (profile?['full_name'] as String?)?.trim();
+    if (name != null && name.isNotEmpty) return name;
+    final email = (profile?['email'] as String?)?.trim();
+    if (email != null && email.isNotEmpty) return email;
+    final sNo = AuthService.getCachedScholarNo();
+    if (sNo != null && sNo.isNotEmpty) return 'Staff #$sNo';
+    return 'School Staff';
+  }
+
   void _handleApproveMedicalLeave(String requestId, String studentName) async {
     if (_processingClaimIds.contains(requestId)) return;
     setState(() => _processingClaimIds.add(requestId));
     try {
-      await _authService.approveMedicalLeave(
+      final reviewer = _getReviewerName();
+      final ok = await _authService.approveMedicalLeave(
         leaveId: requestId,
-        reviewerName: 'School Administration',
+        reviewerName: reviewer,
         adminRemark: 'Approved - Medical Certificate Verified',
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Approved Medical Leave for $studentName!'),
-          backgroundColor: Colors.teal[700],
-        ),
-      );
+      if (ok) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Approved Medical Leave for $studentName!'),
+            backgroundColor: Colors.teal[700],
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Error approving medical leave: Permission denied or network failure.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -144,18 +172,28 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
     if (_processingClaimIds.contains(requestId)) return;
     setState(() => _processingClaimIds.add(requestId));
     try {
-      await _authService.rejectMedicalLeave(
+      final reviewer = _getReviewerName();
+      final ok = await _authService.rejectMedicalLeave(
         leaveId: requestId,
-        reviewerName: 'School Administration',
+        reviewerName: reviewer,
         adminRemark: 'Declined - Incomplete or illegible medical certificate',
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Declined Medical Leave request for $studentName.'),
-          backgroundColor: Colors.orange[800],
-        ),
-      );
+      if (ok) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Declined Medical Leave request for $studentName.'),
+            backgroundColor: Colors.orange[800],
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Error declining medical leave: Permission denied or network failure.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -520,32 +558,36 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
           ),
           const SizedBox(width: 8),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: Colors.amber,
-          indicatorWeight: 3,
-          labelColor: Theme.of(context).colorScheme.onSurface,
-          unselectedLabelColor: Colors.grey,
-          labelStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
-          tabs: const [
-            Tab(
-              icon: Icon(Icons.verified_user_rounded, size: 20),
-              text: 'Point Claims',
-            ),
-            Tab(
-              icon: Icon(Icons.medical_services_rounded, size: 20),
-              text: 'Medical Reports',
-            ),
-          ],
-        ),
+        bottom: _canReviewMedical
+            ? TabBar(
+                controller: _tabController,
+                indicatorColor: Colors.amber,
+                indicatorWeight: 3,
+                labelColor: Theme.of(context).colorScheme.onSurface,
+                unselectedLabelColor: Colors.grey,
+                labelStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                tabs: const [
+                  Tab(
+                    icon: Icon(Icons.verified_user_rounded, size: 20),
+                    text: 'Point Claims',
+                  ),
+                  Tab(
+                    icon: Icon(Icons.medical_services_rounded, size: 20),
+                    text: 'Medical Reports',
+                  ),
+                ],
+              )
+            : null,
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildClaimsTab(),
-          _buildMedicalReportsTab(),
-        ],
-      ),
+      body: _canReviewMedical
+          ? TabBarView(
+              controller: _tabController,
+              children: [
+                _buildClaimsTab(),
+                _buildMedicalReportsTab(),
+              ],
+            )
+          : _buildClaimsTab(),
     );
   }
 

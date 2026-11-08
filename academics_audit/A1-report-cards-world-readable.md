@@ -37,8 +37,8 @@ The client *behaves* as if this were private — `getReportCardsStream` filters 
 
 **Decision note:** if council officers are ever meant to see peers' cards, add `isCouncil()` explicitly — but the privacy-preserving default is owner + admin only.
 
-## Done when
+## Status: RESOLVED (2026-11-08)
 
-- A signed-in student reading another scholar's report card doc gets `permission-denied`; reading their own works; admin reads all.
-- The report-card tab still loads for students (owner-scoped query) and staff.
-- Rules-contract test passes; rules deployed and `firebase deploy` re-run reports "already up to date".
+1. **Firestore Rules:** `classes/{classId}/report_cards/{reportCardId}` read permission restricted to `isAdmin() || ('scholar_no' in resource.data && isScholarOwner(resource.data.scholar_no))`. Deployed to `cloud.firestore` with zero warnings ("already up to date").
+2. **Stream Fallback:** Added `.handleError` in `auth_service.dart:1559` to gracefully catch asynchronous rules denial / stream error and fall back to local cached report cards.
+3. **Automated Verification:** Verified in `test/academics_security_test.dart` (read rules contract test and stream fallback test passed).

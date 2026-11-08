@@ -6979,12 +6979,28 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
                           Navigator.of(ctx).pop();
 
                           final profile = AuthService.getCachedProfile();
-                          final sNo = widget.scholarNo ?? (profile?['scholar_no'] ?? '2310910').toString();
-                          final sName = (profile?['full_name'] ?? 'Mohammed Ayaan').toString();
+                          final sNo = widget.scholarNo ?? (profile?['scholar_no']?.toString().trim().isNotEmpty == true
+                              ? profile!['scholar_no'].toString().trim()
+                              : (AuthService.getCachedScholarNo() ?? ''));
+                          final sName = (profile?['full_name']?.toString().trim().isNotEmpty == true
+                              ? profile!['full_name'].toString().trim()
+                              : 'Scholar #$sNo');
                           final sHouse = AuthService.getCachedHouse() ?? 'ruby';
-                          final sClass = widget.classLevel ?? (profile?['class_level'] ?? 'Grade 10').toString();
+                          final sClass = widget.classLevel ?? (profile?['class_level']?.toString().trim().isNotEmpty == true
+                              ? profile!['class_level'].toString().trim()
+                              : 'Grade 10');
 
-                          await AuthService().submitMedicalLeaveRequest(
+                          if (sNo.isEmpty) {
+                            parentMessenger.showSnackBar(
+                              const SnackBar(
+                                content: Text('Cannot submit leave: student profile is not loaded.'),
+                                backgroundColor: Colors.redAccent,
+                              ),
+                            );
+                            return;
+                          }
+
+                          final ok = await AuthService().submitMedicalLeaveRequest(
                             scholarNo: sNo,
                             studentName: sName,
                             house: sHouse,
@@ -6997,14 +7013,23 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
                           );
 
                           if (!mounted) return;
-                          parentMessenger.showSnackBar(
-                            SnackBar(
-                              content: const Text(
-                                'Medical Leave Pass & Doctor Prescription submitted directly to Administration for approval!',
+                          if (ok) {
+                            parentMessenger.showSnackBar(
+                              SnackBar(
+                                content: const Text(
+                                  'Medical Leave Pass & Doctor Prescription submitted directly to Administration for approval!',
+                                ),
+                                backgroundColor: Colors.green[700],
                               ),
-                              backgroundColor: Colors.green[700],
-                            ),
-                          );
+                            );
+                          } else {
+                            parentMessenger.showSnackBar(
+                              const SnackBar(
+                                content: Text('Failed to submit medical leave request. Please check permissions or connection.'),
+                                backgroundColor: Colors.redAccent,
+                              ),
+                            );
+                          }
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF6366F1),

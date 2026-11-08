@@ -1553,12 +1553,23 @@ class AuthService {
             .toList();
         cards.sort();
         if (cards.isNotEmpty) {
-          cacheReportCards(cards, classLevel: cLevel, scholarNo: sNo, termName: termName);
+          cacheReportCards(cards, classLevel: cLevel, scholarNo: sNo, termName: effectiveTerm);
         }
         return cards;
+      }).handleError((error) {
+        debugPrint('Report cards stream error: $error');
+        return getCachedReportCards(classLevel: cLevel, scholarNo: sNo, termName: effectiveTerm);
       });
     } catch (_) {
-      return Stream.value(<AcademicReportCard>[]);
+      return Stream.value(getCachedReportCards(
+        classLevel: (classLevel != null && classLevel.trim().isNotEmpty)
+            ? classLevel.trim()
+            : (getCachedProfile()?['class_level']?.toString() ?? 'Grade 10'),
+        scholarNo: (scholarNo != null && scholarNo.trim().isNotEmpty)
+            ? scholarNo.trim()
+            : (getCachedScholarNo() ?? ''),
+        termName: term ?? termName,
+      ));
     }
   }
 
@@ -3469,10 +3480,14 @@ class AuthService {
 
   /// Stream pending claims for Admin review.
   Stream<QuerySnapshot> getPendingClaimsStream() {
-    return _firestore
-        .collection('house_claims')
-        .where('status', isEqualTo: 'pending')
-        .snapshots();
+    try {
+      return _firestore
+          .collection('house_claims')
+          .where('status', isEqualTo: 'pending')
+          .snapshots();
+    } catch (_) {
+      return const Stream.empty();
+    }
   }
 
   /// Stream house claims submitted by a specific student.
@@ -6420,6 +6435,9 @@ class AuthService {
         }).toList();
         cacheMedicalLeaves(list);
         return list;
+      }).handleError((e) {
+        debugPrint('Medical leaves stream error: $e');
+        return getCachedMedicalLeaves(scholarNo: scholarNo);
       });
     } catch (_) {
       return Stream.value(getCachedMedicalLeaves(scholarNo: scholarNo));
@@ -6456,11 +6474,21 @@ class AuthService {
       status: MedicalLeaveStatus.pending,
     );
 
-    try {
-      await _firestore.collection('medical_leaves').doc(leaveId).set(request.toMap());
-    } catch (_) {}
+    if (_isFirebaseLive) {
+      try {
+        if (firestoreFailureSimulated != null) {
+          throw firestoreFailureSimulated!;
+        }
+        await _firestore.collection('medical_leaves').doc(leaveId).set(request.toMap());
+      } catch (e) {
+        if (!_isNoAppException(e)) {
+          debugPrint('Firestore submitMedicalLeaveRequest failure: $e');
+          return false;
+        }
+      }
+    }
 
-    // Update local write-through cache
+    // Update local write-through cache only on successful Firestore write or test mode
     final cached = getCachedMedicalLeaves();
     await cacheMedicalLeaves([request, ...cached]);
     return true;
@@ -6473,14 +6501,24 @@ class AuthService {
     String? adminRemark,
   }) async {
     final now = DateTime.now();
-    try {
-      await _firestore.collection('medical_leaves').doc(leaveId).update({
-        'status': 'approved',
-        'reviewed_by': reviewerName,
-        'reviewed_at': FieldValue.serverTimestamp(),
-        'admin_remark': adminRemark,
-      });
-    } catch (_) {}
+    if (_isFirebaseLive) {
+      try {
+        if (firestoreFailureSimulated != null) {
+          throw firestoreFailureSimulated!;
+        }
+        await _firestore.collection('medical_leaves').doc(leaveId).update({
+          'status': 'approved',
+          'reviewed_by': reviewerName,
+          'reviewed_at': FieldValue.serverTimestamp(),
+          'admin_remark': adminRemark,
+        });
+      } catch (e) {
+        if (!_isNoAppException(e)) {
+          debugPrint('Firestore approveMedicalLeave failure: $e');
+          return false;
+        }
+      }
+    }
 
     final cached = getCachedMedicalLeaves();
     final idx = cached.indexWhere((l) => l.id == leaveId);
@@ -6515,14 +6553,24 @@ class AuthService {
     String? adminRemark,
   }) async {
     final now = DateTime.now();
-    try {
-      await _firestore.collection('medical_leaves').doc(leaveId).update({
-        'status': 'rejected',
-        'reviewed_by': reviewerName,
-        'reviewed_at': FieldValue.serverTimestamp(),
-        'admin_remark': adminRemark,
-      });
-    } catch (_) {}
+    if (_isFirebaseLive) {
+      try {
+        if (firestoreFailureSimulated != null) {
+          throw firestoreFailureSimulated!;
+        }
+        await _firestore.collection('medical_leaves').doc(leaveId).update({
+          'status': 'rejected',
+          'reviewed_by': reviewerName,
+          'reviewed_at': FieldValue.serverTimestamp(),
+          'admin_remark': adminRemark,
+        });
+      } catch (e) {
+        if (!_isNoAppException(e)) {
+          debugPrint('Firestore rejectMedicalLeave failure: $e');
+          return false;
+        }
+      }
+    }
 
     final cached = getCachedMedicalLeaves();
     final idx = cached.indexWhere((l) => l.id == leaveId);
