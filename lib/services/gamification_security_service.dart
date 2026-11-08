@@ -64,8 +64,11 @@ class GamificationSecurityService {
     if (_testOverrideSecret != null && _testOverrideSecret!.isNotEmpty) {
       return _testOverrideSecret!;
     }
-    // Safe resilient fallback for live operation when GAMIFICATION_HMAC_SECRET is omitted
-    return 'asb_house_hub_gamification_secret_production_2026';
+    throw StateError(
+      'Security Exception: GAMIFICATION_HMAC_SECRET is not configured. '
+      'Live operation requires a configured secret via --dart-define=GAMIFICATION_HMAC_SECRET=... '
+      'or GamificationSecurityService.setTestSecret(...) in test harnesses.',
+    );
   }
 
   static bool _constantTimeEquals(String a, String b) {

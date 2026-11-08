@@ -20,8 +20,11 @@ class SportsSecurityService {
     if (_testOverrideSalt != null && _testOverrideSalt!.isNotEmpty) {
       return _testOverrideSalt!;
     }
-    // Safe resilient fallback for live operation when SPORTS_CERT_SECRET is omitted
-    return 'asb_house_hub_sports_salt_production_2026';
+    throw StateError(
+      'Security Exception: SPORTS_CERT_SECRET is not configured. '
+      'Live operation requires a configured salt via --dart-define=SPORTS_CERT_SECRET=... '
+      'or SportsSecurityService.setTestSalt(...) in test harnesses.',
+    );
   }
 
   static bool _constantTimeEquals(String a, String b) {
