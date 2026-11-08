@@ -229,6 +229,15 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
           : 'Could not approve timetable. Check for room or teacher conflicts.',
       error: !ok,
     );
+    if (ok) {
+      final fanOut = _timetableService.lastNotificationResult;
+      if (fanOut != null && fanOut.failed > 0) {
+        _toast(
+          fanOut.warning ?? 'Notifications could not reach all recipients.',
+          error: true,
+        );
+      }
+    }
   }
 
   Future<void> _rejectSubmittedTimetable(ClassTimetableVersion version) async {

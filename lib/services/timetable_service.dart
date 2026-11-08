@@ -306,6 +306,7 @@ class TimetableService {
           version: published.version,
           publisherUid: publisherUid,
           publisherName: publisherName,
+          overrideDate: published.overrideDate,
         );
       } catch (e) {
         debugPrint('Timetable notification fan-out failed: $e');
@@ -625,9 +626,9 @@ class TimetableService {
           '${publish ? 'Published' : 'Saved draft'} one-day override for ${_dateLabel(cleanDate)}.',
     );
 
-    final substitutes =
-        override.slots.where((s) => s.hasSubstitute).length;
-    if (substitutes > 0) {
+    final substitutedSlots =
+        override.slots.where((s) => s.hasSubstitute).toList();
+    if (substitutedSlots.isNotEmpty) {
       await writeTimetableAudit(
         action: 'substitute',
         classId: override.classId,
@@ -637,8 +638,30 @@ class TimetableService {
         actorUid: actorUid,
         actorName: actorName,
         details:
-            'Marked $substitutes substitute teacher${substitutes == 1 ? '' : 's'} for ${_dateLabel(cleanDate)}.',
+            'Marked ${substitutedSlots.length} substitute teacher${substitutedSlots.length == 1 ? '' : 's'} for ${_dateLabel(cleanDate)}.',
       );
+
+      // M3 / test 60: notify class and substitute teachers when published
+      if (publish && _isLive) {
+        for (final slot in substitutedSlots) {
+          try {
+            await _notifications.notifyTimetableSubstitution(
+              classId: override.classId,
+              dayOfWeek: override.dayOfWeek,
+              date: cleanDate,
+              periodNumber: slot.periodNumber,
+              subject: slot.subject,
+              originalTeacherName: slot.teacherName,
+              substituteTeacherName: slot.substituteTeacherName,
+              substituteTeacherUid: slot.substituteTeacherUid,
+              actorUid: actorUid,
+              actorName: actorName,
+            );
+          } catch (e) {
+            debugPrint('Substitution notification fan-out failed: $e');
+          }
+        }
+      }
     }
 
     return override;

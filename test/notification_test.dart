@@ -20,6 +20,7 @@ class _RecordingNotificationService extends NotificationService {
   String lastPriority = '';
   String lastDedupe = '';
   String lastSource = '';
+  String lastRoomId = '';
   NotificationFanOutResult result = const NotificationFanOutResult(
     total: 0,
     sent: 0,
@@ -47,6 +48,7 @@ class _RecordingNotificationService extends NotificationService {
     lastPriority = priority;
     lastDedupe = dedupeKey;
     lastSource = sourceId;
+    lastRoomId = roomId;
     return result;
   }
 }
@@ -92,6 +94,7 @@ void main() {
     String priority = 'high',
     String dedupeKey = 'timetable_v1',
     String sourceId = 'v1',
+    String roomId = '',
     bool isRead = false,
     DateTime? timestamp,
   }) {
@@ -104,6 +107,7 @@ void main() {
       priority: priority,
       dedupeKey: dedupeKey,
       sourceId: sourceId,
+      roomId: roomId,
       isRead: isRead,
       timestamp: timestamp ?? DateTime(2026, 11, 8, 9, 30),
     );
@@ -412,6 +416,27 @@ void main() {
       );
       expect(payload.containsKey('is_read'), isFalse);
     });
+
+    test('deleteNotification fails truthfully when offline or denied', () async {
+      AuthService.isFirebaseLiveOverride = false;
+      final offlineOk = await service.deleteNotification('notif_1');
+      expect(offlineOk, isFalse);
+
+      AuthService.isFirebaseLiveOverride = true;
+      NotificationService.firestoreFailureSimulated =
+          Exception('permission-denied');
+      final deniedOk = await service.deleteNotification('notif_1');
+      expect(deniedOk, isFalse);
+    });
+
+    test('clearAll returns true for empty lists and false when offline', () async {
+      AuthService.isFirebaseLiveOverride = false;
+      final emptyOk = await service.clearAll([]);
+      expect(emptyOk, isTrue);
+
+      final listOk = await service.clearAll([notification(id: 'n1')]);
+      expect(listOk, isFalse);
+    });
   });
 
   group('M6d: event conveniences and publish hook', () {
@@ -516,6 +541,106 @@ void main() {
       expect(recorder.lastTitle, contains('11D'));
       expect(timetable.lastNotificationResult?.sent, 2);
     });
+
+    test(
+        '60: teacher substitution notification targets class roster and substitute teacher',
+        () async {
+      final recorder = _RecordingNotificationService();
+      final date = DateTime(2026, 11, 10);
+      final result = await recorder.notifyTimetableSubstitution(
+        classId: '11D',
+        dayOfWeek: 'Tuesday',
+        date: date,
+        periodNumber: 3,
+        subject: 'Physics',
+        originalTeacherName: 'Mr. Khan',
+        substituteTeacherName: 'Ms. Sarah',
+        substituteTeacherUid: 'uid_sub_teacher',
+        actorUid: 'uid_admin_1',
+      );
+
+      expect(result.isComplete, isTrue);
+      expect(recorder.lastRecipients,
+          ['uid_student_1', 'uid_student_2', 'uid_sub_teacher']);
+      expect(recorder.lastCategory, 'timetable');
+      expect(recorder.lastType, 'timetable_substitution');
+      expect(recorder.lastPriority, 'high');
+      expect(recorder.lastTitle, contains('Physics'));
+      expect(recorder.lastTitle, contains('Period 3'));
+      expect(recorder.lastBody, contains('Ms. Sarah'));
+      expect(recorder.lastBody, contains('Mr. Khan'));
+      expect(recorder.lastDedupe, 'tt_sub_11D_2026-11-10_p3');
+      expect(recorder.lastRoomId, '11D');
+    });
+
+    test(
+        '60: timetable override notification formats temporary schedule announcement',
+        () async {
+      final recorder = _RecordingNotificationService();
+      final date = DateTime(2026, 11, 12);
+      await recorder.notifyTimetablePublished(
+        classId: '11D',
+        versionId: 'v_override_1',
+        dayOfWeek: 'Thursday',
+        version: 1,
+        publisherUid: 'uid_teacher_1',
+        publisherName: 'Ms. Fatima',
+        overrideDate: date,
+      );
+
+      expect(recorder.lastCategory, 'timetable');
+      expect(recorder.lastType, 'timetable_override');
+      expect(recorder.lastPriority, 'high');
+      expect(recorder.lastTitle, '📅 Timetable override — 11D');
+      expect(recorder.lastBody, contains('temporary schedule'));
+      expect(recorder.lastDedupe, 'tt_override_11D_2026-11-12_v1');
+      expect(recorder.lastRoomId, '11D');
+    });
+
+    test('saveTimetableOverride with publish triggers substitution notification',
+        () async {
+      final recorder = _RecordingNotificationService()
+        ..result = const NotificationFanOutResult(
+          total: 3,
+          sent: 3,
+          failed: 0,
+        );
+      final timetable = TimetableService(notifications: recorder);
+      AuthService.isFirebaseLiveOverride = true;
+
+      final recurring = ClassTimetableVersion.template(
+        classId: '11D',
+        dayOfWeek: 'Monday',
+        createdByUid: 'uid_teacher_1',
+        createdByName: 'Ms. Fatima',
+      );
+
+      final withSub = recurring.slots.map((s) {
+        if (s.periodNumber == 2) {
+          return s.copyWith(
+            substituteTeacherName: 'Ms. Sarah',
+            substituteTeacherUid: 'uid_sub_teacher',
+          );
+        }
+        return s;
+      }).toList();
+
+      final overrideDraft = recurring.copyWith(slots: withSub);
+      final date = DateTime(2026, 11, 16);
+
+      final saved = await timetable.saveTimetableOverride(
+        overrideDraft,
+        date: date,
+        actorUid: 'uid_teacher_1',
+        actorName: 'Ms. Fatima',
+        publish: true,
+        enforceConflicts: false,
+      );
+
+      expect(saved, isNotNull);
+      expect(recorder.lastType, 'timetable_substitution');
+      expect(recorder.lastTitle, contains('Period 2'));
+    });
   });
 
   group('M6e: rules source contract', () {
@@ -587,6 +712,9 @@ void main() {
       required Stream<List<AppNotification>> stream,
       Future<bool> Function(AppNotification)? onMarkRead,
       Future<bool> Function(List<AppNotification>)? onMarkAllRead,
+      Future<void> Function(AppNotification)? onNotificationTap,
+      Future<bool> Function(AppNotification)? onDeleteNotification,
+      Future<bool> Function(List<AppNotification>)? onClearAll,
     }) async {
       await tester.pumpWidget(
         MaterialApp(
@@ -594,6 +722,9 @@ void main() {
             notificationsStream: stream,
             onMarkRead: onMarkRead,
             onMarkAllRead: onMarkAllRead,
+            onNotificationTap: onNotificationTap,
+            onDeleteNotification: onDeleteNotification,
+            onClearAll: onClearAll,
           ),
         ),
       );
@@ -698,6 +829,97 @@ void main() {
         find.text('Could not mark the notification as read. Try again.'),
         findsOneWidget,
       );
+    });
+
+    testWidgets(
+        'tapping notification invokes onNotificationTap deep link callback',
+        (tester) async {
+      AppNotification? opened;
+      final messages = [
+        notification(
+          id: 'n1',
+          title: 'Class announcement',
+          category: 'class',
+          roomId: '11D',
+        ),
+      ];
+      await pumpCenter(
+        tester,
+        stream: Stream.value(messages),
+        onMarkRead: (n) async => true,
+        onNotificationTap: (n) async {
+          opened = n;
+        },
+      );
+
+      await tester.tap(find.byKey(const Key('notification_tile_n1')));
+      await tester.pumpAndSettle();
+
+      expect(opened?.id, 'n1');
+      expect(opened?.category, 'class');
+      expect(opened?.roomId, '11D');
+    });
+
+    testWidgets('delete button invokes onDeleteNotification', (tester) async {
+      AppNotification? deleted;
+      final messages = [notification(id: 'n1', title: 'Test alert')];
+      await pumpCenter(
+        tester,
+        stream: Stream.value(messages),
+        onDeleteNotification: (n) async {
+          deleted = n;
+          return true;
+        },
+      );
+
+      await tester.tap(find.byKey(const Key('notification_delete_n1')));
+      await tester.pumpAndSettle();
+
+      expect(deleted?.id, 'n1');
+    });
+
+    testWidgets('dismissible swipe invokes onDeleteNotification', (tester) async {
+      AppNotification? dismissed;
+      final messages = [notification(id: 'n1', title: 'Swipe me')];
+      await pumpCenter(
+        tester,
+        stream: Stream.value(messages),
+        onDeleteNotification: (n) async {
+          dismissed = n;
+          return true;
+        },
+      );
+
+      await tester.drag(
+        find.byKey(const Key('notification_dismiss_n1')),
+        const Offset(-500, 0),
+      );
+      await tester.pumpAndSettle();
+
+      expect(dismissed?.id, 'n1');
+    });
+
+    testWidgets(
+        'clear all button sends full notification list to onClearAll',
+        (tester) async {
+      List<AppNotification>? cleared;
+      final messages = [
+        notification(id: 'n1'),
+        notification(id: 'n2'),
+      ];
+      await pumpCenter(
+        tester,
+        stream: Stream.value(messages),
+        onClearAll: (list) async {
+          cleared = list;
+          return true;
+        },
+      );
+
+      await tester.tap(find.byKey(const Key('notification_clear_all')));
+      await tester.pumpAndSettle();
+
+      expect(cleared?.length, 2);
     });
   });
 }

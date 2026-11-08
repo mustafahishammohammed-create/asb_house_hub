@@ -2,24 +2,34 @@ import 'package:flutter/material.dart';
 
 import '../models/app_notification.dart';
 import '../services/notification_service.dart';
+import 'academics_screen.dart';
+import 'class_group_screen.dart';
+import 'house_group_screen.dart';
 
 /// In-app notification center (M6).
 ///
 /// Renders the signed-in user's notification stream, supports per-item and
-/// bulk read marking, and surfaces priority/category without requiring FCM.
+/// bulk read marking, tap navigation/deep-linking, dismiss/clear controls,
+/// and surfaces priority/category without requiring FCM.
 class NotificationCenterScreen extends StatefulWidget {
   /// Test hook so widget tests can render without Firebase.
   final Stream<List<AppNotification>>? notificationsStream;
 
-  /// Test hooks for read actions; default to [NotificationService].
+  /// Test hooks for actions; default to [NotificationService].
   final Future<bool> Function(AppNotification notification)? onMarkRead;
   final Future<bool> Function(List<AppNotification> notifications)? onMarkAllRead;
+  final Future<void> Function(AppNotification notification)? onNotificationTap;
+  final Future<bool> Function(AppNotification notification)? onDeleteNotification;
+  final Future<bool> Function(List<AppNotification> notifications)? onClearAll;
 
   const NotificationCenterScreen({
     super.key,
     this.notificationsStream,
     this.onMarkRead,
     this.onMarkAllRead,
+    this.onNotificationTap,
+    this.onDeleteNotification,
+    this.onClearAll,
   });
 
   @override
@@ -45,6 +55,82 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Could not mark the notification as read. Try again.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
+  }
+
+  Future<void> _handleTap(AppNotification notification) async {
+    if (notification.isUnread) {
+      await _markRead(notification);
+    }
+    if (!mounted) return;
+
+    if (widget.onNotificationTap != null) {
+      await widget.onNotificationTap!(notification);
+      return;
+    }
+
+    final cat = notification.category;
+    final type = notification.type;
+    final room = notification.roomId.trim();
+
+    if (cat == 'timetable' || type.startsWith('timetable')) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => AcademicsScreen(
+            initialTab: 'timetable',
+            classLevel: room.isNotEmpty ? room : null,
+          ),
+        ),
+      );
+    } else if (cat == 'house' || type.startsWith('house')) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => HouseGroupScreen(
+            initialHouseId: room.isNotEmpty ? room : null,
+          ),
+        ),
+      );
+    } else if (cat == 'class' || type.startsWith('class')) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ClassGroupScreen(
+            initialClassId: room.isNotEmpty ? room : null,
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _deleteNotification(AppNotification notification) async {
+    final ok = widget.onDeleteNotification != null
+        ? await widget.onDeleteNotification!(notification)
+        : await _service.deleteNotification(notification.id);
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not delete the notification.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
+  }
+
+  Future<void> _clearAll(List<AppNotification> notifications) async {
+    final ok = widget.onClearAll != null
+        ? await widget.onClearAll!(notifications)
+        : await _service.clearAll(notifications);
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not clear all notifications.'),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -94,28 +180,54 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           }
           return Column(
             children: [
-              if (unread > 0)
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-                    child: TextButton.icon(
-                      key: const Key('notification_mark_all'),
-                      onPressed: () => _markAllRead(notifications),
-                      icon: const Icon(Icons.done_all_rounded, size: 18),
-                      label: Text('Mark all read ($unread)'),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                child: Row(
+                  children: [
+                    if (unread > 0)
+                      TextButton.icon(
+                        key: const Key('notification_mark_all'),
+                        onPressed: () => _markAllRead(notifications),
+                        icon: const Icon(Icons.done_all_rounded, size: 18),
+                        label: Text('Mark all read ($unread)'),
+                      ),
+                    const Spacer(),
+                    TextButton.icon(
+                      key: const Key('notification_clear_all'),
+                      onPressed: () => _clearAll(notifications),
+                      icon: const Icon(Icons.delete_sweep_outlined, size: 18),
+                      label: const Text('Clear all'),
                     ),
-                  ),
+                  ],
                 ),
+              ),
               Expanded(
                 child: ListView.separated(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
                   itemCount: notifications.length,
                   separatorBuilder: (_, _) => const SizedBox(height: 10),
-                  itemBuilder: (context, index) => _buildTile(
-                    notifications[index],
-                    isDark,
-                  ),
+                  itemBuilder: (context, index) {
+                    final item = notifications[index];
+                    return Dismissible(
+                      key: Key('notification_dismiss_${item.id}'),
+                      direction: DismissDirection.endToStart,
+                      background: Container(
+                        alignment: Alignment.centerRight,
+                        padding: const EdgeInsets.only(right: 20),
+                        decoration: BoxDecoration(
+                          color: Colors.redAccent.withValues(alpha: 0.85),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Icon(
+                          Icons.delete_outline_rounded,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                      ),
+                      onDismissed: (_) => _deleteNotification(item),
+                      child: _buildTile(item, isDark),
+                    );
+                  },
                 ),
               ),
             ],
@@ -171,7 +283,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       child: InkWell(
         key: Key('notification_tile_${notification.id}'),
         borderRadius: BorderRadius.circular(16),
-        onTap: () => _markRead(notification),
+        onTap: () => _handleTap(notification),
         child: Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
@@ -226,6 +338,20 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                               shape: BoxShape.circle,
                             ),
                           ),
+                        const SizedBox(width: 4),
+                        InkWell(
+                          key: Key('notification_delete_${notification.id}'),
+                          onTap: () => _deleteNotification(notification),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Padding(
+                            padding: const EdgeInsets.all(4),
+                            child: Icon(
+                              Icons.close_rounded,
+                              size: 16,
+                              color: isDark ? Colors.white38 : Colors.black26,
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                     if (notification.isHighPriority) ...[

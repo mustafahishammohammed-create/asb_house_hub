@@ -483,6 +483,17 @@ class _TeacherTimetableEditorScreenState
             backgroundColor: const Color(0xFF10B981),
           ),
         );
+
+        final fanOut = _timetableService.lastNotificationResult;
+        if (fanOut != null && fanOut.failed > 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(fanOut.warning ??
+                  'Timetable published, but notifications could not be delivered.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

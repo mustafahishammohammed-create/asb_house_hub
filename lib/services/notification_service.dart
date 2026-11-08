@@ -191,6 +191,64 @@ class NotificationService {
   }
 
   // ===============================================================
+  // Deletion / Clear
+  // ===============================================================
+
+  /// Deletes a single notification document owned by the signed-in user.
+  /// Server-enforced: rules allow delete if `isOwner(userId) || isAdmin()`.
+  Future<bool> deleteNotification(String notificationId) async {
+    final id = notificationId.trim();
+    final uid = currentUserId;
+    if (id.isEmpty || uid.isEmpty || !AuthService.isFirebaseLive) return false;
+    if (firestoreFailureSimulated != null) return false;
+    try {
+      await _firestore
+          .collection('users')
+          .doc(uid)
+          .collection('notifications')
+          .doc(id)
+          .delete();
+      return true;
+    } catch (e) {
+      debugPrint('Notification delete failed: $e');
+      return false;
+    }
+  }
+
+  /// Clears multiple notifications owned by the signed-in user in batched writes.
+  Future<bool> clearAll(List<AppNotification> notifications) async {
+    final ids = notifications
+        .map((n) => n.id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList();
+    if (ids.isEmpty) return true;
+
+    final uid = currentUserId;
+    if (uid.isEmpty || !AuthService.isFirebaseLive) return false;
+    if (firestoreFailureSimulated != null) return false;
+
+    try {
+      for (var start = 0; start < ids.length; start += batchLimit) {
+        final end = (start + batchLimit) > ids.length
+            ? ids.length
+            : start + batchLimit;
+        final batch = _firestore.batch();
+        final collection =
+            _firestore.collection('users').doc(uid).collection('notifications');
+        for (var i = start; i < end; i++) {
+          batch.delete(collection.doc(ids[i]));
+        }
+        await batch.commit();
+      }
+      return true;
+    } catch (e) {
+      debugPrint('Notification clearAll failed: $e');
+      return false;
+    }
+  }
+
+  // ===============================================================
   // Recipient resolution
   // ===============================================================
 
@@ -424,11 +482,23 @@ class NotificationService {
   static String _clip(String value, int max) =>
       value.length <= max ? value : value.substring(0, max);
 
+  static String _formatDateLabel(DateTime date) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    final m = (date.month >= 1 && date.month <= 12)
+        ? months[date.month - 1]
+        : '${date.month}';
+    return '$m ${date.day}, ${date.year}';
+  }
+
   // ===============================================================
   // Event conveniences
   // ===============================================================
 
   /// Test 60: a published timetable notifies the verified class roster.
+  /// If [overrideDate] is non-null, creates a temporary override announcement.
   Future<NotificationFanOutResult> notifyTimetablePublished({
     required String classId,
     required String versionId,
@@ -436,29 +506,109 @@ class NotificationService {
     required int version,
     required String publisherUid,
     String publisherName = '',
+    DateTime? overrideDate,
   }) async {
     final id = classId.trim().toUpperCase();
-    final source = versionId.trim().isEmpty
-        ? 'tt_${id}_${dayOfWeek.trim()}_v$version'
-        : versionId.trim();
     final recipients = await resolveRecipients(
       scope: 'class',
       scopeId: id,
       excludeUid: publisherUid,
     );
     final publisher = publisherName.trim();
-    final body = publisher.isEmpty
-        ? 'A new ${dayOfWeek.trim()} timetable (v$version) is now live.'
-        : '$publisher published a new ${dayOfWeek.trim()} timetable (v$version).';
+    final bool isOverride = overrideDate != null;
+    final dateStr = isOverride
+        ? overrideDate.toIso8601String().split('T').first
+        : '';
+    final dateFormatted = isOverride ? _formatDateLabel(overrideDate) : '';
+
+    final String title;
+    final String body;
+    final String type;
+    final String dedupeKey;
+    final String source;
+
+    if (isOverride) {
+      source = versionId.trim().isEmpty
+          ? 'tt_override_${id}_${dateStr}_v$version'
+          : versionId.trim();
+      title = '📅 Timetable override — $id';
+      body = publisher.isEmpty
+          ? 'A temporary schedule for $dateFormatted (v$version) is now live.'
+          : '$publisher published a temporary schedule for $dateFormatted (v$version).';
+      type = 'timetable_override';
+      dedupeKey = 'tt_override_${id}_${dateStr}_v$version';
+    } else {
+      source = versionId.trim().isEmpty
+          ? 'tt_${id}_${dayOfWeek.trim()}_v$version'
+          : versionId.trim();
+      title = '📅 Timetable updated — $id';
+      body = publisher.isEmpty
+          ? 'A new ${dayOfWeek.trim()} timetable (v$version) is now live.'
+          : '$publisher published a new ${dayOfWeek.trim()} timetable (v$version).';
+      type = 'timetable_published';
+      dedupeKey = 'timetable_$source';
+    }
+
     return fanOutToUsers(
       recipientUids: recipients,
-      title: '📅 Timetable updated — $id',
+      title: title,
       body: body,
-      type: 'timetable_published',
+      type: type,
       category: 'timetable',
       priority: 'high',
-      dedupeKey: 'timetable_$source',
+      dedupeKey: dedupeKey,
       sourceId: source,
+      roomId: id,
+    );
+  }
+
+  /// Teacher substitution notification (M3 / test 60):
+  /// Notifies the verified class roster AND the assigned substitute teacher.
+  Future<NotificationFanOutResult> notifyTimetableSubstitution({
+    required String classId,
+    required String dayOfWeek,
+    required DateTime date,
+    required int periodNumber,
+    required String subject,
+    required String originalTeacherName,
+    required String substituteTeacherName,
+    required String substituteTeacherUid,
+    required String actorUid,
+    String actorName = '',
+  }) async {
+    final id = classId.trim().toUpperCase();
+    final recipients = await resolveRecipients(
+      scope: 'class',
+      scopeId: id,
+      excludeUid: actorUid,
+    );
+    final allRecipients = Set<String>.from(recipients);
+    final subUid = substituteTeacherUid.trim();
+    if (subUid.isNotEmpty && subUid != actorUid) {
+      allRecipients.add(subUid);
+    }
+
+    final dateStr = date.toIso8601String().split('T').first;
+    final dateFormatted = _formatDateLabel(date);
+    final orig = originalTeacherName.trim().isEmpty
+        ? 'regular teacher'
+        : originalTeacherName.trim();
+    final sub = substituteTeacherName.trim().isEmpty
+        ? 'A substitute teacher'
+        : substituteTeacherName.trim();
+    final subj = subject.trim().isEmpty ? 'Class' : subject.trim();
+
+    return fanOutToUsers(
+      recipientUids: allRecipients,
+      title: '🔄 Substitution: $subj (Period $periodNumber)',
+      body:
+          '$sub will be substituting for $orig in $subj ($id) on $dateFormatted.',
+      type: 'timetable_substitution',
+      category: 'timetable',
+      priority: 'high',
+      dedupeKey: 'tt_sub_${id}_${dateStr}_p$periodNumber',
+      sourceId: '${id}_${dateStr}_p$periodNumber',
+      roomId: id,
     );
   }
 
@@ -488,6 +638,7 @@ class NotificationService {
       priority: 'high',
       dedupeKey: 'house_${id}_$source',
       sourceId: source,
+      roomId: id,
     );
   }
 
@@ -518,6 +669,7 @@ class NotificationService {
       priority: 'high',
       dedupeKey: 'class_${id}_$source',
       sourceId: source,
+      roomId: id,
     );
   }
 
