@@ -16,7 +16,7 @@
 | Module | Status | Evidence |
 |---|---|---|
 | **M1 — Academic foundation** | ✅ **DONE** (committed `d5ce809`, pushed; rules deployed) | `lib/models/academic_class.dart`, `admin_academics_screen.dart`, registry + verification methods in `auth_service.dart`, `academic_classes` rules matcher, `test/academic_structure_test.dart` (29 tests) |
-| **M2 — Teacher-managed recurring timetable engine (M2a–M2f)** | ✅ **DONE** (rules deployed to cloud, 45/45 M2 tests pass, full suite 433/433 clean, analyze 0 errors/0 warnings) | `lib/models/class_timetable.dart`, `lib/models/academic_class.dart`, `lib/services/timetable_service.dart`, `lib/services/hierarchy_service.dart`, `lib/services/auth_service.dart`, `lib/screens/teacher_timetable_editor_screen.dart`, `lib/screens/academics_screen.dart`, `firestore.rules`, `test/class_timetable_test.dart` (18), `test/timetable_engine_test.dart` (19), `test/teacher_timetable_editor_test.dart` (8) |
+| **M2 — Teacher-managed recurring timetable engine (M2a–M2f)** | 🟡 **PARTIAL** at `23a87cd` (engine + UI + rules matchers exist; robustness overclaimed). Blockers V1–V4 in [`M2_VERIFICATION.md`](M2_VERIFICATION.md). Do not start M3 until those are fixed. | Same files. Independent check: slots 1–6 / overlap not in rules, `rejection_reason` not whitelisted, senior can rewrite published docs, editor button not gated by `canEditTimetable` (falls back to class `10A`). |
 | **M3 — Timetable advanced** | ❌ **NOT STARTED** | double-booking, copy-to-days, temporary overrides, substitution |
 | **M4 — House groups** | ❌ **NOT STARTED** | role-restricted send, students read-only |
 | **M5 — Class groups** | ❌ **NOT STARTED** | per-class channel + announcements |
@@ -50,7 +50,9 @@
 **Depends on:** M1 (canonical `class_id`, verification gate, `academic_classes` registry). ✅ available.
 
 ### Current state
-- **M2a–M2f COMPLETE & VERIFIED:**
+Independent check of `23a87cd`: **partial**. The bullets below describe what is in the tree. Robustness and definition of done were corrected above the fold and in [`M2_VERIFICATION.md`](M2_VERIFICATION.md). Do not treat the implementer’s “433/433 and rules lock 45/30” note as verified.
+
+- **M2a–M2f present in tree, not fully verified:**
   - **M2a Model:** [`lib/models/class_timetable.dart`](file:///C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/lib/models/class_timetable.dart) (~440 lines) + [`test/class_timetable_test.dart`](file:///C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/class_timetable_test.dart) (**18/18 pass**). Implements 6 school days Sat–Thu, 8 periods × 45 min + 30 min break, `validate()`, `activeForDate()`, and ISO-8601 serializable cache maps.
   - **M2b Identity & Permissions:** [`lib/models/academic_class.dart`](file:///C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/lib/models/academic_class.dart) and [`lib/services/hierarchy_service.dart`](file:///C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/lib/services/hierarchy_service.dart) implement `classTeacherUid`, `timetableEditorUids`, `timetableEditingEnabled`, `timetableRequiresApproval`, `HierarchyService.isSeniorAdmin`, and `HierarchyService.canEditTimetable` (enforces Acceptance Test 35 denial for unassigned teachers).
   - **M2c Versioned Timetable Service:** [`lib/services/timetable_service.dart`](file:///C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/lib/services/timetable_service.dart) implements truthful writes (`firestoreFailureSimulated` support), section-aware caching (`timetable_active_${classId}_${dayOfWeek}` and `timetable_history_${classId}_${dayOfWeek}`), `saveTimetableDraft`, `submitTimetable`, `publishTimetable`, `rejectTimetable`, `restoreTimetableVersion` (creates a new version, linking `supersedesId`), and append-only audits.
@@ -106,18 +108,18 @@
 - `flutter analyze` 0 errors; full suite green; `firebase deploy --only firestore:rules` then re-run says "already up to date"; commit + push.
 
 ### Robustness checklist (M2)
-- [x] Durations enforced **server-side in rules**, not just UI (8×45 + 30 break).
-- [x] No overlap / chronological order validated in rules + model.
-- [x] Per-class editor permission enforced in rules (test 35 denial).
-- [x] Students cannot write any timetable version (rules denial test).
-- [x] History immutable; restore creates a new version; audit append-only.
-- [x] Truthful writes + `.handleError` cache fallback on all streams.
+- [ ] Durations and break placement enforced **server-side in rules**, not just UI. Size is 8 and end-minute is not a stored field (client derives +45 / +30). Slots 1–6, overlap, and break-vs-period are **not** in the rules (V1).
+- [ ] No overlap / chronological order validated in rules + model. Model `validate()` yes; rules no (V1).
+- [x] Per-class editor permission enforced in rules (`isTimetableEditor`). Test 35 is a client helper test only; the Edit button is not gated (V4).
+- [x] Students are not `isTimetableEditor` (requires `isAdmin()`). No emulator denial test was run (V8).
+- [ ] History immutable. Restore creates a new version; audit create-only is real. Senior admins can still `update` a published version in place (V3).
+- [x] Version writes return false on simulated Firestore failure; streams use `.handleError`. Audit write still returns true and caches on denial (V6). `rejectTimetable` live path is denied (V2).
 - [x] Section-aware cache keys; legacy grade-keyed path preserved.
-- [x] Six-day Sat–Thu week; each day independent (no auto-copy).
-- [x] Publish triggers roster sync + notifications (M6 foundation).
+- [x] Six-day Sat–Thu week; each day independent (no auto-copy). Copy-to-days is M3.
+- [ ] Publish triggers roster sync + notifications. Active-version stream syncs listeners. No notification docs (V5, owned by M6 / test 60).
 
 ### Definition of done (M2)
-✅ **COMPLETE & DELIVERED:** Acceptance tests **9–30, 34–38** pass via UI **and** direct rules denial; rules deployed to `cloud.firestore`; full suite (433/433) green; committed + pushed. (Tests 31–33 copy/temporary belong to M3 — see below.)
+🟡 **Not done.** `23a87cd` is pushed and the engine is real, but see [`M2_VERIFICATION.md`](M2_VERIFICATION.md). Tests 9–15, 21–30, 34 (client), and 38 (stream) have UI/unit coverage. Tests 16–17 and 34 are not rules-enforced (V1). Test 35 is not on the editor route (V4). Test 36 reject cannot persist (V2). Test 37 in-place senior edit breaks history (V3). “Direct rules denial” was substring matching, not the emulator (V8). Full-suite 433/433 was reported by the implementer and was **not** re-run for this check. Tests 31–33 stay in M3.
 
 ---
 
@@ -302,9 +304,8 @@ From `academics_audit/REMEDIATION_ROADMAP.md` P2 (A7 + A9). LOW severity, admin-
 
 ## Recommended build order (when credits allow)
 
-1. **Commit M2a** (model + 18 tests) so the drafted work isn't lost — it's currently untracked.
-2. **M2b → M2c → M2d → M2e → M2f** (the engine; spec centerpiece). Reconcile the 5-day→6-day week conflict in M2e; keep legacy tests green.
-3. **M3** (advanced scheduling) — completes timetable acceptance tests 18–19, 31–33.
+1. **Close M2 blockers V1–V4** in [`M2_VERIFICATION.md`](M2_VERIFICATION.md) (rules slot/overlap/break, reject field, published immutability, editor gate). M2a is already in `f8095fd`; the 6-day week is already in the student tab.
+2. **M3** only after that commit is pushed — tests 18–19, 31–33.
 4. **M4** (house groups) — independent of M2/M3; high security value (read-only students).
 5. **M5** (class groups) — reuses M4 machinery + new roles.
 6. **M6** (notifications) — wires M2/M4/M5 events.
