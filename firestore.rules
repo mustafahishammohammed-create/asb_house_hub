@@ -29,9 +29,13 @@ rules_version = '2';
 //    - title: string (1-100 chars)
 //    - body: string (1-500 chars)
 //    - timestamp: timestamp
-//    - is_read: bool
+//    - is_read: bool (optional; absent means unread)
 //    - type: string (optional, <= 50 chars)
 //    - room_id: string (optional, <= 128 chars)
+//    - category: string (optional; timetable|house|class|chat|points|system)
+//    - priority: string (optional; normal|high|urgent)
+//    - dedupe_key: string (optional, 1-200 chars)
+//    - source_id: string (optional, <= 128 chars)
 //
 // 3. admin_roster/{docId}
 //    - slot_id: string (optional, <= 64 chars)
@@ -486,14 +490,33 @@ service cloud.firestore {
     }
 
     function isValidNotification(data) {
-      return hasOnlyAllowedFields(['title', 'body', 'timestamp', 'is_read', 'type', 'room_id']) &&
-        hasRequiredFields(['title', 'body', 'timestamp', 'is_read']) &&
+      return hasOnlyAllowedFields([
+          'title', 'body', 'timestamp', 'is_read', 'type', 'room_id',
+          'category', 'priority', 'dedupe_key', 'source_id'
+        ]) &&
+        hasRequiredFields(['title', 'body', 'timestamp']) &&
         data.title is string && data.title.size() >= 1 && data.title.size() <= 100 &&
         data.body is string && data.body.size() >= 1 && data.body.size() <= 500 &&
-        data.is_read is bool &&
+        (!('is_read' in data) || data.is_read is bool) &&
         data.timestamp is timestamp &&
         (!('type' in data) || (data.type is string && data.type.size() <= 50)) &&
-        (!('room_id' in data) || (data.room_id is string && data.room_id.size() <= 128));
+        (!('room_id' in data) || (data.room_id is string && data.room_id.size() <= 128)) &&
+        (!('category' in data) || (
+          data.category is string &&
+          data.category in ['timetable', 'house', 'class', 'chat', 'points', 'system']
+        )) &&
+        (!('priority' in data) || (
+          data.priority is string &&
+          data.priority in ['normal', 'high', 'urgent']
+        )) &&
+        (!('dedupe_key' in data) || (
+          data.dedupe_key is string &&
+          data.dedupe_key.size() >= 1 &&
+          data.dedupe_key.size() <= 200
+        )) &&
+        (!('source_id' in data) || (
+          data.source_id is string && data.source_id.size() <= 128
+        ));
     }
 
     function isValidAcademicClass(data) {
@@ -1110,9 +1133,25 @@ service cloud.firestore {
       match /notifications/{notificationId} {
         allow read: if isOwner(userId) || isAdmin();
         allow create: if isSignedIn() && isValidNotification(request.resource.data);
-        allow update: if isOwner(userId) &&
+        // The owner may toggle read state. The M6 fan-out may refresh an
+        // existing deduplicated event notification (same dedupe/source) without
+        // ever touching is_read, so a retry cannot make a read item unread.
+        allow update: if (
+          isOwner(userId) &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['is_read']) &&
-          request.resource.data.is_read is bool;
+          request.resource.data.is_read is bool
+        ) || (
+          isSignedIn() &&
+          'dedupe_key' in resource.data &&
+          'source_id' in resource.data &&
+          request.resource.data.dedupe_key == resource.data.dedupe_key &&
+          request.resource.data.source_id == resource.data.source_id &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'title', 'body', 'timestamp', 'type', 'room_id',
+            'category', 'priority', 'dedupe_key', 'source_id'
+          ]) &&
+          isValidNotification(request.resource.data)
+        );
         allow delete: if isOwner(userId) || isAdmin();
       }
     }

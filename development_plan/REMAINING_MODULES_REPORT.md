@@ -20,7 +20,7 @@
 | **M3 — Timetable advanced** | ✅ **DONE for scope** (2026-11-08). Client-side double-booking, copy-to-selected-days, one-day overrides, substitution markers. Notification fan-out stays in M6. See [`M3_VERIFICATION.md`](M3_VERIFICATION.md). | double-booking, copy-to-days, temporary overrides, substitution |
 | **M4 — House groups** | ✅ **DONE for scope** (2026-11-08, commit `4caeae5`; rules deployed). See [`M4_VERIFICATION.md`](M4_VERIFICATION.md). | profile-derived membership, rules-enforced sender roles, categories, pin/hide/delete moderation, cross-house isolation/transfer |
 | **M5 — Class groups** | ✅ **DONE for scope** (2026-11-08, rules deployed). See [`M5_VERIFICATION.md`](M5_VERIFICATION.md). | verified-class auto-membership, class-teacher/subject-teacher/representative send, configurable student posting, cross-class isolation |
-| **M6 — Notification engine** | ❌ **NOT STARTED** | in-app notifications (Spark) |
+| **M6 — Notification engine** | ✅ **DONE for scope** (2026-11-08, rules deployed). See [`M6_VERIFICATION.md`](M6_VERIFICATION.md). | timetable publish (60), house announcement (61), class announcement (62), deterministic dedupe, priority, mark-all-read |
 | **M7 — Admin Command Center expansion** | ❌ **NOT STARTED** | academic/teacher/house/group/user mgmt, approval queue, audit viewer, promotion |
 | **M8 — Dashboard/profile + acceptance** | ❌ **NOT STARTED** | verified-class dashboard, full §11 suite |
 
@@ -194,7 +194,7 @@ Verified 2026-11-08 after V1–V4 remediation: **complete for scope**. The origi
 
 **Goal:** unified in-app notifications with read/unread, priority, dedupe; alerts for timetable/class/house changes.
 **Depends on:** M2/M4/M5 events.
-**Current state:** ❌ not started. Existing "unread" hits are chat-message counts only. A per-user `users/{userId}/notifications/{id}` subcollection + `isValidNotification` validator **already exists** in rules (`:368`, closed whitelist `[title,body,timestamp,is_read,type,room_id]`, create = `isSignedIn`) — reuse/extend it.
+**Current state:** ✅ **DONE for scope (2026-11-08).** Unified in-app notifications with deterministic dedupe IDs, priority chips, unread count stream, and mark-read controls. See [`M6_VERIFICATION.md`](M6_VERIFICATION.md).
 
 **Requirements (spec §5, tests 60–62):**
 - `notifications` stream + read/unread engine; priority; dedupe (idempotency key per event).
@@ -206,6 +206,7 @@ Verified 2026-11-08 after V1–V4 remediation: **complete for scope**. The origi
 **Tests (60–62):** publish/announcement produces exactly the right recipients' notifications; dedupe prevents doubles; read/unread toggles; rules validator rejects malformed docs.
 **Robustness:** fan-out is truthful (partial failure surfaced, not phantom success); dedupe idempotent; recipient scoping correct (no cross-house/class leakage); validator closed whitelist.
 **Definition of done:** tests 60–62 pass; in-app engine works on Spark; Blaze fan-out documented as deferred; deployed; committed.
+**Delivered 2026-11-08:** targeted `test/notification_test.dart` **30/30**, full suite **577/577**, analysis 0 errors/0 warnings, rules compiled and released. Hooks wired into `timetable_service`, `house_group_service`, `class_group_service`; notification center screen and home bell/badge integrated.
 
 ---
 
@@ -314,7 +315,7 @@ From `academics_audit/REMEDIATION_ROADMAP.md` P2 (A7 + A9). LOW severity, admin-
 2. **M3** only after that commit is pushed — tests 18–19, 31–33.
 4. **M4** (house groups) — independent of M2/M3; high security value (read-only students).
 5. **M5** (class groups) — ✅ delivered 2026-11-08; reuses M4 machinery + new roles. See [`M5_VERIFICATION.md`](M5_VERIFICATION.md).
-6. **M6** (notifications) — wires M2/M4/M5 events.
+6. **M6** (notifications) — ✅ delivered 2026-11-08; wires M2/M4/M5 events. See [`M6_VERIFICATION.md`](M6_VERIFICATION.md).
 7. **M7** (admin expansion) — approval queue, audit viewer, promotion.
 8. **M8** (dashboard + full 64-test acceptance) — capstone.
 9. **P2 academics hygiene** (A7/A9) — slot in anywhere; small.

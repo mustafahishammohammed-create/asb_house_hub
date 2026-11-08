@@ -7,18 +7,26 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/class_timetable.dart';
 import 'auth_service.dart';
+import 'notification_service.dart';
 
 /// Service responsible for managing section-scoped, versioned recurring weekly
 /// timetables (Module M2), version history, approval workflows, and append-only audits.
 class TimetableService {
   final FirebaseFirestore? _customFirestore;
+  final NotificationService? _customNotifications;
   FirebaseFirestore get _firestore => _customFirestore ?? FirebaseFirestore.instance;
+  NotificationService get _notifications =>
+      _customNotifications ?? NotificationService();
   static SharedPreferences? _prefs;
 
   static Exception? firestoreFailureSimulated;
 
-  TimetableService({FirebaseFirestore? firestore})
-      : _customFirestore = firestore;
+  /// Result of the M6 notification fan-out for the most recent publish.
+  NotificationFanOutResult? lastNotificationResult;
+
+  TimetableService({FirebaseFirestore? firestore, NotificationService? notifications})
+      : _customFirestore = firestore,
+        _customNotifications = notifications;
 
   static Future<void> initPreferences([SharedPreferences? prefs]) async {
     _prefs = prefs ?? await SharedPreferences.getInstance();
@@ -217,6 +225,7 @@ class TimetableService {
     required String publisherName,
     bool enforceConflicts = true,
   }) async {
+    lastNotificationResult = null;
     final errors = version.validate();
     if (errors.isNotEmpty) return false;
 
@@ -284,6 +293,24 @@ class TimetableService {
           ? 'Published one-day override for ${_dateLabel(published.overrideDate!)}'
           : 'Published recurring version ${published.version} effective from ${published.effectiveFrom.toIso8601String().split('T').first}',
     );
+
+    // M6/test 60: fan out to the verified class roster. Notification failure
+    // must never turn a successful timetable publish into a reported failure;
+    // the partial result is exposed to the caller instead.
+    if (_isLive) {
+      try {
+        lastNotificationResult = await _notifications.notifyTimetablePublished(
+          classId: published.classId,
+          versionId: published.id,
+          dayOfWeek: published.dayOfWeek,
+          version: published.version,
+          publisherUid: publisherUid,
+          publisherName: publisherName,
+        );
+      } catch (e) {
+        debugPrint('Timetable notification fan-out failed: $e');
+      }
+    }
 
     return true;
   }

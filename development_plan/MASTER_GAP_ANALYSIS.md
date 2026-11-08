@@ -38,8 +38,8 @@ Legend: **EXISTS** (keep) · **PARTIAL** (extend) · **MISSING** (build) · **CO
 
 ## 5. Notification engine (spec §5)
 
-- **MISSING** — No unified notifications. Grep hits for "unread/notification" are chat-message unread counts only. No `notifications` collection, no read/unread engine, no FCM (`firebase_messaging` not in use).
-- **Spark note** — In-app notifications (Firestore `notifications` + client stream) work on Spark. Server fan-out via Cloud Functions needs Blaze → deferred; client-side fan-out on publish is the Spark path.
+- **DELIVERED 2026-11-08** — unified in-app notification engine under `users/{uid}/notifications`. Deduplicated client-side fan-out on timetable publishes (test 60), house announcements (61), and class announcements (62). Stream list, unread badges on the home AppBar and drawer, priority badges, mark-as-read on tap, and mark-all-read. Deterministic document IDs prevent duplicates, creation payloads omit `is_read` to protect read state, and rules restrict read updates to the recipient.
+- **KNOWN LIMITS** — fan-out runs in a client-side roster loop on Spark (Cloud Functions server fan-out stays Blaze-deferred); no mobile OS push notifications (FCM); notification streams cap at 100 newest items; rules tests are source-contract assertions. See `M6_VERIFICATION.md`.
 
 ## 6. Admin Command Center (spec §6)
 
@@ -82,7 +82,7 @@ Each module: model + service + rules + UI + tests, deployed and verified before 
 - **M3 — Timetable advanced. ✅ DELIVERED FOR SCOPE 2026-11-08.** Client-side double-booking detection (teacher/room, tests 18–19), copy-to-selected-days (31–32), temporary one-day overrides (33), substitution markers, version history/restore already in M2. Server-side conflict validation at scale stays Blaze-deferred; substitution notification fan-out stays M6; admin approval queue stays M7. See `M3_VERIFICATION.md`.
 - **M4 — House communication groups. ✅ DELIVERED 2026-11-08.** Profile-derived auto-membership; role-restricted send (students/prefects read-only) enforced in rules; categories; pin/hide/delete moderation; cross-house isolation and transfer semantics. *(Depends on M1 house identity; independent of M2/M3.)* See `M4_VERIFICATION.md`.
 - **M5 — Class groups & academic communication. ✅ DELIVERED FOR SCOPE 2026-11-08.** Verified-class auto-membership; class-teacher and assigned-subject-teacher send; class representative/vice send; configurable `student_posting_enabled` (default read-only); categories, data-URL attachments, pin/hide/delete moderation; cross-class isolation in rules. *(Depends on M1 + M4 machinery.)* Class notification fan-out stays M6/test 62; rules tests are source contract. See `M5_VERIFICATION.md`.
-- **M6 — Notification engine (in-app, Spark).** `notifications` collection + stream; read/unread; priority; dedupe; timetable/class/house change alerts. Blaze server fan-out deferred. *(Depends on M2/M4/M5 events.)*
+- **M6 — Notification engine (in-app, Spark). ✅ DELIVERED 2026-11-08.** Unified in-app notifications; timetable publish (test 60), house announcement (61), class announcement (62) fan-out; deterministic dedupe doc IDs; priority badges; unread badge counter; mark-read/mark-all-read; rules-enforced read-state protection. *(Depends on M2/M4/M5 events.)* See `M6_VERIFICATION.md`.
 - **M7 — Admin Command Center expansion.** Academic/teacher/house/group/user management, timetable approval queue, audit logs, promotion. *(Depends on M1–M6.)*
 - **M8 — Dashboard & profile polish + acceptance.** Verified-class dashboard (today/current/next/break), class-teacher field, full spec §11 acceptance suite (roles × frontend × backend). *(Capstone.)*
 

@@ -6,6 +6,7 @@ import '../models/academic_class.dart';
 import '../models/class_group.dart';
 import 'auth_service.dart';
 import 'hierarchy_service.dart';
+import 'notification_service.dart';
 
 /// Spark-compatible class group service.
 ///
@@ -20,14 +21,24 @@ class ClassGroupService {
 
   final FirebaseAuth? _customAuth;
   final FirebaseFirestore? _customFirestore;
+  final NotificationService? _customNotifications;
 
-  ClassGroupService({FirebaseAuth? auth, FirebaseFirestore? firestore})
-      : _customAuth = auth,
-        _customFirestore = firestore;
+  ClassGroupService({
+    FirebaseAuth? auth,
+    FirebaseFirestore? firestore,
+    NotificationService? notifications,
+  })  : _customAuth = auth,
+        _customFirestore = firestore,
+        _customNotifications = notifications;
 
   FirebaseAuth get _auth => _customAuth ?? FirebaseAuth.instance;
   FirebaseFirestore get _firestore =>
       _customFirestore ?? FirebaseFirestore.instance;
+  NotificationService get _notifications =>
+      _customNotifications ?? NotificationService();
+
+  /// Result of the M6 fan-out for the most recent announcement message.
+  NotificationFanOutResult? lastNotificationResult;
 
   String get currentUserId {
     try {
@@ -170,6 +181,7 @@ class ClassGroupService {
     final cleanText = text.trim();
     final attachment = attachmentUrl.trim();
     if (cleanText.isEmpty && attachment.isEmpty) return false;
+    lastNotificationResult = null;
     if (!AuthService.isFirebaseLive) return false;
     if (firestoreFailureSimulated != null) return false;
 
@@ -204,7 +216,7 @@ class ClassGroupService {
       );
       final timestamp = FieldValue.serverTimestamp();
 
-      await _firestore
+      final messageRef = await _firestore
           .collection('class_groups')
           .doc(id)
           .collection('messages')
@@ -247,6 +259,22 @@ class ClassGroupService {
           });
         }
       } catch (_) {}
+
+      // M6/test 62: only announcement-category messages fan out. The message is
+      // already committed, so a notification failure never reverses the send.
+      if (normalizeClassGroupCategory(category) == 'announcement') {
+        try {
+          lastNotificationResult = await _notifications.notifyClassAnnouncement(
+            classId: id,
+            messageId: messageRef.id,
+            senderUid: uid,
+            senderName: senderName,
+            preview: cleanText.isEmpty ? 'Photo attachment' : cleanText,
+          );
+        } catch (e) {
+          debugPrint('Class announcement notification fan-out failed: $e');
+        }
+      }
 
       return true;
     } catch (e) {

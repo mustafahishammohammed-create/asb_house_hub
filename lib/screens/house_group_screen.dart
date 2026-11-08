@@ -169,6 +169,17 @@ class _HouseGroupScreenState extends State<HouseGroupScreen> {
       return;
     }
 
+    final fanOut = _service.lastNotificationResult;
+    if (fanOut != null && fanOut.failed > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(fanOut.warning ??
+              'Announcement posted, but notifications could not be delivered.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
+
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
         0,

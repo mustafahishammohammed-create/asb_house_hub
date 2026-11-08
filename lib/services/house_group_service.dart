@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../models/house_group.dart';
 import 'auth_service.dart';
 import 'hierarchy_service.dart';
+import 'notification_service.dart';
 
 /// Spark-compatible house group service.
 ///
@@ -17,13 +18,23 @@ class HouseGroupService {
 
   final FirebaseAuth? _customAuth;
   final FirebaseFirestore? _customFirestore;
+  final NotificationService? _customNotifications;
 
-  HouseGroupService({FirebaseAuth? auth, FirebaseFirestore? firestore})
-      : _customAuth = auth,
-        _customFirestore = firestore;
+  HouseGroupService({
+    FirebaseAuth? auth,
+    FirebaseFirestore? firestore,
+    NotificationService? notifications,
+  })  : _customAuth = auth,
+        _customFirestore = firestore,
+        _customNotifications = notifications;
 
   FirebaseAuth get _auth => _customAuth ?? FirebaseAuth.instance;
   FirebaseFirestore get _firestore => _customFirestore ?? FirebaseFirestore.instance;
+  NotificationService get _notifications =>
+      _customNotifications ?? NotificationService();
+
+  /// Result of the M6 fan-out for the most recent announcement message.
+  NotificationFanOutResult? lastNotificationResult;
 
   String get currentUserId {
     try {
@@ -120,6 +131,7 @@ class HouseGroupService {
     final cleanText = text.trim();
     final attachment = attachmentUrl.trim();
     if (cleanText.isEmpty && attachment.isEmpty) return false;
+    lastNotificationResult = null;
 
     var profile = currentProfile;
     if (!HouseGroupAccess.canSend(profile, id)) return false;
@@ -156,7 +168,7 @@ class HouseGroupService {
       );
       final timestamp = FieldValue.serverTimestamp();
 
-      await _firestore
+      final messageRef = await _firestore
           .collection('house_groups')
           .doc(id)
           .collection('messages')
@@ -193,6 +205,22 @@ class HouseGroupService {
           'updated_at': timestamp,
         });
       } catch (_) {}
+
+      // M6/test 61: only announcement-category messages fan out. The message is
+      // already committed, so a notification failure never reverses the send.
+      if (normalizeHouseGroupCategory(category) == 'announcement') {
+        try {
+          lastNotificationResult = await _notifications.notifyHouseAnnouncement(
+            houseId: id,
+            messageId: messageRef.id,
+            senderUid: uid,
+            senderName: senderName,
+            preview: cleanText.isEmpty ? 'Photo attachment' : cleanText,
+          );
+        } catch (e) {
+          debugPrint('House announcement notification fan-out failed: $e');
+        }
+      }
 
       return true;
     } catch (e) {

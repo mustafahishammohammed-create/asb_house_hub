@@ -7,6 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/auth_service.dart';
 import '../services/hierarchy_service.dart';
+import '../services/notification_service.dart';
 import '../theme/app_theme.dart';
 import 'admin_claims_screen.dart';
 import 'merch_store_tab.dart';
@@ -14,6 +15,7 @@ import '../widgets/camera_capture_dialog.dart';
 import 'chat_list_screen.dart';
 import 'house_group_screen.dart';
 import 'class_group_screen.dart';
+import 'notification_center_screen.dart';
 import 'digital_wallet_screen.dart';
 import 'house_leaderboard_screen.dart';
 import 'id_scanner_screen.dart';
@@ -156,6 +158,7 @@ class _HomeScreenState extends State<HomeScreen>
   late final AnimationController _pulseController;
   late final Animation<double> _pulseAnimation;
   final _authService = AuthService();
+  final _notificationService = NotificationService();
   FirebaseFirestore? get _safeFirestore {
     try {
       return FirebaseFirestore.instance;
@@ -2033,6 +2036,65 @@ class _HomeScreenState extends State<HomeScreen>
                     studentName: fullName,
                     scholarNo: scholarNo,
                   ),
+                ),
+              );
+            },
+          ),
+          StreamBuilder<int>(
+            stream: _notificationService.getUnreadCountStream(),
+            builder: (context, snapshot) {
+              final unread = snapshot.data ?? 0;
+              return IconButton(
+                key: const Key('home_notifications_button'),
+                padding: const EdgeInsets.all(8),
+                constraints:
+                    const BoxConstraints(minWidth: 48, minHeight: 48),
+                tooltip: unread > 0
+                    ? 'Notifications ($unread unread)'
+                    : 'Notifications',
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const NotificationCenterScreen(),
+                    ),
+                  );
+                },
+                icon: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Icon(
+                      Icons.notifications_none_rounded,
+                      color: houseColor,
+                      size: 24,
+                    ),
+                    if (unread > 0)
+                      Positioned(
+                        right: -5,
+                        top: -5,
+                        child: Container(
+                          key: const Key('home_notifications_badge'),
+                          constraints: const BoxConstraints(
+                            minWidth: 16,
+                            minHeight: 16,
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 3),
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: Colors.redAccent,
+                            borderRadius: BorderRadius.circular(9),
+                          ),
+                          child: Text(
+                            unread > 99 ? '99+' : '$unread',
+                            style: const TextStyle(
+                              fontSize: 8.5,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               );
             },
@@ -5130,6 +5192,20 @@ class _HomeScreenState extends State<HomeScreen>
                         context,
                         MaterialPageRoute(
                           builder: (_) => const ClassGroupScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildDrawerTile(
+                    Icons.notifications_active_rounded,
+                    '🔔 Notifications',
+                    color,
+                    () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const NotificationCenterScreen(),
                         ),
                       );
                     },
