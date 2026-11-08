@@ -379,9 +379,42 @@ void main() {
 
       final cached = timetableService.getCachedVersions('11D', 'Wednesday');
       expect(cached.first.status, TimetableStatus.rejected);
+      expect(cached.first.rejectionReason, 'Break timing conflicts with general assembly');
+      expect(cached.first.toMap()['rejection_reason'],
+          'Break timing conflicts with general assembly');
 
       final audits = timetableService.getCachedAudits('11D');
       expect(audits.any((a) => a['action'] == 'reject' && (a['details'] as String).contains('general assembly')), isTrue);
+    });
+
+    test('rejectTimetable returns false and never caches when Firestore denies the write', () async {
+      final template = ClassTimetableVersion.template(
+        classId: '11D',
+        dayOfWeek: 'Wednesday',
+        createdByUid: 'uid_teacher_1',
+        createdByName: 'Ms. Fatima',
+      );
+      await timetableService.submitTimetable(template);
+      final submitted = timetableService.getCachedVersions('11D', 'Wednesday').first;
+
+      AuthService.isFirebaseLiveOverride = true;
+      AuthService.firestoreFailureSimulated = Exception('permission-denied');
+
+      final rejected = await timetableService.rejectTimetable(
+        submitted,
+        reason: 'Reason must not appear in cache after a denied write',
+        reviewerUid: 'uid_admin_1',
+        reviewerName: 'Vice Principal',
+      );
+
+      expect(rejected, isFalse);
+      final cached = timetableService.getCachedVersions('11D', 'Wednesday').first;
+      expect(cached.status, TimetableStatus.submitted);
+      expect(cached.rejectionReason, isEmpty);
+      expect(
+        timetableService.getCachedAudits('11D').any((a) => a['action'] == 'reject'),
+        isFalse,
+      );
     });
 
     test('restoreTimetableVersion creates a NEW version linked by supersedesId (Test 28)', () async {
@@ -474,7 +507,10 @@ void main() {
     });
   });
 
-  group('M2d: Firestore security rules contract verification', () {
+  group('M2d: Firestore security rules source contract (not emulator denial)', () {
+    // These are source-contract assertions. They fail when a validator or
+    // matcher regresses, but they do not prove an evaluated denial. No Firebase
+    // rules emulator harness exists in this repository (M2 verification V8).
     late String rulesContent;
 
     setUpAll(() {
@@ -482,6 +518,16 @@ void main() {
       expect(rulesFile.existsSync(), isTrue, reason: 'firestore.rules must exist');
       rulesContent = rulesFile.readAsStringSync();
     });
+
+    String timetableUpdateBlock() {
+      final matchStart = rulesContent.indexOf('match /timetable_versions/{versionId}');
+      final updateStart = rulesContent.indexOf('allow update:', matchStart);
+      final deleteStart = rulesContent.indexOf('allow delete:', updateStart);
+      expect(matchStart, greaterThanOrEqualTo(0));
+      expect(updateStart, greaterThanOrEqualTo(0));
+      expect(deleteStart, greaterThan(updateStart));
+      return rulesContent.substring(updateStart, deleteStart);
+    }
 
     test('rules defines isSeniorAdmin, isTimetableEditor, and canPublishTimetable', () {
       expect(rulesContent.contains('function isSeniorAdmin()'), isTrue);
@@ -496,22 +542,88 @@ void main() {
       expect(rulesContent.contains("'timetable_requires_approval'"), isTrue);
     });
 
-    test('rules enforces 8 slots and 6-day week in isValidTimetableVersion', () {
-      expect(rulesContent.contains("data.slots.size() == 8"), isTrue);
+    test('rules validates all 8 slots, sequential numbering, and no overlap (V1)', () {
+      expect(rulesContent.contains('data.slots.size() == 8'), isTrue);
       expect(rulesContent.contains("['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday']"), isTrue);
-      expect(rulesContent.contains("isValidTimetableSlot(data.slots[0])"), isTrue);
-      expect(rulesContent.contains("isValidTimetableSlot(data.slots[7])"), isTrue);
+
+      for (var i = 0; i < 8; i++) {
+        expect(
+          rulesContent.contains('isValidTimetableSlot(data.slots[$i])'),
+          isTrue,
+          reason: 'slot ${i + 1} must be validated, not only first/last',
+        );
+        expect(
+          rulesContent.contains('slots[$i].period_number == ${i + 1}'),
+          isTrue,
+          reason: 'period number ${i + 1} must be bound to list index $i',
+        );
+      }
+
+      for (var i = 0; i < 7; i++) {
+        expect(
+          rulesContent.contains(
+            'slots[$i].start_minute + 45 <= slots[${i + 1}].start_minute',
+          ),
+          isTrue,
+          reason: 'periods ${i + 1}/${i + 2} must not overlap',
+        );
+      }
+      expect(rulesContent.contains('slots[7].start_minute + 45 <= 1440'), isTrue,
+          reason: 'last period must end by midnight');
+    });
+
+    test('rules enforces 30-minute break placement between periods (V1)', () {
+      expect(rulesContent.contains('function isValidTimetableBreakPlacement('), isTrue);
+      expect(rulesContent.contains('breakStartMinute + 30 <= 1440'), isTrue);
+      for (var after = 1; after <= 8; after++) {
+        expect(
+          rulesContent.contains('breakAfterPeriod != $after ||'),
+          isTrue,
+          reason: 'break placement after period $after must be checked',
+        );
+      }
+      expect(
+        rulesContent.contains(
+          'isValidTimetableBreakPlacement(data.slots, data.break_after_period, data.break_start_minute)',
+        ),
+        isTrue,
+      );
+    });
+
+    test('rules whitelists rejection_reason and every reject update key (V2)', () {
+      expect(rulesContent.contains("'rejection_reason'"), isTrue);
+      expect(rulesContent.contains('data.rejection_reason is string'), isTrue);
+      expect(rulesContent.contains('data.rejection_reason.size() <= 500'), isTrue);
+      for (final key in [
+        'status',
+        'approved_by_uid',
+        'approved_by_name',
+        'rejection_reason',
+        'updated_at',
+      ]) {
+        expect(
+          rulesContent.contains("'$key'"),
+          isTrue,
+          reason: 'reject update key $key must be in the version whitelist',
+        );
+      }
+    });
+
+    test('rules freezes published versions against in-place edits, including seniors (V3)', () {
+      final updateBlock = timetableUpdateBlock();
+      expect(updateBlock.contains("resource.data.status != 'published'"), isTrue,
+          reason: 'published versions must never be updated in place');
+      expect(updateBlock.contains('isSeniorAdmin()'), isTrue,
+          reason: 'senior override remains available for unpublished versions only');
+      expect(updateBlock.indexOf("resource.data.status != 'published'"),
+          lessThan(updateBlock.indexOf('isSeniorAdmin()')),
+          reason: 'the published freeze must guard the senior branch');
     });
 
     test('rules defines append-only timetable_audit collection', () {
       expect(rulesContent.contains("match /timetable_audit/{auditId}"), isTrue);
       expect(rulesContent.contains("allow update, delete: if false;"), isTrue);
       expect(rulesContent.contains("data.actor_uid == request.auth.uid"), isTrue);
-    });
-
-    test('rules protects published timetable versions from being mutated', () {
-      expect(rulesContent.contains("match /timetable_versions/{versionId}"), isTrue);
-      expect(rulesContent.contains("resource.data.status != 'published'"), isTrue);
     });
   });
 }

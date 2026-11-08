@@ -37,6 +37,7 @@ class _TeacherTimetableEditorScreenState
   final List<_SlotController> _slotControllers = [];
   bool _saving = false;
   AcademicClass? _resolvedClass;
+  bool _canEdit = false;
 
   @override
   void initState() {
@@ -53,6 +54,14 @@ class _TeacherTimetableEditorScreenState
               (c) => c?.classId.toUpperCase() == widget.classId.toUpperCase(),
               orElse: () => null,
             );
+
+    // Rules remain the backstop, but the editor must not offer Save/Publish to
+    // an unassigned teacher (Acceptance Test 35). No fallback class is used.
+    _canEdit = HierarchyService.canEditTimetable(
+      profile: AuthService.getCachedProfile(),
+      classId: widget.classId,
+      academicClass: _resolvedClass,
+    );
 
     _loadDayVersion(_selectedDay);
   }
@@ -195,6 +204,15 @@ class _TeacherTimetableEditorScreenState
   }
 
   Future<void> _handleSaveDraft() async {
+    if (!_canEdit) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('You are not assigned to edit this class timetable.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
     final current = _buildCurrentVersion(status: TimetableStatus.draft);
     final errors = current.validate();
     if (errors.isNotEmpty) {
@@ -223,6 +241,15 @@ class _TeacherTimetableEditorScreenState
   }
 
   Future<void> _handlePublishOrSubmit() async {
+    if (!_canEdit) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('You are not assigned to publish this class timetable.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
     final profile = AuthService.getCachedProfile();
     final uid = (profile?['uid'] ?? profile?['id'] ?? '').toString();
     final name = (profile?['full_name'] ?? profile?['name'] ?? 'Class Teacher').toString();
@@ -436,6 +463,36 @@ class _TeacherTimetableEditorScreenState
     final errors = current.validate();
 
     final requiresApproval = _resolvedClass?.timetableRequiresApproval == true;
+
+    if (!_canEdit) {
+      return Scaffold(
+        key: const Key('timetable_editor_unauthorized'),
+        appBar: AppBar(title: Text('${widget.classId} Timetable Editor')),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.lock_outline_rounded, size: 48, color: Colors.grey),
+                SizedBox(height: 12),
+                Text(
+                  'You are not assigned to edit this class timetable.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                ),
+                SizedBox(height: 6),
+                Text(
+                  'Ask an administrator to assign you as class teacher or timetable editor.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(

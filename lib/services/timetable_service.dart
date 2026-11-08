@@ -271,11 +271,14 @@ class TimetableService {
     required String reviewerName,
   }) async {
     if (version.id.isEmpty) return false;
+    final trimmedReason = reason.trim();
+    if (trimmedReason.isEmpty || trimmedReason.length > 500) return false;
 
     final rejected = version.copyWith(
       status: TimetableStatus.rejected,
       approvedByUid: reviewerUid,
       approvedByName: reviewerName,
+      rejectionReason: trimmedReason,
     );
 
     if (_isLive) {
@@ -287,7 +290,7 @@ class TimetableService {
           'status': TimetableStatus.rejected,
           'approved_by_uid': reviewerUid,
           'approved_by_name': reviewerName,
-          'rejection_reason': reason,
+          'rejection_reason': trimmedReason,
           'updated_at': FieldValue.serverTimestamp(),
         });
       } catch (e) {
@@ -307,7 +310,7 @@ class TimetableService {
       version: version.version,
       actorUid: reviewerUid,
       actorName: reviewerName,
-      details: 'Rejected version ${version.version}: $reason',
+      details: 'Rejected version ${version.version}: $trimmedReason',
     );
 
     return true;

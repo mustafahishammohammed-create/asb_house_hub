@@ -341,6 +341,57 @@ class _TimetableTabState extends State<TimetableTab> {
 
   DateTime get _currentTime => widget.mockNow ?? DateTime.now();
 
+  /// Opens the recurring timetable editor only for a class the signed-in
+  /// teacher is actually assigned to. Super admins with no class on their
+  /// profile get an explicit picker instead of a hard-coded fallback class.
+  Future<void> _openRecurringTimetableEditor(
+    List<AcademicClass> editableClasses,
+    AcademicClass? preferred,
+  ) async {
+    var target = preferred;
+
+    if (target == null) {
+      if (editableClasses.length == 1) {
+        target = editableClasses.first;
+      } else if (editableClasses.length > 1) {
+        target = await showDialog<AcademicClass>(
+          context: context,
+          builder: (ctx) => SimpleDialog(
+            title: const Text('Select a Class Timetable'),
+            children: editableClasses
+                .map(
+                  (c) => SimpleDialogOption(
+                    onPressed: () => Navigator.pop(ctx, c),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Text(
+                        '${c.classId} · ${c.displayLabel}',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+        );
+      }
+    }
+
+    if (target == null || !mounted) return;
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => TeacherTimetableEditorScreen(
+          classId: target!.classId,
+          academicClass: target,
+          initialDay: _selectedDay,
+        ),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -355,6 +406,28 @@ class _TimetableTabState extends State<TimetableTab> {
     final rawClassId = profile?['class_id']?.toString().trim() ?? '';
     final parsedClass = AcademicStructure.parseClassId(rawClassId) ?? AcademicStructure.parseClassId(_effectiveClass);
     final canonicalClassId = rawClassId.isNotEmpty ? rawClassId : (parsedClass != null ? AcademicStructure.classIdFrom(parsedClass.$1, parsedClass.$2) : '');
+
+    final editableClasses = <AcademicClass>[];
+    if (isTeacherOrAdmin) {
+      for (final c in AuthService.getCachedAcademicClasses().where((c) => c.active)) {
+        if (HierarchyService.canEditTimetable(
+          profile: profile,
+          classId: c.classId,
+          academicClass: c,
+        )) {
+          editableClasses.add(c);
+        }
+      }
+    }
+    AcademicClass? editorClass;
+    for (final c in editableClasses) {
+      if (c.classId.toUpperCase() == canonicalClassId.toUpperCase()) {
+        editorClass = c;
+        break;
+      }
+    }
+    editorClass ??= editableClasses.length == 1 ? editableClasses.first : null;
+    final canManageTimetable = editableClasses.isNotEmpty;
 
     final activeSectionVersion = canonicalClassId.isNotEmpty
         ? _timetableService.getCachedActiveVersion(canonicalClassId, _selectedDay, now)
@@ -481,30 +554,20 @@ class _TimetableTabState extends State<TimetableTab> {
                                 ),
                               ),
                             if (isTeacherOrAdmin) ...[
-                              FilledButton.icon(
-                                key: const Key('manage_recurring_timetable_button'),
-                                onPressed: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => TeacherTimetableEditorScreen(
-                                        classId: canonicalClassId.isNotEmpty ? canonicalClassId : '10A',
-                                        initialDay: _selectedDay,
-                                      ),
-                                    ),
-                                  ).then((_) {
-                                    if (mounted) setState(() {});
-                                  });
-                                },
-                                icon: const Icon(Icons.edit_calendar_rounded, size: 16),
-                                label: const Text('Edit Timetable', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: isDark ? const Color(0xFF38BDF8) : const Color(0xFF4338CA),
-                                  foregroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              if (canManageTimetable)
+                                FilledButton.icon(
+                                  key: const Key('manage_recurring_timetable_button'),
+                                  onPressed: () =>
+                                      _openRecurringTimetableEditor(editableClasses, editorClass),
+                                  icon: const Icon(Icons.edit_calendar_rounded, size: 16),
+                                  label: const Text('Edit Timetable', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: isDark ? const Color(0xFF38BDF8) : const Color(0xFF4338CA),
+                                    foregroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  ),
                                 ),
-                              ),
                               FilledButton.icon(
                                 key: const Key('add_period_button'),
                                 onPressed: () => _showAddEditPeriodModal(),

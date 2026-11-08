@@ -445,13 +445,51 @@ service cloud.firestore {
         (!('notes' in slot) || (slot.notes is string && slot.notes.size() <= 500));
     }
 
+    // Periods must be exactly 1..8 in order and must not overlap. Gaps are
+    // allowed (M3 transition gaps), but starts must be strictly increasing by
+    // at least the fixed 45-minute teaching duration. The last period must end
+    // by midnight.
+    function hasOrderedTimetableSlots(slots) {
+      return slots[0].period_number == 1 &&
+        slots[1].period_number == 2 &&
+        slots[2].period_number == 3 &&
+        slots[3].period_number == 4 &&
+        slots[4].period_number == 5 &&
+        slots[5].period_number == 6 &&
+        slots[6].period_number == 7 &&
+        slots[7].period_number == 8 &&
+        slots[0].start_minute + 45 <= slots[1].start_minute &&
+        slots[1].start_minute + 45 <= slots[2].start_minute &&
+        slots[2].start_minute + 45 <= slots[3].start_minute &&
+        slots[3].start_minute + 45 <= slots[4].start_minute &&
+        slots[4].start_minute + 45 <= slots[5].start_minute &&
+        slots[5].start_minute + 45 <= slots[6].start_minute &&
+        slots[6].start_minute + 45 <= slots[7].start_minute &&
+        slots[7].start_minute + 45 <= 1440;
+    }
+
+    // The 30-minute break must sit between the period it follows and the next
+    // period, and must end by midnight. break_after_period 1..8 selects the
+    // only slot pair that is checked.
+    function isValidTimetableBreakPlacement(slots, breakAfterPeriod, breakStartMinute) {
+      return breakStartMinute + 30 <= 1440 &&
+        (breakAfterPeriod != 1 || (slots[0].start_minute + 45 <= breakStartMinute && breakStartMinute + 30 <= slots[1].start_minute)) &&
+        (breakAfterPeriod != 2 || (slots[1].start_minute + 45 <= breakStartMinute && breakStartMinute + 30 <= slots[2].start_minute)) &&
+        (breakAfterPeriod != 3 || (slots[2].start_minute + 45 <= breakStartMinute && breakStartMinute + 30 <= slots[3].start_minute)) &&
+        (breakAfterPeriod != 4 || (slots[3].start_minute + 45 <= breakStartMinute && breakStartMinute + 30 <= slots[4].start_minute)) &&
+        (breakAfterPeriod != 5 || (slots[4].start_minute + 45 <= breakStartMinute && breakStartMinute + 30 <= slots[5].start_minute)) &&
+        (breakAfterPeriod != 6 || (slots[5].start_minute + 45 <= breakStartMinute && breakStartMinute + 30 <= slots[6].start_minute)) &&
+        (breakAfterPeriod != 7 || (slots[6].start_minute + 45 <= breakStartMinute && breakStartMinute + 30 <= slots[7].start_minute)) &&
+        (breakAfterPeriod != 8 || (slots[7].start_minute + 45 <= breakStartMinute));
+    }
+
     function isValidTimetableVersion(data, classId) {
       return hasOnlyAllowedFields([
         'id', 'class_id', 'day_of_week', 'status', 'effective_from', 'version',
         'break_after_period', 'break_start_minute', 'slots',
         'created_by_uid', 'created_by_name', 'published_at',
         'approved_by_uid', 'approved_by_name', 'supersedes_id',
-        'created_at', 'updated_at'
+        'rejection_reason', 'created_at', 'updated_at'
       ]) &&
       hasRequiredFields(['class_id', 'day_of_week', 'status', 'effective_from', 'version', 'break_after_period', 'break_start_minute', 'slots']) &&
       data.class_id is string && data.class_id == classId &&
@@ -463,13 +501,22 @@ service cloud.firestore {
       data.break_start_minute is int && data.break_start_minute >= 0 && data.break_start_minute < 1440 &&
       data.slots is list && data.slots.size() == 8 &&
       isValidTimetableSlot(data.slots[0]) &&
+      isValidTimetableSlot(data.slots[1]) &&
+      isValidTimetableSlot(data.slots[2]) &&
+      isValidTimetableSlot(data.slots[3]) &&
+      isValidTimetableSlot(data.slots[4]) &&
+      isValidTimetableSlot(data.slots[5]) &&
+      isValidTimetableSlot(data.slots[6]) &&
       isValidTimetableSlot(data.slots[7]) &&
+      hasOrderedTimetableSlots(data.slots) &&
+      isValidTimetableBreakPlacement(data.slots, data.break_after_period, data.break_start_minute) &&
       (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
       (!('created_by_uid' in data) || (data.created_by_uid is string && data.created_by_uid.size() <= 128)) &&
       (!('created_by_name' in data) || (data.created_by_name is string && data.created_by_name.size() <= 100)) &&
       (!('approved_by_uid' in data) || (data.approved_by_uid is string && data.approved_by_uid.size() <= 128)) &&
       (!('approved_by_name' in data) || (data.approved_by_name is string && data.approved_by_name.size() <= 100)) &&
       (!('supersedes_id' in data) || (data.supersedes_id is string && data.supersedes_id.size() <= 128)) &&
+      (!('rejection_reason' in data) || (data.rejection_reason is string && data.rejection_reason.size() <= 500)) &&
       (!('published_at' in data) || data.published_at is timestamp) &&
       (!('created_at' in data) || data.created_at is timestamp) &&
       (!('updated_at' in data) || data.updated_at is timestamp);
@@ -977,7 +1024,10 @@ service cloud.firestore {
           (request.resource.data.status == 'published' && canPublishTimetable(request.resource.data.class_id))
         );
 
+      // Published versions are immutable for everyone, including senior admins.
+      // Changes and restores create a new version document (supersedes_id).
       allow update: if isSignedIn() &&
+        resource.data.status != 'published' &&
         isValidTimetableVersion(request.resource.data, resource.data.class_id) &&
         request.resource.data.class_id == resource.data.class_id &&
         areImmutableFieldsUnchanged(['class_id', 'day_of_week', 'version', 'created_at']) &&
@@ -985,7 +1035,6 @@ service cloud.firestore {
           (isSeniorAdmin()) ||
           (
             isTimetableEditor(resource.data.class_id) &&
-            resource.data.status != 'published' &&
             (
               (request.resource.data.status in ['draft', 'submitted']) ||
               (request.resource.data.status == 'published' && canPublishTimetable(resource.data.class_id))

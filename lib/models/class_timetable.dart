@@ -167,6 +167,7 @@ class ClassTimetableVersion {
   final DateTime? publishedAt;
   final String approvedByUid;
   final String approvedByName;
+  final String rejectionReason;
   final String supersedesId;
   final DateTime? createdAt;
 
@@ -185,6 +186,7 @@ class ClassTimetableVersion {
     this.publishedAt,
     this.approvedByUid = '',
     this.approvedByName = '',
+    this.rejectionReason = '',
     this.supersedesId = '',
     this.createdAt,
   });
@@ -349,6 +351,7 @@ class ClassTimetableVersion {
         if (publishedAt != null) 'published_at': Timestamp.fromDate(publishedAt!),
         if (approvedByUid.isNotEmpty) 'approved_by_uid': approvedByUid,
         if (approvedByName.isNotEmpty) 'approved_by_name': approvedByName,
+        if (rejectionReason.isNotEmpty) 'rejection_reason': rejectionReason,
         if (supersedesId.isNotEmpty) 'supersedes_id': supersedesId,
         if (createdAt != null) 'created_at': Timestamp.fromDate(createdAt!),
       };
@@ -405,6 +408,7 @@ class ClassTimetableVersion {
       publishedAt: parseNullableDate(map['published_at'] ?? map['publishedAt']),
       approvedByUid: (map['approved_by_uid'] ?? map['approvedByUid'] ?? '').toString().trim(),
       approvedByName: (map['approved_by_name'] ?? map['approvedByName'] ?? '').toString().trim(),
+      rejectionReason: (map['rejection_reason'] ?? map['rejectionReason'] ?? '').toString().trim(),
       supersedesId: (map['supersedes_id'] ?? map['supersedesId'] ?? '').toString().trim(),
       createdAt: parseNullableDate(map['created_at'] ?? map['createdAt']),
     );
@@ -430,6 +434,7 @@ class ClassTimetableVersion {
     DateTime? publishedAt,
     String? approvedByUid,
     String? approvedByName,
+    String? rejectionReason,
     String? supersedesId,
     DateTime? createdAt,
   }) {
@@ -448,6 +453,7 @@ class ClassTimetableVersion {
       publishedAt: publishedAt ?? this.publishedAt,
       approvedByUid: approvedByUid ?? this.approvedByUid,
       approvedByName: approvedByName ?? this.approvedByName,
+      rejectionReason: rejectionReason ?? this.rejectionReason,
       supersedesId: supersedesId ?? this.supersedesId,
       createdAt: createdAt ?? this.createdAt,
     );

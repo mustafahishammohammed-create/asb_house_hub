@@ -228,6 +228,21 @@ void main() {
       expect(restored.effectiveFrom.year, v.effectiveFrom.year);
     });
 
+    test('rejection reason round-trips so a rejected version stays explainable', () {
+      final v = ClassTimetableVersion.template(classId: '11D', dayOfWeek: 'Monday')
+          .copyWith(
+        status: TimetableStatus.rejected,
+        rejectionReason: 'Break timing conflicts with general assembly',
+      );
+
+      final map = v.toMap();
+      expect(map['rejection_reason'], 'Break timing conflicts with general assembly');
+      expect(
+        ClassTimetableVersion.fromMap(map).rejectionReason,
+        'Break timing conflicts with general assembly',
+      );
+    });
+
     test('Firestore Timestamp effective date round-trips', () {
       final eff = DateTime(2026, 11, 18);
       final v = ClassTimetableVersion.template(classId: '11D', dayOfWeek: 'Monday')

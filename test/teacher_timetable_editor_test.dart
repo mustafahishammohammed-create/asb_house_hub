@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:asb_house_hub/models/academic_class.dart';
 import 'package:asb_house_hub/models/class_timetable.dart';
 import 'package:asb_house_hub/screens/academics_screen.dart';
 import 'package:asb_house_hub/screens/teacher_timetable_editor_screen.dart';
@@ -37,6 +38,39 @@ void main() {
       'class_level': 'Grade 11',
       'division': 'D',
     });
+    await AuthService.cacheAcademicClasses([
+      const AcademicClass(
+        classId: '11D',
+        grade: 'Grade 11',
+        section: 'D',
+        classTeacher: 'Ms. Fatima',
+        classTeacherUid: 'uid_teacher_fatima',
+        timetableEditingEnabled: true,
+      ),
+    ]);
+  }
+
+  Future<void> seedUnassignedTeacherProfile() async {
+    await AuthService.cacheProfile({
+      'uid': 'uid_teacher_unassigned',
+      'scholar_no': '2310199',
+      'full_name': 'Mr. Sharma',
+      'role': 'teacher',
+      'house_name': 'ruby',
+      'class_id': '11D',
+      'class_level': 'Grade 11',
+      'division': 'D',
+    });
+    await AuthService.cacheAcademicClasses([
+      const AcademicClass(
+        classId: '11D',
+        grade: 'Grade 11',
+        section: 'D',
+        classTeacher: 'Ms. Fatima',
+        classTeacherUid: 'uid_teacher_fatima',
+        timetableEditingEnabled: true,
+      ),
+    ]);
   }
 
   Future<void> seedStudentProfile({String classId = '11D'}) async {
@@ -263,6 +297,54 @@ void main() {
 
       expect(find.text('11D Timetable Editor'), findsOneWidget);
       expect(find.byKey(const Key('save_timetable_draft_button')), findsOneWidget);
+    });
+
+    testWidgets('Unassigned teacher sees no Edit Timetable button (Acceptance Test 35)',
+        (tester) async {
+      await seedUnassignedTeacherProfile();
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: TimetableTab(classLevel: '11D', initialDay: 'Wednesday'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('manage_recurring_timetable_button')), findsNothing);
+    });
+
+    testWidgets('Unauthorized editor blocks Save/Publish and never writes the old 10A fallback',
+        (tester) async {
+      await seedUnassignedTeacherProfile();
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: TeacherTimetableEditorScreen(classId: '10A', initialDay: 'Saturday'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('timetable_editor_unauthorized')), findsOneWidget);
+      expect(find.byKey(const Key('save_timetable_draft_button')), findsNothing);
+      expect(find.byKey(const Key('publish_timetable_button')), findsNothing);
+      expect(timetableService.getCachedVersions('10A', 'Saturday'), isEmpty);
+    });
+
+    testWidgets('Assigned teacher is authorized in the editor', (tester) async {
+      await seedTeacherProfile();
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: TeacherTimetableEditorScreen(classId: '11D', initialDay: 'Saturday'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('timetable_editor_unauthorized')), findsNothing);
+      expect(find.byKey(const Key('save_timetable_draft_button')), findsOneWidget);
+      expect(find.byKey(const Key('publish_timetable_button')), findsOneWidget);
     });
   });
 }
