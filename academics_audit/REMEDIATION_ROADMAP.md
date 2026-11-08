@@ -2,7 +2,7 @@
 
 Prioritized plan for A1–A7. **P0/P1/P2 are all no-Blaze** (client + rules + tests, deployable on Spark). Server-authority items are deferred to `election_audit/BLAZE_REQUIRED_FEATURES.md` **D5**.
 
-Status: **P0 CLOSED** (all 5 items implemented, tested, and rules deployed). P1 & P2 open.
+Status: **P0 & P1 CLOSED** (all 11 items implemented, tested, and rules deployed). P2 open.
 
 ---
 
@@ -16,16 +16,16 @@ Status: **P0 CLOSED** (all 5 items implemented, tested, and rules deployed). P1 
 | P0-4 | Medical-leave rules validator + transition guard | A3 | Added `isValidMedicalLeave(data)` schema validator in `firestore.rules` (field whitelist, 500k photo cap, string bounds); update requires `resource.data.status == 'pending'` and `request.resource.data.status in ['approved', 'rejected']` with immutable core fields. | **CLOSED** — Rules-contract tests pass; deployed to `cloud.firestore`. |
 | P0-5 | Real reviewer identity | A3 | Passed authenticated reviewer name from `_getReviewerName()` in `admin_claims_screen.dart` to `approveMedicalLeave`/`rejectMedicalLeave`. | **CLOSED** — Verified in unit tests asserting `reviewed_by` captures actual user profile. |
 
-## P1 — Phantom-success eradication & gate alignment
+## P1 — Phantom-success eradication & gate alignment (RESOLVED)
 
-| # | Item | Finding | Change | Verify |
-|---|------|---------|--------|--------|
-| P1-1 | Assignment publish/delete truthful + gated | A2 | Return `false` on live denial, cache after ack, UI checks result; gate buttons to staff | Denial tests; student sees no Publish/Delete |
-| P1-2 | Timetable bulk ops truthful + tab gated | A5 | Same treatment for clear/populate; gate all timetable mutation UI to staff; label CBSE template | Denial tests; student read-only timetable |
-| P1-3 | Align faculty role lists | A6 | Decide `faculty_advisor`/`teacher_lead`: add to rules `isAdmin()` **or** remove from client; contract test keeps lists equal | Test asserts client list == rules list |
-| P1-4 | Attendance dialog error handling | A6 | try/catch around Save; visible error, dialog stays open on failure | Denial → error snackbar, nothing saved |
-| P1-5 | Honours claim interim hardening | A4 | Read the card doc server-side for GPA/ownership (ignore caller `gpa`); stop the doomed `is_merit_claimed` client write; derive claimed state from the award ledger; truthful fail-closed messaging | Claim uses doc GPA; no cache-only claimed state |
-| P1-6 | Stop fabricating official report cards | A8 | Block invalid numeric input (no 90.0/98.0 fallbacks); per-subject entry or clearly-labeled template; remove hardcoded principalRemarks/status/section values; drop demo scholar prefill | No invented scores/endorsements on published cards |
+| # | Item | Finding | Change | Status / Evidence |
+|---|------|---------|--------|-------------------|
+| P1-1 | Assignment publish/delete truthful + gated | A2 | `publishAssignment` / `deleteAssignment` write/delete Firestore first, check `firestoreFailureSimulated`, return `false` on denial, update cache only on ack (`auth_service.dart:1168-1243`). Gated `add_assignment_button`, `empty_add_assignment_button`, and `delete_assignment_*` to `isTeacherOrAdmin` (`academics_screen.dart:1777, 2072, 2340`). UI shows real red error snackbar on denial (`:2387, 2631`). | **CLOSED** — Verified by denial tests & student/staff widget tests in `test/academics_security_test.dart`. |
+| P1-2 | Timetable bulk ops truthful + tab gated | A5 | `clearTimetableForDay` and `populateDefaultCBSEWeeklyTimetable` execute Firestore delete/batch first, check `firestoreFailureSimulated`, return `false` on denial, update cache only on ack (`auth_service.dart:792-918`). Gated `add_period_button`, `empty_add_period_button`, `populate_cbse_button`, `edit_period_*`, `delete_period_*` to `isTeacherOrAdmin` (`academics_screen.dart:452, 998, 1076`). Auto-load dialog labelled with starter schedule notice (`:1169`). | **CLOSED** — Verified by failure simulation and student read-only widget tests in `test/academics_security_test.dart`. |
+| P1-3 | Align faculty role lists | A6 | Added `'faculty_advisor'` and `'teacher_lead'` to `firestore.rules` `isAdmin()` token and user-doc branches (`firestore.rules:251-252`). Matching exact 6 roles in `HierarchyService.isTeacherOrFaculty` (`hierarchy_service.dart:28-35`). | **CLOSED** — Verified by bidirectional rules contract test in `test/academics_security_test.dart`. Deployed to `cloud.firestore`. |
+| P1-4 | Attendance dialog error handling | A6 | `markStudentAttendance` returns `Future<bool>`, executes live set first, check `firestoreFailureSimulated`, returns `false` on failure, updates cache only on ack (`auth_service.dart:1908-1964`). Save button wrapped in try/catch, checks boolean return; on failure dialog stays open and displays red error snackbar (`academics_screen.dart:6435-6490`). | **CLOSED** — Verified by failure simulation unit test in `test/academics_security_test.dart`. |
+| P1-5 | Honours claim interim hardening | A4 | `claimReportCardHonoursMerit` inspects actual report card document (Firestore live or local cache offline), enforces `verifiedGpa >= 3.80` from doc (ignoring spoofed caller GPA), enforces caller scholar ownership (`card.scholarNo == sNo`), blocks already claimed cards (`card.isMeritClaimed == false`), drops doomed client write, updates cache only on verified award (`auth_service.dart:1647-1745`). | **CLOSED** — Verified by 4 unit tests (spoof rejection, mismatch rejection, already-claimed rejection, valid award success) in `test/academics_security_test.dart`. |
+| P1-6 | Stop fabricating official report cards | A8 | Deleted hardcoded `principalRemarks`, `status`, `section` getters from `AcademicReportCard` model; replaced with real nullable/serialized fields defaulting to `'Published'` and `null` (`academic_report_card.dart:128, 173-176, 256-258`). In publisher dialog, removed `'2310910'` prefill and demo values; strictly validates numeric percentage (0-100), GPA (0-4), attendance (0-100) with error messages; subject breakdown sets `teacherComment: ''` (`academics_screen.dart:5310-5324, 5575-5630`). | **CLOSED** — Verified by model round-trip and validation tests in `test/academics_security_test.dart`. |
 
 ## P2 — Hygiene
 

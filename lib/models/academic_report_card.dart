@@ -106,6 +106,9 @@ class AcademicReportCard implements Comparable<AcademicReportCard> {
   final DateTime publishedAt;
   final bool isMeritClaimed;
   final String? imageUrl;
+  final String status;
+  final String? section;
+  final String? principalRemarks;
 
   const AcademicReportCard({
     required this.id,
@@ -122,6 +125,9 @@ class AcademicReportCard implements Comparable<AcademicReportCard> {
     required this.publishedAt,
     this.isMeritClaimed = false,
     this.imageUrl,
+    this.status = 'Published',
+    this.section,
+    this.principalRemarks,
   });
 
   /// Evaluates whether student achieved academic distinction (GPA >= 3.8).
@@ -146,9 +152,6 @@ class AcademicReportCard implements Comparable<AcademicReportCard> {
   String get term => termName;
   bool get pointsClaimed => isMeritClaimed;
   double get attendancePercentage => attendanceRate;
-  String get status => 'Official';
-  String get section => 'A';
-  String? get principalRemarks => 'Approved for Academic Excellence and Merit Recognition.';
   String get formattedIssueDate =>
       '${publishedAt.day.toString().padLeft(2, '0')}/${publishedAt.month.toString().padLeft(2, '0')}/${publishedAt.year}';
   List<SubjectGrade> get subjects => subjectGrades;
@@ -167,6 +170,9 @@ class AcademicReportCard implements Comparable<AcademicReportCard> {
     'subject_grades': subjectGrades.map((g) => g.toMap()).toList(),
     'published_at': publishedAt.toIso8601String(),
     'is_merit_claimed': isMeritClaimed,
+    'status': status,
+    if (section != null && section!.isNotEmpty) 'section': section,
+    if (principalRemarks != null && principalRemarks!.isNotEmpty) 'principal_remarks': principalRemarks,
     if (imageUrl != null && imageUrl!.isNotEmpty) 'image_url': imageUrl,
   };
 
@@ -247,6 +253,9 @@ class AcademicReportCard implements Comparable<AcademicReportCard> {
       publishedAt: parseDate(map['published_at'] ?? map['publishedAt'] ?? map['date'], DateTime.now()),
       isMeritClaimed: (map['is_merit_claimed'] ?? map['isMeritClaimed'] ?? false) == true,
       imageUrl: (map['image_url'] ?? map['imageUrl'])?.toString().trim(),
+      status: (map['status'] ?? 'Published').toString().trim(),
+      section: (map['section'] ?? map['class_section'])?.toString().trim(),
+      principalRemarks: (map['principal_remarks'] ?? map['principalRemarks'])?.toString().trim(),
     );
   }
 
@@ -276,6 +285,9 @@ class AcademicReportCard implements Comparable<AcademicReportCard> {
     bool? isMeritClaimed,
     bool? pointsClaimed,
     String? imageUrl,
+    String? status,
+    String? section,
+    String? principalRemarks,
   }) {
     return AcademicReportCard(
       id: id ?? this.id,
@@ -292,6 +304,9 @@ class AcademicReportCard implements Comparable<AcademicReportCard> {
       publishedAt: publishedAt ?? this.publishedAt,
       isMeritClaimed: pointsClaimed ?? isMeritClaimed ?? this.isMeritClaimed,
       imageUrl: imageUrl ?? this.imageUrl,
+      status: status ?? this.status,
+      section: section ?? this.section,
+      principalRemarks: principalRemarks ?? this.principalRemarks,
     );
   }
 

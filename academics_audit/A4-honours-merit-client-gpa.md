@@ -1,6 +1,12 @@
 # A4. Honours merit claim trusts client GPA; claimed-flag can never persist
 
-**Severity:** MEDIUM
+**Severity:** MEDIUM  
+**Status:** RESOLVED (Phase P1 Interim Hardening, 2026-11-08; end-state D5 callable deferred to Blaze)
+
+## Resolution Evidence
+- **Server/Cached Document Verification (`auth_service.dart:1647-1710`):** `claimReportCardHonoursMerit` inspects the actual report card document. It enforces `verifiedGpa >= 3.80` strictly from the document (rejecting caller-spoofed GPA values), asserts `docScholar == sNo` (rejecting cross-student claims), and checks `alreadyClaimed == false`.
+- **Eradication of Doomed Client Write:** Dropped the doomed client-side `_firestore.collection('report_cards').update({'is_merit_claimed': true})` call which rules would reject. Updates cache only upon verified points award.
+- **Automated Verification:** Verified by 4 security unit tests in `test/academics_security_test.dart` (spoof rejection, caller mismatch rejection, already-claimed rejection, and verified award success).
 
 ## Problem
 

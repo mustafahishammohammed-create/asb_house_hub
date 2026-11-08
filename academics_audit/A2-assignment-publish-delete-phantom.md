@@ -1,6 +1,12 @@
 # A2. Assignment publish/delete report phantom success; buttons are ungated
 
-**Severity:** MEDIUM
+**Severity:** MEDIUM  
+**Status:** RESOLVED (Phase P1, 2026-11-08)
+
+## Resolution Evidence
+- **Truthful Writes (`auth_service.dart:1168-1243`):** `publishAssignment` and `deleteAssignment` attempt live Firestore set/delete first, check `firestoreFailureSimulated`, log errors without swallowing, return `false` on failure, and only mutate local cache upon verified server acknowledgement.
+- **UI Gating & Error Feedback (`academics_screen.dart:1777, 2072, 2340, 2387, 2631`):** `add_assignment_button`, `empty_add_assignment_button`, and `delete_assignment_*` are strictly gated to `if (isTeacherOrAdmin)` (`HierarchyService.isTeacherOrFaculty || isSuperAdmin`). UI inspects boolean return and displays a red error snackbar if denied.
+- **Automated Verification:** Verified in `test/academics_security_test.dart` (failure simulation tests + student/staff widget test) and `test/widget_test.dart` (Test 227). All tests pass.
 
 ## Problem
 

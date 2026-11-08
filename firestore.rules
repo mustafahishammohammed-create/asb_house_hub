@@ -248,8 +248,8 @@ service cloud.firestore {
     function isAdmin() {
       return isSignedIn() && (
         isSuperAdmin() ||
-        (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in ['teacher', 'faculty', 'principal', 'staff']) ||
-        (hasUserDoc() && 'role' in getUserData() && getUserData().role in ['teacher', 'faculty', 'principal', 'staff'])
+        (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in ['teacher', 'faculty', 'principal', 'staff', 'faculty_advisor', 'teacher_lead']) ||
+        (hasUserDoc() && 'role' in getUserData() && getUserData().role in ['teacher', 'faculty', 'principal', 'staff', 'faculty_advisor', 'teacher_lead'])
       );
     }
 

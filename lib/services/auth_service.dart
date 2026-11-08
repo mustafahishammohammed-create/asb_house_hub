@@ -789,20 +789,29 @@ class AuthService {
           ? classLevel.trim()
           : (getCachedProfile()?['class_level']?.toString() ?? 'Grade 10');
 
-      await cacheTimetable(<TimetablePeriod>[], classLevel: cLevel, dayOfWeek: dayOfWeek);
-
-      try {
-        final snap = await _firestore
-            .collection('classes')
-            .doc(cLevel)
-            .collection('timetable')
-            .where('day_of_week', isEqualTo: dayOfWeek)
-            .get();
-        for (final doc in snap.docs) {
-          await doc.reference.delete();
+      if (_isFirebaseLive) {
+        try {
+          if (firestoreFailureSimulated != null) {
+            throw firestoreFailureSimulated!;
+          }
+          final snap = await _firestore
+              .collection('classes')
+              .doc(cLevel)
+              .collection('timetable')
+              .where('day_of_week', isEqualTo: dayOfWeek)
+              .get();
+          for (final doc in snap.docs) {
+            await doc.reference.delete();
+          }
+        } catch (e) {
+          if (!_isNoAppException(e)) {
+            debugPrint('Firestore clearTimetableForDay failure: $e');
+            return false;
+          }
         }
-      } catch (_) {}
+      }
 
+      await cacheTimetable(<TimetablePeriod>[], classLevel: cLevel, dayOfWeek: dayOfWeek);
       return true;
     } catch (_) {
       return false;
@@ -873,22 +882,37 @@ class AuthService {
         ],
       };
 
+      if (_isFirebaseLive) {
+        try {
+          if (firestoreFailureSimulated != null) {
+            throw firestoreFailureSimulated!;
+          }
+          final batch = _firestore.batch();
+          for (final day in standardDays) {
+            final list = weeklySchedule[day]!;
+            for (final period in list) {
+              final docId = 'p_${day.toLowerCase()}_${period.periodNumber}';
+              final ref = _firestore
+                  .collection('classes')
+                  .doc(cLevel)
+                  .collection('timetable')
+                  .doc(docId);
+              batch.set(ref, period.toMap(), SetOptions(merge: true));
+            }
+          }
+          await batch.commit();
+        } catch (e) {
+          if (!_isNoAppException(e)) {
+            debugPrint('Firestore populateDefaultCBSEWeeklyTimetable failure: $e');
+            return false;
+          }
+        }
+      }
+
       for (final day in standardDays) {
         final list = weeklySchedule[day]!;
         await cacheTimetable(list, classLevel: cLevel, dayOfWeek: day);
-        try {
-          for (final period in list) {
-            final docId = 'p_${day.toLowerCase()}_${period.periodNumber}';
-            await _firestore
-                .collection('classes')
-                .doc(cLevel)
-                .collection('timetable')
-                .doc(docId)
-                .set(period.toMap(), SetOptions(merge: true));
-          }
-        } catch (_) {}
       }
-
       await cacheTimetable(weeklySchedule['Sunday']!, classLevel: cLevel);
       return true;
     } catch (_) {
@@ -1141,7 +1165,27 @@ class AuthService {
 
       final updatedAssignment = assignment.copyWith(classLevel: cLevel);
 
-      // 1. Update local cache
+      // 1. Persist to Firestore first if live
+      if (_isFirebaseLive) {
+        try {
+          if (firestoreFailureSimulated != null) {
+            throw firestoreFailureSimulated!;
+          }
+          await _firestore
+              .collection('classes')
+              .doc(cLevel)
+              .collection('assignments')
+              .doc(updatedAssignment.id)
+              .set(updatedAssignment.toMap(), SetOptions(merge: true));
+        } catch (e) {
+          if (!_isNoAppException(e)) {
+            debugPrint('Firestore publishAssignment failure: $e');
+            return false;
+          }
+        }
+      }
+
+      // 2. Update local cache on acknowledged write or offline test mode
       final currentList = getCachedAssignments(classLevel: cLevel, subject: 'All');
       final updatedList = List<AcademicAssignment>.from(currentList);
       final existingIndex = updatedList.indexWhere((a) => a.id == updatedAssignment.id);
@@ -1160,16 +1204,6 @@ class AuthService {
         );
       }
 
-      // 2. Persist to Firestore
-      try {
-        await _firestore
-            .collection('classes')
-            .doc(cLevel)
-            .collection('assignments')
-            .doc(updatedAssignment.id)
-            .set(updatedAssignment.toMap(), SetOptions(merge: true));
-      } catch (_) {}
-
       return true;
     } catch (_) {
       return false;
@@ -1187,7 +1221,27 @@ class AuthService {
           ? classLevel.trim()
           : (getCachedProfile()?['class_level']?.toString() ?? 'Grade 10');
 
-      // 1. Update local cache
+      // 1. Delete from Firestore first if live
+      if (_isFirebaseLive) {
+        try {
+          if (firestoreFailureSimulated != null) {
+            throw firestoreFailureSimulated!;
+          }
+          await _firestore
+              .collection('classes')
+              .doc(cLevel)
+              .collection('assignments')
+              .doc(assignmentId)
+              .delete();
+        } catch (e) {
+          if (!_isNoAppException(e)) {
+            debugPrint('Firestore deleteAssignment failure: $e');
+            return false;
+          }
+        }
+      }
+
+      // 2. Update local cache on acknowledged write or offline test mode
       final currentList = getCachedAssignments(classLevel: cLevel, subject: 'All');
       final updatedList = currentList.where((a) => a.id != assignmentId).toList();
       await cacheAssignments(updatedList, classLevel: cLevel, subject: 'All');
@@ -1195,16 +1249,6 @@ class AuthService {
         final filtered = updatedList.where((a) => a.subject.toLowerCase() == subject.toLowerCase()).toList();
         await cacheAssignments(filtered, classLevel: cLevel, subject: subject);
       }
-
-      // 2. Delete from Firestore
-      try {
-        await _firestore
-            .collection('classes')
-            .doc(cLevel)
-            .collection('assignments')
-            .doc(assignmentId)
-            .delete();
-      } catch (_) {}
 
       return true;
     } catch (_) {
@@ -1574,21 +1618,23 @@ class AuthService {
   }
 
   /// Claim academic honours merit reward for distinction (GPA >= 3.80).
-  /// Verifies authenticity with HMAC-SHA256 score proof token.
+  /// Verifies card authenticity, ownership, and GPA against the server document.
   Future<bool> claimReportCardHonoursMerit({
     required String reportCardId,
-    double? gpa,
+    double? gpa, // Ignored: verified against actual report card document
     int pointsReward = 50,
     String? classLevel,
     String? scholarNo,
     String? house,
   }) async {
     try {
-      if (gpa == null || gpa < 3.80) return false;
-
       final sNo = (scholarNo != null && scholarNo.trim().isNotEmpty)
           ? scholarNo.trim()
           : (getCachedScholarNo() ?? '');
+      if (sNo.isEmpty) {
+        debugPrint('Honours merit claim rejected: unauthenticated/missing scholar number.');
+        return false;
+      }
 
       final effectiveHouse = (house != null && house.trim().isNotEmpty)
           ? house.trim().toLowerCase()
@@ -1598,14 +1644,78 @@ class AuthService {
           ? classLevel.trim()
           : (getCachedProfile()?['class_level']?.toString() ?? 'Grade 10');
 
-      // Generate HMAC-SHA256 score proof token
+      // 1. Audit A4 Hardening: Verify report card document authenticity & ownership
+      double verifiedGpa = 0.0;
+      bool alreadyClaimed = false;
+
+      if (_isFirebaseLive) {
+        try {
+          final doc = await _firestore
+              .collection('classes')
+              .doc(cLevel)
+              .collection('report_cards')
+              .doc(reportCardId)
+              .get();
+          if (!doc.exists) {
+            debugPrint('Honours merit claim rejected: report card doc does not exist.');
+            return false;
+          }
+          final data = doc.data() ?? {};
+          final docScholar = (data['scholar_no'] ?? data['scholarNo'])?.toString().trim();
+          if (docScholar != sNo) {
+            debugPrint('Honours merit claim rejected: scholar ownership mismatch ($docScholar vs $sNo).');
+            return false;
+          }
+          final rawGpa = data['overall_gpa'] ?? data['overallGpa'];
+          verifiedGpa = (rawGpa is num) ? rawGpa.toDouble() : (double.tryParse(rawGpa?.toString() ?? '') ?? 0.0);
+          alreadyClaimed = (data['is_merit_claimed'] ?? data['isMeritClaimed']) == true;
+        } catch (e) {
+          if (!_isNoAppException(e)) {
+            debugPrint('Firestore read error in honours merit claim: $e');
+            return false;
+          }
+        }
+      } else {
+        // Test / offline fallback verification
+        final cached = getCachedReportCards(classLevel: cLevel, scholarNo: sNo);
+        final card = cached.firstWhere(
+          (c) => c.id == reportCardId,
+          orElse: () => AcademicReportCard(
+            id: '',
+            scholarNo: '',
+            studentName: '',
+            termName: '',
+            overallGpa: 0.0,
+            overallPercentage: 0.0,
+            publishedAt: DateTime.fromMillisecondsSinceEpoch(0),
+          ),
+        );
+        if (card.id.isEmpty || card.scholarNo != sNo) {
+          debugPrint('Honours merit claim rejected: card not found in cache or owner mismatch.');
+          return false;
+        }
+        verifiedGpa = card.overallGpa;
+        alreadyClaimed = card.isMeritClaimed;
+      }
+
+      if (alreadyClaimed) {
+        debugPrint('Honours merit claim rejected: card distinction bonus already claimed.');
+        return false;
+      }
+
+      if (verifiedGpa < 3.80) {
+        debugPrint('Honours merit claim rejected: verified GPA ($verifiedGpa) is below 3.80 threshold.');
+        return false;
+      }
+
+      // 2. Generate HMAC-SHA256 score proof token
       final token = GamificationSecurityService.generateScoreProofToken(
         scholarNo: sNo,
         pointsEarned: pointsReward,
         activityId: 'report_honours_$reportCardId',
       );
 
-      // Award verified gamification points
+      // 3. Award verified gamification points
       final result = await awardVerifiedGamificationPoints(
         token: token,
         scholarNo: sNo,
@@ -1617,16 +1727,6 @@ class AuthService {
       final success = result.success;
 
       if (success) {
-        // Update Firestore document if available
-        try {
-          await _firestore
-              .collection('classes')
-              .doc(cLevel)
-              .collection('report_cards')
-              .doc(reportCardId)
-              .update({'is_merit_claimed': true});
-        } catch (_) {}
-
         // Update local cache
         final cached = getCachedReportCards(classLevel: cLevel, scholarNo: sNo);
         final updated = cached.map((c) {
@@ -1805,7 +1905,7 @@ class AuthService {
   }
 
   /// Record or update student daily attendance in Firestore and local cache.
-  Future<void> markStudentAttendance({
+  Future<bool> markStudentAttendance({
     required String classLevel,
     required String scholarNo,
     required AttendanceStatus status,
@@ -1813,38 +1913,56 @@ class AuthService {
     Map<int, AttendanceStatus>? periodBreakdown,
     String? remarks,
   }) async {
-    final d = date ?? DateTime.now();
-    final docId = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-    final cleanClass = classLevel.trim().isNotEmpty ? classLevel.trim() : 'Grade 10';
-    final cleanScholar = scholarNo.trim().isNotEmpty ? scholarNo.trim() : (getCachedScholarNo() ?? '');
+    try {
+      final d = date ?? DateTime.now();
+      final docId = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+      final cleanClass = classLevel.trim().isNotEmpty ? classLevel.trim() : 'Grade 10';
+      final cleanScholar = scholarNo.trim().isNotEmpty ? scholarNo.trim() : (getCachedScholarNo() ?? '');
 
-    final record = AttendanceRecord(
-      id: docId,
-      scholarNo: cleanScholar,
-      date: d,
-      status: status,
-      periodBreakdown: periodBreakdown ?? {for (int i = 1; i <= 8; i++) i: status},
-      excusedReason: remarks,
-      isApproved: true,
-      classLevel: cleanClass,
-    );
+      final record = AttendanceRecord(
+        id: docId,
+        scholarNo: cleanScholar,
+        date: d,
+        status: status,
+        periodBreakdown: periodBreakdown ?? {for (int i = 1; i <= 8; i++) i: status},
+        excusedReason: remarks,
+        isApproved: true,
+        classLevel: cleanClass,
+      );
 
-    await _firestore
-        .collection('classes')
-        .doc(cleanClass)
-        .collection('attendance')
-        .doc(cleanScholar)
-        .collection('records')
-        .doc(docId)
-        .set(record.toMap(), SetOptions(merge: true));
+      // 1. Persist to Firestore first if live
+      if (_isFirebaseLive) {
+        try {
+          if (firestoreFailureSimulated != null) {
+            throw firestoreFailureSimulated!;
+          }
+          await _firestore
+              .collection('classes')
+              .doc(cleanClass)
+              .collection('attendance')
+              .doc(cleanScholar)
+              .collection('records')
+              .doc(docId)
+              .set(record.toMap(), SetOptions(merge: true));
+        } catch (e) {
+          if (!_isNoAppException(e)) {
+            debugPrint('Firestore markStudentAttendance failure: $e');
+            return false;
+          }
+        }
+      }
 
-    // Update local cache immediately for zero-lag UI reaction
-    final existing = getCachedAttendanceRecords(classLevel: cleanClass, scholarNo: cleanScholar);
-    final updated = [
-      record,
-      ...existing.where((r) => r.id != docId && !(r.date.year == d.year && r.date.month == d.month && r.date.day == d.day)),
-    ]..sort();
-    await cacheAttendanceRecords(updated, classLevel: cleanClass, scholarNo: cleanScholar);
+      // 2. Update local cache on acknowledged write or offline test mode
+      final existing = getCachedAttendanceRecords(classLevel: cleanClass, scholarNo: cleanScholar);
+      final updated = [
+        record,
+        ...existing.where((r) => r.id != docId && !(r.date.year == d.year && r.date.month == d.month && r.date.day == d.day)),
+      ]..sort();
+      await cacheAttendanceRecords(updated, classLevel: cleanClass, scholarNo: cleanScholar);
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Get the cached user profile synchronously.

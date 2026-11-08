@@ -1,6 +1,13 @@
 # A8. Report-card publisher fabricates "official" records
 
-**Severity:** MEDIUM (second pass, 2026-11-08)
+**Severity:** MEDIUM (second pass, 2026-11-08)  
+**Status:** RESOLVED (Phase P1, 2026-11-08)
+
+## Resolution Evidence
+- **Model Hardening (`academic_report_card.dart:128, 173-176, 256-258`):** Removed the hardcoded getters that fabricated `'Approved for Academic Excellence and Merit Recognition.'`, `'Official'`, and `'A'`. Replaced with real nullable and serialized fields defaulting to `null` and `'Published'`.
+- **Validation Without Silent Fallbacks (`academics_screen.dart:5575-5630`):** Strict numeric validation on percentage (0-100), GPA (0-4), and attendance (0-100) displays error snackbars rather than silently falling back to 90.0/98.0.
+- **Eradication of Demo Prefills & Canned Comments (`academics_screen.dart:5310-5324, 5595-5630`):** Removed `'2310910'` prefill and canned demo remarks. The subject breakdown omits fabricated teacher comments (`teacherComment: ''`).
+- **Automated Verification:** Model round-trip and validation tests in `test/academics_security_test.dart` pass.
 
 ## Problem
 

@@ -9039,6 +9039,12 @@ void main() {
 
   testWidgets('Academics Test 5 (Test 226): TimetableTab UI: Add Period Modal, Edit Period & Auto-Load CBSE Template Interaction', (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues({});
+    await AuthService.cacheProfile({
+      'scholar_no': '11209',
+      'class_level': 'Grade 10',
+      'role': 'teacher',
+      'full_name': 'Teacher Staff',
+    });
 
     await tester.pumpWidget(
       MaterialApp(
@@ -9099,6 +9105,12 @@ void main() {
 
   testWidgets('Academics Test 6 (Test 227): AssignmentsTab UI: Add Task Modal, Subject Filtering & Delete Task Interaction', (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues({});
+    await AuthService.cacheProfile({
+      'scholar_no': '11209',
+      'class_level': 'Grade 10',
+      'role': 'teacher',
+      'full_name': 'Mr. Sharma',
+    });
 
     await tester.pumpWidget(
       MaterialApp(
@@ -9133,6 +9145,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Tap publish
+    await tester.ensureVisible(find.byKey(const Key('publish_assignment_button')));
     await tester.tap(find.byKey(const Key('publish_assignment_button')));
     await tester.pumpAndSettle();
 

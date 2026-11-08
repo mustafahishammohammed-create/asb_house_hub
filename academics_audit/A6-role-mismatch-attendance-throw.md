@@ -1,6 +1,13 @@
 # A6. faculty_advisor/teacher_lead role mismatch; attendance-mark denial throws unhandled
 
-**Severity:** LOW
+**Severity:** LOW  
+**Status:** RESOLVED (Phase P1, 2026-11-08)
+
+## Resolution Evidence
+- **Faculty Role Alignment (`firestore.rules:251-252`):** Added `'faculty_advisor'` and `'teacher_lead'` to the `isAdmin()` function in `firestore.rules` across both `request.auth.token.role` and `getUserData().role` branches. The rules now match the canonical list in `HierarchyService.isTeacherOrFaculty` (`hierarchy_service.dart:28-35`). Deployed to `cloud.firestore`.
+- **Bidirectional Contract Test (`test/academics_security_test.dart`):** Added a contract test verifying that every role admitted by `HierarchyService.isTeacherOrFaculty` is present in `firestore.rules`'s `isAdmin()` and vice versa.
+- **Attendance Save Error Handling (`auth_service.dart:1908-1964`, `academics_screen.dart:6435-6490`):** `markStudentAttendance` returns `Future<bool>`, attempts Firestore set first, checks `firestoreFailureSimulated`, returns `false` on failure, and updates cache only on ack. The dialog's Save button is wrapped in try/catch, checks the boolean result, displays a red error snackbar and keeps the dialog open on denial, only dismissing upon confirmed success.
+- **Automated Verification:** Verified by failure simulation unit test and rules-contract test in `test/academics_security_test.dart`. All tests pass.
 
 ## Problem
 

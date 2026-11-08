@@ -1,6 +1,13 @@
 # A5. Timetable clear/CBSE-populate are phantom; edit buttons ungated; demo content hardcoded
 
-**Severity:** LOW
+**Severity:** LOW  
+**Status:** RESOLVED (Phase P1, 2026-11-08)
+
+## Resolution Evidence
+- **Truthful Bulk Writes (`auth_service.dart:792-918`):** `clearTimetableForDay` and `populateDefaultCBSEWeeklyTimetable` execute Firestore delete/batch operations first, check `firestoreFailureSimulated`, return `false` on failure, and only mutate local cache upon verified server acknowledgement.
+- **UI Gating (`academics_screen.dart:452, 998, 1076`):** `add_period_button`, `empty_add_period_button`, `empty_load_cbse_button`, `populate_cbse_button`, and the per-card Edit/Delete icon buttons are gated on `if (isTeacherOrAdmin)` (`HierarchyService.isTeacherOrFaculty || isSuperAdmin`). Students see a clean read-only schedule.
+- **Starter Schedule Labeling (`academics_screen.dart:1169`):** The confirmation dialog explicitly informs the user that it populates an indicative starter template.
+- **Automated Verification:** Verified by failure simulation unit tests & student read-only widget test in `test/academics_security_test.dart` and `test/widget_test.dart` (Test 226). All tests pass.
 
 ## Problem
 

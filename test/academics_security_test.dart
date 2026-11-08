@@ -7,7 +7,13 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:asb_house_hub/services/auth_service.dart';
 import 'package:asb_house_hub/models/academic_report_card.dart';
 import 'package:asb_house_hub/models/medical_leave_request.dart';
+import 'package:asb_house_hub/models/academic_assignment.dart';
+import 'package:asb_house_hub/models/timetable_period.dart';
+import 'package:asb_house_hub/models/attendance_record.dart';
+import 'package:asb_house_hub/services/hierarchy_service.dart';
+import 'package:asb_house_hub/services/gamification_security_service.dart';
 import 'package:asb_house_hub/screens/admin_claims_screen.dart';
+import 'package:asb_house_hub/screens/academics_screen.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -16,6 +22,10 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     await AuthService.initPreferences();
     await AuthService.clearCache();
+    await GamificationSecurityService.initPreferences();
+    await GamificationSecurityService.clearCooldowns();
+    GamificationSecurityService.resetConsumedNoncesForTesting();
+    GamificationSecurityService.setTestSecret('test-secret-key-12345');
     AuthService.firestoreFailureSimulated = null;
     AuthService.isFirebaseLiveOverride = null;
   });
@@ -23,6 +33,7 @@ void main() {
   tearDown(() {
     AuthService.firestoreFailureSimulated = null;
     AuthService.isFirebaseLiveOverride = null;
+    GamificationSecurityService.setTestSecret(null);
   });
 
   group('P0-1 (A1): Report Cards Read Rules & Stream Error Fallback', () {
@@ -369,6 +380,496 @@ void main() {
       expect(cached.first.reviewedBy, 'Head of House Sapphire');
       expect(cached.first.adminRemark, 'Doctor certificate missing.');
       expect(cached.first.status, MedicalLeaveStatus.rejected);
+    });
+  });
+
+  group('P1-1 (A2): Assignment Publish/Delete Truthful Writes & Gate', () {
+    test('publishAssignment returns false on simulated Firestore failure and does not cache', () async {
+      final auth = AuthService();
+      await AuthService.cacheProfile({
+        'scholar_no': '11209',
+        'full_name': 'Teacher Staff',
+        'role': 'teacher',
+      });
+
+      final assignment = AcademicAssignment(
+        id: 'hw_test_fail',
+        title: 'Failing Math Task',
+        subject: 'Mathematics',
+        teacherName: 'Teacher Staff',
+        dueDateTime: DateTime.now().add(const Duration(days: 2)),
+        pointsReward: 30,
+        status: AssignmentStatus.pending,
+        description: 'Test failure handling',
+        classLevel: 'Grade 10',
+      );
+
+      AuthService.isFirebaseLiveOverride = true;
+      AuthService.firestoreFailureSimulated = FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'permission-denied',
+        message: 'Missing or insufficient permissions',
+      );
+
+      final ok = await auth.publishAssignment(
+        assignment: assignment,
+        classLevel: 'Grade 10',
+      );
+
+      expect(ok, isFalse, reason: 'publishAssignment must return false on Firestore error');
+      final cached = AuthService.getCachedAssignments(classLevel: 'Grade 10');
+      expect(cached.any((a) => a.id == 'hw_test_fail'), isFalse, reason: 'Cache must not be mutated on failed write');
+    });
+
+    test('deleteAssignment returns false on simulated Firestore failure and does not remove from cache', () async {
+      final auth = AuthService();
+      final assignment = AcademicAssignment(
+        id: 'hw_test_del_fail',
+        title: 'Do Not Delete Me',
+        subject: 'Mathematics',
+        teacherName: 'Teacher Staff',
+        dueDateTime: DateTime.now().add(const Duration(days: 2)),
+        pointsReward: 30,
+        status: AssignmentStatus.pending,
+        description: 'Testing delete denial',
+        classLevel: 'Grade 10',
+      );
+      await AuthService.cacheAssignments([assignment], classLevel: 'Grade 10');
+
+      AuthService.isFirebaseLiveOverride = true;
+      AuthService.firestoreFailureSimulated = FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'permission-denied',
+        message: 'Missing or insufficient permissions',
+      );
+
+      final ok = await auth.deleteAssignment(
+        assignmentId: 'hw_test_del_fail',
+        classLevel: 'Grade 10',
+        subject: 'Mathematics',
+      );
+
+      expect(ok, isFalse, reason: 'deleteAssignment must return false on Firestore error');
+      final cached = AuthService.getCachedAssignments(classLevel: 'Grade 10');
+      expect(cached.any((a) => a.id == 'hw_test_del_fail'), isTrue, reason: 'Assignment must remain in cache if delete denied');
+    });
+
+    testWidgets('Student and Council users see no Add Task or Delete Assignment buttons', (tester) async {
+      await AuthService.cacheProfile({
+        'scholar_no': '2310910',
+        'full_name': 'Student User',
+        'role': 'student',
+        'house': 'ruby',
+      });
+
+      final assignment = AcademicAssignment(
+        id: 'hw_student_view',
+        title: 'Read Only Task',
+        subject: 'Mathematics',
+        teacherName: 'Staff Member',
+        dueDateTime: DateTime.now().add(const Duration(days: 2)),
+        pointsReward: 20,
+        status: AssignmentStatus.pending,
+        description: 'Solve problems 1-10',
+        classLevel: 'Grade 10',
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AcademicsScreen(
+              initialTab: 'homework',
+              classLevel: 'Grade 10',
+              initialAssignments: [assignment],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('add_assignment_button')), findsNothing);
+      expect(find.byKey(const Key('empty_add_assignment_button')), findsNothing);
+      expect(find.byKey(Key('delete_assignment_${assignment.id}')), findsNothing);
+    });
+
+    testWidgets('Staff users see Add Task and Delete Assignment buttons', (tester) async {
+      await AuthService.cacheProfile({
+        'scholar_no': '11209',
+        'full_name': 'Teacher Staff',
+        'role': 'teacher',
+        'house': 'ruby',
+      });
+
+      final assignment = AcademicAssignment(
+        id: 'hw_teacher_view',
+        title: 'Manageable Task',
+        subject: 'Mathematics',
+        teacherName: 'Teacher Staff',
+        dueDateTime: DateTime.now().add(const Duration(days: 2)),
+        pointsReward: 20,
+        status: AssignmentStatus.pending,
+        description: 'Solve problems 1-10',
+        classLevel: 'Grade 10',
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AcademicsScreen(
+              initialTab: 'homework',
+              classLevel: 'Grade 10',
+              initialAssignments: [assignment],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('add_assignment_button')), findsOneWidget);
+      expect(find.byKey(Key('delete_assignment_${assignment.id}')), findsOneWidget);
+    });
+  });
+
+  group('P1-2 (A5): Timetable Bulk Ops Truthful Writes & Gate', () {
+    test('clearTimetableForDay returns false on simulated Firestore failure and does not clear cache', () async {
+      final auth = AuthService();
+      final period = TimetablePeriod(
+        periodNumber: 1,
+        subject: 'Mathematics',
+        teacherName: 'Mr. Ramanujan',
+        room: 'Room 201',
+        timeSlot: '08:00 - 08:45',
+        dayOfWeek: 'Sunday',
+        classLevel: 'Grade 10',
+      );
+      await AuthService.cacheTimetable([period], classLevel: 'Grade 10', dayOfWeek: 'Sunday');
+
+      AuthService.isFirebaseLiveOverride = true;
+      AuthService.firestoreFailureSimulated = FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'permission-denied',
+        message: 'Missing or insufficient permissions',
+      );
+
+      final ok = await auth.clearTimetableForDay(dayOfWeek: 'Sunday', classLevel: 'Grade 10');
+
+      expect(ok, isFalse, reason: 'clearTimetableForDay must return false on Firestore error');
+      final cached = AuthService.getCachedTimetable(classLevel: 'Grade 10', dayOfWeek: 'Sunday');
+      expect(cached.isNotEmpty, isTrue, reason: 'Cache must not be wiped if delete was denied');
+    });
+
+    test('populateDefaultCBSEWeeklyTimetable returns false on simulated Firestore failure and does not update cache', () async {
+      final auth = AuthService();
+      await AuthService.cacheTimetable([], classLevel: 'Grade 10', dayOfWeek: 'Sunday');
+
+      AuthService.isFirebaseLiveOverride = true;
+      AuthService.firestoreFailureSimulated = FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'permission-denied',
+        message: 'Missing or insufficient permissions',
+      );
+
+      final ok = await auth.populateDefaultCBSEWeeklyTimetable(classLevel: 'Grade 10');
+
+      expect(ok, isFalse, reason: 'populateDefaultCBSEWeeklyTimetable must return false on Firestore error');
+      final cached = AuthService.getCachedTimetable(classLevel: 'Grade 10', dayOfWeek: 'Sunday');
+      expect(cached.isEmpty, isTrue, reason: 'Cache must not be populated if batch write was denied');
+    });
+
+    testWidgets('Student sees read-only timetable without mutation affordances', (tester) async {
+      await AuthService.cacheProfile({
+        'scholar_no': '2310910',
+        'full_name': 'Student User',
+        'role': 'student',
+      });
+
+      final period = TimetablePeriod(
+        periodNumber: 1,
+        subject: 'Mathematics',
+        teacherName: 'Mr. Ramanujan',
+        room: 'Room 201',
+        timeSlot: '08:00 - 08:45',
+        dayOfWeek: 'Sunday',
+        classLevel: 'Grade 10',
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AcademicsScreen(
+              initialTab: 'timetable',
+              initialDay: 'Sunday',
+              classLevel: 'Grade 10',
+              initialPeriods: [period],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('add_period_button')), findsNothing);
+      expect(find.byKey(const Key('empty_add_period_button')), findsNothing);
+      expect(find.byKey(const Key('populate_cbse_button')), findsNothing);
+      expect(find.byKey(Key('edit_period_${period.periodNumber}')), findsNothing);
+      expect(find.byKey(Key('delete_period_${period.periodNumber}')), findsNothing);
+    });
+  });
+
+  group('P1-3 (A6): Faculty Role Lists Alignment Contract', () {
+    test('firestore.rules isAdmin role list exactly matches HierarchyService.isTeacherOrFaculty roles', () {
+      final rules = File('firestore.rules').readAsStringSync();
+      final match = RegExp(r"function isAdmin\(\) \{([\s\S]*?)\}").firstMatch(rules);
+      expect(match, isNotNull, reason: 'isAdmin function not found in firestore.rules');
+      final body = match!.group(1)!;
+
+      // Extract roles from request.auth.token.role in [...]
+      final tokenMatch = RegExp(r"role in \[([^\]]+)\]").firstMatch(body);
+      expect(tokenMatch, isNotNull, reason: 'role array not found in isAdmin()');
+      final rawRoles = tokenMatch!.group(1)!;
+      final rulesRoles = RegExp(r"'([^']+)'")
+          .allMatches(rawRoles)
+          .map((m) => m.group(1)!)
+          .toSet();
+
+      // HierarchyService.isTeacherOrFaculty known roles
+      const clientFacultyRoles = {
+        'teacher',
+        'faculty',
+        'principal',
+        'staff',
+        'faculty_advisor',
+        'teacher_lead',
+      };
+
+      for (final r in clientFacultyRoles) {
+        expect(
+          rulesRoles.contains(r),
+          isTrue,
+          reason: 'Role "$r" recognized by client HierarchyService must be authorized in firestore.rules isAdmin()',
+        );
+        expect(
+          HierarchyService.isTeacherOrFaculty(role: r),
+          isTrue,
+          reason: 'HierarchyService must authorize role "$r"',
+        );
+      }
+      expect(rulesRoles, equals(clientFacultyRoles));
+    });
+  });
+
+  group('P1-4 (A6): Attendance Save Error Handling', () {
+    test('markStudentAttendance returns false on simulated Firestore failure and does not update cache', () async {
+      final auth = AuthService();
+      await AuthService.cacheProfile({
+        'scholar_no': '11209',
+        'full_name': 'Teacher Staff',
+        'role': 'teacher',
+      });
+
+      AuthService.isFirebaseLiveOverride = true;
+      AuthService.firestoreFailureSimulated = FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'permission-denied',
+        message: 'Missing or insufficient permissions',
+      );
+
+      final ok = await auth.markStudentAttendance(
+        classLevel: 'Grade 10',
+        scholarNo: '99999',
+        status: AttendanceStatus.present,
+        remarks: 'Test denial',
+      );
+
+      expect(ok, isFalse, reason: 'markStudentAttendance must return false on Firestore error');
+      final cached = AuthService.getCachedAttendanceRecords(classLevel: 'Grade 10', scholarNo: '99999');
+      expect(cached.isEmpty, isTrue, reason: 'Cache must not be updated if attendance save failed');
+    });
+  });
+
+  group('P1-5 (A4): Honours Merit Claim Interim Hardening', () {
+    test('claimReportCardHonoursMerit validates GPA against card doc and rejects spoofed caller GPA', () async {
+      final auth = AuthService();
+      await AuthService.cacheProfile({
+        'scholar_no': '2310910',
+        'full_name': 'Honours Student',
+        'house': 'ruby',
+        'role': 'student',
+      });
+
+      // Card has GPA 3.50 (below 3.80 requirement)
+      final card = AcademicReportCard(
+        id: 'rep_gpa_low',
+        scholarNo: '2310910',
+        studentName: 'Honours Student',
+        termName: 'Term 1 Mid-Term',
+        overallGpa: 3.50,
+        overallPercentage: 87.5,
+        publishedAt: DateTime(2026, 11, 1),
+        isMeritClaimed: false,
+      );
+      await AuthService.cacheReportCards([card], classLevel: 'Grade 10', scholarNo: '2310910');
+
+      // Caller attempts to spoof gpa = 4.0
+      final ok = await auth.claimReportCardHonoursMerit(
+        reportCardId: 'rep_gpa_low',
+        classLevel: 'Grade 10',
+        scholarNo: '2310910',
+        house: 'ruby',
+        gpa: 4.0, // spoofed!
+        pointsReward: 50,
+      );
+
+      expect(ok, isFalse, reason: 'Claim must be rejected because verified GPA from card is < 3.80');
+      final cached = AuthService.getCachedReportCards(classLevel: 'Grade 10', scholarNo: '2310910');
+      expect(cached.first.isMeritClaimed, isFalse, reason: 'Card must not be marked as claimed on rejection');
+    });
+
+    test('claimReportCardHonoursMerit rejects claim when scholar number mismatches card owner', () async {
+      final auth = AuthService();
+      await AuthService.cacheProfile({
+        'scholar_no': '2310910',
+        'full_name': 'Honours Student',
+        'house': 'ruby',
+        'role': 'student',
+      });
+
+      final card = AcademicReportCard(
+        id: 'rep_other_student',
+        scholarNo: '9999999', // different scholar!
+        studentName: 'Another Student',
+        termName: 'Term 1 Mid-Term',
+        overallGpa: 3.95,
+        overallPercentage: 96.0,
+        publishedAt: DateTime(2026, 11, 1),
+        isMeritClaimed: false,
+      );
+      await AuthService.cacheReportCards([card], classLevel: 'Grade 10', scholarNo: '9999999');
+
+      final ok = await auth.claimReportCardHonoursMerit(
+        reportCardId: 'rep_other_student',
+        classLevel: 'Grade 10',
+        scholarNo: '2310910',
+        house: 'ruby',
+        gpa: 3.95,
+        pointsReward: 50,
+      );
+
+      expect(ok, isFalse, reason: 'Claim must be rejected when caller does not own the card');
+    });
+
+    test('claimReportCardHonoursMerit rejects claim if distinction already claimed', () async {
+      final auth = AuthService();
+      await AuthService.cacheProfile({
+        'scholar_no': '2310910',
+        'full_name': 'Honours Student',
+        'house': 'ruby',
+        'role': 'student',
+      });
+
+      final card = AcademicReportCard(
+        id: 'rep_already_claimed',
+        scholarNo: '2310910',
+        studentName: 'Honours Student',
+        termName: 'Term 1 Mid-Term',
+        overallGpa: 3.90,
+        overallPercentage: 95.0,
+        publishedAt: DateTime(2026, 11, 1),
+        isMeritClaimed: true, // Already claimed!
+      );
+      await AuthService.cacheReportCards([card], classLevel: 'Grade 10', scholarNo: '2310910');
+
+      final ok = await auth.claimReportCardHonoursMerit(
+        reportCardId: 'rep_already_claimed',
+        classLevel: 'Grade 10',
+        scholarNo: '2310910',
+        house: 'ruby',
+        gpa: 3.90,
+        pointsReward: 50,
+      );
+
+      expect(ok, isFalse, reason: 'Claim must be rejected if distinction is already claimed');
+    });
+
+    test('claimReportCardHonoursMerit succeeds and awards points for qualifying unclaimed card', () async {
+      final auth = AuthService();
+      await AuthService.cacheProfile({
+        'scholar_no': '2310910',
+        'full_name': 'Honours Student',
+        'house': 'ruby',
+        'role': 'student',
+      });
+
+      final card = AcademicReportCard(
+        id: 'rep_qualifying',
+        scholarNo: '2310910',
+        studentName: 'Honours Student',
+        termName: 'Term 1 Mid-Term',
+        overallGpa: 3.88,
+        overallPercentage: 94.0,
+        publishedAt: DateTime(2026, 11, 1),
+        isMeritClaimed: false,
+      );
+      await AuthService.cacheReportCards([card], classLevel: 'Grade 10', scholarNo: '2310910');
+
+      final ok = await auth.claimReportCardHonoursMerit(
+        reportCardId: 'rep_qualifying',
+        classLevel: 'Grade 10',
+        scholarNo: '2310910',
+        house: 'ruby',
+        gpa: 3.88,
+        pointsReward: 50,
+      );
+
+      expect(ok, isTrue, reason: 'Qualifying card claim should succeed');
+      final cached = AuthService.getCachedReportCards(classLevel: 'Grade 10', scholarNo: '2310910');
+      expect(cached.first.isMeritClaimed, isTrue, reason: 'Card must be marked claimed in cache');
+    });
+  });
+
+  group('P1-6 (A8): Stop Fabricating Official Report Cards', () {
+    test('AcademicReportCard does not fabricate principalRemarks or fixed section', () {
+      final card = AcademicReportCard(
+        id: 'rep_clean',
+        scholarNo: '11209',
+        studentName: 'Real Student',
+        termName: 'Term 1 Final',
+        overallGpa: 3.92,
+        overallPercentage: 94.5,
+        publishedAt: DateTime(2026, 11, 1),
+      );
+
+      expect(card.principalRemarks, isNull, reason: 'Model must not synthesize fake principal remarks');
+      expect(card.section, isNull, reason: 'Model must not synthesize fake section');
+      expect(card.status, equals('Published'), reason: 'Default status should be Published, not hardcoded Official');
+
+      final map = card.toMap();
+      expect(map.containsKey('principal_remarks'), isFalse);
+      expect(map.containsKey('section'), isFalse);
+    });
+
+    test('AcademicReportCard round-trips stored fields without inventing values', () {
+      final cardWithRemarks = AcademicReportCard(
+        id: 'rep_with_remarks',
+        scholarNo: '11209',
+        studentName: 'Real Student',
+        termName: 'Term 1 Final',
+        overallGpa: 3.92,
+        overallPercentage: 94.5,
+        publishedAt: DateTime(2026, 11, 1),
+        status: 'Official',
+        section: 'B',
+        principalRemarks: 'Real human endorsement from the Principal',
+      );
+
+      final map = cardWithRemarks.toMap();
+      expect(map['principal_remarks'], equals('Real human endorsement from the Principal'));
+      expect(map['section'], equals('B'));
+      expect(map['status'], equals('Official'));
+
+      final reconstructed = AcademicReportCard.fromMap(map);
+      expect(reconstructed.principalRemarks, equals('Real human endorsement from the Principal'));
+      expect(reconstructed.section, equals('B'));
+      expect(reconstructed.status, equals('Official'));
     });
   });
 }
