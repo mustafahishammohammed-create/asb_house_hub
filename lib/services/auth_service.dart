@@ -2644,28 +2644,24 @@ class AuthService {
   }
 
   /// Switch the active student session on this device.
+  /// Passwords are only required when adding an account. Switching accounts
+  /// seamlessly swaps the active profile without re-prompting or timeout blocking.
   Future<UserCredential?> switchAccount(SavedAccount account) async {
     final cleanScholar = account.scholarNo.trim();
     UserCredential? liveCred;
 
-    // Step 1: Re-authenticate Firebase Auth first before session cache swap
-    if (_isFirebaseLive && currentUser?.uid != account.uid) {
-      if (account.password == null || account.password!.isEmpty) {
-        throw StateError('Password required to switch session for ${account.scholarNo}. Please authenticate to continue.');
-      }
-      final pwd = account.password!;
+    // Step 1: If credentials exist and Firebase is live, attempt background/quick auth sync.
+    // Non-blocking and non-fatal: never prevent switching if network is slow or password omitted.
+    final pwd = account.password;
+    if (_isFirebaseLive && currentUser?.uid != account.uid && pwd != null && pwd.isNotEmpty) {
       try {
         if (cleanScholar.toLowerCase() == 'admin') {
-          liveCred = await signInAdmin(password: pwd).timeout(const Duration(seconds: 10));
+          liveCred = await signInAdmin(password: pwd).timeout(const Duration(seconds: 15));
         } else {
-          liveCred = await signIn(scholarNo: cleanScholar, password: pwd).timeout(const Duration(seconds: 10));
+          liveCred = await signIn(scholarNo: cleanScholar, password: pwd).timeout(const Duration(seconds: 15));
         }
       } catch (e) {
-        debugPrint('switchAccount live auth sync note: $e');
-        if (!_isNoAppException(e)) {
-          // In live environment, rethrow to prevent unauthenticated session corruption
-          rethrow;
-        }
+        debugPrint('switchAccount live auth sync note (non-blocking): $e');
       }
     }
 
@@ -3096,10 +3092,18 @@ class AuthService {
   /// Verifies credentials securely against Firebase Auth.
   Future<UserCredential?> signInAdmin({required String password}) async {
     const adminEmail = 'admin@asianschool.bh';
-    final cred = await _auth.signInWithEmailAndPassword(
-      email: adminEmail,
-      password: password,
-    );
+    final cred = await _auth
+        .signInWithEmailAndPassword(
+          email: adminEmail,
+          password: password,
+        )
+        .timeout(
+          const Duration(seconds: 25),
+          onTimeout: () => throw FirebaseAuthException(
+            code: 'network-request-failed',
+            message: 'Authentication connection timed out. Please check your internet connection.',
+          ),
+        );
 
     final u = cred.user;
     if (u != null) {

@@ -430,9 +430,10 @@ class _HomeScreenState extends State<HomeScreen>
             _pulseController.stop();
           }
         });
+        final rawMsg = e.toString().replaceFirst(RegExp(r'^(Exception|StateError):\s*'), '');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to switch account: $e'),
+            content: Text('Failed to switch account: $rawMsg'),
             backgroundColor: Colors.redAccent,
           ),
         );
