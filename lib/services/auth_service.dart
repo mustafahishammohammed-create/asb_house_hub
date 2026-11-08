@@ -6741,7 +6741,7 @@ class AuthService {
 
   static const List<String> _staffRoles = [
     'teacher', 'faculty', 'principal', 'staff', 'admin', 'super_admin',
-    'faculty_advisor', 'teacher_lead',
+    'faculty_advisor', 'teacher_lead', 'class_teacher', 'subject_teacher',
   ];
 
   /// Persist the academic class registry to disk for offline rendering.
@@ -6822,6 +6822,9 @@ class AuthService {
         final existing = await ref.get();
         final data = entry.toMap();
         data.remove('created_at');
+        // Always write the assignment fields so clearing a teacher UID in the
+        // admin dialog actually revokes access instead of leaving the old UID.
+        data['class_teacher_uid'] = entry.classTeacherUid ?? '';
         data['updated_at'] = FieldValue.serverTimestamp();
         if (existing.exists) {
           await ref.update(data);
@@ -6924,6 +6927,69 @@ class AuthService {
         timetableEditorUids: timetableEditorUids ?? current.timetableEditorUids,
         timetableEditingEnabled: timetableEditingEnabled ?? current.timetableEditingEnabled,
         timetableRequiresApproval: timetableRequiresApproval ?? current.timetableRequiresApproval,
+      );
+      await cacheAcademicClasses(cached);
+    }
+    return true;
+  }
+
+  /// Updates class-group permissions for a class/section (admin only).
+  ///
+  /// [classTeacherUid] and [subjectTeacherUids] are the authoritative
+  /// assignments used by the class-group rules. [studentPostingEnabled] is the
+  /// school-controlled switch for student messages; it defaults to false.
+  Future<bool> updateClassCommunicationSettings({
+    required String classId,
+    String? classTeacherUid,
+    List<String>? subjectTeacherUids,
+    bool? studentPostingEnabled,
+  }) async {
+    final id = classId.trim();
+    if (id.isEmpty) return false;
+
+    final updates = <String, dynamic>{
+      'updated_at': FieldValue.serverTimestamp(),
+    };
+    if (classTeacherUid != null) {
+      updates['class_teacher_uid'] = classTeacherUid.trim();
+    }
+    if (subjectTeacherUids != null) {
+      updates['subject_teacher_uids'] = subjectTeacherUids
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toSet()
+          .toList();
+    }
+    if (studentPostingEnabled != null) {
+      updates['student_posting_enabled'] = studentPostingEnabled;
+    }
+
+    if (_isFirebaseLive) {
+      try {
+        if (firestoreFailureSimulated != null) {
+          throw firestoreFailureSimulated!;
+        }
+        await _firestore.collection('academic_classes').doc(id).update(updates);
+      } catch (e) {
+        if (!_isNoAppException(e)) {
+          debugPrint('Firestore updateClassCommunicationSettings failure: $e');
+          return false;
+        }
+      }
+    }
+
+    final cached = getCachedAcademicClasses();
+    final idx = cached.indexWhere((c) => c.classId == id);
+    if (idx != -1) {
+      final current = cached[idx];
+      cached[idx] = current.copyWith(
+        classTeacherUid: classTeacherUid?.trim(),
+        subjectTeacherUids: subjectTeacherUids
+            ?.map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .toSet()
+            .toList(),
+        studentPostingEnabled: studentPostingEnabled,
       );
       await cacheAcademicClasses(cached);
     }

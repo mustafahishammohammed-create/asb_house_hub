@@ -33,8 +33,8 @@ Legend: **EXISTS** (keep) · **PARTIAL** (extend) · **MISSING** (build) · **CO
 
 ## 4. Class groups / academic communication (spec §4)
 
-- **MISSING** — No per-class group or class announcement channel. Assignments/exams exist but no class-scoped discussion/announcement feed.
-- **Depends on** §1 (verified class identity) and §3 (group machinery).
+- **DELIVERED 2026-11-08** — per-class channel `class_groups/{classId}` + messages. Membership derives from verified `class_id` + `class_verified` on the profile (no join document); the class teacher and assigned subject teachers are scoped by `academic_classes` (`class_teacher_uid`, `subject_teacher_uids`); class representatives/vice always send; ordinary students/prefects send only when the school enables `student_posting_enabled`; senior admins view/moderate across classes but do not send. Categories, image data-URL attachments, and pin/hide/delete moderation reuse M4. Read/write isolation is enforced in `firestore.rules`.
+- **KNOWN LIMITS** — class announcements do not fan out notifications until M6/test 62; attachments are Firestore data-URL strings, not Storage; message streams are capped at 200; rules tests are source-contract assertions. See `M5_VERIFICATION.md`.
 
 ## 5. Notification engine (spec §5)
 
@@ -49,7 +49,7 @@ Legend: **EXISTS** (keep) · **PARTIAL** (extend) · **MISSING** (build) · **CO
 ## 7. Roles / RBAC (spec §9.3)
 
 - **EXISTS** — `hierarchy_service.dart`: super_admin; teacher/faculty/principal/staff/faculty_advisor/teacher_lead; captain/vice_captain/house_captain/house_vice_captain; council (head_boy, head_girl, deputy_*, sports_captain, sports_vice_captain, cultural_secretary, head_of_activities); prefect/student_rep/grade_prefect. Rules helpers mirror these, and M4 extended the `isValidUser` role whitelist with the council/head/deputy/activity roles used by house-group senders.
-- **PARTIAL** — head_boy/head_girl/sports_captain exist (as council). **MISSING** distinct class_teacher / subject_teacher / class_representative / vice_class_representative / parent roles and per-class teaching assignments.
+- **DELIVERED (M5)** — `class_teacher`, `subject_teacher`, `class_representative`, `vice_class_representative`, and `parent` roles added client-side and to the rules role whitelist; `class_teacher`/`subject_teacher` count as faculty, and per-class teaching assignments live on `academic_classes`. A people-picker for those UIDs is an M7 admin-expansion improvement.
 - **CONFLICT (known, fixed for academics)** — client `isTeacherOrFaculty` admits faculty_advisor/teacher_lead; rules historically didn't (A6 — addressed in `1f426c2`; keep lists synced).
 
 ## 8. Student profile / dashboard (spec §7)
@@ -81,7 +81,7 @@ Each module: model + service + rules + UI + tests, deployed and verified before 
 - **M2 — Mandated timetable engine. ✅ DELIVERED 2026-11-08.** 8×45 + 30-min break structure; start-time editor with auto end-time; validation (count/duration/overlap/chronology); per-section + per-day; publish/draft; rules scoped to verified class. *(Spec centerpiece; depends on M1.)* V1–V4 fixed; V5 notification fan-out stays M6; V6/V7 non-blocking; rules tests are source contract (V8). See `M2_VERIFICATION.md`.
 - **M3 — Timetable advanced. ✅ DELIVERED FOR SCOPE 2026-11-08.** Client-side double-booking detection (teacher/room, tests 18–19), copy-to-selected-days (31–32), temporary one-day overrides (33), substitution markers, version history/restore already in M2. Server-side conflict validation at scale stays Blaze-deferred; substitution notification fan-out stays M6; admin approval queue stays M7. See `M3_VERIFICATION.md`.
 - **M4 — House communication groups. ✅ DELIVERED 2026-11-08.** Profile-derived auto-membership; role-restricted send (students/prefects read-only) enforced in rules; categories; pin/hide/delete moderation; cross-house isolation and transfer semantics. *(Depends on M1 house identity; independent of M2/M3.)* See `M4_VERIFICATION.md`.
-- **M5 — Class groups & academic communication.** Per-class channel; teacher/subject-teacher/class-rep permissions; configurable student send; class announcements. *(Depends on M1 + M4 machinery.)*
+- **M5 — Class groups & academic communication. ✅ DELIVERED FOR SCOPE 2026-11-08.** Verified-class auto-membership; class-teacher and assigned-subject-teacher send; class representative/vice send; configurable `student_posting_enabled` (default read-only); categories, data-URL attachments, pin/hide/delete moderation; cross-class isolation in rules. *(Depends on M1 + M4 machinery.)* Class notification fan-out stays M6/test 62; rules tests are source contract. See `M5_VERIFICATION.md`.
 - **M6 — Notification engine (in-app, Spark).** `notifications` collection + stream; read/unread; priority; dedupe; timetable/class/house change alerts. Blaze server fan-out deferred. *(Depends on M2/M4/M5 events.)*
 - **M7 — Admin Command Center expansion.** Academic/teacher/house/group/user management, timetable approval queue, audit logs, promotion. *(Depends on M1–M6.)*
 - **M8 — Dashboard & profile polish + acceptance.** Verified-class dashboard (today/current/next/break), class-teacher field, full spec §11 acceptance suite (roles × frontend × backend). *(Capstone.)*

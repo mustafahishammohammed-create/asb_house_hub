@@ -192,6 +192,22 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
     );
   }
 
+  Future<void> _editClassCommunication(AcademicClass cls) async {
+    final updated = await showDialog<AcademicClass>(
+      context: context,
+      builder: (ctx) => _ClassCommunicationDialog(cls: cls),
+    );
+    if (updated == null || !mounted) return;
+    final ok = await _authService.saveAcademicClass(updated);
+    if (!mounted) return;
+    _toast(
+      ok
+          ? 'Class group settings updated for ${cls.classId}.'
+          : 'Could not update class group settings for ${cls.classId}.',
+      error: !ok,
+    );
+  }
+
   Future<void> _toggleClassActive(AcademicClass cls, bool active) async {
     final ok = await _authService.setClassActive(cls.classId, active);
     if (!mounted) return;
@@ -448,6 +464,11 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                       tooltip: 'Edit class teacher',
                       icon: const Icon(Icons.edit_outlined, size: 20),
                       onPressed: () => _editClassTeacher(cls),
+                    ),
+                    IconButton(
+                      tooltip: 'Class group settings',
+                      icon: const Icon(Icons.forum_outlined, size: 20),
+                      onPressed: () => _editClassCommunication(cls),
                     ),
                     Switch(
                       value: cls.active,
@@ -759,6 +780,138 @@ class _SectionEditorDialogState extends State<_SectionEditorDialog> {
             ),
           ),
           child: const Text('Create'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Admin editor for the class-group permissions stored on the class registry.
+/// These values are the authoritative assignments checked by firestore.rules.
+class _ClassCommunicationDialog extends StatefulWidget {
+  final AcademicClass cls;
+
+  const _ClassCommunicationDialog({required this.cls});
+
+  @override
+  State<_ClassCommunicationDialog> createState() =>
+      _ClassCommunicationDialogState();
+}
+
+class _ClassCommunicationDialogState extends State<_ClassCommunicationDialog> {
+  late final TextEditingController _teacherNameController;
+  late final TextEditingController _teacherUidController;
+  late final TextEditingController _subjectUidsController;
+  late bool _studentPostingEnabled;
+
+  @override
+  void initState() {
+    super.initState();
+    _teacherNameController =
+        TextEditingController(text: widget.cls.classTeacher);
+    _teacherUidController =
+        TextEditingController(text: widget.cls.classTeacherUid ?? '');
+    _subjectUidsController = TextEditingController(
+      text: widget.cls.subjectTeacherUids.join(', '),
+    );
+    _studentPostingEnabled = widget.cls.studentPostingEnabled;
+  }
+
+  @override
+  void dispose() {
+    _teacherNameController.dispose();
+    _teacherUidController.dispose();
+    _subjectUidsController.dispose();
+    super.dispose();
+  }
+
+  List<String> _parseUids(String raw) {
+    final seen = <String>{};
+    for (final part in raw.split(',')) {
+      final uid = part.trim();
+      if (uid.isNotEmpty) seen.add(uid);
+    }
+    return seen.toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Class Group — ${widget.cls.classId}'),
+      content: SizedBox(
+        width: 360,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: _teacherNameController,
+                decoration: const InputDecoration(
+                  labelText: 'Class teacher name',
+                  hintText: 'e.g. Ms. Fatima Al Hasan',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _teacherUidController,
+                decoration: const InputDecoration(
+                  labelText: 'Class teacher UID',
+                  hintText: 'Firebase Auth UID for class-group access',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _subjectUidsController,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                  labelText: 'Subject teacher UIDs',
+                  hintText: 'Comma-separated Firebase Auth UIDs',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _studentPostingEnabled,
+                title: const Text('Allow student posting'),
+                subtitle: const Text(
+                  'Default is read-only. Class representatives can always post.',
+                ),
+                onChanged: (v) =>
+                    setState(() => _studentPostingEnabled = v),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'These assignments are enforced by Firestore rules. Subject teachers only see the classes listed here.',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  height: 1.35,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(
+            context,
+            widget.cls.copyWith(
+              classTeacher: _teacherNameController.text.trim(),
+              classTeacherUid: _teacherUidController.text.trim(),
+              subjectTeacherUids: _parseUids(_subjectUidsController.text),
+              studentPostingEnabled: _studentPostingEnabled,
+            ),
+          ),
+          child: const Text('Save'),
         ),
       ],
     );

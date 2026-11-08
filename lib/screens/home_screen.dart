@@ -13,6 +13,7 @@ import 'merch_store_tab.dart';
 import '../widgets/camera_capture_dialog.dart';
 import 'chat_list_screen.dart';
 import 'house_group_screen.dart';
+import 'class_group_screen.dart';
 import 'digital_wallet_screen.dart';
 import 'house_leaderboard_screen.dart';
 import 'id_scanner_screen.dart';
@@ -3405,6 +3406,13 @@ class _HomeScreenState extends State<HomeScreen>
         'color': HouseColors.getHouseColor(houseName),
       },
       {
+        'title': '🏫 My Class Group',
+        'sub':
+            'Class announcements, homework, and updates from your class teacher and representatives.',
+        'icon': Icons.school_rounded,
+        'color': themeColor,
+      },
+      {
         'title': 'Attendance Record',
         'sub': 'View your term attendance summary and status.',
         'icon': Icons.fact_check_rounded,
@@ -3465,6 +3473,11 @@ class _HomeScreenState extends State<HomeScreen>
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const HouseGroupScreen()),
+              );
+            } else if (item['title'] == '🏫 My Class Group') {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ClassGroupScreen()),
               );
             } else if (item['title'] == 'Attendance Record') {
               Navigator.push(
@@ -5103,6 +5116,20 @@ class _HomeScreenState extends State<HomeScreen>
                         context,
                         MaterialPageRoute(
                           builder: (_) => const HouseGroupScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildDrawerTile(
+                    Icons.school_rounded,
+                    '🏫 Class Group',
+                    color,
+                    () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ClassGroupScreen(),
                         ),
                       );
                     },

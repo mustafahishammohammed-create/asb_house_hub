@@ -267,8 +267,8 @@ service cloud.firestore {
     function isAdmin() {
       return isSignedIn() && (
         isSuperAdmin() ||
-        (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in ['teacher', 'faculty', 'principal', 'staff', 'faculty_advisor', 'teacher_lead']) ||
-        (hasUserDoc() && 'role' in getUserData() && getUserData().role in ['teacher', 'faculty', 'principal', 'staff', 'faculty_advisor', 'teacher_lead'])
+        (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in ['teacher', 'faculty', 'principal', 'staff', 'faculty_advisor', 'teacher_lead', 'class_teacher', 'subject_teacher']) ||
+        (hasUserDoc() && 'role' in getUserData() && getUserData().role in ['teacher', 'faculty', 'principal', 'staff', 'faculty_advisor', 'teacher_lead', 'class_teacher', 'subject_teacher'])
       );
     }
 
@@ -360,6 +360,68 @@ service cloud.firestore {
       return isSeniorAdmin() || isHouseSender(houseId);
     }
 
+    // Class-group membership is derived from the verified class placement on
+    // the profile. Unverified signups and legacy profiles without
+    // class_verified == true are not members.
+    function isVerifiedClassMember(classId) {
+      return isSignedIn() && hasUserDoc() &&
+        'class_id' in getUserData() &&
+        getUserData().class_id is string &&
+        getUserData().class_id.upper() == classId.upper() &&
+        'class_verified' in getUserData() &&
+        getUserData().class_verified == true;
+    }
+
+    function isClassTeacher(classId) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/academic_classes/$(classId)) &&
+        'class_teacher_uid' in getClassData(classId) &&
+        getClassData(classId).class_teacher_uid == request.auth.uid;
+    }
+
+    // Subject teachers can only post to classes where an administrator has
+    // listed their UID in academic_classes/{classId}.subject_teacher_uids.
+    function isClassSubjectTeacher(classId) {
+      return isAdmin() &&
+        exists(/databases/$(database)/documents/academic_classes/$(classId)) &&
+        'subject_teacher_uids' in getClassData(classId) &&
+        request.auth.uid in getClassData(classId).subject_teacher_uids;
+    }
+
+    function isClassRepresentative(classId) {
+      return isVerifiedClassMember(classId) && hasUserDoc() &&
+        'role' in getUserData() &&
+        getUserData().role in ['class_representative', 'vice_class_representative'];
+    }
+
+    function isClassStudentSender(classId) {
+      return isVerifiedClassMember(classId) && hasUserDoc() &&
+        'role' in getUserData() &&
+        getUserData().role in ['student', 'prefect'] &&
+        exists(/databases/$(database)/documents/academic_classes/$(classId)) &&
+        'student_posting_enabled' in getClassData(classId) &&
+        getClassData(classId).student_posting_enabled == true;
+    }
+
+    function isClassSender(classId) {
+      return isClassTeacher(classId) ||
+        isClassSubjectTeacher(classId) ||
+        isClassRepresentative(classId) ||
+        isClassStudentSender(classId);
+    }
+
+    function isClassModerator(classId) {
+      return isSeniorAdmin() || isClassTeacher(classId);
+    }
+
+    function isClassViewer(classId) {
+      return isVerifiedClassMember(classId) ||
+        isClassTeacher(classId) ||
+        isClassSubjectTeacher(classId) ||
+        isClassRepresentative(classId) ||
+        isSeniorAdmin();
+    }
+
     // Resolves student identity against current authenticated user (via email prefix or users profile)
     function isScholarOwner(scholarNo) {
       return isSignedIn() && (
@@ -403,7 +465,9 @@ service cloud.firestore {
         'sports_captain', 'sports_vice_captain', 'sports_lead',
         'head_boy', 'head_girl', 'deputy_head_boy', 'deputy_head_girl',
         'head_of_activities', 'cultural_secretary', 'executive_council',
+        'class_representative', 'vice_class_representative', 'parent',
         'teacher', 'faculty', 'faculty_advisor', 'teacher_lead',
+        'class_teacher', 'subject_teacher',
         'principal', 'staff', 'administrator', 'admin', 'super_admin'
       ] &&
       data.house_name is string && data.house_name.lower() in ['ruby', 'sapphire', 'emerald', 'topaz'] &&
@@ -435,7 +499,8 @@ service cloud.firestore {
     function isValidAcademicClass(data) {
       return hasOnlyAllowedFields([
         'class_id', 'grade', 'section', 'active', 'class_teacher',
-        'class_teacher_uid', 'timetable_editor_uids', 'timetable_editing_enabled', 'timetable_requires_approval',
+        'class_teacher_uid', 'subject_teacher_uids', 'student_posting_enabled',
+        'timetable_editor_uids', 'timetable_editing_enabled', 'timetable_requires_approval',
         'academic_year', 'created_at', 'updated_at'
       ]) &&
       hasRequiredFields(['class_id', 'grade', 'section', 'active']) &&
@@ -448,6 +513,8 @@ service cloud.firestore {
       data.active is bool &&
       (!('class_teacher' in data) || (data.class_teacher is string && data.class_teacher.size() <= 100)) &&
       (!('class_teacher_uid' in data) || (data.class_teacher_uid is string && data.class_teacher_uid.size() <= 128)) &&
+      (!('subject_teacher_uids' in data) || (data.subject_teacher_uids is list && data.subject_teacher_uids.size() <= 30)) &&
+      (!('student_posting_enabled' in data) || data.student_posting_enabled is bool) &&
       (!('timetable_editor_uids' in data) || (data.timetable_editor_uids is list && data.timetable_editor_uids.size() <= 20)) &&
       (!('timetable_editing_enabled' in data) || data.timetable_editing_enabled is bool) &&
       (!('timetable_requires_approval' in data) || data.timetable_requires_approval is bool) &&
@@ -743,6 +810,56 @@ service cloud.firestore {
         data.sender_name is string && data.sender_name.size() >= 1 && data.sender_name.size() <= 100 &&
         data.sender_role is string && data.sender_role.size() <= 100 &&
         data.sender_house is string && data.sender_house.lower() == houseId.lower() &&
+        data.text is string && data.text.size() <= 2000 &&
+        (data.text.size() >= 1 || (
+          'attachment_url' in data &&
+          data.attachment_url is string &&
+          data.attachment_url.size() >= 1
+        )) &&
+        (!('attachment_url' in data) ||
+          (data.attachment_url is string && data.attachment_url.size() <= 900000)) &&
+        data.category is string && data.category in [
+          'general', 'announcement', 'event', 'sports'
+        ] &&
+        data.is_pinned is bool &&
+        data.is_hidden is bool &&
+        (!('moderated_by' in data) || (data.moderated_by is string && data.moderated_by.size() <= 128)) &&
+        (!('moderated_at' in data) || data.moderated_at is timestamp) &&
+        data.timestamp is timestamp;
+    }
+
+    function isValidClassGroup(classId, data) {
+      return hasOnlyAllowedFields([
+          'class_id', 'name', 'description', 'last_message',
+          'last_message_at', 'created_at', 'updated_at'
+        ]) &&
+        hasRequiredFields(['class_id', 'name']) &&
+        data.class_id is string && data.class_id.upper() == classId.upper() &&
+        data.name is string && data.name.size() >= 3 && data.name.size() <= 100 &&
+        (!('description' in data) || (data.description is string && data.description.size() <= 300)) &&
+        (!('last_message' in data) || (data.last_message is string && data.last_message.size() <= 500)) &&
+        (!('last_message_at' in data) || data.last_message_at is timestamp) &&
+        (!('created_at' in data) || data.created_at is timestamp) &&
+        (!('updated_at' in data) || data.updated_at is timestamp);
+    }
+
+    // Class-group messages are writable only by the class teacher, an assigned
+    // subject teacher, a class representative, or a student when the school has
+    // enabled student posting for this class.
+    function isValidClassGroupMessage(classId, data) {
+      return hasOnlyAllowedFields([
+          'sender_id', 'sender_name', 'sender_role', 'sender_class',
+          'text', 'category', 'attachment_url', 'timestamp',
+          'is_pinned', 'is_hidden', 'moderated_by', 'moderated_at'
+        ]) &&
+        hasRequiredFields([
+          'sender_id', 'sender_name', 'sender_role', 'sender_class',
+          'text', 'category', 'is_pinned', 'is_hidden', 'timestamp'
+        ]) &&
+        data.sender_id is string && data.sender_id.size() >= 1 && data.sender_id.size() <= 128 &&
+        data.sender_name is string && data.sender_name.size() >= 1 && data.sender_name.size() <= 100 &&
+        data.sender_role is string && data.sender_role.size() <= 100 &&
+        data.sender_class is string && data.sender_class.upper() == classId.upper() &&
         data.text is string && data.text.size() <= 2000 &&
         (data.text.size() >= 1 || (
           'attachment_url' in data &&
@@ -1294,6 +1411,34 @@ service cloud.firestore {
           request.resource.data.is_pinned is bool &&
           request.resource.data.is_hidden is bool;
         allow delete: if isHouseModerator(houseId);
+      }
+    }
+
+    // 9c. class_groups/{classId} and messages/{messageId}
+    // Membership is derived from the verified class placement; subject-teacher
+    // access is scoped by the academic_classes registry, not by the UI.
+    match /class_groups/{classId} {
+      allow read: if isClassViewer(classId);
+      allow create: if isClassModerator(classId) &&
+        isValidClassGroup(classId, request.resource.data);
+      allow update: if isClassModerator(classId) &&
+        isValidClassGroup(classId, request.resource.data);
+      allow delete: if isSeniorAdmin();
+
+      match /messages/{messageId} {
+        allow read: if isClassViewer(classId);
+        allow create: if isClassSender(classId) &&
+          request.resource.data.sender_id == request.auth.uid &&
+          isValidClassGroupMessage(classId, request.resource.data);
+        // Moderation only: pin/hide (and audit who did it). Message text and
+        // authorship are immutable.
+        allow update: if isClassModerator(classId) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'is_pinned', 'is_hidden', 'moderated_by', 'moderated_at'
+          ]) &&
+          request.resource.data.is_pinned is bool &&
+          request.resource.data.is_hidden is bool;
+        allow delete: if isClassModerator(classId);
       }
     }
 

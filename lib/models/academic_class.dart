@@ -96,6 +96,8 @@ class AcademicClass {
   final bool active;
   final String classTeacher;
   final String? classTeacherUid;
+  final List<String> subjectTeacherUids;
+  final bool studentPostingEnabled;
   final List<String> timetableEditorUids;
   final bool timetableEditingEnabled;
   final bool timetableRequiresApproval;
@@ -109,6 +111,8 @@ class AcademicClass {
     this.active = true,
     this.classTeacher = '',
     this.classTeacherUid,
+    this.subjectTeacherUids = const [],
+    this.studentPostingEnabled = false,
     this.timetableEditorUids = const [],
     this.timetableEditingEnabled = true,
     this.timetableRequiresApproval = false,
@@ -126,6 +130,8 @@ class AcademicClass {
     'class_teacher': classTeacher,
     if (classTeacherUid != null && classTeacherUid!.isNotEmpty)
       'class_teacher_uid': classTeacherUid,
+    'subject_teacher_uids': subjectTeacherUids,
+    'student_posting_enabled': studentPostingEnabled,
     'timetable_editor_uids': timetableEditorUids,
     'timetable_editing_enabled': timetableEditingEnabled,
     'timetable_requires_approval': timetableRequiresApproval,
@@ -155,6 +161,17 @@ class AcademicClass {
     }
 
     final teacherUidRaw = (map['class_teacher_uid'] ?? map['classTeacherUid'])?.toString().trim();
+    final rawSubjectTeachers =
+        map['subject_teacher_uids'] ?? map['subjectTeacherUids'];
+    final subjectTeachers = <String>[];
+    if (rawSubjectTeachers is List) {
+      for (final e in rawSubjectTeachers) {
+        final s = (e ?? '').toString().trim();
+        if (s.isNotEmpty && !subjectTeachers.contains(s)) {
+          subjectTeachers.add(s);
+        }
+      }
+    }
 
     return AcademicClass(
       classId: id.isNotEmpty ? id : AcademicStructure.classIdFrom(grade, section),
@@ -163,6 +180,9 @@ class AcademicClass {
       active: map['active'] != false,
       classTeacher: (map['class_teacher'] ?? map['classTeacher'] ?? '').toString().trim(),
       classTeacherUid: (teacherUidRaw != null && teacherUidRaw.isNotEmpty) ? teacherUidRaw : null,
+      subjectTeacherUids: subjectTeachers,
+      studentPostingEnabled: map['student_posting_enabled'] == true ||
+          map['studentPostingEnabled'] == true,
       timetableEditorUids: editors,
       timetableEditingEnabled: map['timetable_editing_enabled'] != false && map['timetableEditingEnabled'] != false,
       timetableRequiresApproval: map['timetable_requires_approval'] == true || map['timetableRequiresApproval'] == true,
@@ -183,6 +203,8 @@ class AcademicClass {
     bool? active,
     String? classTeacher,
     String? classTeacherUid,
+    List<String>? subjectTeacherUids,
+    bool? studentPostingEnabled,
     List<String>? timetableEditorUids,
     bool? timetableEditingEnabled,
     bool? timetableRequiresApproval,
@@ -196,6 +218,8 @@ class AcademicClass {
       active: active ?? this.active,
       classTeacher: classTeacher ?? this.classTeacher,
       classTeacherUid: classTeacherUid ?? this.classTeacherUid,
+      subjectTeacherUids: subjectTeacherUids ?? this.subjectTeacherUids,
+      studentPostingEnabled: studentPostingEnabled ?? this.studentPostingEnabled,
       timetableEditorUids: timetableEditorUids ?? this.timetableEditorUids,
       timetableEditingEnabled: timetableEditingEnabled ?? this.timetableEditingEnabled,
       timetableRequiresApproval: timetableRequiresApproval ?? this.timetableRequiresApproval,

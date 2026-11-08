@@ -32,7 +32,9 @@ class HierarchyService {
         rStr == 'principal' ||
         rStr == 'staff' ||
         rStr == 'faculty_advisor' ||
-        rStr == 'teacher_lead') {
+        rStr == 'teacher_lead' ||
+        rStr == 'class_teacher' ||
+        rStr == 'subject_teacher') {
       return true;
     }
 
@@ -96,6 +98,48 @@ class HierarchyService {
     }
 
     return false;
+  }
+
+  /// Check if user is a class teacher (ownership is verified against the
+  /// `academic_classes` registry by the class-group rules, not by this role
+  /// alone).
+  static bool isClassTeacher({
+    String? scholarNo,
+    String? role,
+    String? fullName,
+  }) {
+    return (role ?? '').trim().toLowerCase() == 'class_teacher';
+  }
+
+  /// Check if user is a subject teacher (assigned classes are verified against
+  /// `academic_classes/{classId}.subject_teacher_uids` by the rules).
+  static bool isSubjectTeacher({
+    String? scholarNo,
+    String? role,
+    String? fullName,
+  }) {
+    return (role ?? '').trim().toLowerCase() == 'subject_teacher';
+  }
+
+  /// Check if user is a class representative or vice representative. The
+  /// class scope still comes from the verified `class_id` on the profile.
+  static bool isClassRepresentative({
+    String? scholarNo,
+    String? role,
+    String? fullName,
+  }) {
+    final rStr = (role ?? '').trim().toLowerCase();
+    return rStr == 'class_representative' ||
+        rStr == 'vice_class_representative';
+  }
+
+  /// Check if user is a parent account.
+  static bool isParent({
+    String? scholarNo,
+    String? role,
+    String? fullName,
+  }) {
+    return (role ?? '').trim().toLowerCase() == 'parent';
   }
 
   /// General check if user holds administrative or executive review privileges.
@@ -257,6 +301,16 @@ class HierarchyService {
     }
     if (isCouncil(scholarNo: scholarNo, role: role, fullName: fullName)) {
       return 'Student Council';
+    }
+    if (isClassRepresentative(
+      scholarNo: scholarNo,
+      role: role,
+      fullName: fullName,
+    )) {
+      return 'Class Representative';
+    }
+    if (isParent(scholarNo: scholarNo, role: role, fullName: fullName)) {
+      return 'Parent';
     }
     if (isPrefect(scholarNo: scholarNo, role: role, fullName: fullName)) {
       return 'Grade Prefect';

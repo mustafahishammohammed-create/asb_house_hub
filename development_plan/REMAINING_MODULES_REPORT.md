@@ -19,7 +19,7 @@
 | **M2 — Teacher-managed recurring timetable engine (M2a–M2f)** | ✅ **DONE for scope** (V1–V4 fixed 2026-11-08). V5 is owned by M6; V6/V7 are non-blocking follow-ups; V8 remains a source-contract caveat. | Engine + UI + rules. V1: all 8 slots, period order, overlap, break placement validated in rules. V2: `rejection_reason` round-trips and is whitelisted; reject is truthful. V3: published versions are immutable for everyone. V4: editor button is gated by `canEditTimetable`, no `'10A'` fallback, editor blocks unauthorized writes. See [`M2_VERIFICATION.md`](M2_VERIFICATION.md). |
 | **M3 — Timetable advanced** | ✅ **DONE for scope** (2026-11-08). Client-side double-booking, copy-to-selected-days, one-day overrides, substitution markers. Notification fan-out stays in M6. See [`M3_VERIFICATION.md`](M3_VERIFICATION.md). | double-booking, copy-to-days, temporary overrides, substitution |
 | **M4 — House groups** | ✅ **DONE for scope** (2026-11-08, commit `4caeae5`; rules deployed). See [`M4_VERIFICATION.md`](M4_VERIFICATION.md). | profile-derived membership, rules-enforced sender roles, categories, pin/hide/delete moderation, cross-house isolation/transfer |
-| **M5 — Class groups** | ❌ **NOT STARTED** | per-class channel + announcements |
+| **M5 — Class groups** | ✅ **DONE for scope** (2026-11-08, rules deployed). See [`M5_VERIFICATION.md`](M5_VERIFICATION.md). | verified-class auto-membership, class-teacher/subject-teacher/representative send, configurable student posting, cross-class isolation |
 | **M6 — Notification engine** | ❌ **NOT STARTED** | in-app notifications (Spark) |
 | **M7 — Admin Command Center expansion** | ❌ **NOT STARTED** | academic/teacher/house/group/user mgmt, approval queue, audit viewer, promotion |
 | **M8 — Dashboard/profile + acceptance** | ❌ **NOT STARTED** | verified-class dashboard, full §11 suite |
@@ -173,7 +173,7 @@ Verified 2026-11-08 after V1–V4 remediation: **complete for scope**. The origi
 
 **Goal:** per-class channel + class announcements; class teacher / subject teacher / class rep permissions; configurable student send; class-scoped isolation.
 **Depends on:** M1 (verified `class_id`) + M4 group machinery.
-**Current state:** ❌ not started. Assignments/exams exist but no class discussion/announcement feed.
+**Current state:** ✅ **DONE for scope (2026-11-08).** Live per-class channel with verified auto-membership, rules-scoped senders, configurable student posting, categories/attachments/moderation, and cross-class isolation. See [`M5_VERIFICATION.md`](M5_VERIFICATION.md).
 
 **Requirements (spec §4, tests 50–54):**
 - Verified students auto-join their class group (test 50).
@@ -186,6 +186,7 @@ Verified 2026-11-08 after V1–V4 remediation: **complete for scope**. The origi
 **Tests (50–54):** auto-join, class-teacher publish, subject-teacher assigned-only, configurable student send, cross-class denial — UI + rules.
 **Robustness:** class membership verified (M1 gate); subject-teacher scoping enforced in rules; student send is a server-checked flag, not UI; truthful writes.
 **Definition of done:** tests 50–54 pass UI + rules; new roles synced client↔rules; deployed; committed.
+**Delivered 2026-11-08:** targeted `test/class_group_test.dart` **47/47**, full suite **547/547**, analysis 0 errors/0 warnings, rules compiled and released. Commit follows `M5_VERIFICATION.md`; notification fan-out for class announcements stays M6/test 62.
 
 ---
 
@@ -312,7 +313,7 @@ From `academics_audit/REMEDIATION_ROADMAP.md` P2 (A7 + A9). LOW severity, admin-
 1. **Close M2 blockers V1–V4** in [`M2_VERIFICATION.md`](M2_VERIFICATION.md) (rules slot/overlap/break, reject field, published immutability, editor gate). M2a is already in `f8095fd`; the 6-day week is already in the student tab.
 2. **M3** only after that commit is pushed — tests 18–19, 31–33.
 4. **M4** (house groups) — independent of M2/M3; high security value (read-only students).
-5. **M5** (class groups) — reuses M4 machinery + new roles.
+5. **M5** (class groups) — ✅ delivered 2026-11-08; reuses M4 machinery + new roles. See [`M5_VERIFICATION.md`](M5_VERIFICATION.md).
 6. **M6** (notifications) — wires M2/M4/M5 events.
 7. **M7** (admin expansion) — approval queue, audit viewer, promotion.
 8. **M8** (dashboard + full 64-test acceptance) — capstone.

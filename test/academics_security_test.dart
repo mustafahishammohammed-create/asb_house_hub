@@ -639,6 +639,8 @@ void main() {
         'staff',
         'faculty_advisor',
         'teacher_lead',
+        'class_teacher',
+        'subject_teacher',
       };
 
       for (final r in clientFacultyRoles) {
