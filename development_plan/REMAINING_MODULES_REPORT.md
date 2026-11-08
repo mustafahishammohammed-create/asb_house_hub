@@ -16,7 +16,7 @@
 | Module | Status | Evidence |
 |---|---|---|
 | **M1 — Academic foundation** | ✅ **DONE** (committed `d5ce809`, pushed; rules deployed) | `lib/models/academic_class.dart`, `admin_academics_screen.dart`, registry + verification methods in `auth_service.dart`, `academic_classes` rules matcher, `test/academic_structure_test.dart` (29 tests) |
-| **M2a — Timetable version model** | 🟡 **DRAFTED + TESTED, UNCOMMITTED** | `lib/models/class_timetable.dart`, `test/class_timetable_test.dart` (18/18 pass). Not wired to service/rules/UI yet. |
+| **M2a — Timetable version model** | ✅ **COMMITTED** (commit `f8095fd`, pushed) | `lib/models/class_timetable.dart`, `test/class_timetable_test.dart` (18/18 pass, analyze 0 issues). |
 | **M2b–M2f — Timetable engine** | ❌ **NOT STARTED** | permissions, service, rules, UI, acceptance/deploy |
 | **M3 — Timetable advanced** | ❌ **NOT STARTED** | double-booking, copy-to-days, temporary overrides, substitution |
 | **M4 — House groups** | ❌ **NOT STARTED** | role-restricted send, students read-only |
