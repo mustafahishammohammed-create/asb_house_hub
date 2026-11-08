@@ -456,7 +456,8 @@ service cloud.firestore {
         'uid', 'scholar_no', 'full_name', 'role', 'house_name',
         'class_level', 'division', 'class_id', 'class_verified',
         'points', 'points_contributed',
-        'created_at', 'updated_at', 'age', 'position_title', 'designation'
+        'created_at', 'updated_at', 'age', 'position_title', 'designation',
+        'status'
       ]) &&
       hasRequiredFields(['scholar_no', 'full_name', 'role', 'house_name']) &&
       data.full_name is string && data.full_name.size() >= 2 && data.full_name.size() <= 100 &&
@@ -485,6 +486,7 @@ service cloud.firestore {
       (!('position_title' in data) || (data.position_title is string && data.position_title.size() <= 100)) &&
       (!('designation' in data) || (data.designation is string && data.designation.size() <= 100)) &&
       (!('uid' in data) || (data.uid is string && data.uid.size() <= 128)) &&
+      (!('status' in data) || (data.status is string && data.status in ['active', 'suspended', 'deactivated'])) &&
       (!('created_at' in data) || data.created_at is timestamp) &&
       (!('updated_at' in data) || data.updated_at is timestamp);
     }
@@ -645,7 +647,7 @@ service cloud.firestore {
         'actor_uid', 'actor_name', 'details', 'timestamp'
       ]) &&
       hasRequiredFields(['action', 'class_id', 'actor_uid', 'timestamp']) &&
-      data.action is string && data.action in ['create', 'edit', 'submit', 'publish', 'reject', 'restore', 'override', 'copy', 'substitute'] &&
+      data.action is string && data.action in ['create', 'edit', 'submit', 'publish', 'approve', 'reject', 'restore', 'override', 'copy', 'substitute', 'promotion', 'transfer'] &&
       data.class_id is string && data.class_id.size() >= 2 && data.class_id.size() <= 10 &&
       data.actor_uid is string && data.actor_uid == request.auth.uid &&
       data.timestamp is timestamp &&
@@ -1123,7 +1125,7 @@ service cloud.firestore {
         (
           isOwner(userId) &&
           request.resource.data.role == resource.data.role &&
-          areImmutableFieldsUnchanged(['role', 'points', 'points_contributed', 'scholar_no', 'created_at', 'uid', 'class_id', 'class_verified'])
+          areImmutableFieldsUnchanged(['role', 'points', 'points_contributed', 'scholar_no', 'created_at', 'uid', 'class_id', 'class_verified', 'status'])
         )
       );
 
@@ -1286,7 +1288,7 @@ service cloud.firestore {
     match /timetable_audit/{auditId} {
       allow read: if isAdmin();
       allow create: if isSignedIn() &&
-        isTimetableEditor(request.resource.data.class_id) &&
+        (isAdmin() || isTimetableEditor(request.resource.data.class_id)) &&
         isValidTimetableAudit(request.resource.data);
       allow update, delete: if false; // strictly immutable and append-only
     }

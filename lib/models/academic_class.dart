@@ -85,6 +85,49 @@ class AcademicStructure {
     if (sec.isEmpty) return g;
     return '$g — Section $sec';
   }
+
+  /// Returns the next grade level in standard school progression (Test 55/59).
+  /// LKG -> UKG -> Grade 1 -> ... -> Grade 12 -> null (Graduated).
+  static String? nextGrade(String grade) {
+    final norm = normalizeGrade(grade);
+    if (norm == null) return null;
+    final idx = gradeLevels.indexOf(norm);
+    if (idx != -1 && idx + 1 < gradeLevels.length) {
+      return gradeLevels[idx + 1];
+    }
+    return null;
+  }
+
+  /// Calculates the next canonical classId for academic year progression,
+  /// preserving the section letter (Test 59).
+  /// e.g. '11D' -> '12D', 'LKG-A' -> 'UKG-A', 'UKG-B' -> '1B'.
+  /// Returns null for graduating Grade 12 classes.
+  static String? nextClassId(String classId) {
+    final parsed = parseClassId(classId);
+    if (parsed == null) return null;
+    final (currentGrade, section) = parsed;
+    final nextG = nextGrade(currentGrade);
+    if (nextG == null) return null;
+    return classIdFrom(nextG, section);
+  }
+}
+
+/// Truthful result of a batch promotion operation across a class section.
+class PromotionResult {
+  final int total;
+  final int promoted;
+  final int failed;
+  final List<String> failedScholarNumbers;
+
+  const PromotionResult({
+    required this.total,
+    required this.promoted,
+    required this.failed,
+    this.failedScholarNumbers = const [],
+  });
+
+  bool get isCompleteSuccess => total > 0 && failed == 0;
+  bool get hasFailures => failed > 0;
 }
 
 /// A managed class/section entry in the `academic_classes` registry.

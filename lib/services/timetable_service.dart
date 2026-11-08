@@ -778,6 +778,60 @@ class TimetableService {
         });
   }
 
+  /// Returns all cached submitted timetable versions across classes (offline / test mode).
+  List<ClassTimetableVersion> getAllCachedSubmittedVersions({String? classId}) {
+    final prefs = _safePrefs;
+    if (prefs == null) return <ClassTimetableVersion>[];
+    final all = <ClassTimetableVersion>[];
+    final targetClass = classId?.trim();
+    for (final key in prefs.getKeys()) {
+      if (key.startsWith('timetable_history_')) {
+        if (targetClass != null && targetClass.isNotEmpty && !key.contains(targetClass)) {
+          continue;
+        }
+        final raw = prefs.getStringList(key);
+        if (raw != null) {
+          for (final s in raw) {
+            try {
+              final v = ClassTimetableVersion.fromMap(jsonDecode(s) as Map<String, dynamic>);
+              if (v.status == TimetableStatus.submitted) {
+                all.add(v);
+              }
+            } catch (_) {}
+          }
+        }
+      }
+    }
+    all.sort((a, b) => (b.createdAt ?? DateTime.now()).compareTo(a.createdAt ?? DateTime.now()));
+    return all;
+  }
+
+  /// Stream of timetable versions awaiting administrative approval (Test 36).
+  Stream<List<ClassTimetableVersion>> getSubmittedTimetableQueueStream({String? classId}) {
+    if (!_isLive) {
+      return Stream.value(getAllCachedSubmittedVersions(classId: classId));
+    }
+
+    Query<Map<String, dynamic>> query = _firestore
+        .collection('timetable_versions')
+        .where('status', isEqualTo: TimetableStatus.submitted);
+
+    if (classId != null && classId.trim().isNotEmpty) {
+      query = query.where('class_id', isEqualTo: classId.trim());
+    }
+
+    return query.snapshots().map((snapshot) {
+      final list = snapshot.docs
+          .map((doc) => ClassTimetableVersion.fromFirestore(doc))
+          .toList();
+      list.sort((a, b) => (b.createdAt ?? DateTime.now()).compareTo(a.createdAt ?? DateTime.now()));
+      return list;
+    }).handleError((error) {
+      debugPrint('getSubmittedTimetableQueueStream error: $error, falling back to cache');
+      return getAllCachedSubmittedVersions(classId: classId);
+    });
+  }
+
   // ===============================================================
   // Append-Only Timetable Audit Log
   // ===============================================================
@@ -824,6 +878,43 @@ class TimetableService {
     return true;
   }
 
+  /// Returns all cached audit records across classes (offline / test mode).
+  List<Map<String, dynamic>> getAllCachedAudits({String? classId, String? actionFilter}) {
+    final prefs = _safePrefs;
+    if (prefs == null) return <Map<String, dynamic>>[];
+    final all = <Map<String, dynamic>>[];
+    final targetClass = classId?.trim();
+    for (final key in prefs.getKeys()) {
+      if (key.startsWith('timetable_audit_')) {
+        if (targetClass != null && targetClass.isNotEmpty && !key.contains(targetClass)) {
+          continue;
+        }
+        final raw = prefs.getStringList(key);
+        if (raw != null) {
+          for (final s in raw) {
+            try {
+              all.add(Map<String, dynamic>.from(jsonDecode(s) as Map));
+            } catch (_) {}
+          }
+        }
+      }
+    }
+    final filtered = all.where((a) {
+      if (actionFilter != null && actionFilter.trim().isNotEmpty && actionFilter != 'all') {
+        if ((a['action'] ?? '').toString().toLowerCase() != actionFilter.trim().toLowerCase()) {
+          return false;
+        }
+      }
+      return true;
+    }).toList();
+    filtered.sort((a, b) {
+      final ta = (a['timestamp'] ?? '').toString();
+      final tb = (b['timestamp'] ?? '').toString();
+      return tb.compareTo(ta);
+    });
+    return filtered;
+  }
+
   Stream<List<Map<String, dynamic>>> getTimetableAuditStream(String classId) {
     if (!_isLive) {
       return Stream.value(getCachedAudits(classId));
@@ -853,6 +944,46 @@ class TimetableService {
           debugPrint('getTimetableAuditStream error: $error, falling back to cache');
           return getCachedAudits(classId);
         });
+  }
+
+  /// Stream of all timetable and administrative audit logs (Spec §6, Test 63).
+  /// Enforced admin-only by Firestore rules; append-only and strictly immutable.
+  Stream<List<Map<String, dynamic>>> getAllTimetableAuditsStream({
+    String? classId,
+    String? actionFilter,
+    int limit = 100,
+  }) {
+    if (!_isLive) {
+      return Stream.value(getAllCachedAudits(classId: classId, actionFilter: actionFilter));
+    }
+
+    Query<Map<String, dynamic>> query = _firestore.collection('timetable_audit');
+    if (classId != null && classId.trim().isNotEmpty) {
+      query = query.where('class_id', isEqualTo: classId.trim());
+    }
+    if (actionFilter != null && actionFilter.trim().isNotEmpty && actionFilter != 'all') {
+      query = query.where('action', isEqualTo: actionFilter.trim().toLowerCase());
+    }
+
+    return query.limit(limit).snapshots().map((snapshot) {
+      final list = snapshot.docs.map((doc) {
+        final data = doc.data();
+        data['id'] = doc.id;
+        return data;
+      }).toList();
+      list.sort((a, b) {
+        final ta = a['timestamp'];
+        final tb = b['timestamp'];
+        if (ta is Timestamp && tb is Timestamp) {
+          return tb.compareTo(ta);
+        }
+        return 0;
+      });
+      return list;
+    }).handleError((error) {
+      debugPrint('getAllTimetableAuditsStream error: $error, falling back to cache');
+      return getAllCachedAudits(classId: classId, actionFilter: actionFilter);
+    });
   }
 
   // ===============================================================

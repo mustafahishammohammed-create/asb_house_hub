@@ -7056,6 +7056,166 @@ class AuthService {
     );
   }
 
+  /// Admin assigns or changes a scholar's house (Spec §6, Test 58).
+  ///
+  /// House options: 'ruby', 'sapphire', 'emerald', 'topaz'.
+  /// CRITICAL: Academic class placement (class_id, class_verified) remains
+  /// strictly untouched!
+  Future<bool> assignStudentHouse({
+    required String scholarNo,
+    required String houseName,
+  }) async {
+    final sNo = scholarNo.trim();
+    final house = houseName.trim().toLowerCase();
+    if (sNo.isEmpty || !['ruby', 'sapphire', 'emerald', 'topaz'].contains(house)) {
+      return false;
+    }
+
+    return _applyStudentClassUpdate(
+      scholarNo: sNo,
+      updates: {
+        'house_name': house,
+        'updated_at': FieldValue.serverTimestamp(),
+      },
+      notificationTitle: 'House Assignment Updated',
+      notificationBody: 'You have been assigned to ${house[0].toUpperCase()}${house.substring(1)} House.',
+      notificationType: 'house_assigned',
+    );
+  }
+
+  /// Promotes an individual scholar to [targetClassId] for the new academic year
+  /// (Spec §9.5, Test 59).
+  ///
+  /// CRITICAL: Per Spec §9.5, the student's [house_name] MUST remain strictly
+  /// preserved! Class identity and verification update, house stays unchanged.
+  Future<bool> promoteScholar({
+    required String scholarNo,
+    required String targetClassId,
+    String? academicYear,
+  }) async {
+    final sNo = scholarNo.trim();
+    final id = targetClassId.trim();
+    final parsed = AcademicStructure.parseClassId(id);
+    if (sNo.isEmpty || parsed == null) return false;
+    final (grade, section) = parsed;
+
+    return _applyStudentClassUpdate(
+      scholarNo: sNo,
+      updates: {
+        'class_id': id,
+        'class_level': grade,
+        'division': section,
+        'class_verified': true,
+        if (academicYear != null && academicYear.isNotEmpty)
+          'academic_year': academicYear,
+        'updated_at': FieldValue.serverTimestamp(),
+      },
+      notificationTitle: 'Academic Year Promotion',
+      notificationBody: 'Congratulations! You have been promoted to $id (${AcademicStructure.displayClass(grade, section)}) for the new academic year.',
+      notificationType: 'academic_promotion',
+    );
+  }
+
+  /// Sequentially promotes all verified students in [sourceClassId] to [targetClassId]
+  /// (Spark path, Test 59).
+  ///
+  /// CRITICAL: Every student's [house_name] is strictly preserved!
+  /// Truthfully reports total, promoted, and failed counts via [PromotionResult].
+  Future<PromotionResult> promoteClassSection({
+    required String sourceClassId,
+    required String targetClassId,
+    String? academicYear,
+  }) async {
+    final src = sourceClassId.trim();
+    final tgt = targetClassId.trim();
+    if (AcademicStructure.parseClassId(src) == null ||
+        AcademicStructure.parseClassId(tgt) == null) {
+      return const PromotionResult(total: 0, promoted: 0, failed: 0);
+    }
+
+    final students = <Map<String, dynamic>>[];
+    if (_isFirebaseLive) {
+      try {
+        final snap = await _firestore
+            .collection('users')
+            .where('class_id', isEqualTo: src)
+            .where('class_verified', isEqualTo: true)
+            .get();
+        for (final doc in snap.docs) {
+          students.add({...doc.data(), 'uid': doc.id});
+        }
+      } catch (e) {
+        debugPrint('promoteClassSection roster fetch failure: $e');
+        return const PromotionResult(total: 0, promoted: 0, failed: 0);
+      }
+    } else {
+      // Offline / cached test mode: check cached profile if matching
+      final cached = getCachedProfile();
+      if (cached != null &&
+          cached['class_id'] == src &&
+          cached['class_verified'] == true) {
+        students.add(cached);
+      }
+    }
+
+    if (students.isEmpty) {
+      return const PromotionResult(total: 0, promoted: 0, failed: 0);
+    }
+
+    var promoted = 0;
+    var failed = 0;
+    final failedScholars = <String>[];
+
+    for (final student in students) {
+      final sNo = (student['scholar_no'] ?? '').toString().trim();
+      if (sNo.isEmpty) continue;
+      final ok = await promoteScholar(
+        scholarNo: sNo,
+        targetClassId: tgt,
+        academicYear: academicYear,
+      );
+      if (ok) {
+        promoted++;
+      } else {
+        failed++;
+        failedScholars.add(sNo);
+      }
+    }
+
+    return PromotionResult(
+      total: students.length,
+      promoted: promoted,
+      failed: failed,
+      failedScholarNumbers: failedScholars,
+    );
+  }
+
+  /// Updates user status ('active', 'suspended', 'deactivated') (Spec §6, Test 64).
+  /// Enforced admin-only by Firestore rules.
+  Future<bool> setUserStatus({
+    required String scholarNo,
+    required String status,
+  }) async {
+    final sNo = scholarNo.trim();
+    final stat = status.trim().toLowerCase();
+    if (sNo.isEmpty || !['active', 'suspended', 'deactivated'].contains(stat)) {
+      return false;
+    }
+
+    return _applyStudentClassUpdate(
+      scholarNo: sNo,
+      updates: {
+        'status': stat,
+        'updated_at': FieldValue.serverTimestamp(),
+      },
+      notificationTitle: 'Account Status Updated',
+      notificationBody: stat == 'active'
+          ? 'Your ASB account is active and verified.'
+          : 'Your ASB account has been $stat by the administration.',
+      notificationType: 'account_status',
+    );
+  }
+
   Future<bool> _applyStudentClassUpdate({
     required String scholarNo,
     required Map<String, dynamic> updates,

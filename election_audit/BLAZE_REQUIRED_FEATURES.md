@@ -106,6 +106,14 @@ The academics audit (`academics_audit/README.md`, 2026-11-08, HEAD `91114ea`) fo
 
 ---
 
+## D6. Server-side notification fan-out and atomic promotion transactions (M6/M7)
+
+1. **Server-side notification fan-out (M6):** Currently implemented via client-side batched writes into `users/{uid}/notifications`. On Blaze, a background Cloud Function triggered on timetable publishes, house announcements, and class announcements should handle roster fan-out atomically on the server.
+2. **Atomic cross-collection promotion transactions (M7):** Currently runs client-side sequential writes with failure tracking and honest `PromotionResult` reporting. On Blaze, promotion should run inside a server transaction or callable function guaranteeing all-or-nothing execution across all student documents.
+3. **Server-side timetable conflict validation at scale (M3/M7):** Scalable indexing and background validation across hundreds of concurrent sections.
+
+---
+
 ## Completion order when Blaze is available
 
 1. Upgrade project to Blaze in Firebase Console (billing).
