@@ -239,12 +239,12 @@ void main() {
       await tester.pumpAndSettle();
 
       // Go to Audit Logs
-      await tester.tap(find.text('Audit Logs'));
+      await tester.tap(find.widgetWithText(Tab, 'Audit Logs'));
       await tester.pumpAndSettle();
       expect(find.text('PUBLISH'), findsOneWidget);
 
       // Now tap Classes tab
-      await tester.tap(find.text('Classes'));
+      await tester.tap(find.widgetWithText(Tab, 'Classes'));
       await tester.pumpAndSettle();
 
       final ex = tester.takeException();
@@ -256,6 +256,109 @@ void main() {
       // Expect classes tab content
       expect(find.text('12E'), findsWidgets);
       expect(find.text('11A'), findsWidgets);
+
+      // Now tap Promotion tab
+      await tester.tap(find.widgetWithText(Tab, 'Promotion'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.text('Academic Year Promotion (Spec §9.5)'), findsOneWidget);
+
+      // Now tap Rosters tab
+      await tester.tap(find.widgetWithText(Tab, 'Rosters'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      // Now tap Verify tab
+      await tester.tap(find.widgetWithText(Tab, 'Verify'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      // Cycle back to Audit Logs and then back to Promotion
+      await tester.tap(find.widgetWithText(Tab, 'Audit Logs'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.widgetWithText(Tab, 'Promotion'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.text('Academic Year Promotion (Spec §9.5)'), findsOneWidget);
+    });
+
+    test('All academic streams allow multiple simultaneous subscriptions as broadcast streams', () async {
+      final auth = AuthService();
+      final tt = TimetableService();
+
+      // Test getAcademicClassesStream allows multiple listeners
+      final classesStream = auth.getAcademicClassesStream();
+      final sub1 = classesStream.listen((_) {});
+      final sub2 = classesStream.listen((_) {});
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      await sub1.cancel();
+      await sub2.cancel();
+
+      // Test getPendingClassVerificationsStream allows multiple listeners
+      final pendingStream = auth.getPendingClassVerificationsStream();
+      final pSub1 = pendingStream.listen((_) {});
+      final pSub2 = pendingStream.listen((_) {});
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      await pSub1.cancel();
+      await pSub2.cancel();
+
+      // Test getClassRosterStream allows multiple listeners
+      final rosterStream = auth.getClassRosterStream('12E');
+      final rSub1 = rosterStream.listen((_) {});
+      final rSub2 = rosterStream.listen((_) {});
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      await rSub1.cancel();
+      await rSub2.cancel();
+
+      // Test getSubmittedTimetableQueueStream allows multiple listeners
+      final queueStream = tt.getSubmittedTimetableQueueStream();
+      final qSub1 = queueStream.listen((_) {});
+      final qSub2 = queueStream.listen((_) {});
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      await qSub1.cancel();
+      await qSub2.cancel();
+
+      // Test getAllTimetableAuditsStream allows multiple listeners
+      final auditsStream = tt.getAllTimetableAuditsStream();
+      final aSub1 = auditsStream.listen((_) {});
+      final aSub2 = auditsStream.listen((_) {});
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      await aSub1.cancel();
+      await aSub2.cancel();
+    });
+
+    test('verifyStudentClass preserves full profile metadata in local placements and class roster', () async {
+      final auth = AuthService();
+      final studentProfile = {
+        'scholar_no': '12345',
+        'full_name': 'test',
+        'house_name': 'sapphire',
+        'role': 'student',
+        'class_level': 'Grade 12',
+        'division': 'E',
+        'class_id': '12E',
+        'uid': 'uid_test_12345',
+      };
+
+      final ok = await auth.verifyStudentClass(
+        scholarNo: '12345',
+        classId: '12E',
+        uid: 'uid_test_12345',
+        studentProfile: studentProfile,
+      );
+      expect(ok, isTrue);
+
+      final placements = AuthService.getVerifiedClassPlacements();
+      expect(placements['12345']?['full_name'], equals('test'));
+      expect(placements['12345']?['house_name'], equals('sapphire'));
+      expect(placements['12345']?['class_id'], equals('12E'));
+      expect(placements['12345']?['class_verified'], isTrue);
+
+      // Verify class roster stream includes test with full name
+      final roster = await auth.getClassRosterStream('12E').first;
+      expect(roster.any((s) => s['scholar_no'] == '12345' && s['full_name'] == 'test'), isTrue);
     });
   });
 }

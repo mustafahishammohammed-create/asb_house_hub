@@ -850,31 +850,35 @@ class TimetableService {
   }
 
   /// Stream of timetable versions awaiting administrative approval (Test 36).
-  Stream<List<ClassTimetableVersion>> getSubmittedTimetableQueueStream({String? classId}) async* {
-    yield getAllCachedSubmittedVersions(classId: classId);
-
-    if (!_isLive) return;
-
-    try {
-      Query<Map<String, dynamic>> query = _firestore
-          .collection('timetable_versions')
-          .where('status', isEqualTo: TimetableStatus.submitted);
-
-      if (classId != null && classId.trim().isNotEmpty) {
-        query = query.where('class_id', isEqualTo: classId.trim());
-      }
-
-      await for (final snapshot in query.snapshots()) {
-        final list = snapshot.docs
-            .map((doc) => ClassTimetableVersion.fromFirestore(doc))
-            .toList();
-        list.sort((a, b) => (b.createdAt ?? DateTime.now()).compareTo(a.createdAt ?? DateTime.now()));
-        yield list;
-      }
-    } catch (error) {
-      debugPrint('getSubmittedTimetableQueueStream error: $error, falling back to cache');
+  Stream<List<ClassTimetableVersion>> getSubmittedTimetableQueueStream({String? classId}) {
+    Stream<List<ClassTimetableVersion>> stream() async* {
       yield getAllCachedSubmittedVersions(classId: classId);
+
+      if (!_isLive) return;
+
+      try {
+        Query<Map<String, dynamic>> query = _firestore
+            .collection('timetable_versions')
+            .where('status', isEqualTo: TimetableStatus.submitted);
+
+        if (classId != null && classId.trim().isNotEmpty) {
+          query = query.where('class_id', isEqualTo: classId.trim());
+        }
+
+        await for (final snapshot in query.snapshots()) {
+          final list = snapshot.docs
+              .map((doc) => ClassTimetableVersion.fromFirestore(doc))
+              .toList();
+          list.sort((a, b) => (b.createdAt ?? DateTime.now()).compareTo(a.createdAt ?? DateTime.now()));
+          yield list;
+        }
+      } catch (error) {
+        debugPrint('getSubmittedTimetableQueueStream error: $error, falling back to cache');
+        yield getAllCachedSubmittedVersions(classId: classId);
+      }
     }
+
+    return stream().asBroadcastStream();
   }
 
   // ===============================================================
@@ -970,7 +974,7 @@ class TimetableService {
 
   Stream<List<Map<String, dynamic>>> getTimetableAuditStream(String classId) {
     if (!_isLive) {
-      return Stream.value(getCachedAudits(classId));
+      return Stream.value(getCachedAudits(classId)).asBroadcastStream();
     }
 
     return _firestore
@@ -996,7 +1000,8 @@ class TimetableService {
         .handleError((error) {
           debugPrint('getTimetableAuditStream error: $error, falling back to cache');
           return getCachedAudits(classId);
-        });
+        })
+        .asBroadcastStream();
   }
 
   /// Stream of all timetable and administrative audit logs (Spec §6, Test 63).
@@ -1005,40 +1010,44 @@ class TimetableService {
     String? classId,
     String? actionFilter,
     int limit = 100,
-  }) async* {
-    yield getAllCachedAudits(classId: classId, actionFilter: actionFilter);
-
-    if (!_isLive) return;
-
-    try {
-      Query<Map<String, dynamic>> query = _firestore.collection('timetable_audit');
-      if (classId != null && classId.trim().isNotEmpty) {
-        query = query.where('class_id', isEqualTo: classId.trim());
-      }
-      if (actionFilter != null && actionFilter.trim().isNotEmpty && actionFilter != 'all') {
-        query = query.where('action', isEqualTo: actionFilter.trim().toLowerCase());
-      }
-
-      await for (final snapshot in query.limit(limit).snapshots()) {
-        final list = snapshot.docs.map((doc) {
-          final data = Map<String, dynamic>.from(doc.data());
-          data['id'] = doc.id;
-          return data;
-        }).toList();
-        list.sort((a, b) {
-          final ta = a['timestamp'];
-          final tb = b['timestamp'];
-          if (ta is Timestamp && tb is Timestamp) {
-            return tb.compareTo(ta);
-          }
-          return 0;
-        });
-        yield list;
-      }
-    } catch (error) {
-      debugPrint('getAllTimetableAuditsStream error: $error, falling back to cache');
+  }) {
+    Stream<List<Map<String, dynamic>>> stream() async* {
       yield getAllCachedAudits(classId: classId, actionFilter: actionFilter);
+
+      if (!_isLive) return;
+
+      try {
+        Query<Map<String, dynamic>> query = _firestore.collection('timetable_audit');
+        if (classId != null && classId.trim().isNotEmpty) {
+          query = query.where('class_id', isEqualTo: classId.trim());
+        }
+        if (actionFilter != null && actionFilter.trim().isNotEmpty && actionFilter != 'all') {
+          query = query.where('action', isEqualTo: actionFilter.trim().toLowerCase());
+        }
+
+        await for (final snapshot in query.limit(limit).snapshots()) {
+          final list = snapshot.docs.map((doc) {
+            final data = Map<String, dynamic>.from(doc.data());
+            data['id'] = doc.id;
+            return data;
+          }).toList();
+          list.sort((a, b) {
+            final ta = a['timestamp'];
+            final tb = b['timestamp'];
+            if (ta is Timestamp && tb is Timestamp) {
+              return tb.compareTo(ta);
+            }
+            return 0;
+          });
+          yield list;
+        }
+      } catch (error) {
+        debugPrint('getAllTimetableAuditsStream error: $error, falling back to cache');
+        yield getAllCachedAudits(classId: classId, actionFilter: actionFilter);
+      }
     }
+
+    return stream().asBroadcastStream();
   }
 
   // ===============================================================

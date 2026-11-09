@@ -121,6 +121,8 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
     final ok = await _authService.verifyStudentClass(
       scholarNo: scholarNo,
       classId: classId,
+      uid: (profile['uid'] ?? '').toString(),
+      studentProfile: profile,
     );
     if (!mounted) return;
     setState(() => _processing.remove(scholarNo));
@@ -148,6 +150,8 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
     final ok = await _authService.transferStudentClass(
       scholarNo: scholarNo,
       classId: target,
+      uid: (profile['uid'] ?? '').toString(),
+      studentProfile: profile,
     );
     if (!mounted) return;
     setState(() => _processing.remove(scholarNo));
@@ -423,12 +427,12 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
       body: TabBarView(
         controller: _tabController,
         children: [
-          _buildPendingTab(scheme),
-          _buildClassesTab(scheme),
-          _buildRostersTab(scheme),
-          _buildPromotionTab(scheme),
-          _buildApprovalsTab(scheme),
-          _buildAuditLogsTab(scheme),
+          _KeepAliveTab(key: const PageStorageKey('tab_verify'), child: _buildPendingTab(scheme)),
+          _KeepAliveTab(key: const PageStorageKey('tab_classes'), child: _buildClassesTab(scheme)),
+          _KeepAliveTab(key: const PageStorageKey('tab_rosters'), child: _buildRostersTab(scheme)),
+          _KeepAliveTab(key: const PageStorageKey('tab_promotion'), child: _buildPromotionTab(scheme)),
+          _KeepAliveTab(key: const PageStorageKey('tab_approvals'), child: _buildApprovalsTab(scheme)),
+          _KeepAliveTab(key: const PageStorageKey('tab_audits'), child: _buildAuditLogsTab(scheme)),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -441,6 +445,7 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
 
   Widget _buildPendingTab(ColorScheme scheme) {
     return StreamBuilder<List<Map<String, dynamic>>>(
+      key: const ValueKey('pending_stream_builder'),
       stream: _authService.getPendingClassVerificationsStream(),
       initialData: const <Map<String, dynamic>>[],
       builder: (context, snap) {
@@ -571,6 +576,7 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
 
   Widget _buildClassesTab(ColorScheme scheme) {
     return StreamBuilder<List<AcademicClass>>(
+      key: const ValueKey('classes_stream_builder'),
       stream: _authService.getAcademicClassesStream(),
       initialData: AuthService.getCachedAcademicClasses(),
       builder: (context, snap) {
@@ -656,6 +662,7 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
 
   Widget _buildRostersTab(ColorScheme scheme) {
     return StreamBuilder<List<AcademicClass>>(
+      key: const ValueKey('roster_classes_stream_builder'),
       stream: _authService.getAcademicClassesStream(),
       initialData: AuthService.getCachedAcademicClasses(),
       builder: (context, snap) {
@@ -705,6 +712,7 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
             ),
             Expanded(
               child: StreamBuilder<List<Map<String, dynamic>>>(
+                key: ValueKey('roster_students_$selected'),
                 stream: _authService.getClassRosterStream(selected),
                 initialData: const <Map<String, dynamic>>[],
                 builder: (context, rosterSnap) {
@@ -867,6 +875,7 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
 
   Widget _buildPromotionTab(ColorScheme scheme) {
     return StreamBuilder<List<AcademicClass>>(
+      key: const ValueKey('promotion_classes_stream_builder'),
       stream: _authService.getAcademicClassesStream(activeOnly: true),
       initialData: AuthService.getCachedAcademicClasses()
           .where((c) => c.active)
@@ -1007,6 +1016,7 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                     ),
                     const SizedBox(height: 16),
                     StreamBuilder<List<Map<String, dynamic>>>(
+                      key: ValueKey('promotion_roster_$sourceClass'),
                       stream: _authService.getClassRosterStream(sourceClass),
                       builder: (ctx, rosterSnap) {
                         final count = (rosterSnap.data ?? [])
@@ -1181,6 +1191,7 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
 
   Widget _buildApprovalsTab(ColorScheme scheme) {
     return StreamBuilder<List<ClassTimetableVersion>>(
+      key: const ValueKey('approvals_stream_builder'),
       stream: _timetableService.getSubmittedTimetableQueueStream(),
       initialData: _timetableService.getAllCachedSubmittedVersions(),
       builder: (context, snap) {
@@ -1336,6 +1347,7 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
         ),
         Expanded(
           child: StreamBuilder<List<Map<String, dynamic>>>(
+            key: ValueKey('audits_stream_${_auditClassFilter}_$_auditActionFilter'),
             stream: _timetableService.getAllTimetableAuditsStream(
               classId: _auditClassFilter,
               actionFilter: _auditActionFilter,
@@ -1979,5 +1991,25 @@ class _ClassCommunicationDialogState extends State<_ClassCommunicationDialog> {
         ),
       ],
     );
+  }
+}
+
+class _KeepAliveTab extends StatefulWidget {
+  final Widget child;
+  const _KeepAliveTab({super.key, required this.child});
+
+  @override
+  State<_KeepAliveTab> createState() => _KeepAliveTabState();
+}
+
+class _KeepAliveTabState extends State<_KeepAliveTab>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
   }
 }

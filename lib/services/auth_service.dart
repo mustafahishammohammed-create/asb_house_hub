@@ -6982,28 +6982,32 @@ class AuthService {
   /// Stream of the managed class/section registry. Admin-facing; students may
   /// only read their own class document per Firestore rules, so a full
   /// collection query falls back to cache for non-admin callers.
-  Stream<List<AcademicClass>> getAcademicClassesStream({bool activeOnly = false}) async* {
-    List<AcademicClass> applyFilter(List<AcademicClass> list) =>
-        activeOnly ? list.where((c) => c.active).toList() : list;
+  Stream<List<AcademicClass>> getAcademicClassesStream({bool activeOnly = false}) {
+    Stream<List<AcademicClass>> stream() async* {
+      List<AcademicClass> applyFilter(List<AcademicClass> list) =>
+          activeOnly ? list.where((c) => c.active).toList() : list;
 
-    // Immediately yield cached classes so UI never hangs in waiting state
-    yield applyFilter(getCachedAcademicClasses());
-
-    if (!_isFirebaseLive) return;
-
-    try {
-      Query query = _firestore.collection('academic_classes');
-      if (activeOnly) query = query.where('active', isEqualTo: true);
-      await for (final snap in query.snapshots()) {
-        final list = snap.docs.map((d) => AcademicClass.fromFirestore(d)).toList();
-        list.sort(compareAcademicClasses);
-        cacheAcademicClasses(list);
-        yield applyFilter(list);
-      }
-    } catch (e) {
-      debugPrint('Academic classes stream error: $e');
+      // Immediately yield cached classes so UI never hangs in waiting state
       yield applyFilter(getCachedAcademicClasses());
+
+      if (!_isFirebaseLive) return;
+
+      try {
+        Query query = _firestore.collection('academic_classes');
+        if (activeOnly) query = query.where('active', isEqualTo: true);
+        await for (final snap in query.snapshots()) {
+          final list = snap.docs.map((d) => AcademicClass.fromFirestore(d)).toList();
+          list.sort(compareAcademicClasses);
+          cacheAcademicClasses(list);
+          yield applyFilter(list);
+        }
+      } catch (e) {
+        debugPrint('Academic classes stream error: $e');
+        yield applyFilter(getCachedAcademicClasses());
+      }
     }
+
+    return stream().asBroadcastStream();
   }
 
   /// Creates or updates a class/section entry (admin only per rules).
@@ -7067,17 +7071,33 @@ class AuthService {
         final snapshots = await Future.wait(queries);
         for (final snap in snapshots) {
           for (final doc in snap.docs) {
-            final d = doc.data();
-            final rawSec = (d['division'] ?? '').toString().trim().toUpperCase();
-            final cid = (d['class_id'] ?? '').toString().trim().toUpperCase();
-            final lvl = (d['class_level'] ?? '').toString().trim().toUpperCase();
-            if (rawSec == entry.section || cid == entry.classId || lvl == entry.classId) {
-              await doc.reference.update({
-                'class_id': entry.classId,
-                'class_level': entry.grade,
-                'division': entry.section,
-                'updated_at': FieldValue.serverTimestamp(),
-              });
+            try {
+              final d = doc.data();
+              final rawSec = (d['division'] ?? '').toString().trim().toUpperCase();
+              final cid = (d['class_id'] ?? '').toString().trim().toUpperCase();
+              final lvl = (d['class_level'] ?? '').toString().trim().toUpperCase();
+              if (rawSec == entry.section || cid == entry.classId || lvl == entry.classId) {
+                await doc.reference.update({
+                  'class_id': entry.classId,
+                  'class_level': entry.grade,
+                  'division': entry.section,
+                  'updated_at': FieldValue.serverTimestamp(),
+                });
+                final sNo = (d['scholar_no'] ?? doc.id).toString().trim();
+                final updatedDoc = {
+                  ...d,
+                  'class_id': entry.classId,
+                  'class_level': entry.grade,
+                  'division': entry.section,
+                };
+                if (sNo.isNotEmpty) {
+                  await saveVerifiedClassPlacement(sNo, updatedDoc);
+                  await saveVerifiedClassPlacement(sNo.toLowerCase(), updatedDoc);
+                }
+                await saveVerifiedClassPlacement(doc.id, updatedDoc);
+              }
+            } catch (err) {
+              debugPrint('saveAcademicClass doc auto-assign warning: $err');
             }
           }
         }
@@ -7314,6 +7334,8 @@ class AuthService {
   Future<bool> verifyStudentClass({
     required String scholarNo,
     String? classId,
+    String? uid,
+    Map<String, dynamic>? studentProfile,
   }) async {
     final sNo = scholarNo.trim();
     if (sNo.isEmpty) return false;
@@ -7334,6 +7356,8 @@ class AuthService {
     }
     return _applyStudentClassUpdate(
       scholarNo: sNo,
+      uid: uid,
+      studentProfile: studentProfile,
       updates: updates,
       notificationTitle: 'Class Placement Verified',
       notificationBody: targetId.isNotEmpty
@@ -7347,6 +7371,8 @@ class AuthService {
   Future<bool> transferStudentClass({
     required String scholarNo,
     required String classId,
+    String? uid,
+    Map<String, dynamic>? studentProfile,
   }) async {
     final sNo = scholarNo.trim();
     final id = classId.trim();
@@ -7356,6 +7382,8 @@ class AuthService {
 
     return _applyStudentClassUpdate(
       scholarNo: sNo,
+      uid: uid,
+      studentProfile: studentProfile,
       updates: {
         'class_id': id,
         'class_level': grade,
@@ -7549,6 +7577,8 @@ class AuthService {
 
   Future<bool> _applyStudentClassUpdate({
     required String scholarNo,
+    String? uid,
+    Map<String, dynamic>? studentProfile,
     required Map<String, dynamic> updates,
     required String notificationTitle,
     required String notificationBody,
@@ -7562,30 +7592,39 @@ class AuthService {
         if (firestoreFailureSimulated != null) {
           throw firestoreFailureSimulated!;
         }
-        var query = await _firestore
-            .collection('users')
-            .where('scholar_no', isEqualTo: cleanScholarNo)
-            .limit(1)
-            .get();
-        if (query.docs.isEmpty) {
-          final parsedInt = int.tryParse(cleanScholarNo);
-          if (parsedInt != null) {
-            query = await _firestore
-                .collection('users')
-                .where('scholar_no', isEqualTo: parsedInt)
-                .limit(1)
-                .get();
+        if (uid != null && uid.trim().isNotEmpty) {
+          final direct = await _firestore.collection('users').doc(uid.trim()).get();
+          if (direct.exists) {
+            updatedUser = direct.reference;
+            await updatedUser.update(updates);
           }
         }
-        if (query.docs.isNotEmpty) {
-          updatedUser = query.docs.first.reference;
-          await updatedUser.update(updates);
-        } else {
-          // Check if document is keyed directly by scholarNo or uid
-          final directDoc = await _firestore.collection('users').doc(cleanScholarNo).get();
-          if (directDoc.exists) {
-            updatedUser = directDoc.reference;
+        if (updatedUser == null) {
+          var query = await _firestore
+              .collection('users')
+              .where('scholar_no', isEqualTo: cleanScholarNo)
+              .limit(1)
+              .get();
+          if (query.docs.isEmpty) {
+            final parsedInt = int.tryParse(cleanScholarNo);
+            if (parsedInt != null) {
+              query = await _firestore
+                  .collection('users')
+                  .where('scholar_no', isEqualTo: parsedInt)
+                  .limit(1)
+                  .get();
+            }
+          }
+          if (query.docs.isNotEmpty) {
+            updatedUser = query.docs.first.reference;
             await updatedUser.update(updates);
+          } else {
+            // Check if document is keyed directly by scholarNo or uid
+            final directDoc = await _firestore.collection('users').doc(cleanScholarNo).get();
+            if (directDoc.exists) {
+              updatedUser = directDoc.reference;
+              await updatedUser.update(updates);
+            }
           }
         }
       } catch (e) {
@@ -7622,10 +7661,22 @@ class AuthService {
 
     // Save in verified placements cache if verifying or transferring class
     if (updates['class_verified'] == true || updates.containsKey('class_id')) {
-      final placementData = Map<String, dynamic>.from(updates);
+      final placementData = <String, dynamic>{
+        ...?studentProfile,
+        ...updates,
+      };
       placementData.removeWhere((k, v) => v is FieldValue);
       placementData['scholar_no'] = cleanScholarNo;
       await saveVerifiedClassPlacement(cleanScholarNo, placementData);
+      if (uid != null && uid.trim().isNotEmpty) {
+        await saveVerifiedClassPlacement(uid.trim(), placementData);
+      }
+      if (studentProfile != null && studentProfile['full_name'] != null) {
+        final name = studentProfile['full_name'].toString().trim().toLowerCase();
+        if (name.isNotEmpty) {
+          await saveVerifiedClassPlacement(name, placementData);
+        }
+      }
       localUpdated = true;
     }
 
@@ -7692,240 +7743,248 @@ class AuthService {
 
   /// Stream of scholars awaiting class verification (legacy profiles without
   /// the flag are included). Staff/admin accounts are excluded.
-  Stream<List<Map<String, dynamic>>> getPendingClassVerificationsStream() async* {
-    List<Map<String, dynamic>> getLocalPending() {
-      final local = <Map<String, dynamic>>[];
-      final seen = <String>{};
-
-      void check(Map<String, dynamic>? data) {
-        if (data == null) return;
-        final role = (data['role'] ?? '').toString().trim().toLowerCase();
-        if (_staffRoles.contains(role)) return;
-        if (data['class_verified'] == true) return;
-        final sNo = (data['scholar_no'] ?? data['uid'] ?? '').toString().trim();
-        if (sNo.isEmpty || seen.contains(sNo)) return;
-        final placements = getVerifiedClassPlacements();
-        final sNoLower = sNo.toLowerCase();
-        final parsed = int.tryParse(sNo);
-        final isVerified = placements.containsKey(sNoLower) ||
-            (parsed != null && placements.containsKey(parsed.toString())) ||
-            (data['uid'] != null && placements.containsKey(data['uid'].toString().toLowerCase())) ||
-            (data['full_name'] != null && placements.containsKey(data['full_name'].toString().toLowerCase()));
-        if (isVerified) return;
-        seen.add(sNo);
-        local.add(Map<String, dynamic>.from(data));
-      }
-
-      check(getCachedProfile());
-      for (final acc in getSavedAccounts()) {
-        check({
-          ...acc.cachedProfile,
-          'scholar_no': acc.scholarNo,
-          'full_name': acc.fullName,
-          'house_name': acc.houseName,
-          'uid': acc.uid,
-          if (acc.role != null) 'role': acc.role,
-          if (acc.classLevel != null) 'class_level': acc.classLevel,
-          if (acc.division != null) 'division': acc.division,
-        });
-      }
-      return local;
-    }
-
-    yield getLocalPending();
-
-    if (!_isFirebaseLive) return;
-
-    try {
-      await for (final snap in _firestore.collection('users').snapshots()) {
-        final pending = <Map<String, dynamic>>[];
+  Stream<List<Map<String, dynamic>>> getPendingClassVerificationsStream() {
+    Stream<List<Map<String, dynamic>>> stream() async* {
+      List<Map<String, dynamic>> getLocalPending() {
+        final local = <Map<String, dynamic>>[];
         final seen = <String>{};
-        final localSaved = getSavedAccounts();
-        for (final doc in snap.docs) {
-          final data = doc.data();
-          final role = (data['role'] ?? '').toString().trim().toLowerCase();
-          if (_staffRoles.contains(role)) continue;
-          if (data['class_verified'] == true) continue;
-          final sNo = (data['scholar_no'] ?? doc.id).toString().trim();
 
-          // If this scholar was verified on this device, skip from pending!
+        void check(Map<String, dynamic>? data) {
+          if (data == null) return;
+          final role = (data['role'] ?? '').toString().trim().toLowerCase();
+          if (_staffRoles.contains(role)) return;
+          if (data['class_verified'] == true) return;
+          final sNo = (data['scholar_no'] ?? data['uid'] ?? '').toString().trim();
+          if (sNo.isEmpty || seen.contains(sNo)) return;
           final placements = getVerifiedClassPlacements();
           final sNoLower = sNo.toLowerCase();
-          final docIdLower = doc.id.toLowerCase();
           final parsed = int.tryParse(sNo);
-          final isLocallyVerified = placements.containsKey(sNoLower) ||
-              placements.containsKey(docIdLower) ||
+          final isVerified = placements.containsKey(sNoLower) ||
               (parsed != null && placements.containsKey(parsed.toString())) ||
-              (data['full_name'] != null && placements.containsKey(data['full_name'].toString().toLowerCase())) ||
-              localSaved.any((acc) {
-                final accSNo = acc.scholarNo.trim().toLowerCase();
-                final docSNo = sNo.toLowerCase();
-                final parsedAcc = int.tryParse(accSNo);
-                final parsedDoc = int.tryParse(docSNo);
-                final match = accSNo == docSNo ||
-                    acc.uid.trim() == doc.id ||
-                    acc.fullName.trim().toLowerCase() == (data['full_name'] ?? '').toString().trim().toLowerCase() ||
-                    (parsedAcc != null && parsedDoc != null && parsedAcc == parsedDoc);
-                return match && acc.cachedProfile['class_verified'] == true;
-              });
-          if (isLocallyVerified) continue;
-
+              (data['uid'] != null && placements.containsKey(data['uid'].toString().toLowerCase())) ||
+              (data['full_name'] != null && placements.containsKey(data['full_name'].toString().toLowerCase()));
+          if (isVerified) return;
           seen.add(sNo);
-          pending.add({...data, 'uid': doc.id});
+          local.add(Map<String, dynamic>.from(data));
         }
-        for (final loc in getLocalPending()) {
-          final sNo = (loc['scholar_no'] ?? loc['uid'] ?? '').toString().trim();
-          if (!seen.contains(sNo)) {
-            seen.add(sNo);
-            pending.add(loc);
-          }
+
+        check(getCachedProfile());
+        for (final acc in getSavedAccounts()) {
+          check({
+            ...acc.cachedProfile,
+            'scholar_no': acc.scholarNo,
+            'full_name': acc.fullName,
+            'house_name': acc.houseName,
+            'uid': acc.uid,
+            if (acc.role != null) 'role': acc.role,
+            if (acc.classLevel != null) 'class_level': acc.classLevel,
+            if (acc.division != null) 'division': acc.division,
+          });
         }
-        pending.sort((a, b) => (a['full_name'] ?? '')
-            .toString()
-            .compareTo((b['full_name'] ?? '').toString()));
-        yield pending;
+        return local;
       }
-    } catch (e) {
-      debugPrint('Pending class verifications stream error: $e');
+
       yield getLocalPending();
+
+      if (!_isFirebaseLive) return;
+
+      try {
+        await for (final snap in _firestore.collection('users').snapshots()) {
+          final pending = <Map<String, dynamic>>[];
+          final seen = <String>{};
+          final localSaved = getSavedAccounts();
+          for (final doc in snap.docs) {
+            final data = doc.data();
+            final role = (data['role'] ?? '').toString().trim().toLowerCase();
+            if (_staffRoles.contains(role)) continue;
+            if (data['class_verified'] == true) continue;
+            final sNo = (data['scholar_no'] ?? doc.id).toString().trim();
+
+            // If this scholar was verified on this device, skip from pending!
+            final placements = getVerifiedClassPlacements();
+            final sNoLower = sNo.toLowerCase();
+            final docIdLower = doc.id.toLowerCase();
+            final parsed = int.tryParse(sNo);
+            final isLocallyVerified = placements.containsKey(sNoLower) ||
+                placements.containsKey(docIdLower) ||
+                (parsed != null && placements.containsKey(parsed.toString())) ||
+                (data['full_name'] != null && placements.containsKey(data['full_name'].toString().toLowerCase())) ||
+                localSaved.any((acc) {
+                  final accSNo = acc.scholarNo.trim().toLowerCase();
+                  final docSNo = sNo.toLowerCase();
+                  final parsedAcc = int.tryParse(accSNo);
+                  final parsedDoc = int.tryParse(docSNo);
+                  final match = accSNo == docSNo ||
+                      acc.uid.trim() == doc.id ||
+                      acc.fullName.trim().toLowerCase() == (data['full_name'] ?? '').toString().trim().toLowerCase() ||
+                      (parsedAcc != null && parsedDoc != null && parsedAcc == parsedDoc);
+                  return match && acc.cachedProfile['class_verified'] == true;
+                });
+            if (isLocallyVerified) continue;
+
+            seen.add(sNo);
+            pending.add({...data, 'uid': doc.id});
+          }
+          for (final loc in getLocalPending()) {
+            final sNo = (loc['scholar_no'] ?? loc['uid'] ?? '').toString().trim();
+            if (!seen.contains(sNo)) {
+              seen.add(sNo);
+              pending.add(loc);
+            }
+          }
+          pending.sort((a, b) => (a['full_name'] ?? '')
+              .toString()
+              .compareTo((b['full_name'] ?? '').toString()));
+          yield pending;
+        }
+      } catch (e) {
+        debugPrint('Pending class verifications stream error: $e');
+        yield getLocalPending();
+      }
     }
+
+    return stream().asBroadcastStream();
   }
 
   /// Stream of scholars belonging to a canonical class. Matches the canonical
   /// class_id first and falls back to legacy class_level + division for
   /// profiles created before the registry existed.
-  Stream<List<Map<String, dynamic>>> getClassRosterStream(String classId) async* {
-    final id = classId.trim().toUpperCase();
-    final parsed = AcademicStructure.parseClassId(id);
-    if (parsed == null) {
-      yield <Map<String, dynamic>>[];
-      return;
-    }
-    final (grade, section) = parsed;
-
-    bool matches(Map<String, dynamic> data) {
-      final role = (data['role'] ?? '').toString().trim().toLowerCase();
-      if (_staffRoles.contains(role)) return false;
-
-      final cid = (data['class_id'] ?? '').toString().trim().toUpperCase();
-      if (cid == id) return true;
-
-      final rawLevel = (data['class_level'] ?? '').toString().trim();
-      final normGrade = AcademicStructure.normalizeGrade(rawLevel);
-      final rawSec = (data['division'] ?? '').toString().trim().toUpperCase();
-
-      if (rawLevel.toUpperCase().replaceAll(' ', '') == id) return true;
-
-      if (normGrade != null && normGrade == grade && rawSec == section) {
-        return true;
+  Stream<List<Map<String, dynamic>>> getClassRosterStream(String classId) {
+    Stream<List<Map<String, dynamic>>> stream() async* {
+      final id = classId.trim().toUpperCase();
+      final parsed = AcademicStructure.parseClassId(id);
+      if (parsed == null) {
+        yield <Map<String, dynamic>>[];
+        return;
       }
+      final (grade, section) = parsed;
 
-      final computed = AcademicStructure.classIdFrom(rawLevel, rawSec);
-      if (computed.isNotEmpty && computed == id) return true;
+      bool matches(Map<String, dynamic> data) {
+        final role = (data['role'] ?? '').toString().trim().toLowerCase();
+        if (_staffRoles.contains(role)) return false;
 
-      return false;
-    }
+        final cid = (data['class_id'] ?? '').toString().trim().toUpperCase();
+        if (cid == id) return true;
 
-    List<Map<String, dynamic>> getLocalRoster() {
-      final local = <Map<String, dynamic>>[];
-      final seen = <String>{};
+        final rawLevel = (data['class_level'] ?? '').toString().trim();
+        final normGrade = AcademicStructure.normalizeGrade(rawLevel);
+        final rawSec = (data['division'] ?? '').toString().trim().toUpperCase();
 
-      void addIfMatch(Map<String, dynamic>? prof) {
-        if (prof == null) return;
-        final sNo = (prof['scholar_no'] ?? prof['uid'] ?? '').toString().trim();
-        if (sNo.isEmpty || seen.contains(sNo)) return;
-        if (matches(prof)) {
-          seen.add(sNo);
-          local.add(Map<String, dynamic>.from(prof));
+        if (rawLevel.toUpperCase().replaceAll(' ', '') == id) return true;
+
+        if (normGrade != null && normGrade == grade && rawSec == section) {
+          return true;
         }
+
+        final computed = AcademicStructure.classIdFrom(rawLevel, rawSec);
+        if (computed.isNotEmpty && computed == id) return true;
+
+        return false;
       }
 
-      addIfMatch(getCachedProfile());
-      for (final acc in getSavedAccounts()) {
-        final map = {
-          ...acc.cachedProfile,
-          'scholar_no': acc.scholarNo,
-          'full_name': acc.fullName,
-          'house_name': acc.houseName,
-          'uid': acc.uid,
-          if (acc.role != null) 'role': acc.role,
-          if (acc.classLevel != null) 'class_level': acc.classLevel,
-          if (acc.division != null) 'division': acc.division,
-        };
-        addIfMatch(map);
-      }
-      final localPlacements = getVerifiedClassPlacements();
-      for (final entry in localPlacements.values) {
-        addIfMatch(entry);
-      }
-
-      local.sort((a, b) => (a['full_name'] ?? '')
-          .toString()
-          .compareTo((b['full_name'] ?? '').toString()));
-      return local;
-    }
-
-    yield getLocalRoster();
-
-    if (!_isFirebaseLive) return;
-
-    try {
-      await for (final snap in _firestore.collection('users').snapshots()) {
-        final roster = <Map<String, dynamic>>[];
+      List<Map<String, dynamic>> getLocalRoster() {
+        final local = <Map<String, dynamic>>[];
         final seen = <String>{};
 
-        final localSaved = getSavedAccounts();
-        final placements = getVerifiedClassPlacements();
-        for (final doc in snap.docs) {
-          final data = Map<String, dynamic>.from(doc.data());
-          final sNo = (data['scholar_no'] ?? doc.id).toString().trim();
+        void addIfMatch(Map<String, dynamic>? prof) {
+          if (prof == null) return;
+          final sNo = (prof['scholar_no'] ?? prof['uid'] ?? '').toString().trim();
+          if (sNo.isEmpty || seen.contains(sNo)) return;
+          if (matches(prof)) {
+            seen.add(sNo);
+            local.add(Map<String, dynamic>.from(prof));
+          }
+        }
 
-          // Overlay local saved account data if matching
-          for (final acc in localSaved) {
-            final accSNo = acc.scholarNo.trim().toLowerCase();
-            final docSNo = sNo.toLowerCase();
-            final parsedAcc = int.tryParse(accSNo);
-            final parsedDoc = int.tryParse(docSNo);
-            final match = accSNo == docSNo ||
-                acc.uid.trim() == doc.id ||
-                (parsedAcc != null && parsedDoc != null && parsedAcc == parsedDoc);
-            if (match) {
-              data.addAll(acc.cachedProfile);
-              if (acc.classLevel != null) data['class_level'] = acc.classLevel;
-              if (acc.division != null) data['division'] = acc.division;
-              break;
+        addIfMatch(getCachedProfile());
+        for (final acc in getSavedAccounts()) {
+          final map = {
+            ...acc.cachedProfile,
+            'scholar_no': acc.scholarNo,
+            'full_name': acc.fullName,
+            'house_name': acc.houseName,
+            'uid': acc.uid,
+            if (acc.role != null) 'role': acc.role,
+            if (acc.classLevel != null) 'class_level': acc.classLevel,
+            if (acc.division != null) 'division': acc.division,
+          };
+          addIfMatch(map);
+        }
+        final localPlacements = getVerifiedClassPlacements();
+        for (final entry in localPlacements.values) {
+          addIfMatch(entry);
+        }
+
+        local.sort((a, b) => (a['full_name'] ?? '')
+            .toString()
+            .compareTo((b['full_name'] ?? '').toString()));
+        return local;
+      }
+
+      yield getLocalRoster();
+
+      if (!_isFirebaseLive) return;
+
+      try {
+        await for (final snap in _firestore.collection('users').snapshots()) {
+          final roster = <Map<String, dynamic>>[];
+          final seen = <String>{};
+
+          final localSaved = getSavedAccounts();
+          final placements = getVerifiedClassPlacements();
+          for (final doc in snap.docs) {
+            final data = Map<String, dynamic>.from(doc.data());
+            final sNo = (data['scholar_no'] ?? doc.id).toString().trim();
+
+            // Overlay local saved account data if matching
+            for (final acc in localSaved) {
+              final accSNo = acc.scholarNo.trim().toLowerCase();
+              final docSNo = sNo.toLowerCase();
+              final parsedAcc = int.tryParse(accSNo);
+              final parsedDoc = int.tryParse(docSNo);
+              final match = accSNo == docSNo ||
+                  acc.uid.trim() == doc.id ||
+                  (parsedAcc != null && parsedDoc != null && parsedAcc == parsedDoc);
+              if (match) {
+                data.addAll(acc.cachedProfile);
+                if (acc.classLevel != null) data['class_level'] = acc.classLevel;
+                if (acc.division != null) data['division'] = acc.division;
+                break;
+              }
+            }
+
+            final sKey = sNo.toLowerCase();
+            final uKey = doc.id.toLowerCase();
+            final placement = placements[sKey] ?? placements[uKey];
+            if (placement != null) {
+              data.addAll(placement);
+            }
+
+            if (matches(data)) {
+              seen.add(sNo);
+              roster.add({...data, 'uid': doc.id});
             }
           }
 
-          final sKey = sNo.toLowerCase();
-          final uKey = doc.id.toLowerCase();
-          final placement = placements[sKey] ?? placements[uKey];
-          if (placement != null) {
-            data.addAll(placement);
+          for (final loc in getLocalRoster()) {
+            final sNo = (loc['scholar_no'] ?? loc['uid'] ?? '').toString().trim();
+            if (!seen.contains(sNo)) {
+              seen.add(sNo);
+              roster.add(loc);
+            }
           }
 
-          if (matches(data)) {
-            seen.add(sNo);
-            roster.add({...data, 'uid': doc.id});
-          }
+          roster.sort((a, b) => (a['full_name'] ?? '')
+              .toString()
+              .compareTo((b['full_name'] ?? '').toString()));
+          yield roster;
         }
-
-        for (final loc in getLocalRoster()) {
-          final sNo = (loc['scholar_no'] ?? loc['uid'] ?? '').toString().trim();
-          if (!seen.contains(sNo)) {
-            seen.add(sNo);
-            roster.add(loc);
-          }
-        }
-
-        roster.sort((a, b) => (a['full_name'] ?? '')
-            .toString()
-            .compareTo((b['full_name'] ?? '').toString()));
-        yield roster;
+      } catch (e) {
+        debugPrint('Class roster stream error: $e');
+        yield getLocalRoster();
       }
-    } catch (e) {
-      debugPrint('Class roster stream error: $e');
-      yield getLocalRoster();
     }
+
+    return stream().asBroadcastStream();
   }
 }
