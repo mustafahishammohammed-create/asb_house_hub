@@ -436,8 +436,9 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
   Widget _buildPendingTab(ColorScheme scheme) {
     return StreamBuilder<List<Map<String, dynamic>>>(
       stream: _authService.getPendingClassVerificationsStream(),
+      initialData: const <Map<String, dynamic>>[],
       builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting) {
+        if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
         final pending = snap.data ?? [];
@@ -565,8 +566,9 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
   Widget _buildClassesTab(ColorScheme scheme) {
     return StreamBuilder<List<AcademicClass>>(
       stream: _authService.getAcademicClassesStream(),
+      initialData: AuthService.getCachedAcademicClasses(),
       builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting) {
+        if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
         final classes = snap.data ?? [];
@@ -644,7 +646,11 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
   Widget _buildRostersTab(ColorScheme scheme) {
     return StreamBuilder<List<AcademicClass>>(
       stream: _authService.getAcademicClassesStream(),
+      initialData: AuthService.getCachedAcademicClasses(),
       builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
         final classes = (snap.data ?? [])
             .where((c) => c.active)
             .toList();
@@ -683,8 +689,9 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
             Expanded(
               child: StreamBuilder<List<Map<String, dynamic>>>(
                 stream: _authService.getClassRosterStream(selected),
+                initialData: const <Map<String, dynamic>>[],
                 builder: (context, rosterSnap) {
-                  if (rosterSnap.connectionState == ConnectionState.waiting) {
+                  if (rosterSnap.connectionState == ConnectionState.waiting && !rosterSnap.hasData) {
                     return const Center(child: CircularProgressIndicator());
                   }
                   final roster = rosterSnap.data ?? [];
@@ -844,8 +851,11 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
   Widget _buildPromotionTab(ColorScheme scheme) {
     return StreamBuilder<List<AcademicClass>>(
       stream: _authService.getAcademicClassesStream(activeOnly: true),
+      initialData: AuthService.getCachedAcademicClasses()
+          .where((c) => c.active)
+          .toList(),
       builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting) {
+        if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
         final classes = snap.data ?? [];
@@ -1126,8 +1136,9 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
   Widget _buildApprovalsTab(ColorScheme scheme) {
     return StreamBuilder<List<ClassTimetableVersion>>(
       stream: _timetableService.getSubmittedTimetableQueueStream(),
+      initialData: _timetableService.getAllCachedSubmittedVersions(),
       builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting) {
+        if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
         final list = snap.data ?? [];
@@ -1283,8 +1294,12 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
               classId: _auditClassFilter,
               actionFilter: _auditActionFilter,
             ),
+            initialData: _timetableService.getAllCachedAudits(
+              classId: _auditClassFilter,
+              actionFilter: _auditActionFilter,
+            ),
             builder: (context, snap) {
-              if (snap.connectionState == ConnectionState.waiting) {
+              if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
                 return const Center(child: CircularProgressIndicator());
               }
               final logs = snap.data ?? [];
@@ -1599,6 +1614,9 @@ class _TransferDialogState extends State<_TransferDialog> {
         width: 320,
         child: StreamBuilder<List<AcademicClass>>(
           stream: widget.authService.getAcademicClassesStream(activeOnly: true),
+          initialData: AuthService.getCachedAcademicClasses()
+              .where((c) => c.active)
+              .toList(),
           builder: (context, snap) {
             final classes = snap.data ?? [];
             if (classes.isEmpty) {

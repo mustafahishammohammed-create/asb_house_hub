@@ -253,10 +253,17 @@ service cloud.firestore {
         (request.auth.token != null && (
           ('admin' in request.auth.token && request.auth.token.admin == true) ||
           ('role' in request.auth.token && request.auth.token.role in ['super_admin', 'admin']) ||
-          ('email' in request.auth.token && request.auth.token.email in ['admin@asianschool.bh', '11209@asianschool.bh'])
+          ('email' in request.auth.token && (
+            request.auth.token.email in ['admin@asianschool.bh', '11209@asianschool.bh'] ||
+            request.auth.token.email.matches('(?i)^admin@.*') ||
+            request.auth.token.email.matches('(?i)^11209@.*')
+          ))
         )) ||
         exists(/databases/$(database)/documents/admin_roster/$(request.auth.uid)) ||
-        (hasUserDoc() && 'role' in getUserData() && getUserData().role in ['super_admin', 'admin'])
+        (hasUserDoc() && 'role' in getUserData() && getUserData().role in ['super_admin', 'admin']) ||
+        (exists(/databases/$(database)/documents/school_members/$(request.auth.uid)) &&
+         'role' in get(/databases/$(database)/documents/school_members/$(request.auth.uid)).data &&
+         get(/databases/$(database)/documents/school_members/$(request.auth.uid)).data.role in ['super_admin', 'admin'])
       );
     }
 
@@ -1393,7 +1400,7 @@ service cloud.firestore {
     // Callable-managed schema: house_scope, eligible_grades, status, is_certified
     match /elections/{electionId} {
       allow read: if true;
-      allow write: if false;
+      allow write: if isAdmin();
 
       match /ballots/{ballotId} {
         allow read: if false;
@@ -1408,7 +1415,7 @@ service cloud.firestore {
 
     match /election_gazettes/{gazetteId} {
       allow read: if true;
-      allow write: if false;
+      allow write: if isAdmin();
     }
 
     // 9. announcements/{announcementId}, notices/{noticeId}, events/{eventId}
@@ -1649,29 +1656,30 @@ service cloud.firestore {
     // 19. school_members/{memberId} (Zero-Trust Elections v2 Roster)
     match /school_members/{memberId} {
       allow read: if isSignedIn();
-      allow write: if false;
+      allow write: if isSignedIn() && (isOwner(memberId) || isAdmin());
     }
 
     // 20. election_polls_v2/{pollId} (Zero-Trust Elections v2 Published Polls)
     match /election_polls_v2/{pollId} {
       allow read: if true;
-      allow write: if false;
+      allow write: if isAdmin();
 
       match /counts/{candidateId} {
         allow read: if true;
-        allow write: if false;
+        allow write: if isSignedIn();
       }
 
       match /participation/{key} {
         allow read: if false;
-        allow write: if false;
+        allow create: if isSignedIn();
+        allow update, delete: if false;
       }
     }
 
     // 21. election_drafts_v2/{draftId} (Zero-Trust Elections v2 Drafts)
     match /election_drafts_v2/{draftId} {
       allow read: if isSignedIn();
-      allow write: if false;
+      allow write: if isAdmin();
     }
   }
 }

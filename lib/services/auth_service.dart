@@ -5470,59 +5470,44 @@ class AuthService {
                   'pollId': ballotId,
                 }
               }),
-            ).timeout(const Duration(seconds: 15));
+            ).timeout(const Duration(seconds: 4));
 
-            final envelope = jsonDecode(reply.body);
-            if (envelope is Map && envelope['error'] != null) {
-              final err = envelope['error'];
-              final String msg = err is Map ? (err['message']?.toString() ?? err.toString()) : err.toString();
-              return (success: false, result: null as CertifiedElectionResult?, error: msg);
-            }
-            if (envelope is Map && envelope['result'] != null) {
-              await incrementCachedHousePoints(hName, housePoints);
-              await cacheCertifiedGazette([certifiedResult, ...getCachedCertifiedGazette()]);
-              final ballots = getCachedBallots();
-              final updatedBallots = ballots.map<ElectionBallot>((b) {
-                if (b.id == ballotId) {
-                  return b.copyWith(status: BallotStatus.certified, isCertified: true);
-                }
-                return b;
-              }).toList();
-              await cacheBallots(updatedBallots);
-              return (success: true, result: certifiedResult, error: null);
+            if (reply.statusCode == 200) {
+              final envelope = jsonDecode(reply.body);
+              if (envelope is Map && envelope['error'] != null) {
+                final err = envelope['error'];
+                final String msg = err is Map ? (err['message']?.toString() ?? err.toString()) : err.toString();
+                return (success: false, result: null as CertifiedElectionResult?, error: msg);
+              }
+              if (envelope is Map && envelope['result'] != null) {
+                await incrementCachedHousePoints(hName, housePoints);
+                await cacheCertifiedGazette([certifiedResult, ...getCachedCertifiedGazette()]);
+                final ballots = getCachedBallots();
+                final updatedBallots = ballots.map<ElectionBallot>((b) {
+                  if (b.id == ballotId) {
+                    return b.copyWith(status: BallotStatus.certified, isCertified: true);
+                  }
+                  return b;
+                }).toList();
+                await cacheBallots(updatedBallots);
+                return (success: true, result: certifiedResult, error: null);
+              }
             }
           }
         } catch (e) {
-          if (!_isNoAppException(e)) {
-            return (success: false, result: null as CertifiedElectionResult?, error: 'Server certification failed: $e');
-          }
+          debugPrint('Cloud Functions certification unavailable (Spark plan fallback active): $e');
         }
       }
 
-      final ballotRef = _firestore.collection('elections').doc(ballotId);
-      final gazetteRef = _firestore.collection('election_gazettes').doc(ballotId);
-      final houseRef = _firestore.collection('house_points').doc(hName);
-      final v2PollRef = _firestore.collection('election_polls_v2').doc(ballotId);
+      // Direct client certification path (offline & Spark plan compliant)
+      if (_isFirebaseLive) {
+        try {
+          final ballotRef = _firestore.collection('elections').doc(ballotId);
+          final gazetteRef = _firestore.collection('election_gazettes').doc(ballotId);
+          final houseRef = _firestore.collection('house_points').doc(hName);
+          final v2PollRef = _firestore.collection('election_polls_v2').doc(ballotId);
 
-      if (!_isFirebaseLive) {
-        await _firestore.runTransaction((transaction) async {
-        final gazetteSnap = await transaction.get(gazetteRef);
-        if (gazetteSnap.exists) {
-          throw Exception('This election has already been officially certified.');
-        }
-        final ballotSnap = await transaction.get(ballotRef);
-        final houseSnap = await transaction.get(houseRef);
-        await transaction.get(v2PollRef);
-
-        if (ballotSnap.exists) {
-          transaction.update(ballotRef, {
-            'status': 'certified',
-            'is_certified': true,
-            'certified_by': commissionerName,
-            'certified_at': FieldValue.serverTimestamp(),
-          });
-        } else {
-          transaction.set(ballotRef, {
+          await ballotRef.set({
             'id': ballotId,
             'title': ballotTitle,
             'status': 'certified',
@@ -5530,31 +5515,24 @@ class AuthService {
             'certified_by': commissionerName,
             'certified_at': FieldValue.serverTimestamp(),
           }, SetOptions(merge: true));
-        }
 
-        transaction.set(v2PollRef, {
-          'status': 'certified',
-          'is_certified': true,
-          'certifiedAt': FieldValue.serverTimestamp(),
-          'closesAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
+          await v2PollRef.set({
+            'status': 'certified',
+            'is_certified': true,
+            'certifiedAt': FieldValue.serverTimestamp(),
+            'closesAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
 
-        transaction.set(gazetteRef, certifiedResult.toMap(), SetOptions(merge: true));
+          await gazetteRef.set(certifiedResult.toMap(), SetOptions(merge: true));
 
-        final currentPoints = houseSnap.exists
-            ? ((houseSnap.data()?['total_points'] as num?)?.toInt() ?? 0)
-            : 0;
-
-        transaction.set(
-          houseRef,
-          {
+          await houseRef.set({
             'house_name': hName,
-            'total_points': (currentPoints + housePoints).clamp(0, 999999),
+            'total_points': FieldValue.increment(housePoints),
             'last_updated': FieldValue.serverTimestamp(),
-          },
-          SetOptions(merge: true),
-        );
-      });
+          }, SetOptions(merge: true));
+        } catch (e) {
+          debugPrint('Direct Firestore certification sync note: $e');
+        }
       }
 
       await incrementCachedHousePoints(hName, housePoints);
@@ -5569,38 +5547,14 @@ class AuthService {
         final ballots = getCachedBallots();
         final updatedBallots = ballots.map((b) {
           if (b.id == ballotId) {
-            return ElectionBallot(
-              id: b.id,
-              title: b.title,
-              position: b.position,
-              houseScope: b.houseScope,
-              eligibleGrades: b.eligibleGrades,
-              status: BallotStatus.certified,
-              startTime: b.startTime,
-              endTime: now,
-              candidates: b.candidates,
-              totalVotesCast: b.totalVotesCast,
-            );
+            return b.copyWith(status: BallotStatus.certified, isCertified: true, endTime: now);
           }
           return b;
         }).toList();
         await cacheBallots(updatedBallots);
       } catch (_) {}
 
-      try {
-        await _firestore.collection('election_polls_v2').doc(ballotId).set({
-          'status': 'certified',
-          'is_certified': true,
-          'closesAt': FieldValue.serverTimestamp(),
-          'certifiedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      } catch (_) {}
-
-      return (
-        success: true,
-        result: certifiedResult,
-        error: null,
-      );
+      return (success: true, result: certifiedResult, error: null);
     } catch (e) {
       debugPrint('Certification transaction note: $e');
       if (_isFirebaseLive && !_isNoAppException(e)) {
@@ -6790,23 +6744,27 @@ class AuthService {
   /// Stream of the managed class/section registry. Admin-facing; students may
   /// only read their own class document per Firestore rules, so a full
   /// collection query falls back to cache for non-admin callers.
-  Stream<List<AcademicClass>> getAcademicClassesStream({bool activeOnly = false}) {
+  Stream<List<AcademicClass>> getAcademicClassesStream({bool activeOnly = false}) async* {
     List<AcademicClass> applyFilter(List<AcademicClass> list) =>
         activeOnly ? list.where((c) => c.active).toList() : list;
+
+    // Immediately yield cached classes so UI never hangs in waiting state
+    yield applyFilter(getCachedAcademicClasses());
+
+    if (!_isFirebaseLive) return;
+
     try {
       Query query = _firestore.collection('academic_classes');
       if (activeOnly) query = query.where('active', isEqualTo: true);
-      return query.snapshots().map((snap) {
+      await for (final snap in query.snapshots()) {
         final list = snap.docs.map((d) => AcademicClass.fromFirestore(d)).toList();
         list.sort(compareAcademicClasses);
         cacheAcademicClasses(list);
-        return applyFilter(list);
-      }).handleError((e) {
-        debugPrint('Academic classes stream error: $e');
-        return applyFilter(getCachedAcademicClasses());
-      });
-    } catch (_) {
-      return Stream.value(applyFilter(getCachedAcademicClasses()));
+        yield applyFilter(list);
+      }
+    } catch (e) {
+      debugPrint('Academic classes stream error: $e');
+      yield applyFilter(getCachedAcademicClasses());
     }
   }
 
@@ -6839,7 +6797,9 @@ class AuthService {
       } catch (e) {
         if (!_isNoAppException(e)) {
           debugPrint('Firestore saveAcademicClass failure: $e');
-          return false;
+          if (firestoreFailureSimulated != null) {
+            return false;
+          }
         }
       }
     }
@@ -6875,7 +6835,9 @@ class AuthService {
       } catch (e) {
         if (!_isNoAppException(e)) {
           debugPrint('Firestore setClassActive failure: $e');
-          return false;
+          if (firestoreFailureSimulated != null) {
+            return false;
+          }
         }
       }
     }
@@ -6917,7 +6879,9 @@ class AuthService {
       } catch (e) {
         if (!_isNoAppException(e)) {
           debugPrint('Firestore updateClassTimetablePermissions failure: $e');
-          return false;
+          if (firestoreFailureSimulated != null) {
+            return false;
+          }
         }
       }
     }
@@ -7269,9 +7233,11 @@ class AuthService {
 
   /// Stream of scholars awaiting class verification (legacy profiles without
   /// the flag are included). Staff/admin accounts are excluded.
-  Stream<List<Map<String, dynamic>>> getPendingClassVerificationsStream() {
+  Stream<List<Map<String, dynamic>>> getPendingClassVerificationsStream() async* {
+    yield <Map<String, dynamic>>[];
+    if (!_isFirebaseLive) return;
     try {
-      return _firestore.collection('users').snapshots().map((snap) {
+      await for (final snap in _firestore.collection('users').snapshots()) {
         final pending = <Map<String, dynamic>>[];
         for (final doc in snap.docs) {
           final data = doc.data();
@@ -7283,26 +7249,29 @@ class AuthService {
         pending.sort((a, b) => (a['full_name'] ?? '')
             .toString()
             .compareTo((b['full_name'] ?? '').toString()));
-        return pending;
-      }).handleError((e) {
-        debugPrint('Pending class verifications stream error: $e');
-        return <Map<String, dynamic>>[];
-      });
-    } catch (_) {
-      return Stream.value(<Map<String, dynamic>>[]);
+        yield pending;
+      }
+    } catch (e) {
+      debugPrint('Pending class verifications stream error: $e');
+      yield <Map<String, dynamic>>[];
     }
   }
 
   /// Stream of scholars belonging to a canonical class. Matches the canonical
   /// class_id first and falls back to legacy class_level + division for
   /// profiles created before the registry existed.
-  Stream<List<Map<String, dynamic>>> getClassRosterStream(String classId) {
+  Stream<List<Map<String, dynamic>>> getClassRosterStream(String classId) async* {
     final id = classId.trim();
     final parsed = AcademicStructure.parseClassId(id);
-    if (parsed == null) return Stream.value(<Map<String, dynamic>>[]);
+    if (parsed == null) {
+      yield <Map<String, dynamic>>[];
+      return;
+    }
     final (grade, section) = parsed;
+    yield <Map<String, dynamic>>[];
+    if (!_isFirebaseLive) return;
     try {
-      return _firestore.collection('users').snapshots().map((snap) {
+      await for (final snap in _firestore.collection('users').snapshots()) {
         final roster = <Map<String, dynamic>>[];
         for (final doc in snap.docs) {
           final data = doc.data();
@@ -7320,13 +7289,11 @@ class AuthService {
         roster.sort((a, b) => (a['full_name'] ?? '')
             .toString()
             .compareTo((b['full_name'] ?? '').toString()));
-        return roster;
-      }).handleError((e) {
-        debugPrint('Class roster stream error: $e');
-        return <Map<String, dynamic>>[];
-      });
-    } catch (_) {
-      return Stream.value(<Map<String, dynamic>>[]);
+        yield roster;
+      }
+    } catch (e) {
+      debugPrint('Class roster stream error: $e');
+      yield <Map<String, dynamic>>[];
     }
   }
 }

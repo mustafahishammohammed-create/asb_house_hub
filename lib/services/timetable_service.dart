@@ -830,29 +830,31 @@ class TimetableService {
   }
 
   /// Stream of timetable versions awaiting administrative approval (Test 36).
-  Stream<List<ClassTimetableVersion>> getSubmittedTimetableQueueStream({String? classId}) {
-    if (!_isLive) {
-      return Stream.value(getAllCachedSubmittedVersions(classId: classId));
-    }
+  Stream<List<ClassTimetableVersion>> getSubmittedTimetableQueueStream({String? classId}) async* {
+    yield getAllCachedSubmittedVersions(classId: classId);
 
-    Query<Map<String, dynamic>> query = _firestore
-        .collection('timetable_versions')
-        .where('status', isEqualTo: TimetableStatus.submitted);
+    if (!_isLive) return;
 
-    if (classId != null && classId.trim().isNotEmpty) {
-      query = query.where('class_id', isEqualTo: classId.trim());
-    }
+    try {
+      Query<Map<String, dynamic>> query = _firestore
+          .collection('timetable_versions')
+          .where('status', isEqualTo: TimetableStatus.submitted);
 
-    return query.snapshots().map((snapshot) {
-      final list = snapshot.docs
-          .map((doc) => ClassTimetableVersion.fromFirestore(doc))
-          .toList();
-      list.sort((a, b) => (b.createdAt ?? DateTime.now()).compareTo(a.createdAt ?? DateTime.now()));
-      return list;
-    }).handleError((error) {
+      if (classId != null && classId.trim().isNotEmpty) {
+        query = query.where('class_id', isEqualTo: classId.trim());
+      }
+
+      await for (final snapshot in query.snapshots()) {
+        final list = snapshot.docs
+            .map((doc) => ClassTimetableVersion.fromFirestore(doc))
+            .toList();
+        list.sort((a, b) => (b.createdAt ?? DateTime.now()).compareTo(a.createdAt ?? DateTime.now()));
+        yield list;
+      }
+    } catch (error) {
       debugPrint('getSubmittedTimetableQueueStream error: $error, falling back to cache');
-      return getAllCachedSubmittedVersions(classId: classId);
-    });
+      yield getAllCachedSubmittedVersions(classId: classId);
+    }
   }
 
   // ===============================================================
@@ -975,38 +977,40 @@ class TimetableService {
     String? classId,
     String? actionFilter,
     int limit = 100,
-  }) {
-    if (!_isLive) {
-      return Stream.value(getAllCachedAudits(classId: classId, actionFilter: actionFilter));
-    }
+  }) async* {
+    yield getAllCachedAudits(classId: classId, actionFilter: actionFilter);
 
-    Query<Map<String, dynamic>> query = _firestore.collection('timetable_audit');
-    if (classId != null && classId.trim().isNotEmpty) {
-      query = query.where('class_id', isEqualTo: classId.trim());
-    }
-    if (actionFilter != null && actionFilter.trim().isNotEmpty && actionFilter != 'all') {
-      query = query.where('action', isEqualTo: actionFilter.trim().toLowerCase());
-    }
+    if (!_isLive) return;
 
-    return query.limit(limit).snapshots().map((snapshot) {
-      final list = snapshot.docs.map((doc) {
-        final data = doc.data();
-        data['id'] = doc.id;
-        return data;
-      }).toList();
-      list.sort((a, b) {
-        final ta = a['timestamp'];
-        final tb = b['timestamp'];
-        if (ta is Timestamp && tb is Timestamp) {
-          return tb.compareTo(ta);
-        }
-        return 0;
-      });
-      return list;
-    }).handleError((error) {
+    try {
+      Query<Map<String, dynamic>> query = _firestore.collection('timetable_audit');
+      if (classId != null && classId.trim().isNotEmpty) {
+        query = query.where('class_id', isEqualTo: classId.trim());
+      }
+      if (actionFilter != null && actionFilter.trim().isNotEmpty && actionFilter != 'all') {
+        query = query.where('action', isEqualTo: actionFilter.trim().toLowerCase());
+      }
+
+      await for (final snapshot in query.limit(limit).snapshots()) {
+        final list = snapshot.docs.map((doc) {
+          final data = doc.data();
+          data['id'] = doc.id;
+          return data;
+        }).toList();
+        list.sort((a, b) {
+          final ta = a['timestamp'];
+          final tb = b['timestamp'];
+          if (ta is Timestamp && tb is Timestamp) {
+            return tb.compareTo(ta);
+          }
+          return 0;
+        });
+        yield list;
+      }
+    } catch (error) {
       debugPrint('getAllTimetableAuditsStream error: $error, falling back to cache');
-      return getAllCachedAudits(classId: classId, actionFilter: actionFilter);
-    });
+      yield getAllCachedAudits(classId: classId, actionFilter: actionFilter);
+    }
   }
 
   // ===============================================================
