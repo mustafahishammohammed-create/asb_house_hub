@@ -254,9 +254,11 @@ service cloud.firestore {
           ('admin' in request.auth.token && request.auth.token.admin == true) ||
           ('role' in request.auth.token && request.auth.token.role in ['super_admin', 'admin']) ||
           ('email' in request.auth.token && (
-            request.auth.token.email in ['admin@asianschool.bh', '11209@asianschool.bh'] ||
-            request.auth.token.email.matches('(?i)^admin@.*') ||
-            request.auth.token.email.matches('(?i)^11209@.*')
+            // Exact bootstrap accounts only. Never use a prefix regex here:
+            // any self-registered admin.* or 11209.* email would become a
+            // super admin. Role claims and the server-side admin roster below
+            // are the only other elevation paths.
+            request.auth.token.email in ['admin@asianschool.bh', '11209@asianschool.bh']
           ))
         )) ||
         exists(/databases/$(database)/documents/admin_roster/$(request.auth.uid)) ||

@@ -2,27 +2,28 @@
 
 Input: `MASTER DEVELOPMENT PROMPT — ASB DIGITAL CAMPUS` (12-section spec, attached 2026-11-08).
 Method: first-hand inspection of the current codebase (spec §12 requirement) before any implementation.
-Baseline: HEAD `1f426c2` (academics P0/P1 remediations landed: A1–A6, A8). `flutter analyze` = 20 infos / 0 errors; `test/academics_security_test.dart` 28/28; full suite green. Firebase **Spark** (no Blaze) — see `election_audit/BLAZE_REQUIRED_FEATURES.md`.
+Baseline: `mustafa1` at `15aa7c3`, plus the M8/P0 working batch (2026-11-09). M1–M7 are delivered; M8 dashboard/acceptance is delivered with four documented acceptance partials (tests 5, 22, 24, 25). `flutter analyze --no-pub` = **No issues found**; full suite green. Firebase **Spark** (no Blaze) — see `election_audit/BLAZE_REQUIRED_FEATURES.md` and `ACCEPTANCE_MATRIX.md`.
 
 Legend: **EXISTS** (keep) · **PARTIAL** (extend) · **MISSING** (build) · **CONFLICT** (spec contradicts current code).
 
 ---
 
-## 1. Academic classification (spec §1)
+## 1. Academic classification (spec §1) — ✅ DELIVERED (M1)
 
-- **PARTIAL** — Signup captures grade + section + house: `signup_screen.dart:38` `_grades = ['6'..'12']`, `:39` `_divisions = ['A'..'F']`, `:142-144` passes `classLevel`, `division`, `houseName` to `signUp`.
-- **CONFLICT** — Grades only 6–12. Spec requires **LKG, UKG, Grades 1–12**.
-- **CONFLICT** — Sections are a fixed client list A–F. Spec: admin-managed, variable count per grade, create/rename/activate/deactivate.
-- **CONFLICT** — Timetable/academics are keyed by `class_level` = `'Grade N'` only (e.g. `classes/Grade 10/timetable`). `division` is stored on the profile but **not used to scope timetables** → every section of a grade shares one timetable. Spec §2.6 demands per-section (9A ≠ 9D).
-- **MISSING** — Admin verification/approval of a student's requested class; class-roster view; transfers; promotion; deactivation. No `classes`/`classMemberships` registry collection (the `classes/{id}` docs are implicit containers, not managed entities).
+- **DELIVERED** — `AcademicStructure` covers **LKG, UKG, Grades 1–12** (14 levels), canonical class ids (`11D`, `LKG-A`), `gradeLevels`, `nextGrade`, and `nextClassId`.
+- **DELIVERED** — Admin-managed `academic_classes` registry: create/rename/activate/deactivate sections, class teacher, subject teacher UIDs, student posting, timetable permissions. Identity fields are immutable; transfers create a new placement.
+- **DELIVERED** — Signup captures grade + section + house and writes `class_id`; `class_verified` starts `false`. Admin verification/approval, roster view, transfer, house assignment, and academic-year promotion are in the M7 Admin Command Center.
+- **DELIVERED** — Timetable and groups are keyed by canonical `class_id`, so 9A and 9D are distinct.
+- **KNOWN LIMIT** — Rules tests are source-contract assertions, not emulator denials. See `M7_VERIFICATION.md` and `ACCEPTANCE_MATRIX.md` tests 1–8.
 
-## 2. Timetable (spec §2) — the centerpiece
+## 2. Timetable (spec §2) — ✅ DELIVERED (M2/M3, M8 test 14)
 
-- **PARTIAL** — `TimetablePeriod` model + Timetable tab + `AuthService` CRUD + photo upload (shipped). Period card, weekday selector (Sun–Thu), current/next highlighting exist.
-- **CONFLICT** — No fixed structure. `periodNumber` is arbitrary, `timeSlot` is a free string with a "custom timing" option, break is an `isBreak` flag on a period. Spec mandates **exactly 8 teaching periods × 45 min + exactly one 30-min break**, break not counted as a period, durations immutable by teachers.
-- **CONFLICT** — Not per-section (see §1).
-- **MISSING** — Auto end-time calculation from a start time; chronological/overlap validation; teacher & room double-booking detection; draft→publish + approval modes; per-day copy/apply-to-week; temporary one-day overrides; version history/restore; substitution; change notifications; school operating-hours config; transition gaps.
-- **EXISTS to reuse** — `saveTimetablePeriod`/`deleteTimetablePeriod` are truthful (server-first); rules `classes/{id}/timetable` admin-write only (`firestore.rules:758-761`); staff UI gates now aligned (A5/A6 fixed).
+- **DELIVERED** — Mandated structure: exactly 8 teaching periods × 45 minutes plus one separate 30-minute break, default break after Period 4. Durations are derived, not teacher-editable; start times are customizable and end times computed.
+- **DELIVERED** — Per-section/per-day versioned timetables with draft → submit → publish, immutable published versions, restore-as-new-version, effective dates, one-day overrides, substitution markers, version history and audit.
+- **DELIVERED** — Validation for period count, numbering, missing starts, chronology, overlaps, break placement, Friday rejection, and timetable-mismatched override dates; the editor blocks save/publish on errors.
+- **DELIVERED** — Client-side cross-class teacher/room double-booking detection with a blocking conflict dialog (tests 18–19). It is not transactional; concurrent publishes can race, and server-side validation at scale remains Blaze-deferred.
+- **DELIVERED** — Copy-to-selected-days (tests 31–32), temporary one-day schedules (33), and the M8 moving-break recalculation control (test 14).
+- **KNOWN LIMIT** — Cross-class published reads still cannot be strictly denied for list queries under the current collection layout (P1-04, acceptance test 5 PARTIAL).
 
 ## 3. House communication groups (spec §3) — ✅ DELIVERED (M4, 2026-11-08)
 
@@ -41,10 +42,12 @@ Legend: **EXISTS** (keep) · **PARTIAL** (extend) · **MISSING** (build) · **CO
 - **DELIVERED 2026-11-08, HARDENED 2026-11-09** — unified in-app notification engine under `users/{uid}/notifications`. Deduplicated client-side fan-out on timetable publishes (test 60), substitutions/overrides (60), house announcements (61), and class announcements (62). Stream list, unread badges on the home AppBar and drawer, priority badges, mark-as-read on tap, and mark-all-read. Deterministic document IDs prevent duplicates, creation payloads omit `is_read` to protect read state, and rules restrict read updates to the recipient. Roster-lookup failures return an explicit error result instead of a phantom complete fan-out; substitution failures surface through `lastNotificationResult`; failed swipe deletes snap back with an error.
 - **KNOWN LIMITS** — fan-out runs in a client-side roster loop on Spark (Cloud Functions server fan-out stays Blaze-deferred); no mobile OS push notifications (FCM); notification streams cap at 100 newest items; roster lookups cap at 500 and batch writes at 400; no automatic retry after a roster-lookup failure; rules tests are source-contract assertions. See `M6_VERIFICATION.md`.
 
-## 6. Admin Command Center (spec §6)
+## 6. Admin Command Center (spec §6) — ✅ DELIVERED (M7)
 
-- **PARTIAL** — `admin_claims_screen.dart` (point claims + medical reports), admin gates in `home_screen.dart`. Election/gamification admin surfaces exist.
-- **MISSING** — academic management (grades/sections/rosters/transfers/promotion), teacher management, timetable management/approval queue, house management, group/communication management, notification management, audit-log viewer, user verification/suspension.
+- **DELIVERED** — `AdminAcademicsScreen` six-tab command center: academics/sections, verification queue, rosters, transfers, house assignment, promotion, timetable approval queue, audit log viewer, and user status/suspension.
+- **DELIVERED** — `admin_claims_screen.dart` (point claims + medical reports) and admin gates in `home_screen.dart` remain. Election/gamification admin surfaces exist.
+- **DELIVERED** — Every admin action is server-gated by rules; live denials return `false` without phantom cache entries. Batch promotion reports total/promoted/failed and distinguishes a roster-read error from an empty roster. Audit writes are best-effort and never roll back a successful primary action.
+- **KNOWN LIMITS** — Sequential batch promotion (not transactional), cached queue fallback can be stale, suspension does not revoke an already-issued Auth token, rules tests are source contract. See `M7_VERIFICATION.md` and acceptance tests 55–59/63–64.
 
 ## 7. Roles / RBAC (spec §9.3)
 
@@ -52,10 +55,14 @@ Legend: **EXISTS** (keep) · **PARTIAL** (extend) · **MISSING** (build) · **CO
 - **DELIVERED (M5)** — `class_teacher`, `subject_teacher`, `class_representative`, `vice_class_representative`, and `parent` roles added client-side and to the rules role whitelist; `class_teacher`/`subject_teacher` count as faculty, and per-class teaching assignments live on `academic_classes`. A people-picker for those UIDs is an M7 admin-expansion improvement.
 - **CONFLICT (known, fixed for academics)** — client `isTeacherOrFaculty` admits faculty_advisor/teacher_lead; rules historically didn't (A6 — addressed in `1f426c2`; keep lists synced).
 
-## 8. Student profile / dashboard (spec §7)
+## 8. Student profile / dashboard (spec §7) — ✅ DELIVERED (M8)
 
-- **PARTIAL** — profile has scholar_no, full_name, class_level, division, house, role, age. `home_screen.dart` adapts tiles by role/house.
-- **MISSING** — class-teacher field; verified-class badge; dashboard "today's 8 periods / current / next / break" driven by the published (section) timetable; unread class/house announcement counts.
+- **DELIVERED** — Profile has scholar_no, full_name, class_level, division, class_id, class_verified, house, role, age. `home_screen.dart` adapts tiles by role/house and simplifies the UI for younger students (LKG–UKG, Grades 1–5).
+- **DELIVERED** — Verified-class badge and class-teacher display in both the dashboard and profile tabs, reading `academic_classes/{classId}` live with a verified cached fallback.
+- **DELIVERED** — Dashboard "today's timetable / Now / Next / Break" card driven by the **published section timetable**, with all eight periods plus the BRK row, published-only data, and a verified-class gate. Unverified profiles render a truthful notice instead of another class's schedule.
+- **DELIVERED** — Unread class/house/timetable counts from the M6 notification stream, opening the notification centre.
+- **DELIVERED** — Responsive dashboard padding at desktop widths; younger students do not see council/sports/AI/event-wall clutter or election/chat/claim cards.
+- **KNOWN LIMIT** — The dashboard/timetable UI scopes to the verified class, but the current `timetable_versions` collection rules cannot strictly deny list queries for another class (P1-04, acceptance test 5 PARTIAL).
 
 ---
 
@@ -84,14 +91,19 @@ Each module: model + service + rules + UI + tests, deployed and verified before 
 - **M5 — Class groups & academic communication. ✅ DELIVERED FOR SCOPE 2026-11-08.** Verified-class auto-membership; class-teacher and assigned-subject-teacher send; class representative/vice send; configurable `student_posting_enabled` (default read-only); categories, data-URL attachments, pin/hide/delete moderation; cross-class isolation in rules. *(Depends on M1 + M4 machinery.)* Class notification fan-out stays M6/test 62; rules tests are source contract. See `M5_VERIFICATION.md`.
 - **M6 — Notification engine (in-app, Spark). ✅ DELIVERED 2026-11-08.** Unified in-app notifications; timetable publish (test 60), house announcement (61), class announcement (62) fan-out; deterministic dedupe doc IDs; priority badges; unread badge counter; mark-read/mark-all-read; rules-enforced read-state protection. *(Depends on M2/M4/M5 events.)* See `M6_VERIFICATION.md`.
 - **M7 — Admin Command Center expansion. ✅ DELIVERED 2026-11-08, HARDENED 2026-11-09.** Academic/section management (LKG–12), verification, transfers, house assignment, academic year promotion (houses strictly preserved), timetable approval queue (approve/reject/audit), one-day override/restore, append-only audit log viewer, and user status management / unauthorized access blocking. Live write denials return `false` without phantom cache entries; batch promotion distinguishes roster-read errors from an empty roster and counts missing scholar numbers as failures; secondary notifications are best-effort. See `M7_VERIFICATION.md`.
-- **M8 — Dashboard & profile polish + acceptance.** Verified-class dashboard (today/current/next/break), class-teacher field, full spec §11 acceptance suite (roles × frontend × backend). *(Capstone.)*
+- **M8 — Dashboard & profile polish + acceptance. ✅ DELIVERED 2026-11-09, with 4 documented partials.** Verified-class dashboard (today/current/next/break), class-teacher field, unread breakdown, younger-student simplification, responsive layout, and the full 64-row spec §11 acceptance matrix. 60 tests PASS; tests 5, 22, 24, 25 are PARTIAL and explicitly not counted as done. See `M8_VERIFICATION.md` and `ACCEPTANCE_MATRIX.md`.
 
 **Blaze-deferred (add to BLAZE_REQUIRED_FEATURES.md):** server-side notification fan-out, atomic cross-collection promotion/transfer transactions, server timetable conflict validation at scale.
 
 ## Acceptance mapping
 
-Spec §11 tests 1–64 map to modules: 1–8 → M1; 9–20 → M2; 21–38 → M2/M3; 39–49 → M4; 50–54 → M5; 55–64 → M6/M7. Every restriction tested via UI **and** direct rules denial (project convention).
+Spec §11 tests 1–64 map to modules: 1–8 → M1; 9–20 → M2; 21–38 → M2/M3; 39–49 → M4; 50–54 → M5; 55–64 → M6/M7. The row-by-row evidence, status, and limitation is in `ACCEPTANCE_MATRIX.md` and enforced by `test/acceptance_matrix_test.dart`.
 
-## Recommended starting point
+**Current honest score:** 60 PASS · 4 PARTIAL · 0 MISSING. The partials are test 5 (timetable cross-class rules scoping, P1-04), test 22 (multi-class editor picker not directly widget-tested), and tests 24–25 (period time-picker interactions not directly automated). PARTIALs are not counted as passing.
 
-**M1 (academic foundation)** — the section-aware class identity and verification gate are prerequisites for the timetable, groups, and notifications. Building the timetable first would key it on the wrong (grade-only) identity and force a migration later.
+## Next work (post-M8)
+
+1. **P1-04 / acceptance test 5** — path-scoped timetable storage (or a per-class active-timetable document with `get`-only student access and staff-only `list`) so a modified client cannot read another class's schedule. This is the only security-scoping partial.
+2. **Acceptance tests 22, 24, 25** — add direct widget tests for the multi-class editor picker and the per-period time-picker interactions.
+3. **P1-01 secrets** — build the production release with all four `--dart-define` secrets and remove reliance on the development fallbacks.
+4. **Blaze-deferred** — server-side notification fan-out, atomic promotion/transfer transactions, and server-side timetable conflict validation at scale.

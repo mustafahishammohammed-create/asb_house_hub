@@ -8,7 +8,12 @@ import 'package:image_picker/image_picker.dart';
 import '../services/auth_service.dart';
 import '../services/hierarchy_service.dart';
 import '../services/notification_service.dart';
+import '../services/timetable_service.dart';
 import '../theme/app_theme.dart';
+import '../models/academic_class.dart';
+import '../models/app_notification.dart';
+import '../models/class_timetable.dart';
+import '../models/timetable_period.dart';
 import 'admin_claims_screen.dart';
 import 'merch_store_tab.dart';
 import '../widgets/camera_capture_dialog.dart';
@@ -34,7 +39,12 @@ import '../widgets/managed_modal_scope.dart';
 
 class HomeScreen extends StatefulWidget {
   final int initialIndex;
-  const HomeScreen({super.key, this.initialIndex = 0});
+
+  /// Fixed clock for deterministic dashboard tests. When null the dashboard
+  /// refreshes the current/next period every 30 seconds.
+  final DateTime? mockNow;
+
+  const HomeScreen({super.key, this.initialIndex = 0, this.mockNow});
 
   /// Dual-Mode Resilient Image Engine:
   /// Decodes Base64 data URIs (webcam/desktop uploads) and renders Image.memory,
@@ -159,8 +169,13 @@ class _HomeScreenState extends State<HomeScreen>
   late final Animation<double> _pulseAnimation;
   final _authService = AuthService();
   final _notificationService = NotificationService();
+  final _timetableService = TimetableService();
   Stream<int>? _unreadCountStream;
   String _unreadCountUid = '';
+  Stream<NotificationUnreadBreakdown>? _unreadBreakdownStream;
+  String _unreadBreakdownUid = '';
+  DateTime _now = DateTime.now();
+  Timer? _clockTimer;
 
   /// Reuse the unread-count stream across rebuilds, but refresh it if the
   /// signed-in account changes (account switching).
@@ -171,6 +186,56 @@ class _HomeScreenState extends State<HomeScreen>
       _unreadCountStream = _notificationService.getUnreadCountStream();
     }
     return _unreadCountStream!;
+  }
+
+  Stream<NotificationUnreadBreakdown> _unreadBreakdownStreamForCurrentUser() {
+    final uid = _notificationService.currentUserId;
+    if (_unreadBreakdownStream == null || _unreadBreakdownUid != uid) {
+      _unreadBreakdownUid = uid;
+      _unreadBreakdownStream = _notificationService.getUnreadBreakdownStream();
+    }
+    return _unreadBreakdownStream!;
+  }
+
+  /// Canonical class id from the profile. `class_id` wins when it parses;
+  /// legacy grade/division fields are only a fallback.
+  String _classIdForProfile(String classLevel, String division) {
+    final raw = (_profile?['class_id'] ?? '').toString().trim().toUpperCase();
+    if (raw.isNotEmpty && AcademicStructure.parseClassId(raw) != null) {
+      return raw;
+    }
+    return AcademicStructure.classIdFrom(classLevel, division);
+  }
+
+  AcademicClass? _cachedAcademicClass(String classId) {
+    final id = classId.trim().toUpperCase();
+    if (id.isEmpty) return null;
+    for (final cls in AuthService.getCachedAcademicClasses()) {
+      if (cls.classId.trim().toUpperCase() == id) return cls;
+    }
+    return null;
+  }
+
+  /// Live class-teacher data, falling back to the verified local registry when
+  /// Firebase is unavailable or the read is denied.
+  Stream<AcademicClass?> _academicClassStream(String classId) {
+    final cached = _cachedAcademicClass(classId);
+    final firestore = _safeFirestore;
+    if (firestore == null || !AuthService.isFirebaseLive || classId.isEmpty) {
+      return Stream.value(cached);
+    }
+    return firestore
+        .collection('academic_classes')
+        .doc(classId)
+        .snapshots()
+        .map<AcademicClass?>((doc) {
+          if (!doc.exists) return cached;
+          return AcademicClass.fromFirestore(doc);
+        })
+        .handleError((Object error) {
+          debugPrint('Academic class stream error: $error');
+          return cached;
+        });
   }
   FirebaseFirestore? get _safeFirestore {
     try {
@@ -218,6 +283,14 @@ class _HomeScreenState extends State<HomeScreen>
   void initState() {
     super.initState();
     _selectedIndex = widget.initialIndex;
+    _now = widget.mockNow ?? DateTime.now();
+    if (widget.mockNow == null) {
+      _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+        if (mounted) {
+          setState(() => _now = DateTime.now());
+        }
+      });
+    }
     final cachedProfile = AuthService.getCachedProfile();
 
     if (cachedProfile != null) {
@@ -261,6 +334,7 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void dispose() {
     _watchdogTimer?.cancel();
+    _clockTimer?.cancel();
     _pulseController.dispose();
     _isMyHouseFirstPlaceNotifier.dispose();
     super.dispose();
@@ -1273,9 +1347,12 @@ class _HomeScreenState extends State<HomeScreen>
     final houseMascot = HouseColors.getHouseMascotName(houseName);
     final houseMotto = HouseColors.getHouseMotto(houseName);
     final fullName = _profile?['full_name'] ?? _profile?['name'] ?? user?.displayName ?? 'Student';
-    final scholarNo = _profile?['scholar_no'] ?? '---';
-    final classLevel = _profile?['class_level'] ?? '--';
-    final division = _profile?['division'] ?? '';
+    final scholarNo = (_profile?['scholar_no'] ?? '---').toString();
+    final classLevel = (_profile?['class_level'] ?? '--').toString();
+    final division = (_profile?['division'] ?? '').toString();
+    final isClassVerified = _profile?['class_verified'] == true;
+    final profileClassId = _classIdForProfile(classLevel, division);
+    final verifiedClassId = isClassVerified ? profileClassId : '';
 
     // Strict role validation via centralized HierarchyService
     final roleStr = (_profile?['role'] ?? '').toString();
@@ -1294,6 +1371,14 @@ class _HomeScreenState extends State<HomeScreen>
       role: roleStr,
       fullName: fullName,
     );
+    final isFaculty = HierarchyService.isTeacherOrFaculty(
+      scholarNo: scholarNo,
+      role: roleStr,
+      fullName: fullName,
+    );
+    final showStudentDashboard = !isFaculty && !isSuperAdmin;
+    final isYoungerStudent =
+        showStudentDashboard && AcademicStructure.isPrimaryGrade(classLevel);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     if (_loading) {
@@ -1610,7 +1695,15 @@ class _HomeScreenState extends State<HomeScreen>
                 houseDark,
                 isSuperAdmin,
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 16),
+              if (showStudentDashboard) ...[
+                _buildVerifiedClassStrip(
+                  classId: profileClassId,
+                  verified: isClassVerified,
+                  houseColor: houseColor,
+                ),
+                const SizedBox(height: 16),
+              ],
               _buildStudentContributionRecord(
                 scholarNo: scholarNo,
                 studentName: fullName,
@@ -1630,7 +1723,11 @@ class _HomeScreenState extends State<HomeScreen>
         color: houseColor,
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          padding: EdgeInsets.symmetric(
+            horizontal:
+                MediaQuery.sizeOf(context).width >= 900 ? 96 : 24,
+            vertical: 16,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1645,7 +1742,28 @@ class _HomeScreenState extends State<HomeScreen>
                 houseDark,
                 isSuperAdmin,
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 16),
+
+              // M8: verified-class identity, class teacher, today's published
+              // timetable and unread class/house counts.
+              if (showStudentDashboard) ...[
+                _buildVerifiedClassStrip(
+                  classId: profileClassId,
+                  verified: isClassVerified,
+                  houseColor: houseColor,
+                ),
+                const SizedBox(height: 16),
+                if (verifiedClassId.isNotEmpty) ...[
+                  _buildTodayTimetableCard(
+                    classId: verifiedClassId,
+                    houseColor: houseColor,
+                    houseDark: houseDark,
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                _buildAnnouncementUnreadCard(houseColor),
+                const SizedBox(height: 24),
+              ],
 
               // 👑 Hidden Admin Button (Appears if user role == 'admin' or accessible in Drawer)
               if (isAdmin) ...[
@@ -1722,39 +1840,49 @@ class _HomeScreenState extends State<HomeScreen>
                 const SizedBox(height: 24),
               ],
 
-              // 2. ASB House Warroom & Spirit Clash Arena Feature Banner
-              _buildHouseArenaBanner(houseName, scholarNo, fullName, houseColor, isAdmin),
-              const SizedBox(height: 16),
+              // M8: younger students (LKG-UKG / Grades 1-5) get a simpler
+              // dashboard without council, sports-league and AI clutter.
+              if (!isYoungerStudent) ...[
+                // 2. ASB House Warroom & Spirit Clash Arena Feature Banner
+                _buildHouseArenaBanner(
+                  houseName,
+                  scholarNo,
+                  fullName,
+                  houseColor,
+                  isAdmin,
+                ),
+                const SizedBox(height: 16),
 
-              // 2.5 Campus Academics Command Center Banner (Phase 5)
-              _buildCampusAcademicsBanner(
-                houseName,
-                scholarNo,
-                fullName,
-                houseColor,
-                classLevel,
-                division,
-              ),
-              const SizedBox(height: 16),
+                // 2.5 Campus Academics Command Center Banner (Phase 5)
+                _buildCampusAcademicsBanner(
+                  houseName,
+                  scholarNo,
+                  fullName,
+                  houseColor,
+                  classLevel,
+                  division,
+                ),
+                const SizedBox(height: 16),
 
-              // 2.6 Inter-House Sports League Banner (Phase 7)
-              _buildSportsLeagueBanner(
-                houseName,
-                scholarNo,
-                fullName,
-                houseColor,
-              ),
-              const SizedBox(height: 16),
+                // 2.6 Inter-House Sports League Banner (Phase 7)
+                _buildSportsLeagueBanner(
+                  houseName,
+                  scholarNo,
+                  fullName,
+                  houseColor,
+                ),
+                const SizedBox(height: 16),
 
-              // 2.7 ASB House AI Companion Mentor Banner
-              _buildHouseAiCompanionBanner(
-                houseName,
-                scholarNo,
-                fullName,
-                houseColor,
-                classLevel,
-              ),
-              const SizedBox(height: 24),
+                // 2.7 ASB House AI Companion Mentor Banner
+                _buildHouseAiCompanionBanner(
+                  houseName,
+                  scholarNo,
+                  fullName,
+                  houseColor,
+                  classLevel,
+                ),
+                const SizedBox(height: 24),
+              ],
 
               // 3. Real-Time House Standings (Streamed Live from Firestore)
               Row(
@@ -1806,7 +1934,13 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
               ),
               const SizedBox(height: 16),
-              _buildActionCards(houseName, scholarNo, fullName, houseColor),
+              _buildActionCards(
+                houseName,
+                scholarNo,
+                fullName,
+                houseColor,
+                younger: isYoungerStudent,
+              ),
               const SizedBox(height: 36),
 
               // 4. Live Notice Board Feed from Firestore
@@ -1833,43 +1967,46 @@ class _HomeScreenState extends State<HomeScreen>
               const SizedBox(height: 36),
 
               // 5. Live Instagram-Style Event Photo Feed / Wall
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Flexible(
-                    child: Text(
-                      '📸 Live Event Wall',
-                      style: TextStyle(
-                        fontSize: 19,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.5,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.purple.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Text(
-                      'Community Feed',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.purple,
+              if (!isYoungerStudent) ...[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Flexible(
+                      child: Text(
+                        '📸 Live Event Wall',
+                        style: TextStyle(
+                          fontSize: 19,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.5,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              _buildLiveEventWall(houseColor, isAdmin || isSuperAdmin),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.purple.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Text(
+                        'Community Feed',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.purple,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                _buildLiveEventWall(houseColor, isAdmin || isSuperAdmin),
+                const SizedBox(height: 36),
+              ],
               const SizedBox(height: 100),
             ],
           ),
@@ -2343,6 +2480,573 @@ class _HomeScreenState extends State<HomeScreen>
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  /// M8: verified-class strip shared by the dashboard and profile tabs.
+  Widget _buildVerifiedClassStrip({
+    required String classId,
+    required bool verified,
+    required Color houseColor,
+  }) {
+    return StreamBuilder<AcademicClass?>(
+      stream: classId.isEmpty ? null : _academicClassStream(classId),
+      builder: (context, snapshot) {
+        final cls = snapshot.data ?? _cachedAcademicClass(classId);
+        final teacher = cls?.classTeacher.trim() ?? '';
+        final label = classId.isNotEmpty ? classId : 'No class on profile';
+        final accent =
+            verified ? const Color(0xFF059669) : const Color(0xFFD97706);
+        final title =
+            verified ? 'Verified Class · $label' : 'Class not verified';
+        final subtitle = verified
+            ? (teacher.isNotEmpty
+                ? 'Class Teacher · $teacher'
+                : 'Class teacher not assigned yet')
+            : (classId.isNotEmpty
+                ? '$label · awaiting school verification'
+                : 'Ask the school office to add your section');
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: accent.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: accent.withValues(alpha: 0.35)),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                verified
+                    ? Icons.verified_rounded
+                    : Icons.shield_outlined,
+                color: accent,
+                size: 24,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: accent,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withValues(alpha: 0.7),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (verified)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    'VERIFIED',
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.8,
+                      color: accent,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// M8: today's published timetable for the verified class only.
+  Widget _buildTodayTimetableCard({
+    required String classId,
+    required Color houseColor,
+    required Color houseDark,
+  }) {
+    final now = _now;
+    final day = timetableDayForWeekday(now.weekday);
+    final isSchoolDay = now.weekday != DateTime.friday;
+
+    return StreamBuilder<ClassTimetableVersion?>(
+      stream: _timetableService.getActiveTimetableStream(classId, day, now),
+      initialData:
+          _timetableService.getCachedActiveVersion(classId, day, now),
+      builder: (context, snapshot) {
+        final version = snapshot.data;
+        final periods = version?.toPeriods() ?? const <TimetablePeriod>[];
+        TimetablePeriod? current;
+        TimetablePeriod? next;
+        TimetablePeriod? breakPeriod;
+        if (isSchoolDay) {
+          for (final period in periods) {
+            if (period.isBreak) {
+              breakPeriod ??= period;
+            }
+            if (current == null && period.isCurrentPeriod(now, true)) {
+              current = period;
+            }
+            if (next == null && period.isUpcomingPeriod(now, true)) {
+              next = period;
+            }
+          }
+        }
+        final teachingCount = periods.where((p) => !p.isBreak).length;
+
+        return Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest
+                .withValues(alpha: 0.45),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: houseColor.withValues(alpha: 0.22),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      houseColor.withValues(alpha: 0.9),
+                      houseDark.withValues(alpha: 0.9),
+                    ],
+                  ),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(24),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.today_rounded,
+                      color: Colors.white,
+                      size: 22,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            isSchoolDay
+                                ? "Today's Timetable"
+                                : 'Next School Day',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          Text(
+                            '$classId · $day · $teachingCount periods',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.82),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (snapshot.connectionState == ConnectionState.waiting &&
+                        !snapshot.hasData)
+                      const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: periods.isEmpty
+                    ? Text(
+                        'No published timetable for $classId yet. Your class '
+                        'teacher publishes it from Academics → Timetable.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 1.4,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withValues(alpha: 0.72),
+                        ),
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (!isSchoolDay)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: Text(
+                                'Friday is a weekend. Showing the next school '
+                                'day ($day) schedule.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurface
+                                      .withValues(alpha: 0.66),
+                                ),
+                              ),
+                            ),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              _buildTimetableStatusChip(
+                                label: 'Now',
+                                value: current == null
+                                    ? (isSchoolDay ? 'Free' : 'Weekend')
+                                    : (current.isBreak
+                                        ? 'Break'
+                                        : 'P${current.periodNumber} '
+                                            '${current.subject}'),
+                                color: houseColor,
+                                highlighted: current != null,
+                              ),
+                              _buildTimetableStatusChip(
+                                label: 'Next',
+                                value: next == null
+                                    ? 'Done'
+                                    : (next.isBreak
+                                        ? 'Break'
+                                        : 'P${next.periodNumber} '
+                                            '${next.subject}'),
+                                color: houseColor,
+                                highlighted: next != null,
+                              ),
+                              _buildTimetableStatusChip(
+                                label: 'Break',
+                                value: breakPeriod?.timeSlot ?? '—',
+                                color: const Color(0xFFD97706),
+                                highlighted: current?.isBreak == true,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+                          for (final period in periods)
+                            _buildDashboardPeriodRow(
+                              period,
+                              isNow: period == current,
+                              isNext: period == next,
+                              houseColor: houseColor,
+                            ),
+                        ],
+                      ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildTimetableStatusChip({
+    required String label,
+    required String value,
+    required Color color,
+    required bool highlighted,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: highlighted
+            ? color.withValues(alpha: 0.14)
+            : Theme.of(context).colorScheme.surface.withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: highlighted
+              ? color.withValues(alpha: 0.5)
+              : Colors.grey.withValues(alpha: 0.2),
+        ),
+      ),
+      child: RichText(
+        text: TextSpan(
+          style: TextStyle(
+            fontSize: 11,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
+          children: [
+            TextSpan(
+              text: '$label · ',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: highlighted ? color : null,
+              ),
+            ),
+            TextSpan(
+              text: value,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDashboardPeriodRow(
+    TimetablePeriod period, {
+    required bool isNow,
+    required bool isNext,
+    required Color houseColor,
+  }) {
+    final details = <String>[
+      if (period.teacherName.trim().isNotEmpty) period.teacherName.trim(),
+      if (period.room.trim().isNotEmpty) 'Room ${period.room.trim()}',
+    ];
+    final accent = period.isBreak
+        ? const Color(0xFFD97706)
+        : houseColor;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: isNow
+            ? accent.withValues(alpha: 0.14)
+            : (isNext
+                ? Colors.amber.withValues(alpha: 0.09)
+                : Colors.transparent),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isNow
+              ? accent.withValues(alpha: 0.5)
+              : (isNext
+                  ? Colors.amber.withValues(alpha: 0.45)
+                  : Colors.grey.withValues(alpha: 0.14)),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 28,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: isNow || isNext ? 0.18 : 0.08),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              period.isBreak ? 'BRK' : 'P${period.periodNumber}',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+                color: accent,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  period.isBreak ? 'Break' : period.subject,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                Text(
+                  details.isEmpty
+                      ? (period.isBreak
+                          ? '30-minute interval'
+                          : 'Teacher/room not published')
+                      : details.join(' · '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withValues(alpha: 0.62),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            period.timeSlot,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: Theme.of(context)
+                  .colorScheme
+                  .onSurface
+                  .withValues(alpha: 0.7),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// M8: unread class/house/timetable announcement counts. Tapping opens the
+  /// notification centre; the bell badge remains the total unread count.
+  Widget _buildAnnouncementUnreadCard(Color houseColor) {
+    return StreamBuilder<NotificationUnreadBreakdown>(
+      stream: _unreadBreakdownStreamForCurrentUser(),
+      builder: (context, snapshot) {
+        final data = snapshot.data ?? NotificationUnreadBreakdown.empty;
+        return InkWell(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const NotificationCenterScreen(),
+              ),
+            );
+          },
+          borderRadius: BorderRadius.circular(18),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: houseColor.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: houseColor.withValues(alpha: 0.22),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.notifications_active_rounded,
+                      size: 18,
+                      color: houseColor,
+                    ),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Unread Announcements',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      data.total > 99 ? '99+' : '${data.total}',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                        color: houseColor,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      size: 12,
+                      color: houseColor,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _buildUnreadPill(
+                      icon: Icons.school_rounded,
+                      label: 'Class',
+                      count: data.classCount,
+                      color: houseColor,
+                    ),
+                    _buildUnreadPill(
+                      icon: Icons.groups_rounded,
+                      label: 'House',
+                      count: data.houseCount,
+                      color: houseColor,
+                    ),
+                    _buildUnreadPill(
+                      icon: Icons.schedule_rounded,
+                      label: 'Timetable',
+                      count: data.timetableCount,
+                      color: houseColor,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildUnreadPill({
+    required IconData icon,
+    required String label,
+    required int count,
+    required Color color,
+  }) {
+    final hasUnread = count > 0;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: hasUnread
+            ? color.withValues(alpha: 0.16)
+            : Theme.of(context).colorScheme.surface.withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: hasUnread
+              ? color.withValues(alpha: 0.4)
+              : Colors.grey.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 13,
+            color: hasUnread ? color : Colors.grey,
+          ),
+          const SizedBox(width: 5),
+          Text(
+            '$label $count',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: hasUnread ? FontWeight.w800 : FontWeight.w600,
+              color: hasUnread ? color : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -3451,8 +4155,9 @@ class _HomeScreenState extends State<HomeScreen>
     String houseName,
     String scholarNo,
     String studentName,
-    Color themeColor,
-  ) {
+    Color themeColor, {
+    bool younger = false,
+  }) {
     final cards = [
       {
         'title': '👥 Switch Account / Siblings',
@@ -3520,13 +4225,24 @@ class _HomeScreenState extends State<HomeScreen>
       },
     ];
 
+    // Younger students get the simpler service list: no 1:1 council chat,
+    // election ballot, or certificate-claim workflow.
+    final visibleCards = younger
+        ? cards.where((item) {
+            final title = item['title'] as String;
+            return title != '1-on-1 Council & Student Chats' &&
+                title != '🗳️ Student Council Elections' &&
+                title != 'Submit House Claim';
+          }).toList()
+        : cards;
+
     return ListView.separated(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      itemCount: cards.length,
+      itemCount: visibleCards.length,
       separatorBuilder: (context, index) => const SizedBox(height: 14),
       itemBuilder: (context, index) {
-        final item = cards[index];
+        final item = visibleCards[index];
         final color = item['color'] as Color;
         return InkWell(
           onTap: () {

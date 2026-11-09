@@ -211,6 +211,36 @@ class _TeacherTimetableEditorScreenState
     setState(() {});
   }
 
+  /// Acceptance test 14: moving the break after a different period
+  /// recalculates the whole day sequentially from the first period's start,
+  /// keeping eight 45-minute periods and one 30-minute break.
+  void _moveBreakAfter(int afterPeriod) {
+    if (afterPeriod < 1 || afterPeriod > kTeachingPeriodCount) return;
+    if (afterPeriod == _breakAfterPeriod) return;
+
+    final firstStart =
+        _slotControllers.isNotEmpty && _slotControllers.first.startMinute >= 0
+            ? _slotControllers.first.startMinute
+            : 465;
+    final template = ClassTimetableVersion.template(
+      classId: widget.classId,
+      dayOfWeek: _selectedDay,
+      dayStartMinute: firstStart,
+      breakAfterPeriod: afterPeriod,
+      effectiveFrom: _effectiveFrom,
+    );
+
+    setState(() {
+      _breakAfterPeriod = afterPeriod;
+      _breakStartMinute = template.breakStartMinute;
+      for (var i = 0; i < _slotControllers.length; i++) {
+        if (i < template.slots.length) {
+          _slotControllers[i].startMinute = template.slots[i].startMinute;
+        }
+      }
+    });
+  }
+
   Future<void> _pickStartTime(_SlotController controller) async {
     final initialTime = controller.startMinute >= 0
         ? TimeOfDay(
@@ -1437,24 +1467,48 @@ class _TeacherTimetableEditorScreenState
         border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              const Icon(Icons.coffee_rounded, color: Colors.amber, size: 20),
-              const SizedBox(width: 8),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('School Break (30 min fixed)', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
-                  Text(
-                    'After Period $_breakAfterPeriod',
-                    style: const TextStyle(fontSize: 11, color: Colors.grey),
-                  ),
-                ],
-              ),
-            ],
+          const Icon(Icons.coffee_rounded, color: Colors.amber, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'School Break (30 min fixed)',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                ),
+                Row(
+                  children: [
+                    Text(
+                      'After Period $_breakAfterPeriod',
+                      style: const TextStyle(fontSize: 11, color: Colors.grey),
+                    ),
+                    PopupMenuButton<int>(
+                      key: const Key('break_after_period_button'),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      tooltip: 'Move break after another period',
+                      icon: const Icon(
+                        Icons.swap_horiz_rounded,
+                        size: 15,
+                        color: Colors.amber,
+                      ),
+                      onSelected: _moveBreakAfter,
+                      itemBuilder: (context) => [
+                        for (var n = 1; n <= kTeachingPeriodCount; n++)
+                          PopupMenuItem<int>(
+                            value: n,
+                            child: Text('After Period $n'),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
+          const SizedBox(width: 8),
           InkWell(
             key: const Key('break_time_button'),
             onTap: _pickBreakStartTime,

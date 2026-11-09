@@ -143,3 +143,54 @@ class AppNotification {
   static int unreadCount(Iterable<AppNotification> notifications) =>
       notifications.where((n) => n.isUnread).length;
 }
+
+/// Per-category unread totals used by the dashboard (M8). Only the categories
+/// needed by the dashboard are counted; [total] still includes every unread
+/// notification so the bell badge and the chips cannot disagree.
+class NotificationUnreadBreakdown {
+  final int total;
+  final int classCount;
+  final int houseCount;
+  final int timetableCount;
+
+  const NotificationUnreadBreakdown({
+    this.total = 0,
+    this.classCount = 0,
+    this.houseCount = 0,
+    this.timetableCount = 0,
+  });
+
+  static const empty = NotificationUnreadBreakdown();
+
+  bool get hasAny => total > 0;
+
+  factory NotificationUnreadBreakdown.from(
+    Iterable<AppNotification> notifications,
+  ) {
+    var total = 0;
+    var classCount = 0;
+    var houseCount = 0;
+    var timetableCount = 0;
+    for (final notification in notifications) {
+      if (!notification.isUnread) continue;
+      total++;
+      switch (notification.category) {
+        case 'class':
+          classCount++;
+          break;
+        case 'house':
+          houseCount++;
+          break;
+        case 'timetable':
+          timetableCount++;
+          break;
+      }
+    }
+    return NotificationUnreadBreakdown(
+      total: total,
+      classCount: classCount,
+      houseCount: houseCount,
+      timetableCount: timetableCount,
+    );
+  }
+}

@@ -10318,8 +10318,12 @@ void main() {
     expect(firestoreContent.contains('event_wall'), isTrue);
     expect(firestoreContent.contains('player_sports_stats'), isTrue);
 
-    // Verify super admin bootstrap registration allowed
+    // Verify super admin bootstrap registration allowed, but only by exact
+    // address. Prefix matching would let any admin.* account self-elevate.
     expect(firestoreContent.contains('admin@asianschool.bh'), isTrue);
+    expect(firestoreContent.contains('11209@asianschool.bh'), isTrue);
+    expect(firestoreContent.contains('^admin@'), isFalse);
+    expect(firestoreContent.contains('^11209@'), isFalse);
 
     // Verify elections voting update rule
     expect(firestoreContent.contains('total_votes_cast'), isTrue);

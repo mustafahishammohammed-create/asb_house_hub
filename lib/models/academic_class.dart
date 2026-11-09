@@ -98,6 +98,18 @@ class AcademicStructure {
     return null;
   }
 
+  /// Younger-student cohort (LKG–UKG and Grades 1–5). The dashboard uses this
+  /// to hide council/admin-oriented modules for a simpler interface (M8).
+  static bool isPrimaryGrade(dynamic raw) {
+    final normalized = normalizeGrade(raw);
+    if (normalized == null) return false;
+    if (kindergarten.contains(normalized)) return true;
+    final number = int.tryParse(
+      normalized.replaceAll(RegExp(r'[^0-9]'), ''),
+    );
+    return number != null && number >= 1 && number <= 5;
+  }
+
   /// Calculates the next canonical classId for academic year progression,
   /// preserving the section letter (Test 59).
   /// e.g. '11D' -> '12D', 'LKG-A' -> 'UKG-A', 'UKG-B' -> '1B'.

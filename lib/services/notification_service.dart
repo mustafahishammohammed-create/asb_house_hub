@@ -96,6 +96,11 @@ class NotificationService {
     String scopeId,
   )? recipientsLoader;
 
+  /// Test hook: replace the signed-in user's notification stream so dashboard
+  /// widget tests can exercise unread chips without Firebase.
+  @visibleForTesting
+  static Stream<List<AppNotification>>? notificationsStreamOverride;
+
   String get currentUserId {
     try {
       final uid = _auth.currentUser?.uid ?? '';
@@ -113,6 +118,8 @@ class NotificationService {
   Stream<List<AppNotification>> getNotificationsStream({
     int limit = streamLimit,
   }) {
+    final override = notificationsStreamOverride;
+    if (override != null) return override;
     final uid = currentUserId;
     if (!AuthService.isFirebaseLive || uid.isEmpty) {
       return Stream.value(const <AppNotification>[]);
@@ -140,6 +147,13 @@ class NotificationService {
 
   Stream<int> getUnreadCountStream({int limit = streamLimit}) =>
       getNotificationsStream(limit: limit).map(AppNotification.unreadCount);
+
+  /// Dashboard breakdown of unread class/house/timetable announcements.
+  Stream<NotificationUnreadBreakdown> getUnreadBreakdownStream({
+    int limit = streamLimit,
+  }) =>
+      getNotificationsStream(limit: limit)
+          .map(NotificationUnreadBreakdown.from);
 
   // ===============================================================
   // Read state

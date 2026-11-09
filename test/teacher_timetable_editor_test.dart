@@ -153,6 +153,35 @@ void main() {
       expect(find.textContaining('Timetable Valid'), findsOneWidget);
     });
 
+    testWidgets('Moving the break recalculates all period times (Acceptance Test 14)',
+        (tester) async {
+      tester.view.physicalSize = const Size(1080, 3400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      await seedTeacherProfile();
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: TeacherTimetableEditorScreen(classId: '11D', initialDay: 'Saturday'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('break_after_period_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('After Period 6').last);
+      await tester.pumpAndSettle();
+
+      // The break moved after Period 6 and the day recalculated sequentially:
+      // P6 11:30-12:15, Break 12:15-12:45, P7 12:45-13:30.
+      expect(find.text('After Period 6'), findsWidgets);
+      expect(find.text('11:30 - 12:15'), findsOneWidget);
+      expect(find.text('12:15 - 12:45'), findsOneWidget);
+      expect(find.text('12:45 - 13:30'), findsOneWidget);
+      expect(find.textContaining('Timetable Valid'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('Save Draft persists version to cache without publishing to active', (tester) async {
       await seedTeacherProfile();
       await tester.pumpWidget(
