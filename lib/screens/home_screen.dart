@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/rendering.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/auth_service.dart';
 import '../services/hierarchy_service.dart';
 import '../services/notification_service.dart';
@@ -13,6 +14,7 @@ import '../theme/app_theme.dart';
 import '../models/academic_class.dart';
 import '../models/app_notification.dart';
 import '../models/class_timetable.dart';
+import '../models/school_notice.dart';
 import '../models/timetable_period.dart';
 import 'admin_claims_screen.dart';
 import 'merch_store_tab.dart';
@@ -36,6 +38,7 @@ import '../widgets/confetti_overlay.dart';
 import '../widgets/account_switcher_modal.dart';
 import '../widgets/student_profile_modal.dart';
 import '../widgets/managed_modal_scope.dart';
+import '../widgets/school_circular_composer.dart';
 
 class HomeScreen extends StatefulWidget {
   final int initialIndex;
@@ -1963,7 +1966,10 @@ class _HomeScreenState extends State<HomeScreen>
                 ],
               ),
               const SizedBox(height: 16),
-              _buildLiveNoticesFeed(houseColor),
+              _buildLiveNoticesFeed(
+                houseColor,
+                canPost: isAdmin || isSuperAdmin,
+              ),
               const SizedBox(height: 36),
 
               // 5. Live Instagram-Style Event Photo Feed / Wall
@@ -4807,7 +4813,7 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _buildLiveNoticesFeed(Color themeColor) {
+  Widget _buildLiveNoticesFeed(Color themeColor, {required bool canPost}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -4821,11 +4827,16 @@ class _HomeScreenState extends State<HomeScreen>
               'Official Circulars & Notices',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
             ),
-            TextButton.icon(
-              onPressed: _showPostCircularDialog,
-              icon: const Icon(Icons.post_add_rounded, size: 18),
-              label: const Text('Post Circular', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
-            ),
+            if (canPost)
+              TextButton.icon(
+                key: const Key('post_circular_button'),
+                onPressed: _showPostCircularDialog,
+                icon: const Icon(Icons.post_add_rounded, size: 18),
+                label: const Text(
+                  'Post Circular',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+                ),
+              ),
           ],
         ),
         const SizedBox(height: 8),
@@ -4837,6 +4848,36 @@ class _HomeScreenState extends State<HomeScreen>
                 child: Padding(
                   padding: EdgeInsets.all(24),
                   child: CircularProgressIndicator(),
+                ),
+              );
+            }
+
+            if (snapshot.hasError) {
+              return Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: Colors.red.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: const Column(
+                  children: [
+                    Icon(Icons.cloud_off_rounded, color: Colors.red, size: 34),
+                    SizedBox(height: 8),
+                    Text(
+                      'Could not load circulars',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Check the connection and try again.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ],
                 ),
               );
             }
@@ -4860,11 +4901,16 @@ class _HomeScreenState extends State<HomeScreen>
                     const SizedBox(height: 14),
                     const Text(
                       'No Circulars Posted Yet',
-                      style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'When school administrators publish new announcements or circulars, they will appear live right here.',
+                      canPost
+                          ? 'Post the first circular with details and an optional PDF attachment.'
+                          : 'When school administrators publish new announcements or circulars, they will appear live right here.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 14,
@@ -4877,19 +4923,21 @@ class _HomeScreenState extends State<HomeScreen>
               );
             }
 
+            final notices = snapshot.data!.docs.map((doc) {
+              final raw = doc.data();
+              final data = raw is Map
+                  ? Map<String, dynamic>.from(raw)
+                  : <String, dynamic>{};
+              return SchoolNotice.fromMap(doc.id, data);
+            }).toList();
+
             return ListView.separated(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              itemCount: snapshot.data!.docs.length,
+              itemCount: notices.length,
               separatorBuilder: (context, index) => const SizedBox(height: 12),
               itemBuilder: (context, index) {
-                final doc = snapshot.data!.docs[index];
-                final raw = doc.data();
-                final data = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
-                final title = data['title'] ?? 'School Announcement';
-                final desc = data['content'] ?? '';
-                final date = data['date'] ?? 'Recent';
-
+                final notice = notices[index];
                 return Container(
                   padding: const EdgeInsets.all(22),
                   decoration: BoxDecoration(
@@ -4917,7 +4965,7 @@ class _HomeScreenState extends State<HomeScreen>
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
-                              'Circular',
+                              notice.categoryLabel,
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
@@ -4927,7 +4975,9 @@ class _HomeScreenState extends State<HomeScreen>
                           ),
                           Flexible(
                             child: Text(
-                              date.toString(),
+                              notice.date.trim().isEmpty
+                                  ? 'Recent'
+                                  : notice.date,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
@@ -4939,23 +4989,103 @@ class _HomeScreenState extends State<HomeScreen>
                           ),
                         ],
                       ),
+                      if (notice.targetAudience.trim().isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          notice.targetAudience,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 12),
                       Text(
-                        title.toString(),
+                        notice.title,
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        desc.toString(),
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey[600],
-                          height: 1.4,
+                      if (notice.content.trim().isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          notice.content,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey[600],
+                            height: 1.4,
+                          ),
                         ),
-                      ),
+                      ],
+                      if (notice.hasAttachment) ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          key: ValueKey('circular_attachment_${notice.id}'),
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withValues(alpha: 0.07),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.red.withValues(alpha: 0.3),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.picture_as_pdf_rounded,
+                                color: Colors.red,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      notice.attachmentLabel,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    if (notice.attachmentSize > 0)
+                                      Text(
+                                        notice.attachmentSize >= 1024 * 1024
+                                            ? '${(notice.attachmentSize / (1024 * 1024)).toStringAsFixed(1)} MB'
+                                            : '${(notice.attachmentSize / 1024).toStringAsFixed(0)} KB',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.grey[600],
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              TextButton.icon(
+                                key: ValueKey(
+                                  'circular_open_pdf_${notice.id}',
+                                ),
+                                onPressed: () =>
+                                    _openCircularAttachment(notice),
+                                icon: const Icon(
+                                  Icons.open_in_new_rounded,
+                                  size: 15,
+                                ),
+                                label: const Text(
+                                  'Open PDF',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 );
@@ -4967,14 +5097,37 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  Future<void> _openCircularAttachment(SchoolNotice notice) async {
+    final url = notice.attachmentUrl.trim();
+    if (url.isEmpty) return;
+    final uri = Uri.tryParse(url);
+    if (uri == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('This circular attachment link is invalid.')),
+      );
+      return;
+    }
+    var opened = false;
+    try {
+      opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      opened = false;
+    }
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Could not open the PDF. Check that a PDF viewer or browser is available.',
+          ),
+        ),
+      );
+    }
+  }
+
   void _showPostCircularDialog() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final titleController = TextEditingController();
-    final contentController = TextEditingController();
-    String category = 'Academic';
-    String targetAudience = 'All Students';
-
-    showModalBottomSheet(
+    showModalBottomSheet<SchoolNoticePublishResult>(
       context: context,
       isScrollControlled: true,
       backgroundColor: isDark ? const Color(0xFF151D2E) : Colors.white,
@@ -4982,147 +5135,42 @@ class _HomeScreenState extends State<HomeScreen>
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) {
-        return ManagedModalScope(
-          controllers: [titleController, contentController],
-          child: StatefulBuilder(
-            builder: (modalCtx, setModalState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 20,
-                right: 20,
-                top: 24,
-                bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '📢 Post School Circular & Notice',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                        color: isDark ? Colors.white : const Color(0xFF0F172A),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Publish official circulars or event notices to all students and faculty.',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: titleController,
-                      decoration: InputDecoration(
-                        labelText: 'Circular Title',
-                        hintText: 'e.g. Mid-Term Examination Conduct & Guidelines',
-                        filled: true,
-                        fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: DropdownButtonFormField<String>(
-                            initialValue: category,
-                            decoration: InputDecoration(
-                              labelText: 'Category',
-                              filled: true,
-                              fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                            ),
-                            items: ['Academic', 'Sports', 'Examination', 'Holiday & Closure', 'General'].map((c) {
-                              return DropdownMenuItem(value: c, child: Text(c));
-                            }).toList(),
-                            onChanged: (val) {
-                              if (val != null) setModalState(() => category = val);
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: DropdownButtonFormField<String>(
-                            initialValue: targetAudience,
-                            decoration: InputDecoration(
-                              labelText: 'Audience',
-                              filled: true,
-                              fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                            ),
-                            items: ['All Students', 'Middle School (6-8)', 'Secondary (9-10)', 'Senior Secondary (11-12)'].map((a) {
-                              return DropdownMenuItem(value: a, child: Text(a, overflow: TextOverflow.ellipsis));
-                            }).toList(),
-                            onChanged: (val) {
-                              if (val != null) setModalState(() => targetAudience = val);
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: contentController,
-                      maxLines: 4,
-                      decoration: InputDecoration(
-                        labelText: 'Circular Content / Details',
-                        hintText: 'Enter full proclamation or circular text...',
-                        filled: true,
-                        fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 48,
-                      child: ElevatedButton(
-                        onPressed: () async {
-                          final noticeTitle = titleController.text.trim();
-                          final noticeContent = contentController.text.trim();
-                          if (noticeTitle.isEmpty || noticeContent.isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Please enter circular title and content.')),
-                            );
-                            return;
-                          }
-                          final messenger = ScaffoldMessenger.of(context);
-                          Navigator.of(ctx).pop();
-                          await _authService.publishSchoolNotice(
-                            title: noticeTitle,
-                            content: noticeContent,
-                            category: category,
-                            targetAudience: targetAudience,
-                          );
-                          if (!mounted) return;
-                          setState(() {});
-                          messenger.showSnackBar(
-                            SnackBar(
-                              content: Text('Published circular: "$noticeTitle"!'),
-                              backgroundColor: Colors.green[700],
-                            ),
-                          );
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF4338CA),
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                        ),
-                        child: const Text('Broadcast Circular', style: TextStyle(fontWeight: FontWeight.w800)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+        return SchoolCircularComposer(
+          isDark: isDark,
+          onPublish: ({
+            required String title,
+            required String content,
+            required String category,
+            required String targetAudience,
+            PickedCircularPdf? pdf,
+          }) {
+            return _authService.publishSchoolNotice(
+              title: title,
+              content: content,
+              category: category,
+              targetAudience: targetAudience,
+              attachmentBytes: pdf?.bytes,
+              attachmentName: pdf?.fileName,
             );
           },
-        ),
-      );
-    },
-  );
-}
+        );
+      },
+    ).then((result) {
+      if (result != null && result.success && mounted) {
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              result.attachmentUrl != null
+                  ? 'Published circular with PDF attachment!'
+                  : 'Published circular successfully!',
+            ),
+            backgroundColor: Colors.green[700],
+          ),
+        );
+      }
+    });
+  }
 
   Widget _buildLiveTickerBanner(bool isSuperAdmin) {
     return StreamBuilder<DocumentSnapshot>(

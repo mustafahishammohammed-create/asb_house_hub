@@ -47,6 +47,12 @@ service firebase.storage {
       allow write: if isSignedIn() && (isImage() || isPdf()) && isUnderMaxSize(15);
     }
 
+    // School Circulars & Official Notices (PDFs up to 15MB)
+    match /circulars/{noticeId}/{fileName=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isPdf() && isUnderMaxSize(15);
+    }
+
     // Explicit Default Deny for all other write paths (wildcard write removed for security)
     match /{allPaths=**} {
       allow read: if isSignedIn();

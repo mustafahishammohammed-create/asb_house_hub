@@ -13,8 +13,8 @@
 | **PARTIAL** | At least one sub-requirement is implemented but not directly automated, or has a documented Spark/rules limitation. **PARTIAL is not counted as a completed test.** |
 | **MISSING** | No implementation or no credible evidence. |
 
-**Summary:** **60 PASS · 4 PARTIAL · 0 MISSING** (64 rows).
-The four partials are tests **5, 22, 24, and 25**. They remain open by design and are not counted as passing.
+**Summary:** **61 PASS · 3 PARTIAL · 0 MISSING** (64 rows).
+The three partials are tests **5, 24, and 25**. They remain open by design and are not counted as passing.
 
 ## Matrix
 
@@ -41,7 +41,7 @@ The four partials are tests **5, 22, 24, and 25**. They remain open by design an
 | 19 | Detect double-booked rooms | Same conflict engine, room dimension | `test/timetable_m3_test.dart` `detects a room double-booked across two classes (19)` | Same as test 18 | PASS | Same non-transactional limit as test 18. |
 | 20 | Publish updates every affected student | `publishTimetable` writes the published version, streams it to verified members, and fans out notification docs | `test/teacher_timetable_editor_test.dart` student published timetable test; `test/notification_test.dart` `publishTimetable invokes the M6 fan-out after a successful publish` | Published own-class versions readable; notification create validated per recipient | PASS | Spark fan-out is client-side, capped and best-effort (M6 limit). |
 | 21 | Authorised teacher opens the editor | `TimetableTab` resolves editable classes with `HierarchyService.canEditTimetable`; editor re-checks on save/publish | `test/teacher_timetable_editor_test.dart` `Staff sees "Edit Timetable" button...`, `Assigned teacher is authorized in the editor`, `Unauthorized editor blocks Save/Publish...` | `isTimetableEditor` requires admin role + class-teacher/editor UID + editing enabled | PASS | Rules evidence is source contract + deployment. |
-| 22 | Select an assigned class | Single editable class auto-selects; multiple classes open `Select a Class Timetable` | `test/teacher_timetable_editor_test.dart` button/authorization tests; `test/timetable_engine_test.dart` `canEditTimetable authorization matrix` | Write rules re-check the target class, not just the UI selection | PARTIAL | The multi-class picker is implemented but has no dedicated widget test that selects a class from the dialog. Single-class selection and denial are tested. |
+| 22 | Select an assigned class | Single editable class auto-selects; multiple classes open `Select a Class Timetable` | `test/teacher_timetable_editor_test.dart` `Multi-class editor picker opens dialog and navigates to selected class (Acceptance Test 22)`; `test/timetable_engine_test.dart` `canEditTimetable authorization matrix` | Write rules re-check the target class, not just the UI selection | PASS | — |
 | 23 | Select a day | Six day chips Saturday–Thursday; Friday excluded | `test/teacher_timetable_editor_test.dart` `renders 6 school days (Saturday to Thursday) and 8 periods` | Rules whitelist Saturday–Thursday only | PASS | — |
 | 24 | Customise Period 1 start | Per-period time picker writes `startMinute`; end derived | Editor widget tests cover the timing grid and standard timing; picker path is implementation-inspected, not directly automated | Rules validate the stored start sequence | PARTIAL | No automated interaction with the period time picker. The underlying start-minute model and validation are tested. |
 | 25 | Customise Periods 2–8 independently | One `_SlotController` per period, each with its own time picker and subject/teacher/room fields | Editor widget tests render all 8 period cards; model tests cover independent starts/gaps | Rules validate the full ordered slot list | PARTIAL | No automated interaction with every period time picker; independent-start validation is covered by the model gap test. |
@@ -90,7 +90,6 @@ The four partials are tests **5, 22, 24, and 25**. They remain open by design an
 | # | Why it is open | What would close it |
 |---|---|---|
 | 5 | `timetable_versions` rules allow broad signed-in published reads and list queries cannot be field-scoped by Firestore rules. The client UI scopes correctly, but a modified client is not denied. | Move timetables under a path-scoped per-class collection, or add a per-class active-timetable document with `get`-only student access and staff-only `list`; then update `TimetableService`, rules, and tests. |
-| 22 | Multi-class editor picker exists but is not directly widget-tested. | Seed a teacher with two editable classes, tap the edit button, select a class from the dialog, and assert the editor opens for the selected class. |
 | 24 | Period-1 time-picker interaction is not directly automated. | Widget test that opens the P1 time picker, selects a new start, and asserts the derived end/time slot. |
 | 25 | Periods 2–8 time-picker interactions are not directly automated. | Extend the P1 test to change an independent later period and assert no unintended shift of other periods. |
 

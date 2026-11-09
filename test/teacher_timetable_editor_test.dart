@@ -375,5 +375,62 @@ void main() {
       expect(find.byKey(const Key('save_timetable_draft_button')), findsOneWidget);
       expect(find.byKey(const Key('publish_timetable_button')), findsOneWidget);
     });
+
+    testWidgets('Multi-class editor picker opens dialog and navigates to selected class (Acceptance Test 22)',
+        (tester) async {
+      await AuthService.cacheProfile({
+        'uid': 'uid_teacher_multiclass',
+        'scholar_no': '2310102',
+        'full_name': 'Ms. Multiclass',
+        'role': 'teacher',
+        'house_name': 'ruby',
+      });
+      await AuthService.cacheAcademicClasses([
+        const AcademicClass(
+          classId: '11A',
+          grade: 'Grade 11',
+          section: 'A',
+          classTeacher: 'Ms. Multiclass',
+          classTeacherUid: 'uid_teacher_multiclass',
+          timetableEditingEnabled: true,
+        ),
+        const AcademicClass(
+          classId: '11B',
+          grade: 'Grade 11',
+          section: 'B',
+          classTeacher: 'Ms. Multiclass',
+          classTeacherUid: 'uid_teacher_multiclass',
+          timetableEditingEnabled: true,
+        ),
+      ]);
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: TimetableTab(classLevel: '', initialDay: 'Wednesday'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final editBtn = find.byKey(const Key('manage_recurring_timetable_button'));
+      expect(editBtn, findsOneWidget);
+
+      await tester.tap(editBtn);
+      await tester.pumpAndSettle();
+
+      // Dialog opens with class options
+      expect(find.text('Select a Class Timetable'), findsOneWidget);
+      expect(find.textContaining('11A · Grade 11'), findsOneWidget);
+      expect(find.textContaining('11B · Grade 11'), findsOneWidget);
+
+      // Select 11B
+      await tester.tap(find.textContaining('11B · Grade 11'));
+      await tester.pumpAndSettle();
+
+      // Editor screen opens for 11B
+      expect(find.text('11B Timetable Editor'), findsOneWidget);
+      expect(find.byKey(const Key('save_timetable_draft_button')), findsOneWidget);
+    });
   });
 }

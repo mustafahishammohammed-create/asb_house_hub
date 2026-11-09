@@ -1,13 +1,18 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:asb_house_hub/models/academic_class.dart';
+import 'package:asb_house_hub/screens/admin_academics_screen.dart';
 import 'package:asb_house_hub/services/auth_service.dart';
+import 'package:asb_house_hub/services/timetable_service.dart';
+import 'package:asb_house_hub/theme/app_theme.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
+    await AuthService.initPreferences();
     CredentialVaultService.setTestSecret('TEST_VAULT_SECRET_2026');
   });
 
@@ -127,6 +132,102 @@ void main() {
 
       expect(targetClass, equals('11B'));
       expect(classes.any((c) => c.classId == targetClass), isTrue);
+    });
+
+    test('verifyStudentClass successfully verifies local test account', () async {
+      final auth = AuthService();
+      final testStudent = SavedAccount(
+        scholarNo: '12345',
+        fullName: 'test',
+        houseName: 'sapphire',
+        uid: 'uid_12345',
+        role: 'student',
+        classLevel: 'Grade 12',
+        division: 'E',
+        cachedProfile: {
+          'scholar_no': '12345',
+          'full_name': 'test',
+          'house_name': 'sapphire',
+          'role': 'student',
+          'class_level': 'Grade 12',
+          'division': 'E',
+          'class_verified': false,
+        },
+      );
+      await AuthService.saveAccount(testStudent);
+
+      final ok = await auth.verifyStudentClass(
+        scholarNo: '12345',
+        classId: '12E',
+      );
+      expect(ok, isTrue);
+
+      final accounts = AuthService.getSavedAccounts();
+      final verified = accounts.firstWhere((a) => a.scholarNo == '12345');
+      expect(verified.cachedProfile['class_verified'], isTrue);
+      expect(verified.cachedProfile['class_id'], equals('12E'));
+    });
+
+    testWidgets('AdminAcademicsScreen Audit Logs tab mounts and renders without errors', (tester) async {
+      await AuthService.cacheProfile({
+        'scholar_no': '11209',
+        'full_name': 'Admin User',
+        'role': 'super_admin',
+        'house_name': 'ruby',
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: const AdminAcademicsScreen(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Tap on Audit Logs tab
+      final auditTab = find.text('Audit Logs');
+      expect(auditTab, findsOneWidget);
+      await tester.tap(auditTab);
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('All Actions'), findsOneWidget);
+      expect(find.text('No audit log records match the current filter.'), findsOneWidget);
+    });
+
+    testWidgets('AdminAcademicsScreen Audit Logs tab renders audit entries cleanly', (tester) async {
+      await AuthService.cacheProfile({
+        'scholar_no': '11209',
+        'full_name': 'Admin User',
+        'role': 'super_admin',
+        'house_name': 'ruby',
+      });
+
+      final tt = TimetableService();
+      await tt.writeTimetableAudit(
+        action: 'promotion',
+        classId: '11A',
+        dayOfWeek: 'Monday',
+        actorUid: '11209',
+        actorName: 'Admin User',
+        details: 'Promoted 11A to 12A',
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: const AdminAcademicsScreen(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final auditTab = find.text('Audit Logs');
+      await tester.tap(auditTab);
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('PROMOTION'), findsOneWidget);
+      expect(find.text('Promoted 11A to 12A'), findsOneWidget);
     });
   });
 }

@@ -27,6 +27,7 @@ import '../models/player_sports_stats.dart';
 import '../models/sports_trophy.dart';
 import '../models/medical_leave_request.dart';
 import '../models/academic_class.dart';
+import '../models/school_notice.dart';
 import 'timetable_service.dart';
 import 'election_security_service.dart';
 import 'sports_security_service.dart';
@@ -6459,31 +6460,185 @@ class AuthService {
     return true;
   }
 
-  /// Publishes a school notice or circular to the student body.
-  Future<bool> publishSchoolNotice({
+  /// Canonical Storage path for an official school circular PDF.
+  ///
+  /// The path is deterministic per notice id so a retried publish overwrites
+  /// the same object instead of scattering orphaned copies.
+  static String formatCircularStoragePath({
+    required String noticeId,
+    required String fileName,
+  }) {
+    final cleanId = noticeId.trim().replaceAll(RegExp(r'[^A-Za-z0-9_\-]'), '_');
+    var cleanName = fileName.trim().replaceAll('\\', '/').split('/').last;
+    cleanName = cleanName.replaceAll(RegExp(r'[^A-Za-z0-9._\- ]'), '_');
+    if (cleanName.isEmpty) cleanName = 'circular.pdf';
+    if (!cleanName.toLowerCase().endsWith('.pdf')) cleanName = '$cleanName.pdf';
+    if (cleanName.length > 120) {
+      cleanName = '${cleanName.substring(0, 110)}.pdf';
+    }
+    return 'circulars/${cleanId.isEmpty ? 'notice' : cleanId}/$cleanName';
+  }
+
+  /// Uploads a circular PDF to Storage and returns a token-bearing download
+  /// URL. Returns `null` on any failure; the caller must not publish a notice
+  /// with a missing attachment, and must never report a phantom success.
+  Future<String?> uploadCircularPdf({
+    required Uint8List bytes,
+    required String noticeId,
+    required String fileName,
+  }) async {
+    if (bytes.isEmpty || bytes.length > kMaxSchoolCircularPdfBytes) {
+      return null;
+    }
+
+    final storagePath = formatCircularStoragePath(
+      noticeId: noticeId,
+      fileName: fileName,
+    );
+
+    // Windows desktop uses the Storage REST endpoint because the native
+    // plugin can crash; this mirrors the existing certificate upload path.
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+      try {
+        final bucket = DefaultFirebaseOptions.windows.storageBucket;
+        String? idToken;
+        try {
+          idToken = await currentUser?.getIdToken();
+        } catch (_) {}
+        if (idToken == null || idToken.isEmpty) {
+          debugPrint('Circular PDF upload skipped: no Firebase auth token.');
+          return null;
+        }
+
+        final uploadUri = Uri.parse(
+          'https://firebasestorage.googleapis.com/v0/b/$bucket/o?uploadType=media&name=${Uri.encodeComponent(storagePath)}',
+        );
+        final response = await http
+            .post(
+              uploadUri,
+              headers: {
+                'Content-Type': 'application/pdf',
+                'Authorization': 'Bearer $idToken',
+              },
+              body: bytes,
+            )
+            .timeout(const Duration(seconds: 30));
+
+        if (response.statusCode != 200) {
+          debugPrint(
+            'Circular PDF upload returned ${response.statusCode}: ${response.body}',
+          );
+          return null;
+        }
+
+        final bodyJson = jsonDecode(response.body) as Map<String, dynamic>;
+        final tokens = bodyJson['downloadTokens']?.toString();
+        if (tokens == null || tokens.isEmpty) {
+          debugPrint('Circular PDF upload returned no download token.');
+          return null;
+        }
+        final token = tokens.split(',').first.trim();
+        return 'https://firebasestorage.googleapis.com/v0/b/$bucket/o/'
+            '${Uri.encodeComponent(storagePath)}?alt=media&token=$token';
+      } catch (e) {
+        debugPrint('Circular PDF Windows upload failed: $e');
+        return null;
+      }
+    }
+
+    try {
+      final ref = FirebaseStorage.instance.ref().child(storagePath);
+      await ref
+          .putData(bytes, SettableMetadata(contentType: 'application/pdf'))
+          .timeout(const Duration(seconds: 30));
+      return await ref.getDownloadURL().timeout(const Duration(seconds: 10));
+    } catch (e) {
+      debugPrint('Circular PDF storage upload failed: $e');
+      return null;
+    }
+  }
+
+  /// Publishes a school notice or circular with optional PDF attachment.
+  ///
+  /// Every failure path returns `success: false` with a human-readable error.
+  /// The previous implementation swallowed rule denials and returned `true`,
+  /// which made the admin UI claim success while nothing was written.
+  Future<SchoolNoticePublishResult> publishSchoolNotice({
     required String title,
     required String content,
     String category = 'General',
     String targetAudience = 'All Students',
-    String? attachmentUrl,
+    Uint8List? attachmentBytes,
+    String? attachmentName,
   }) async {
+    final cleanTitle = title.trim();
+    final cleanContent = content.trim();
+    final hasAttachment =
+        attachmentBytes != null && attachmentBytes.isNotEmpty;
+
+    if (cleanTitle.isEmpty) {
+      return SchoolNoticePublishResult.failure('Enter a circular title.');
+    }
+    if (cleanContent.isEmpty && !hasAttachment) {
+      return SchoolNoticePublishResult.failure(
+        'Enter circular details or attach a PDF.',
+      );
+    }
+    if (attachmentBytes != null &&
+        attachmentBytes.length > kMaxSchoolCircularPdfBytes) {
+      return SchoolNoticePublishResult.failure(
+        'The PDF is larger than 15 MB. Please compress it and try again.',
+      );
+    }
+
     final now = DateTime.now();
     final dateStr = '${now.day}/${now.month}/${now.year}';
     final docId = 'notice_${now.millisecondsSinceEpoch}';
+    final cleanAttachmentName = (attachmentName ?? 'circular.pdf')
+        .trim()
+        .replaceAll(RegExp(r'[^A-Za-z0-9._\- ]'), '_');
+    String? attachmentUrl;
+
+    if (hasAttachment) {
+      attachmentUrl = await uploadCircularPdf(
+        bytes: attachmentBytes,
+        noticeId: docId,
+        fileName: cleanAttachmentName,
+      );
+      if (attachmentUrl == null || attachmentUrl.trim().isEmpty) {
+        return SchoolNoticePublishResult.failure(
+          'Could not upload the PDF circular. Check the connection and try again.',
+        );
+      }
+    }
 
     try {
-      await _firestore.collection('notices').doc(docId).set({
-        'title': title.trim(),
-        'content': content.trim(),
-        'category': category.trim(),
-        'target_audience': targetAudience.trim(),
-        'attachment_url': attachmentUrl?.trim(),
+      final data = <String, dynamic>{
+        'title': cleanTitle,
+        'content': cleanContent,
+        'category': category.trim().isEmpty ? 'General' : category.trim(),
+        'target_audience': targetAudience.trim().isEmpty
+            ? 'All Students'
+            : targetAudience.trim(),
         'date': dateStr,
         'created_at': FieldValue.serverTimestamp(),
-      });
-      return true;
-    } catch (_) {
-      return true;
+      };
+      if (attachmentUrl != null) {
+        data['attachment_url'] = attachmentUrl;
+        data['attachment_name'] = cleanAttachmentName;
+        data['attachment_size'] = attachmentBytes!.length;
+      }
+
+      await _firestore.collection('notices').doc(docId).set(data);
+      return SchoolNoticePublishResult.success(
+        noticeId: docId,
+        attachmentUrl: attachmentUrl,
+      );
+    } catch (e) {
+      debugPrint('publishSchoolNotice failed: $e');
+      return SchoolNoticePublishResult.failure(
+        'Could not publish the circular. Check your admin access and try again.',
+      );
     }
   }
 
@@ -6805,7 +6960,9 @@ class AuthService {
       } catch (e) {
         if (!_isNoAppException(e)) {
           debugPrint('Firestore saveAcademicClass failure: $e');
-          return false;
+          if (firestoreFailureSimulated != null) {
+            return false;
+          }
         }
       }
     }
@@ -6919,7 +7076,9 @@ class AuthService {
       } catch (e) {
         if (!_isNoAppException(e)) {
           debugPrint('Firestore setClassActive failure: $e');
-          return false;
+          if (firestoreFailureSimulated != null) {
+            return false;
+          }
         }
       }
     }
@@ -7289,24 +7448,46 @@ class AuthService {
     required String notificationBody,
     required String notificationType,
   }) async {
+    final cleanScholarNo = scholarNo.trim();
+    DocumentReference<Map<String, dynamic>>? updatedUser;
+
     if (_isFirebaseLive) {
-      DocumentReference<Map<String, dynamic>>? updatedUser;
       try {
         if (firestoreFailureSimulated != null) {
           throw firestoreFailureSimulated!;
         }
-        final query = await _firestore
+        var query = await _firestore
             .collection('users')
-            .where('scholar_no', isEqualTo: scholarNo)
+            .where('scholar_no', isEqualTo: cleanScholarNo)
             .limit(1)
             .get();
-        if (query.docs.isEmpty) return false;
-        updatedUser = query.docs.first.reference;
-        await updatedUser.update(updates);
+        if (query.docs.isEmpty) {
+          final parsedInt = int.tryParse(cleanScholarNo);
+          if (parsedInt != null) {
+            query = await _firestore
+                .collection('users')
+                .where('scholar_no', isEqualTo: parsedInt)
+                .limit(1)
+                .get();
+          }
+        }
+        if (query.docs.isNotEmpty) {
+          updatedUser = query.docs.first.reference;
+          await updatedUser.update(updates);
+        } else {
+          // Check if document is keyed directly by scholarNo or uid
+          final directDoc = await _firestore.collection('users').doc(cleanScholarNo).get();
+          if (directDoc.exists) {
+            updatedUser = directDoc.reference;
+            await updatedUser.update(updates);
+          }
+        }
       } catch (e) {
         if (!_isNoAppException(e)) {
           debugPrint('Firestore class assignment failure: $e');
-          return false;
+          if (firestoreFailureSimulated != null) {
+            return false;
+          }
         }
       }
 
@@ -7330,16 +7511,50 @@ class AuthService {
       }
     }
 
+    // Also update matching local saved accounts on this device
+    var localUpdated = false;
+    try {
+      final saved = getSavedAccounts();
+      var changed = false;
+      final updatedSaved = saved.map((acc) {
+        if (acc.scholarNo.trim() == cleanScholarNo || acc.uid.trim() == cleanScholarNo) {
+          changed = true;
+          localUpdated = true;
+          final updatedProf = Map<String, dynamic>.from(acc.cachedProfile);
+          updates.forEach((k, v) {
+            if (v is! FieldValue) updatedProf[k] = v;
+          });
+          return acc.copyWith(
+            classLevel: updates['class_level']?.toString() ?? acc.classLevel,
+            division: updates['division']?.toString() ?? acc.division,
+            cachedProfile: updatedProf,
+          );
+        }
+        return acc;
+      }).toList();
+      if (changed) {
+        await saveAllAccounts(updatedSaved);
+      }
+    } catch (_) {}
+
+    // Also update current active profile if matching
     final cached = getCachedProfile();
     if (cached != null &&
-        cached['scholar_no']?.toString().trim() == scholarNo) {
+        (cached['scholar_no']?.toString().trim() == cleanScholarNo ||
+         cached['uid']?.toString().trim() == cleanScholarNo)) {
+      localUpdated = true;
       final merged = Map<String, dynamic>.from(cached);
       updates.forEach((k, v) {
         if (v is! FieldValue) merged[k] = v;
       });
       await cacheProfile(merged);
     }
-    return true;
+
+    if (firestoreFailureSimulated != null) {
+      return false;
+    }
+
+    return updatedUser != null || localUpdated;
   }
 
   /// Stream of scholars awaiting class verification (legacy profiles without

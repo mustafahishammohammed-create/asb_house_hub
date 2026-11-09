@@ -121,11 +121,25 @@ rules_version = '2';
 //     - proof_token: string
 //     - timestamp: timestamp
 //
-// 11. announcements/{announcementId}, notices/{noticeId}, events/{eventId}
+// 11. announcements/{announcementId}, events/{eventId}
 //     - title: string (1-200 chars)
 //     - body / content: string (optional, <= 5000 chars)
 //     - author_name: string (optional, <= 100 chars)
 //     - priority: string (optional)
+//
+// 11b. notices/{noticeId}
+//     - title: string (1-200 chars, required)
+//     - content: string (optional, <= 5000 chars)
+//     - category: string (optional, <= 50 chars)
+//     - target_audience: string (optional, <= 100 chars)
+//     - date: string (optional, <= 50 chars)
+//     - created_at: timestamp (optional)
+//     - attachment_url: string (optional, <= 2000 chars)
+//     - attachment_name: string (optional, <= 200 chars)
+//     - attachment_size: int (optional, <= 15 * 1024 * 1024 bytes)
+//     - house: string (optional, <= 50 chars)
+//     - body: string (optional, <= 5000 chars)
+//     - id: string (optional, <= 100 chars)
 //
 // 12. chats/{channelId} and chats/{channelId}/messages/{messageId}
 //     - Room doc: participants, participant_names, participant_roles, last_message, last_updated
@@ -802,6 +816,27 @@ service cloud.firestore {
       (!('tags' in data) || (data.tags is list && data.tags.size() <= 10));
     }
 
+    function isValidSchoolNotice(data) {
+      return hasOnlyAllowedFields([
+        'id', 'title', 'content', 'body', 'category', 'target_audience',
+        'date', 'created_at', 'attachment_url', 'attachment_name',
+        'attachment_size', 'house'
+      ]) &&
+      hasRequiredFields(['title']) &&
+      data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
+      (!('content' in data) || (data.content is string && data.content.size() <= 5000)) &&
+      (!('body' in data) || (data.body is string && data.body.size() <= 5000)) &&
+      (!('category' in data) || (data.category is string && data.category.size() <= 50)) &&
+      (!('target_audience' in data) || (data.target_audience is string && data.target_audience.size() <= 100)) &&
+      (!('date' in data) || (data.date is string && data.date.size() <= 50)) &&
+      (!('created_at' in data) || data.created_at is timestamp) &&
+      (!('attachment_url' in data) || (data.attachment_url is string && data.attachment_url.size() <= 2000)) &&
+      (!('attachment_name' in data) || (data.attachment_name is string && data.attachment_name.size() <= 200)) &&
+      (!('attachment_size' in data) || (data.attachment_size is int && data.attachment_size >= 0 && data.attachment_size <= 15 * 1024 * 1024)) &&
+      (!('house' in data) || (data.house is string && data.house.size() <= 50)) &&
+      (!('id' in data) || (data.id is string && data.id.size() <= 100));
+    }
+
     function isValidChatMessage(data) {
       return hasOnlyAllowedFields(['sender_id', 'sender_name', 'text', 'timestamp', 'is_read', 'read_at', 'push_alert_triggered']) &&
         hasRequiredFields(['sender_id', 'text', 'timestamp', 'is_read']) &&
@@ -1428,7 +1463,7 @@ service cloud.firestore {
 
     match /notices/{noticeId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin() && isValidAnnouncement(request.resource.data);
+      allow write: if isAdmin() && isValidSchoolNotice(request.resource.data);
     }
 
     match /events/{eventId} {

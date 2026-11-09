@@ -1338,7 +1338,12 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
               if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
                 return const Center(child: CircularProgressIndicator());
               }
-              final logs = snap.data ?? [];
+              final logs = (snap.data != null && snap.data!.isNotEmpty)
+                  ? snap.data!
+                  : _timetableService.getAllCachedAudits(
+                      classId: _auditClassFilter,
+                      actionFilter: _auditActionFilter,
+                    );
               if (logs.isEmpty) {
                 return _emptyState(
                   scheme,
@@ -1352,15 +1357,23 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                 separatorBuilder: (_, _) => const SizedBox(height: 8),
                 itemBuilder: (context, i) {
                   final log = logs[i];
-                  final action = (log['action'] ?? '').toString();
+                  final rawAction = (log['action'] ?? '').toString().trim().toLowerCase();
+                  final action = rawAction.isEmpty ? 'audit' : rawAction;
                   final classId = (log['class_id'] ?? '').toString();
                   final actorName = (log['actor_name'] ?? 'Staff').toString();
                   final actorUid = (log['actor_uid'] ?? '').toString();
                   final details = (log['details'] ?? '').toString();
                   final ts = log['timestamp'];
-                  final timeLabel = ts is Timestamp
-                      ? ts.toDate().toLocal().toString().split('.').first
-                      : (ts ?? '').toString().split('.').first;
+                  String timeLabel = '';
+                  try {
+                    if (ts is Timestamp) {
+                      timeLabel = ts.toDate().toLocal().toString().split('.').first;
+                    } else if (ts is DateTime) {
+                      timeLabel = ts.toLocal().toString().split('.').first;
+                    } else if (ts != null) {
+                      timeLabel = ts.toString().split('.').first;
+                    }
+                  } catch (_) {}
 
                   Color chipColor;
                   switch (action) {

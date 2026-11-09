@@ -86,7 +86,7 @@ void main() {
         .where((entry) => entry.value[5] == 'PARTIAL')
         .map((entry) => entry.key)
         .toSet();
-    expect(partialIds, {5, 22, 24, 25});
+    expect(partialIds, {5, 24, 25});
 
     for (final id in partialIds) {
       final limitation = rows[id]![6];
