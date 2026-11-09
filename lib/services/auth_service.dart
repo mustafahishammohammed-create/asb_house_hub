@@ -6805,9 +6805,7 @@ class AuthService {
       } catch (e) {
         if (!_isNoAppException(e)) {
           debugPrint('Firestore saveAcademicClass failure: $e');
-          if (firestoreFailureSimulated != null) {
-            return false;
-          }
+          return false;
         }
       }
     }
@@ -6844,7 +6842,11 @@ class AuthService {
           }
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      // The section itself was saved; auto-assignment is best-effort. Log it
+      // rather than silently pretending every matching scholar was linked.
+      debugPrint('saveAcademicClass auto-assign failure: $e');
+    }
 
     // Also auto-assign in saved accounts list on this device
     try {
@@ -6873,7 +6875,9 @@ class AuthService {
       if (changed) {
         await saveAllAccounts(updatedSaved);
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('saveAcademicClass saved-account auto-assign failure: $e');
+    }
 
     // Also auto-assign in current cached profile if matching
     try {
@@ -6891,7 +6895,9 @@ class AuthService {
           await cacheProfile(updatedProf);
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('saveAcademicClass cached-profile auto-assign failure: $e');
+    }
 
     return true;
   }
@@ -6913,9 +6919,7 @@ class AuthService {
       } catch (e) {
         if (!_isNoAppException(e)) {
           debugPrint('Firestore setClassActive failure: $e');
-          if (firestoreFailureSimulated != null) {
-            return false;
-          }
+          return false;
         }
       }
     }
@@ -6957,9 +6961,7 @@ class AuthService {
       } catch (e) {
         if (!_isNoAppException(e)) {
           debugPrint('Firestore updateClassTimetablePermissions failure: $e');
-          if (firestoreFailureSimulated != null) {
-            return false;
-          }
+          return false;
         }
       }
     }
@@ -7182,6 +7184,9 @@ class AuthService {
     final students = <Map<String, dynamic>>[];
     if (_isFirebaseLive) {
       try {
+        if (firestoreFailureSimulated != null) {
+          throw firestoreFailureSimulated!;
+        }
         final snap = await _firestore
             .collection('users')
             .where('class_id', isEqualTo: src)
@@ -7191,8 +7196,15 @@ class AuthService {
           students.add({...doc.data(), 'uid': doc.id});
         }
       } catch (e) {
+        // A failed roster read is not an empty roster. Report it so the admin
+        // does not see "no eligible scholars" after a permission/network error.
         debugPrint('promoteClassSection roster fetch failure: $e');
-        return const PromotionResult(total: 0, promoted: 0, failed: 0);
+        return PromotionResult(
+          total: 0,
+          promoted: 0,
+          failed: 0,
+          error: e.toString(),
+        );
       }
     } else {
       // Offline / cached test mode: check cached profile if matching
@@ -7214,7 +7226,15 @@ class AuthService {
 
     for (final student in students) {
       final sNo = (student['scholar_no'] ?? '').toString().trim();
-      if (sNo.isEmpty) continue;
+      if (sNo.isEmpty) {
+        // A roster entry without a scholar number cannot be promoted. Count it
+        // as a failure so promoted + failed always reconciles with total.
+        failed++;
+        failedScholars.add(
+          (student['uid'] ?? student['full_name'] ?? 'unknown').toString(),
+        );
+        continue;
+      }
       final ok = await promoteScholar(
         scholarNo: sNo,
         targetClassId: tgt,
@@ -7270,6 +7290,7 @@ class AuthService {
     required String notificationType,
   }) async {
     if (_isFirebaseLive) {
+      DocumentReference<Map<String, dynamic>>? updatedUser;
       try {
         if (firestoreFailureSimulated != null) {
           throw firestoreFailureSimulated!;
@@ -7280,19 +7301,31 @@ class AuthService {
             .limit(1)
             .get();
         if (query.docs.isEmpty) return false;
-        final userDoc = query.docs.first;
-        await userDoc.reference.update(updates);
-        await userDoc.reference.collection('notifications').add({
-          'title': notificationTitle,
-          'body': notificationBody,
-          'timestamp': FieldValue.serverTimestamp(),
-          'is_read': false,
-          'type': notificationType,
-        });
+        updatedUser = query.docs.first.reference;
+        await updatedUser.update(updates);
       } catch (e) {
         if (!_isNoAppException(e)) {
           debugPrint('Firestore class assignment failure: $e');
           return false;
+        }
+      }
+
+      // The primary update above is authoritative. A failed best-effort
+      // notification must not turn a successful class/house/status change into
+      // a reported failure.
+      if (updatedUser != null) {
+        try {
+          await updatedUser.collection('notifications').add({
+            'title': notificationTitle,
+            'body': notificationBody,
+            'timestamp': FieldValue.serverTimestamp(),
+            'is_read': false,
+            'type': notificationType,
+          });
+        } catch (e) {
+          debugPrint(
+            'Admin action notification failed after a successful update: $e',
+          );
         }
       }
     }

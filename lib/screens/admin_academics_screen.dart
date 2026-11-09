@@ -1052,7 +1052,12 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                                 );
                                 if (!mounted) return;
                                 setState(() => _promotingBatch = false);
-                                if (res.isCompleteSuccess) {
+                                if (res.hasError) {
+                                  _toast(
+                                    'Could not read the $sourceClass roster: ${res.error}',
+                                    error: true,
+                                  );
+                                } else if (res.isCompleteSuccess) {
                                   _toast(
                                     'Successfully promoted ${res.promoted} scholars to $targetClass. Houses preserved.',
                                   );

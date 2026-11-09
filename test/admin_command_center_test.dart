@@ -288,6 +288,46 @@ void main() {
       expect(result.total, 0);
       expect(result.promoted, 0);
     });
+
+    test('promoteClassSection reports a roster lookup failure truthfully', () async {
+      AuthService.isFirebaseLiveOverride = true;
+      AuthService.firestoreFailureSimulated = Exception('roster unavailable');
+
+      final result = await AuthService().promoteClassSection(
+        sourceClassId: '11A',
+        targetClassId: '12A',
+      );
+
+      expect(result.hasError, isTrue);
+      expect(result.error, contains('roster unavailable'));
+      expect(result.isCompleteSuccess, isFalse);
+      expect(result.promoted, 0);
+      expect(result.failed, 0);
+    });
+
+    test('promoteClassSection counts scholars without a scholar number as failed',
+        () async {
+      await AuthService.cacheProfile({
+        'uid': 'uid_no_scholar',
+        'full_name': 'Missing Scholar Number',
+        'house_name': 'ruby',
+        'class_id': '11A',
+        'class_verified': true,
+        'role': 'student',
+      });
+
+      final result = await AuthService().promoteClassSection(
+        sourceClassId: '11A',
+        targetClassId: '12A',
+      );
+
+      expect(result.total, 1);
+      expect(result.promoted, 0);
+      expect(result.failed, 1);
+      expect(result.hasFailures, isTrue);
+      expect(result.isCompleteSuccess, isFalse);
+      expect(result.failedScholarNumbers, contains('uid_no_scholar'));
+    });
   });
 
   group('M7 Acceptance Test 36: Timetable Approval Queue', () {

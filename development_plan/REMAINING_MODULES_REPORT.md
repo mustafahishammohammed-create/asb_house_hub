@@ -21,7 +21,7 @@
 | **M4 — House groups** | ✅ **DONE for scope** (2026-11-08, commit `4caeae5`; rules deployed). See [`M4_VERIFICATION.md`](M4_VERIFICATION.md). | profile-derived membership, rules-enforced sender roles, categories, pin/hide/delete moderation, cross-house isolation/transfer |
 | **M5 — Class groups** | ✅ **DONE for scope** (2026-11-08, rules deployed). See [`M5_VERIFICATION.md`](M5_VERIFICATION.md). | verified-class auto-membership, class-teacher/subject-teacher/representative send, configurable student posting, cross-class isolation |
 | **M6 — Notification engine** | ✅ **DONE for scope** (2026-11-08, hardened 2026-11-09; rules deployed). See [`M6_VERIFICATION.md`](M6_VERIFICATION.md). | timetable publish (60), house announcement (61), class announcement (62), deterministic dedupe, priority, mark-all-read, truthful lookup/substitution failure reporting |
-| **M7 — Admin Command Center expansion** | ✅ **DONE for scope** (2026-11-08, rules deployed). See [`M7_VERIFICATION.md`](M7_VERIFICATION.md). | academic/teacher/house/group/user mgmt, approval queue, audit viewer, promotion |
+| **M7 — Admin Command Center expansion** | ✅ **DONE for scope** (2026-11-08, hardened 2026-11-09; rules deployed). See [`M7_VERIFICATION.md`](M7_VERIFICATION.md). | academic/teacher/house/group/user mgmt, approval queue, audit viewer, promotion, truthful live-write and promotion failure reporting |
 | **M8 — Dashboard/profile + acceptance** | ❌ **NOT STARTED** | verified-class dashboard, full §11 suite |
 
 **Separate, pre-existing workstreams (not part of M1–M8 but must not regress):**
@@ -214,7 +214,7 @@ Verified 2026-11-08 after V1–V4 remediation: **complete for scope**. The origi
 
 **Goal:** central admin control over academics, teachers, houses, groups, users, timetable approvals, audit logs, promotion.
 **Depends on:** M1–M6.
-**Current state:** ✅ **DONE for scope (2026-11-08).** 6-tab Admin Command Center with section management, transfers, house assignment, academic year promotion (houses preserved), timetable approval queue, and append-only audit log viewer. See [`M7_VERIFICATION.md`](M7_VERIFICATION.md).
+**Current state:** ✅ **DONE for scope (2026-11-08; hardened 2026-11-09).** 6-tab Admin Command Center with section management, transfers, house assignment, academic year promotion (houses preserved), timetable approval queue, and append-only audit log viewer. Hardening adds truthful live-write failures, roster-error reporting for batch promotion, missing-scholar-number failures, and best-effort secondary notifications. See [`M7_VERIFICATION.md`](M7_VERIFICATION.md).
 
 **Requirements (spec §6, §10.4, tests 55–59, 63–64):**
 - Academic management: grades LKG–12 (55), sections create/rename/activate/deactivate (56), approve class assignments (57), house assignments (58), **promotion to next academic year** (59).
@@ -229,7 +229,7 @@ Verified 2026-11-08 after V1–V4 remediation: **complete for scope**. The origi
 **Tests (55–59, 63–64):** grade/section management, approval, house assignment, promotion (house unchanged), audit entries exist + append-only, non-admin denial — UI + rules.
 **Robustness:** every admin action server-gated + audited; promotion/transfer never changes the other membership (class↔house independent); non-admin denial tested directly; truthful writes.
 **Definition of done:** tests 55–59, 63–64 pass UI + rules; approval queue + audit viewer functional; deployed; committed.
-**Delivered 2026-11-08:** targeted `test/admin_command_center_test.dart` **28/28**, full suite **605/605**, analysis 0 errors/0 warnings, rules compiled and released. See [`M7_VERIFICATION.md`](M7_VERIFICATION.md).
+**Delivered 2026-11-08; hardened 2026-11-09:** targeted `test/admin_command_center_test.dart` **30/30** plus `test/academic_section_auto_assign_test.dart` **3/3** (33/33), full suite **625/625**, analysis no issues, rules compiled and already live. See [`M7_VERIFICATION.md`](M7_VERIFICATION.md).
 
 ---
 

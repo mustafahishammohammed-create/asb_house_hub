@@ -119,14 +119,20 @@ class PromotionResult {
   final int failed;
   final List<String> failedScholarNumbers;
 
+  /// Non-empty when the roster itself could not be read. This is distinct from
+  /// a genuine empty roster and must not be presented as "no scholars found".
+  final String error;
+
   const PromotionResult({
     required this.total,
     required this.promoted,
     required this.failed,
     this.failedScholarNumbers = const [],
+    this.error = '',
   });
 
-  bool get isCompleteSuccess => total > 0 && failed == 0;
+  bool get hasError => error.trim().isNotEmpty;
+  bool get isCompleteSuccess => total > 0 && failed == 0 && !hasError;
   bool get hasFailures => failed > 0;
 }
 
