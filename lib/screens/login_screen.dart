@@ -368,7 +368,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             child: Image.asset(
                               'assets/images/app_logo_modern.png',
                               fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => ClipRRect(
+                              errorBuilder: (_, _, _) => ClipRRect(
                                 borderRadius: BorderRadius.circular(20),
                                 child: GridView.count(
                                   crossAxisCount: 2,

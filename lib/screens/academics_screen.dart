@@ -4445,7 +4445,7 @@ class _ExamsTabState extends State<ExamsTab> {
         return Image.memory(
           base64Decode(base64Str),
           fit: fit,
-          errorBuilder: (_, __, ___) => const Center(
+          errorBuilder: (_, _, _) => const Center(
             child: Icon(Icons.broken_image_rounded, color: Colors.grey),
           ),
         );
@@ -4456,7 +4456,7 @@ class _ExamsTabState extends State<ExamsTab> {
       return Image.network(
         imageUrl,
         fit: fit,
-        errorBuilder: (_, __, ___) => const Center(
+        errorBuilder: (_, _, _) => const Center(
           child: Icon(Icons.broken_image_rounded, color: Colors.grey),
         ),
       );
@@ -6197,7 +6197,7 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: leaves.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              separatorBuilder: (_, _) => const SizedBox(height: 10),
               itemBuilder: (context, idx) {
                 final item = leaves[idx];
                 final isApproved = item.status == MedicalLeaveStatus.approved;
@@ -7216,7 +7216,7 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
                               child: Image.memory(
                                 base64Decode(photoBase64!.split(',').last),
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.broken_image)),
+                                errorBuilder: (_, _, _) => const Center(child: Icon(Icons.broken_image)),
                               ),
                             ),
                           ),

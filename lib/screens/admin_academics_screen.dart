@@ -93,16 +93,16 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
           error: true);
       return;
     }
+    final parsed = AcademicStructure.parseClassId(classId);
+    final display = parsed != null
+        ? ' (${AcademicStructure.displayClass(parsed.$1, parsed.$2)})'
+        : '';
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Verify Class Placement'),
         content: Text(
-          'Confirm $name (Scholar #$scholarNo) belongs to $classId '
-          '(${AcademicStructure.displayClass(
-            AcademicStructure.parseClassId(classId)!.$1,
-            AcademicStructure.parseClassId(classId)!.$2,
-          )})?',
+          'Confirm $name (Scholar #$scholarNo) belongs to $classId$display?',
         ),
         actions: [
           TextButton(
@@ -301,6 +301,12 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
           : 'Could not create section ${result.classId}.',
       error: !ok,
     );
+    if (ok) {
+      setState(() {
+        _rosterClassId = result.classId;
+      });
+      _tabController.animateTo(2);
+    }
   }
 
   Future<void> _editClassTeacher(AcademicClass cls) async {
@@ -571,7 +577,12 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
         if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
-        final classes = snap.data ?? [];
+        final rawClasses = snap.data ?? [];
+        final uniqueMap = <String, AcademicClass>{};
+        for (final c in rawClasses) {
+          uniqueMap[c.classId] = c;
+        }
+        final classes = uniqueMap.values.toList();
         if (classes.isEmpty) {
           return _emptyState(
             scheme,
@@ -651,9 +662,14 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
         if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
-        final classes = (snap.data ?? [])
+        final rawClasses = (snap.data ?? [])
             .where((c) => c.active)
             .toList();
+        final uniqueMap = <String, AcademicClass>{};
+        for (final c in rawClasses) {
+          uniqueMap[c.classId] = c;
+        }
+        final classes = uniqueMap.values.toList();
         if (classes.isEmpty) {
           return _emptyState(
             scheme,
@@ -858,7 +874,12 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
         if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
-        final classes = snap.data ?? [];
+        final rawClasses = snap.data ?? [];
+        final uniqueMap = <String, AcademicClass>{};
+        for (final c in rawClasses) {
+          uniqueMap[c.classId] = c;
+        }
+        final classes = uniqueMap.values.toList();
         if (classes.isEmpty) {
           return _emptyState(
             scheme,
@@ -873,7 +894,17 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
             : classes.first.classId;
 
         final autoTarget = AcademicStructure.nextClassId(sourceClass);
-        final targetClass = _promotionTargetClassId ?? autoTarget;
+        final rawTarget = _promotionTargetClassId ?? autoTarget;
+        final targetClass = (rawTarget != null && classes.any((c) => c.classId == rawTarget))
+            ? rawTarget
+            : (classes.any((c) => c.classId != sourceClass)
+                ? classes.firstWhere((c) => c.classId != sourceClass).classId
+                : null);
+
+        final individualTarget = (_individualTargetClassId != null &&
+                classes.any((c) => c.classId == _individualTargetClassId))
+            ? _individualTargetClassId
+            : (classes.isNotEmpty ? classes.first.classId : null);
 
         return ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
@@ -1073,7 +1104,7 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
-                      initialValue: _individualTargetClassId,
+                      initialValue: individualTarget,
                       decoration: const InputDecoration(
                         labelText: 'Target Class',
                         border: OutlineInputBorder(),
@@ -1627,11 +1658,24 @@ class _TransferDialogState extends State<_TransferDialog> {
                 ),
               );
             }
-            final available = classes
-                .where((c) => c.classId != widget.currentClassId)
-                .toList();
+            final uniqueMap = <String, AcademicClass>{};
+            for (final c in classes) {
+              if (c.classId != widget.currentClassId) {
+                uniqueMap[c.classId] = c;
+              }
+            }
+            final available = uniqueMap.values.toList();
+            if (available.isEmpty) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Text('No other active sections available to transfer to.'),
+              );
+            }
+            final validSelected = (_selected != null && available.any((c) => c.classId == _selected))
+                ? _selected
+                : available.first.classId;
             return DropdownButtonFormField<String>(
-              initialValue: _selected,
+              initialValue: validSelected,
               decoration: const InputDecoration(
                 labelText: 'Destination class',
                 border: OutlineInputBorder(),

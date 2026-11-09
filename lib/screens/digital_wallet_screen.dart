@@ -950,7 +950,7 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
                           child: Image.asset(
                             'assets/images/asb_academic_crest.png',
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => const Icon(
+                            errorBuilder: (_, _, _) => const Icon(
                               Icons.school_rounded,
                               color: Colors.amber,
                               size: 32,
