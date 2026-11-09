@@ -43,15 +43,16 @@ class NotificationFanOutResult {
         error: error.toString(),
       );
 
-  bool get isComplete => !skipped && failed == 0;
+  bool get isComplete => !skipped && failed == 0 && !hasError;
   bool get isPartial => !skipped && failed > 0 && sent > 0;
+  bool get hasError => error.trim().isNotEmpty;
 
   String? get warning {
-    if (failed == 0) return null;
+    if (failed == 0 && !hasError) return null;
     if (sent == 0) {
-      return 'Announcement posted, but notifications could not be delivered.';
+      return 'Update posted, but notifications could not be delivered.';
     }
-    return 'Announcement posted, but notifications reached only $sent of $total members.';
+    return 'Update posted, but notifications reached only $sent of $total members.';
   }
 }
 
@@ -77,6 +78,11 @@ class NotificationService {
   static const int batchLimit = 400;
   static const int rosterLimit = 500;
   static const int streamLimit = 100;
+
+  /// Set when the roster/profile query itself fails. This is distinct from a
+  /// genuine empty roster: an event helper must not report a lookup failure as
+  /// a complete zero-recipient fan-out.
+  String _recipientLookupError = '';
 
   /// Test hook: simulate a denied Firestore write. Mirrors the other services.
   @visibleForTesting
@@ -261,6 +267,7 @@ class NotificationService {
     required String scopeId,
     String excludeUid = '',
   }) async {
+    _recipientLookupError = '';
     final normalizedScope = scope.trim().toLowerCase();
     final id = scopeId.trim();
     if (id.isEmpty || (normalizedScope != 'house' && normalizedScope != 'class')) {
@@ -274,6 +281,7 @@ class NotificationService {
           ? await loader(normalizedScope, id)
           : await _loadProfiles(normalizedScope, id);
     } catch (e) {
+      _recipientLookupError = e.toString();
       debugPrint('Notification recipient lookup failed: $e');
       return const [];
     }
@@ -493,6 +501,17 @@ class NotificationService {
     return '$m ${date.day}, ${date.year}';
   }
 
+  /// A failed roster lookup is not a complete zero-recipient fan-out. The
+  /// error is carried into [NotificationFanOutResult] so callers show the
+  /// partial/failure warning instead of a phantom success.
+  NotificationFanOutResult _recipientLookupFailureResult() =>
+      NotificationFanOutResult(
+        total: 0,
+        sent: 0,
+        failed: 0,
+        error: _recipientLookupError,
+      );
+
   // ===============================================================
   // Event conveniences
   // ===============================================================
@@ -514,6 +533,9 @@ class NotificationService {
       scopeId: id,
       excludeUid: publisherUid,
     );
+    if (_recipientLookupError.isNotEmpty) {
+      return _recipientLookupFailureResult();
+    }
     final publisher = publisherName.trim();
     final bool isOverride = overrideDate != null;
     final dateStr = isOverride
@@ -582,6 +604,9 @@ class NotificationService {
       scopeId: id,
       excludeUid: actorUid,
     );
+    if (_recipientLookupError.isNotEmpty) {
+      return _recipientLookupFailureResult();
+    }
     final allRecipients = Set<String>.from(recipients);
     final subUid = substituteTeacherUid.trim();
     if (subUid.isNotEmpty && subUid != actorUid) {
@@ -627,6 +652,9 @@ class NotificationService {
       scopeId: id,
       excludeUid: senderUid,
     );
+    if (_recipientLookupError.isNotEmpty) {
+      return _recipientLookupFailureResult();
+    }
     final name = senderName.trim();
     final text = preview.trim().isEmpty ? 'New house announcement.' : preview.trim();
     return fanOutToUsers(
@@ -657,6 +685,9 @@ class NotificationService {
       scopeId: id,
       excludeUid: senderUid,
     );
+    if (_recipientLookupError.isNotEmpty) {
+      return _recipientLookupFailureResult();
+    }
     final name = senderName.trim();
     final text =
         preview.trim().isEmpty ? 'New class announcement.' : preview.trim();

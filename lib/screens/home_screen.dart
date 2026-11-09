@@ -159,6 +159,19 @@ class _HomeScreenState extends State<HomeScreen>
   late final Animation<double> _pulseAnimation;
   final _authService = AuthService();
   final _notificationService = NotificationService();
+  Stream<int>? _unreadCountStream;
+  String _unreadCountUid = '';
+
+  /// Reuse the unread-count stream across rebuilds, but refresh it if the
+  /// signed-in account changes (account switching).
+  Stream<int> _unreadCountStreamForCurrentUser() {
+    final uid = _notificationService.currentUserId;
+    if (_unreadCountStream == null || _unreadCountUid != uid) {
+      _unreadCountUid = uid;
+      _unreadCountStream = _notificationService.getUnreadCountStream();
+    }
+    return _unreadCountStream!;
+  }
   FirebaseFirestore? get _safeFirestore {
     try {
       return FirebaseFirestore.instance;
@@ -2042,7 +2055,7 @@ class _HomeScreenState extends State<HomeScreen>
             },
           ),
           StreamBuilder<int>(
-            stream: _notificationService.getUnreadCountStream(),
+            stream: _unreadCountStreamForCurrentUser(),
             builder: (context, snapshot) {
               final unread = snapshot.data ?? 0;
               return IconButton(

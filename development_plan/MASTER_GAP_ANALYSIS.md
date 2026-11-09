@@ -38,8 +38,8 @@ Legend: **EXISTS** (keep) · **PARTIAL** (extend) · **MISSING** (build) · **CO
 
 ## 5. Notification engine (spec §5)
 
-- **DELIVERED 2026-11-08** — unified in-app notification engine under `users/{uid}/notifications`. Deduplicated client-side fan-out on timetable publishes (test 60), house announcements (61), and class announcements (62). Stream list, unread badges on the home AppBar and drawer, priority badges, mark-as-read on tap, and mark-all-read. Deterministic document IDs prevent duplicates, creation payloads omit `is_read` to protect read state, and rules restrict read updates to the recipient.
-- **KNOWN LIMITS** — fan-out runs in a client-side roster loop on Spark (Cloud Functions server fan-out stays Blaze-deferred); no mobile OS push notifications (FCM); notification streams cap at 100 newest items; rules tests are source-contract assertions. See `M6_VERIFICATION.md`.
+- **DELIVERED 2026-11-08, HARDENED 2026-11-09** — unified in-app notification engine under `users/{uid}/notifications`. Deduplicated client-side fan-out on timetable publishes (test 60), substitutions/overrides (60), house announcements (61), and class announcements (62). Stream list, unread badges on the home AppBar and drawer, priority badges, mark-as-read on tap, and mark-all-read. Deterministic document IDs prevent duplicates, creation payloads omit `is_read` to protect read state, and rules restrict read updates to the recipient. Roster-lookup failures return an explicit error result instead of a phantom complete fan-out; substitution failures surface through `lastNotificationResult`; failed swipe deletes snap back with an error.
+- **KNOWN LIMITS** — fan-out runs in a client-side roster loop on Spark (Cloud Functions server fan-out stays Blaze-deferred); no mobile OS push notifications (FCM); notification streams cap at 100 newest items; roster lookups cap at 500 and batch writes at 400; no automatic retry after a roster-lookup failure; rules tests are source-contract assertions. See `M6_VERIFICATION.md`.
 
 ## 6. Admin Command Center (spec §6)
 

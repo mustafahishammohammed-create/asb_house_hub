@@ -170,11 +170,10 @@ class _HouseGroupScreenState extends State<HouseGroupScreen> {
     }
 
     final fanOut = _service.lastNotificationResult;
-    if (fanOut != null && fanOut.failed > 0) {
+    if (fanOut != null && fanOut.warning != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(fanOut.warning ??
-              'Announcement posted, but notifications could not be delivered.'),
+          content: Text(fanOut.warning!),
           backgroundColor: Colors.orange,
         ),
       );

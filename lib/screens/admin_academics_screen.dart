@@ -231,9 +231,9 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
     );
     if (ok) {
       final fanOut = _timetableService.lastNotificationResult;
-      if (fanOut != null && fanOut.failed > 0) {
+      if (fanOut != null && fanOut.warning != null) {
         _toast(
-          fanOut.warning ?? 'Notifications could not reach all recipients.',
+          fanOut.warning!,
           error: true,
         );
       }

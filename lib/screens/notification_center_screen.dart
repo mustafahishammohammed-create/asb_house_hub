@@ -107,11 +107,11 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     }
   }
 
-  Future<void> _deleteNotification(AppNotification notification) async {
+  Future<bool> _deleteNotification(AppNotification notification) async {
     final ok = widget.onDeleteNotification != null
         ? await widget.onDeleteNotification!(notification)
         : await _service.deleteNotification(notification.id);
-    if (!mounted) return;
+    if (!mounted) return ok;
     if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -120,6 +120,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         ),
       );
     }
+    return ok;
   }
 
   Future<void> _clearAll(List<AppNotification> notifications) async {
@@ -224,7 +225,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                           size: 24,
                         ),
                       ),
-                      onDismissed: (_) => _deleteNotification(item),
+                      confirmDismiss: (_) => _deleteNotification(item),
                       child: _buildTile(item, isDark),
                     );
                   },

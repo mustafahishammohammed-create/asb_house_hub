@@ -485,11 +485,10 @@ class _TeacherTimetableEditorScreenState
         );
 
         final fanOut = _timetableService.lastNotificationResult;
-        if (fanOut != null && fanOut.failed > 0) {
+        if (fanOut != null && fanOut.warning != null) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(fanOut.warning ??
-                  'Timetable published, but notifications could not be delivered.'),
+              content: Text(fanOut.warning!),
               backgroundColor: Colors.orange,
             ),
           );

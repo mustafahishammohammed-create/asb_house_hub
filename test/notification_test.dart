@@ -53,6 +53,25 @@ class _RecordingNotificationService extends NotificationService {
   }
 }
 
+class _SubstitutionFailureNotificationService
+    extends _RecordingNotificationService {
+  @override
+  Future<NotificationFanOutResult> notifyTimetableSubstitution({
+    required String classId,
+    required String dayOfWeek,
+    required DateTime date,
+    required int periodNumber,
+    required String subject,
+    required String originalTeacherName,
+    required String substituteTeacherName,
+    required String substituteTeacherUid,
+    required String actorUid,
+    String actorName = '',
+  }) async {
+    return const NotificationFanOutResult(total: 2, sent: 1, failed: 1);
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -405,6 +424,28 @@ void main() {
       expect(result.skipped, isFalse);
     });
 
+    test('a failed recipient lookup is not reported as a complete fan-out',
+        () async {
+      NotificationService.recipientsLoader =
+          (scope, id) async => throw Exception('roster unavailable');
+
+      final result = await service.notifyClassAnnouncement(
+        classId: '11D',
+        messageId: 'msg_lookup_failure',
+        senderUid: 'uid_teacher_1',
+        senderName: 'Ms. Fatima',
+        preview: 'Homework moved.',
+      );
+
+      expect(result.total, 0);
+      expect(result.failed, 0);
+      expect(result.sent, 0);
+      expect(result.isComplete, isFalse);
+      expect(result.hasError, isTrue);
+      expect(result.error, contains('roster unavailable'));
+      expect(result.warning, contains('could not be delivered'));
+    });
+
     test('read state is not part of the fan-out payload', () {
       final payload = NotificationService.buildNotificationPayload(
         title: 'House announcement',
@@ -640,6 +681,48 @@ void main() {
       expect(saved, isNotNull);
       expect(recorder.lastType, 'timetable_substitution');
       expect(recorder.lastTitle, contains('Period 2'));
+    });
+
+    test('substitution fan-out failure is surfaced on lastNotificationResult',
+        () async {
+      final recorder = _SubstitutionFailureNotificationService()
+        ..result = const NotificationFanOutResult(
+          total: 3,
+          sent: 3,
+          failed: 0,
+        );
+      final timetable = TimetableService(notifications: recorder);
+      AuthService.isFirebaseLiveOverride = true;
+
+      final recurring = ClassTimetableVersion.template(
+        classId: '11D',
+        dayOfWeek: 'Monday',
+        createdByUid: 'uid_teacher_1',
+        createdByName: 'Ms. Fatima',
+      );
+      final withSub = recurring.slots.map((s) {
+        if (s.periodNumber == 2) {
+          return s.copyWith(
+            substituteTeacherName: 'Ms. Sarah',
+            substituteTeacherUid: 'uid_sub_teacher',
+          );
+        }
+        return s;
+      }).toList();
+
+      final saved = await timetable.saveTimetableOverride(
+        recurring.copyWith(slots: withSub),
+        date: DateTime(2026, 11, 16),
+        actorUid: 'uid_teacher_1',
+        actorName: 'Ms. Fatima',
+        publish: true,
+        enforceConflicts: false,
+      );
+
+      expect(saved, isNotNull);
+      expect(timetable.lastNotificationResult?.failed, 1);
+      expect(timetable.lastNotificationResult?.isComplete, isFalse);
+      expect(timetable.lastNotificationResult?.warning, contains('1 of 2'));
     });
   });
 
@@ -897,6 +980,29 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(dismissed?.id, 'n1');
+    });
+
+    testWidgets('failed swipe delete keeps the notification visible', (
+      tester,
+    ) async {
+      final messages = [notification(id: 'n1', title: 'Still here')];
+      await pumpCenter(
+        tester,
+        stream: Stream.value(messages),
+        onDeleteNotification: (n) async => false,
+      );
+
+      await tester.drag(
+        find.byKey(const Key('notification_dismiss_n1')),
+        const Offset(-500, 0),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('notification_tile_n1')), findsOneWidget);
+      expect(
+        find.text('Could not delete the notification.'),
+        findsOneWidget,
+      );
     });
 
     testWidgets(

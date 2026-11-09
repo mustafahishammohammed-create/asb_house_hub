@@ -168,6 +168,7 @@ class TimetableService {
 
   /// Submits a timetable version for administrative review.
   Future<bool> submitTimetable(ClassTimetableVersion version) async {
+    lastNotificationResult = null;
     final errors = version.validate();
     if (errors.isNotEmpty) return false;
 
@@ -574,6 +575,7 @@ class TimetableService {
     bool publish = false,
     bool enforceConflicts = true,
   }) async {
+    lastNotificationResult = null;
     final cleanDate = DateTime(date.year, date.month, date.day);
     if (cleanDate.weekday == DateTime.friday) return null;
     if (timetableDayForWeekday(cleanDate.weekday) != version.dayOfWeek) {
@@ -645,7 +647,7 @@ class TimetableService {
       if (publish && _isLive) {
         for (final slot in substitutedSlots) {
           try {
-            await _notifications.notifyTimetableSubstitution(
+            final result = await _notifications.notifyTimetableSubstitution(
               classId: override.classId,
               dayOfWeek: override.dayOfWeek,
               date: cleanDate,
@@ -657,7 +659,17 @@ class TimetableService {
               actorUid: actorUid,
               actorName: actorName,
             );
+            // Surface a substitution fan-out failure without hiding an earlier
+            // publish warning. A later complete result must not overwrite an
+            // already-failed substitution result.
+            if (!result.isComplete) {
+              lastNotificationResult = result;
+            }
           } catch (e) {
+            // A thrown fan-out is still a notification failure; never leave a
+            // stale complete result for the caller to display as success.
+            lastNotificationResult =
+                NotificationFanOutResult.failureResult(0, e);
             debugPrint('Substitution notification fan-out failed: $e');
           }
         }

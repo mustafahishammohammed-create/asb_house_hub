@@ -20,7 +20,7 @@
 | **M3 — Timetable advanced** | ✅ **DONE for scope** (2026-11-08). Client-side double-booking, copy-to-selected-days, one-day overrides, substitution markers. Notification fan-out stays in M6. See [`M3_VERIFICATION.md`](M3_VERIFICATION.md). | double-booking, copy-to-days, temporary overrides, substitution |
 | **M4 — House groups** | ✅ **DONE for scope** (2026-11-08, commit `4caeae5`; rules deployed). See [`M4_VERIFICATION.md`](M4_VERIFICATION.md). | profile-derived membership, rules-enforced sender roles, categories, pin/hide/delete moderation, cross-house isolation/transfer |
 | **M5 — Class groups** | ✅ **DONE for scope** (2026-11-08, rules deployed). See [`M5_VERIFICATION.md`](M5_VERIFICATION.md). | verified-class auto-membership, class-teacher/subject-teacher/representative send, configurable student posting, cross-class isolation |
-| **M6 — Notification engine** | ✅ **DONE for scope** (2026-11-08, rules deployed). See [`M6_VERIFICATION.md`](M6_VERIFICATION.md). | timetable publish (60), house announcement (61), class announcement (62), deterministic dedupe, priority, mark-all-read |
+| **M6 — Notification engine** | ✅ **DONE for scope** (2026-11-08, hardened 2026-11-09; rules deployed). See [`M6_VERIFICATION.md`](M6_VERIFICATION.md). | timetable publish (60), house announcement (61), class announcement (62), deterministic dedupe, priority, mark-all-read, truthful lookup/substitution failure reporting |
 | **M7 — Admin Command Center expansion** | ✅ **DONE for scope** (2026-11-08, rules deployed). See [`M7_VERIFICATION.md`](M7_VERIFICATION.md). | academic/teacher/house/group/user mgmt, approval queue, audit viewer, promotion |
 | **M8 — Dashboard/profile + acceptance** | ❌ **NOT STARTED** | verified-class dashboard, full §11 suite |
 
@@ -194,7 +194,7 @@ Verified 2026-11-08 after V1–V4 remediation: **complete for scope**. The origi
 
 **Goal:** unified in-app notifications with read/unread, priority, dedupe; alerts for timetable/class/house changes.
 **Depends on:** M2/M4/M5 events.
-**Current state:** ✅ **DONE for scope (2026-11-08).** Unified in-app notifications with deterministic dedupe IDs, priority chips, unread count stream, and mark-read controls. See [`M6_VERIFICATION.md`](M6_VERIFICATION.md).
+**Current state:** ✅ **DONE for scope (2026-11-08; hardened 2026-11-09).** Unified in-app notifications with deterministic dedupe IDs, priority chips, unread count stream, and mark-read controls. Hardening adds truthful roster-lookup failure reporting, substitution fan-out warnings, failure-safe swipe deletion, and a cached per-user unread stream. See [`M6_VERIFICATION.md`](M6_VERIFICATION.md).
 
 **Requirements (spec §5, tests 60–62):**
 - `notifications` stream + read/unread engine; priority; dedupe (idempotency key per event).
