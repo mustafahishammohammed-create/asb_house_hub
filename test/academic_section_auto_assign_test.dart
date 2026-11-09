@@ -166,6 +166,19 @@ void main() {
       final verified = accounts.firstWhere((a) => a.scholarNo == '12345');
       expect(verified.cachedProfile['class_verified'], isTrue);
       expect(verified.cachedProfile['class_id'], equals('12E'));
+
+      // Assert verified placements contains the scholar
+      final placements = AuthService.getVerifiedClassPlacements();
+      expect(placements.containsKey('12345'), isTrue);
+      expect(placements['12345']?['class_id'], equals('12E'));
+
+      // Assert pending stream excludes verified test account
+      final pending = await auth.getPendingClassVerificationsStream().first;
+      expect(pending.any((p) => p['scholar_no'] == '12345'), isFalse);
+
+      // Assert class roster stream includes verified test account
+      final roster = await auth.getClassRosterStream('12E').first;
+      expect(roster.any((p) => p['scholar_no'] == '12345'), isTrue);
     });
 
     testWidgets('AdminAcademicsScreen Audit Logs tab mounts and renders without errors', (tester) async {
@@ -195,7 +208,7 @@ void main() {
       expect(find.text('No audit log records match the current filter.'), findsOneWidget);
     });
 
-    testWidgets('AdminAcademicsScreen Audit Logs tab renders audit entries cleanly', (tester) async {
+    testWidgets('AdminAcademicsScreen full tab navigation between Audits and Classes', (tester) async {
       await AuthService.cacheProfile({
         'scholar_no': '11209',
         'full_name': 'Admin User',
@@ -203,14 +216,18 @@ void main() {
         'house_name': 'ruby',
       });
 
+      final auth = AuthService();
+      await auth.saveAcademicClass(const AcademicClass(classId: '12E', grade: 'Grade 12', section: 'E'));
+      await auth.saveAcademicClass(const AcademicClass(classId: '11A', grade: 'Grade 11', section: 'A'));
+
       final tt = TimetableService();
       await tt.writeTimetableAudit(
-        action: 'promotion',
-        classId: '11A',
+        action: 'publish',
+        classId: '12E',
         dayOfWeek: 'Monday',
         actorUid: '11209',
         actorName: 'Admin User',
-        details: 'Promoted 11A to 12A',
+        details: 'Published timetable for 12E',
       );
 
       await tester.pumpWidget(
@@ -221,13 +238,24 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final auditTab = find.text('Audit Logs');
-      await tester.tap(auditTab);
+      // Go to Audit Logs
+      await tester.tap(find.text('Audit Logs'));
+      await tester.pumpAndSettle();
+      expect(find.text('PUBLISH'), findsOneWidget);
+
+      // Now tap Classes tab
+      await tester.tap(find.text('Classes'));
       await tester.pumpAndSettle();
 
-      expect(tester.takeException(), isNull);
-      expect(find.text('PROMOTION'), findsOneWidget);
-      expect(find.text('Promoted 11A to 12A'), findsOneWidget);
+      final ex = tester.takeException();
+      if (ex != null) {
+        debugPrint('CAUGHT EXCEPTION ON TAB SWITCH: $ex');
+      }
+      expect(ex, isNull);
+
+      // Expect classes tab content
+      expect(find.text('12E'), findsWidgets);
+      expect(find.text('11A'), findsWidgets);
     });
   });
 }

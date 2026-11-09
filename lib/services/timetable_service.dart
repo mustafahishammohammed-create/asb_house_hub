@@ -824,7 +824,15 @@ class TimetableService {
         if (targetClass != null && targetClass.isNotEmpty && !key.contains(targetClass)) {
           continue;
         }
-        final raw = prefs.getStringList(key);
+        List<String>? raw;
+        try {
+          raw = prefs.getStringList(key);
+        } catch (_) {
+          try {
+            final single = prefs.getString(key);
+            if (single != null) raw = [single];
+          } catch (_) {}
+        }
         if (raw != null) {
           for (final s in raw) {
             try {
@@ -926,7 +934,15 @@ class TimetableService {
         if (targetClass != null && targetClass.isNotEmpty && !key.contains(targetClass)) {
           continue;
         }
-        final raw = prefs.getStringList(key);
+        List<String>? raw;
+        try {
+          raw = prefs.getStringList(key);
+        } catch (_) {
+          try {
+            final single = prefs.getString(key);
+            if (single != null) raw = [single];
+          } catch (_) {}
+        }
         if (raw != null) {
           for (final s in raw) {
             try {
@@ -963,7 +979,7 @@ class TimetableService {
         .snapshots()
         .map((snapshot) {
           final list = snapshot.docs.map((doc) {
-            final data = doc.data();
+            final data = Map<String, dynamic>.from(doc.data());
             data['id'] = doc.id;
             return data;
           }).toList();
@@ -1005,7 +1021,7 @@ class TimetableService {
 
       await for (final snapshot in query.limit(limit).snapshots()) {
         final list = snapshot.docs.map((doc) {
-          final data = doc.data();
+          final data = Map<String, dynamic>.from(doc.data());
           data['id'] = doc.id;
           return data;
         }).toList();

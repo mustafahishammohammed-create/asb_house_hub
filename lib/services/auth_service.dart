@@ -3331,6 +3331,39 @@ class AuthService {
         final data = Map<String, dynamic>.from(doc.data()!);
         data['uid'] = uid;
         final docScholar = (data['scholar_no'] ?? scholarNo ?? '').toString().trim();
+
+        // Check if device has locally verified placement for this user/scholar
+        final localSaved = getSavedAccounts();
+        for (final acc in localSaved) {
+          final accSNo = acc.scholarNo.trim().toLowerCase();
+          final targetSNo = docScholar.toLowerCase();
+          final parsedAcc = int.tryParse(accSNo);
+          final parsedTarget = int.tryParse(targetSNo);
+          final match = accSNo == targetSNo ||
+              acc.uid.trim() == uid ||
+              (parsedAcc != null && parsedTarget != null && parsedAcc == parsedTarget);
+          if (match && acc.cachedProfile['class_verified'] == true) {
+            data['class_verified'] = true;
+            if (acc.cachedProfile['class_id'] != null) {
+              data['class_id'] = acc.cachedProfile['class_id'];
+            }
+            if (acc.classLevel != null) data['class_level'] = acc.classLevel;
+            if (acc.division != null) data['division'] = acc.division;
+            break;
+          }
+        }
+
+        final placements = getVerifiedClassPlacements();
+        final sKey = docScholar.toLowerCase();
+        final uKey = uid.toLowerCase();
+        final placement = placements[sKey] ?? placements[uKey];
+        if (placement != null && placement['class_verified'] == true) {
+          data['class_verified'] = true;
+          if (placement['class_id'] != null) data['class_id'] = placement['class_id'];
+          if (placement['class_level'] != null) data['class_level'] = placement['class_level'];
+          if (placement['division'] != null) data['division'] = placement['division'];
+        }
+
         final currentRole = (data['role'] ?? '').toString().trim().toLowerCase();
 
         // Enforce super_admin role for verified administrators
@@ -6893,6 +6926,48 @@ class AuthService {
     return <AcademicClass>[];
   }
 
+  static const String _kCachedVerifiedPlacementsKey = 'asb_verified_class_placements';
+
+  /// Retrieves persistent map of verified scholar class placements.
+  static Map<String, Map<String, dynamic>> getVerifiedClassPlacements() {
+    try {
+      final raw = _prefs?.getString(_kCachedVerifiedPlacementsKey);
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          final res = <String, Map<String, dynamic>>{};
+          decoded.forEach((k, v) {
+            if (v is Map) {
+              res[k.toString().toLowerCase().trim()] = Map<String, dynamic>.from(v);
+            }
+          });
+          return res;
+        }
+      }
+    } catch (_) {}
+    return <String, Map<String, dynamic>>{};
+  }
+
+  /// Persists a scholar's verified class placement locally across sessions.
+  static Future<void> saveVerifiedClassPlacement(String key, Map<String, dynamic> data) async {
+    try {
+      _prefs ??= await SharedPreferences.getInstance();
+      final map = getVerifiedClassPlacements();
+      final clean = key.trim().toLowerCase();
+      if (clean.isNotEmpty) {
+        map[clean] = data;
+      }
+      final sNo = (data['scholar_no'] ?? '').toString().trim().toLowerCase();
+      if (sNo.isNotEmpty) map[sNo] = data;
+      final uid = (data['uid'] ?? '').toString().trim().toLowerCase();
+      if (uid.isNotEmpty) map[uid] = data;
+      final name = (data['full_name'] ?? '').toString().trim().toLowerCase();
+      if (name.isNotEmpty) map[name] = data;
+
+      await _prefs?.setString(_kCachedVerifiedPlacementsKey, jsonEncode(map));
+    } catch (_) {}
+  }
+
   /// Sorts classes by grade level (LKG first) then section letter.
   static int compareAcademicClasses(AcademicClass a, AcademicClass b) {
     int rank(String grade) {
@@ -6982,20 +7057,28 @@ class AuthService {
     // Auto-assign any existing scholars whose grade and division match this newly created section
     try {
       if (_isFirebaseLive) {
-        final querySnap = await _firestore
-            .collection('users')
-            .where('class_level', isEqualTo: entry.grade)
-            .get();
-        for (final doc in querySnap.docs) {
-          final d = doc.data();
-          final sec = (d['division'] ?? '').toString().trim().toUpperCase();
-          if (sec == entry.section) {
-            await doc.reference.update({
-              'class_id': entry.classId,
-              'class_level': entry.grade,
-              'division': entry.section,
-              'updated_at': FieldValue.serverTimestamp(),
-            });
+        final shortGrade = AcademicStructure.gradeCode(entry.grade);
+        final queries = [
+          _firestore.collection('users').where('class_level', isEqualTo: entry.grade).get(),
+          if (shortGrade != entry.grade)
+            _firestore.collection('users').where('class_level', isEqualTo: shortGrade).get(),
+          _firestore.collection('users').where('class_level', isEqualTo: entry.classId).get(),
+        ];
+        final snapshots = await Future.wait(queries);
+        for (final snap in snapshots) {
+          for (final doc in snap.docs) {
+            final d = doc.data();
+            final rawSec = (d['division'] ?? '').toString().trim().toUpperCase();
+            final cid = (d['class_id'] ?? '').toString().trim().toUpperCase();
+            final lvl = (d['class_level'] ?? '').toString().trim().toUpperCase();
+            if (rawSec == entry.section || cid == entry.classId || lvl == entry.classId) {
+              await doc.reference.update({
+                'class_id': entry.classId,
+                'class_level': entry.grade,
+                'division': entry.section,
+                'updated_at': FieldValue.serverTimestamp(),
+              });
+            }
           }
         }
       }
@@ -7011,16 +7094,29 @@ class AuthService {
       var changed = false;
       final updatedSaved = saved.map((acc) {
         final prof = acc.cachedProfile;
-        final rawLvl = acc.classLevel ?? prof['class_level']?.toString() ?? '';
-        final rawSec = acc.division ?? prof['division']?.toString() ?? '';
+        final rawLvl = (acc.classLevel ?? prof['class_level'] ?? '').toString().trim();
+        final rawSec = (acc.division ?? prof['division'] ?? '').toString().trim().toUpperCase();
+        final rawCid = (prof['class_id'] ?? '').toString().trim().toUpperCase();
         final normG = AcademicStructure.normalizeGrade(rawLvl);
-        if ((normG == entry.grade || rawLvl.toUpperCase() == entry.classId) &&
-            rawSec.trim().toUpperCase() == entry.section) {
+
+        final parsedLvl = AcademicStructure.parseClassId(rawLvl);
+        final parsedCid = AcademicStructure.parseClassId(rawCid);
+
+        final matchByClassId = (rawLvl.toUpperCase() == entry.classId) ||
+            (rawCid == entry.classId) ||
+            (parsedLvl != null && parsedLvl.$1 == entry.grade && parsedLvl.$2 == entry.section) ||
+            (parsedCid != null && parsedCid.$1 == entry.grade && parsedCid.$2 == entry.section);
+        final matchByGradeAndSec = (normG == entry.grade) && (rawSec.isNotEmpty && rawSec == entry.section);
+
+        if (matchByClassId || matchByGradeAndSec) {
           changed = true;
           final updatedProf = Map<String, dynamic>.from(prof);
           updatedProf['class_id'] = entry.classId;
           updatedProf['class_level'] = entry.grade;
           updatedProf['division'] = entry.section;
+          if (updatedProf['class_verified'] == true) {
+            saveVerifiedClassPlacement(acc.scholarNo, updatedProf);
+          }
           return acc.copyWith(
             classLevel: entry.grade,
             division: entry.section,
@@ -7040,11 +7136,21 @@ class AuthService {
     try {
       final current = getCachedProfile();
       if (current != null) {
-        final rawLvl = current['class_level']?.toString() ?? '';
-        final rawSec = current['division']?.toString() ?? '';
+        final rawLvl = (current['class_level'] ?? '').toString().trim();
+        final rawSec = (current['division'] ?? '').toString().trim().toUpperCase();
+        final rawCid = (current['class_id'] ?? '').toString().trim().toUpperCase();
         final normG = AcademicStructure.normalizeGrade(rawLvl);
-        if ((normG == entry.grade || rawLvl.toUpperCase() == entry.classId) &&
-            rawSec.trim().toUpperCase() == entry.section) {
+
+        final parsedLvl = AcademicStructure.parseClassId(rawLvl);
+        final parsedCid = AcademicStructure.parseClassId(rawCid);
+
+        final matchByClassId = (rawLvl.toUpperCase() == entry.classId) ||
+            (rawCid == entry.classId) ||
+            (parsedLvl != null && parsedLvl.$1 == entry.grade && parsedLvl.$2 == entry.section) ||
+            (parsedCid != null && parsedCid.$1 == entry.grade && parsedCid.$2 == entry.section);
+        final matchByGradeAndSec = (normG == entry.grade) && (rawSec.isNotEmpty && rawSec == entry.section);
+
+        if (matchByClassId || matchByGradeAndSec) {
           final updatedProf = Map<String, dynamic>.from(current);
           updatedProf['class_id'] = entry.classId;
           updatedProf['class_level'] = entry.grade;
@@ -7485,6 +7591,7 @@ class AuthService {
       } catch (e) {
         if (!_isNoAppException(e)) {
           debugPrint('Firestore class assignment failure: $e');
+          updatedUser = null;
           if (firestoreFailureSimulated != null) {
             return false;
           }
@@ -7511,13 +7618,28 @@ class AuthService {
       }
     }
 
-    // Also update matching local saved accounts on this device
     var localUpdated = false;
+
+    // Save in verified placements cache if verifying or transferring class
+    if (updates['class_verified'] == true || updates.containsKey('class_id')) {
+      final placementData = Map<String, dynamic>.from(updates);
+      placementData.removeWhere((k, v) => v is FieldValue);
+      placementData['scholar_no'] = cleanScholarNo;
+      await saveVerifiedClassPlacement(cleanScholarNo, placementData);
+      localUpdated = true;
+    }
+
+    // Also update matching local saved accounts on this device
     try {
       final saved = getSavedAccounts();
       var changed = false;
       final updatedSaved = saved.map((acc) {
-        if (acc.scholarNo.trim() == cleanScholarNo || acc.uid.trim() == cleanScholarNo) {
+        if (acc.scholarNo.trim() == cleanScholarNo ||
+            acc.uid.trim() == cleanScholarNo ||
+            acc.fullName.trim().toLowerCase() == cleanScholarNo.toLowerCase() ||
+            (int.tryParse(acc.scholarNo.trim()) != null &&
+             int.tryParse(cleanScholarNo) != null &&
+             int.tryParse(acc.scholarNo.trim()) == int.tryParse(cleanScholarNo))) {
           changed = true;
           localUpdated = true;
           final updatedProf = Map<String, dynamic>.from(acc.cachedProfile);
@@ -7539,15 +7661,26 @@ class AuthService {
 
     // Also update current active profile if matching
     final cached = getCachedProfile();
-    if (cached != null &&
-        (cached['scholar_no']?.toString().trim() == cleanScholarNo ||
-         cached['uid']?.toString().trim() == cleanScholarNo)) {
-      localUpdated = true;
-      final merged = Map<String, dynamic>.from(cached);
-      updates.forEach((k, v) {
-        if (v is! FieldValue) merged[k] = v;
-      });
-      await cacheProfile(merged);
+    if (cached != null) {
+      final cSNo = (cached['scholar_no'] ?? '').toString().trim().toLowerCase();
+      final cUid = (cached['uid'] ?? '').toString().trim();
+      final cName = (cached['full_name'] ?? '').toString().trim().toLowerCase();
+      final cleanLower = cleanScholarNo.toLowerCase();
+      final parsedCSNo = int.tryParse(cSNo);
+      final parsedClean = int.tryParse(cleanLower);
+      final isMatch = cSNo == cleanLower ||
+          cUid == cleanScholarNo ||
+          cName == cleanLower ||
+          (parsedCSNo != null && parsedClean != null && parsedCSNo == parsedClean);
+
+      if (isMatch) {
+        localUpdated = true;
+        final merged = Map<String, dynamic>.from(cached);
+        updates.forEach((k, v) {
+          if (v is! FieldValue) merged[k] = v;
+        });
+        await cacheProfile(merged);
+      }
     }
 
     if (firestoreFailureSimulated != null) {
@@ -7571,6 +7704,14 @@ class AuthService {
         if (data['class_verified'] == true) return;
         final sNo = (data['scholar_no'] ?? data['uid'] ?? '').toString().trim();
         if (sNo.isEmpty || seen.contains(sNo)) return;
+        final placements = getVerifiedClassPlacements();
+        final sNoLower = sNo.toLowerCase();
+        final parsed = int.tryParse(sNo);
+        final isVerified = placements.containsKey(sNoLower) ||
+            (parsed != null && placements.containsKey(parsed.toString())) ||
+            (data['uid'] != null && placements.containsKey(data['uid'].toString().toLowerCase())) ||
+            (data['full_name'] != null && placements.containsKey(data['full_name'].toString().toLowerCase()));
+        if (isVerified) return;
         seen.add(sNo);
         local.add(Map<String, dynamic>.from(data));
       }
@@ -7599,12 +7740,36 @@ class AuthService {
       await for (final snap in _firestore.collection('users').snapshots()) {
         final pending = <Map<String, dynamic>>[];
         final seen = <String>{};
+        final localSaved = getSavedAccounts();
         for (final doc in snap.docs) {
           final data = doc.data();
           final role = (data['role'] ?? '').toString().trim().toLowerCase();
           if (_staffRoles.contains(role)) continue;
           if (data['class_verified'] == true) continue;
           final sNo = (data['scholar_no'] ?? doc.id).toString().trim();
+
+          // If this scholar was verified on this device, skip from pending!
+          final placements = getVerifiedClassPlacements();
+          final sNoLower = sNo.toLowerCase();
+          final docIdLower = doc.id.toLowerCase();
+          final parsed = int.tryParse(sNo);
+          final isLocallyVerified = placements.containsKey(sNoLower) ||
+              placements.containsKey(docIdLower) ||
+              (parsed != null && placements.containsKey(parsed.toString())) ||
+              (data['full_name'] != null && placements.containsKey(data['full_name'].toString().toLowerCase())) ||
+              localSaved.any((acc) {
+                final accSNo = acc.scholarNo.trim().toLowerCase();
+                final docSNo = sNo.toLowerCase();
+                final parsedAcc = int.tryParse(accSNo);
+                final parsedDoc = int.tryParse(docSNo);
+                final match = accSNo == docSNo ||
+                    acc.uid.trim() == doc.id ||
+                    acc.fullName.trim().toLowerCase() == (data['full_name'] ?? '').toString().trim().toLowerCase() ||
+                    (parsedAcc != null && parsedDoc != null && parsedAcc == parsedDoc);
+                return match && acc.cachedProfile['class_verified'] == true;
+              });
+          if (isLocallyVerified) continue;
+
           seen.add(sNo);
           pending.add({...data, 'uid': doc.id});
         }
@@ -7689,6 +7854,10 @@ class AuthService {
         };
         addIfMatch(map);
       }
+      final localPlacements = getVerifiedClassPlacements();
+      for (final entry in localPlacements.values) {
+        addIfMatch(entry);
+      }
 
       local.sort((a, b) => (a['full_name'] ?? '')
           .toString()
@@ -7705,9 +7874,36 @@ class AuthService {
         final roster = <Map<String, dynamic>>[];
         final seen = <String>{};
 
+        final localSaved = getSavedAccounts();
+        final placements = getVerifiedClassPlacements();
         for (final doc in snap.docs) {
-          final data = doc.data();
+          final data = Map<String, dynamic>.from(doc.data());
           final sNo = (data['scholar_no'] ?? doc.id).toString().trim();
+
+          // Overlay local saved account data if matching
+          for (final acc in localSaved) {
+            final accSNo = acc.scholarNo.trim().toLowerCase();
+            final docSNo = sNo.toLowerCase();
+            final parsedAcc = int.tryParse(accSNo);
+            final parsedDoc = int.tryParse(docSNo);
+            final match = accSNo == docSNo ||
+                acc.uid.trim() == doc.id ||
+                (parsedAcc != null && parsedDoc != null && parsedAcc == parsedDoc);
+            if (match) {
+              data.addAll(acc.cachedProfile);
+              if (acc.classLevel != null) data['class_level'] = acc.classLevel;
+              if (acc.division != null) data['division'] = acc.division;
+              break;
+            }
+          }
+
+          final sKey = sNo.toLowerCase();
+          final uKey = doc.id.toLowerCase();
+          final placement = placements[sKey] ?? placements[uKey];
+          if (placement != null) {
+            data.addAll(placement);
+          }
+
           if (matches(data)) {
             seen.add(sNo);
             roster.add({...data, 'uid': doc.id});

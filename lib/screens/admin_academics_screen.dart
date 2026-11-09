@@ -686,6 +686,7 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: DropdownButtonFormField<String>(
+                key: ValueKey('roster_${classes.map((c) => c.classId).join("_")}_$selected'),
                 initialValue: selected,
                 decoration: const InputDecoration(
                   labelText: 'Select class',
@@ -960,7 +961,10 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
-                      initialValue: sourceClass,
+                      key: ValueKey('source_${classes.map((c) => c.classId).join("_")}_$sourceClass'),
+                      initialValue: classes.any((c) => c.classId == sourceClass)
+                          ? sourceClass
+                          : (classes.isNotEmpty ? classes.first.classId : null),
                       decoration: const InputDecoration(
                         labelText: 'Source Class',
                         border: OutlineInputBorder(),
@@ -982,7 +986,10 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
-                      initialValue: targetClass,
+                      key: ValueKey('target_${classes.map((c) => c.classId).join("_")}_$targetClass'),
+                      initialValue: (targetClass != null && classes.any((c) => c.classId == targetClass))
+                          ? targetClass
+                          : null,
                       decoration: InputDecoration(
                         labelText: 'Target Class',
                         border: const OutlineInputBorder(),
@@ -1109,7 +1116,10 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
-                      initialValue: individualTarget,
+                      key: ValueKey('ind_${classes.map((c) => c.classId).join("_")}_$individualTarget'),
+                      initialValue: (individualTarget != null && classes.any((c) => c.classId == individualTarget))
+                          ? individualTarget
+                          : null,
                       decoration: const InputDecoration(
                         labelText: 'Target Class',
                         border: OutlineInputBorder(),
@@ -1338,12 +1348,20 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
               if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
                 return const Center(child: CircularProgressIndicator());
               }
-              final logs = (snap.data != null && snap.data!.isNotEmpty)
-                  ? snap.data!
-                  : _timetableService.getAllCachedAudits(
-                      classId: _auditClassFilter,
-                      actionFilter: _auditActionFilter,
-                    );
+              List<Map<String, dynamic>> logs;
+              try {
+                logs = (snap.data != null && snap.data!.isNotEmpty)
+                    ? snap.data!
+                    : _timetableService.getAllCachedAudits(
+                        classId: _auditClassFilter,
+                        actionFilter: _auditActionFilter,
+                      );
+              } catch (_) {
+                logs = _timetableService.getAllCachedAudits(
+                  classId: _auditClassFilter,
+                  actionFilter: _auditActionFilter,
+                );
+              }
               if (logs.isEmpty) {
                 return _emptyState(
                   scheme,
@@ -1356,127 +1374,131 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                 itemCount: logs.length,
                 separatorBuilder: (_, _) => const SizedBox(height: 8),
                 itemBuilder: (context, i) {
-                  final log = logs[i];
-                  final rawAction = (log['action'] ?? '').toString().trim().toLowerCase();
-                  final action = rawAction.isEmpty ? 'audit' : rawAction;
-                  final classId = (log['class_id'] ?? '').toString();
-                  final actorName = (log['actor_name'] ?? 'Staff').toString();
-                  final actorUid = (log['actor_uid'] ?? '').toString();
-                  final details = (log['details'] ?? '').toString();
-                  final ts = log['timestamp'];
-                  String timeLabel = '';
                   try {
-                    if (ts is Timestamp) {
-                      timeLabel = ts.toDate().toLocal().toString().split('.').first;
-                    } else if (ts is DateTime) {
-                      timeLabel = ts.toLocal().toString().split('.').first;
-                    } else if (ts != null) {
-                      timeLabel = ts.toString().split('.').first;
+                    final log = logs[i];
+                    final rawAction = (log['action'] ?? '').toString().trim().toLowerCase();
+                    final action = rawAction.isEmpty ? 'audit' : rawAction;
+                    final classId = (log['class_id'] ?? '').toString();
+                    final actorName = (log['actor_name'] ?? 'Staff').toString();
+                    final actorUid = (log['actor_uid'] ?? '').toString();
+                    final details = (log['details'] ?? '').toString();
+                    final ts = log['timestamp'];
+                    String timeLabel = '';
+                    try {
+                      if (ts is Timestamp) {
+                        timeLabel = ts.toDate().toLocal().toString().split('.').first;
+                      } else if (ts is DateTime) {
+                        timeLabel = ts.toLocal().toString().split('.').first;
+                      } else if (ts != null) {
+                        timeLabel = ts.toString().split('.').first;
+                      }
+                    } catch (_) {}
+
+                    Color chipColor;
+                    switch (action) {
+                      case 'publish':
+                      case 'approve':
+                        chipColor = Colors.green;
+                        break;
+                      case 'reject':
+                        chipColor = Colors.red;
+                        break;
+                      case 'submit':
+                        chipColor = Colors.orange;
+                        break;
+                      case 'restore':
+                        chipColor = Colors.blue;
+                        break;
+                      case 'override':
+                        chipColor = Colors.purple;
+                        break;
+                      case 'promotion':
+                        chipColor = Colors.indigo;
+                        break;
+                      case 'substitute':
+                        chipColor = Colors.amber;
+                        break;
+                      default:
+                        chipColor = Colors.teal;
                     }
-                  } catch (_) {}
 
-                  Color chipColor;
-                  switch (action) {
-                    case 'publish':
-                    case 'approve':
-                      chipColor = Colors.green;
-                      break;
-                    case 'reject':
-                      chipColor = Colors.red;
-                      break;
-                    case 'submit':
-                      chipColor = Colors.orange;
-                      break;
-                    case 'restore':
-                      chipColor = Colors.blue;
-                      break;
-                    case 'override':
-                      chipColor = Colors.purple;
-                      break;
-                    case 'promotion':
-                      chipColor = Colors.indigo;
-                      break;
-                    case 'substitute':
-                      chipColor = Colors.amber;
-                      break;
-                    default:
-                      chipColor = Colors.teal;
-                  }
-
-                  return Card(
-                    margin: EdgeInsets.zero,
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: chipColor.withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  action.toUpperCase(),
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w800,
-                                    color: chipColor,
-                                  ),
-                                ),
-                              ),
-                              if (classId.isNotEmpty) ...[
-                                const SizedBox(width: 8),
+                    return Card(
+                      margin: EdgeInsets.zero,
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                   decoration: BoxDecoration(
-                                    color: scheme.surfaceContainerHighest,
+                                    color: chipColor.withValues(alpha: 0.15),
                                     borderRadius: BorderRadius.circular(6),
                                   ),
                                   child: Text(
-                                    classId,
-                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                                    action.toUpperCase(),
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w800,
+                                      color: chipColor,
+                                    ),
                                   ),
                                 ),
-                              ],
-                              const Spacer(),
-                              Text(
-                                timeLabel,
-                                style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            details,
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                          ),
-                          const SizedBox(height: 4),
-                          Row(
-                            children: [
-                              Icon(Icons.person_outline, size: 14, color: scheme.onSurfaceVariant),
-                              const SizedBox(width: 4),
-                              Expanded(
-                                child: Text(
-                                  'By $actorName ($actorUid)',
+                                if (classId.isNotEmpty) ...[
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: scheme.surfaceContainerHighest,
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      classId,
+                                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                ],
+                                const Spacer(),
+                                Text(
+                                  timeLabel,
                                   style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
-                                  overflow: TextOverflow.ellipsis,
                                 ),
-                              ),
-                              Icon(Icons.lock_outline, size: 12, color: scheme.onSurfaceVariant),
-                              const SizedBox(width: 2),
-                              Text(
-                                'Immutable Audit',
-                                style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant),
-                              ),
-                            ],
-                          ),
-                        ],
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              details,
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Icon(Icons.person_outline, size: 14, color: scheme.onSurfaceVariant),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    'By $actorName ($actorUid)',
+                                    style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                Icon(Icons.lock_outline, size: 12, color: scheme.onSurfaceVariant),
+                                const SizedBox(width: 2),
+                                Text(
+                                  'Immutable Audit',
+                                  style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  );
+                    );
+                  } catch (e) {
+                    return const SizedBox.shrink();
+                  }
                 },
               );
             },
@@ -1693,6 +1715,7 @@ class _TransferDialogState extends State<_TransferDialog> {
                 ? _selected
                 : available.first.classId;
             return DropdownButtonFormField<String>(
+              key: ValueKey('transfer_$validSelected'),
               initialValue: validSelected,
               decoration: const InputDecoration(
                 labelText: 'Destination class',
@@ -1761,6 +1784,7 @@ class _SectionEditorDialogState extends State<_SectionEditorDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             DropdownButtonFormField<String>(
+              key: ValueKey('sec_grade_$_grade'),
               initialValue: _grade,
               decoration: const InputDecoration(
                 labelText: 'Grade level',
@@ -1773,6 +1797,7 @@ class _SectionEditorDialogState extends State<_SectionEditorDialog> {
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
+              key: ValueKey('sec_section_$_section'),
               initialValue: _section,
               decoration: const InputDecoration(
                 labelText: 'Section',

@@ -14,6 +14,39 @@ import 'l10n/app_localizations.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Custom ErrorWidget builder ensures Flutter release mode NEVER paints a blank grey box.
+  ErrorWidget.builder = (FlutterErrorDetails details) {
+    debugPrint('GLOBAL UI ERROR CAUGHT: ${details.exceptionAsString()}');
+    return Material(
+      color: Colors.transparent,
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 36),
+              const SizedBox(height: 8),
+              const Text(
+                'Something went wrong displaying this view.',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white70),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                details.exceptionAsString(),
+                style: const TextStyle(fontSize: 11, color: Colors.white38),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  };
+
   try {
     await AuthService.initPreferences();
     await AppThemeController.init();
