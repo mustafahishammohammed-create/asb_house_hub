@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/rendering.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/auth_service.dart';
 import '../services/hierarchy_service.dart';
@@ -282,6 +284,51 @@ class _HomeScreenState extends State<HomeScreen>
     },
   ];
 
+  static const String _kLibraryLoansPrefKey = 'asb_library_loans_cache';
+
+  Future<void> _loadLibraryLoans() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_kLibraryLoansPrefKey);
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw) as List<dynamic>;
+        if (mounted && decoded.isNotEmpty) {
+          setState(() {
+            _borrowedBooks.clear();
+            for (final item in decoded) {
+              if (item is Map) {
+                _borrowedBooks.add(Map<String, dynamic>.from(item));
+              }
+            }
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading library loans cache: $e');
+    }
+  }
+
+  Future<void> _saveLibraryLoans() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = jsonEncode(_borrowedBooks);
+      await prefs.setString(_kLibraryLoansPrefKey, jsonStr);
+
+      final curUser = _authService.currentUser;
+      final firestore = _safeFirestore;
+      if (curUser != null && firestore != null && AuthService.isFirebaseLive) {
+        final scholarNo = _profile?['scholar_no'] ?? curUser.uid;
+        await firestore.collection('library_loans').doc(scholarNo.toString()).set({
+          'scholar_no': scholarNo,
+          'books': _borrowedBooks,
+          'updated_at': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+    } catch (e) {
+      debugPrint('Error saving library loans: $e');
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -330,6 +377,7 @@ class _HomeScreenState extends State<HomeScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _loadProfile();
+        _loadLibraryLoans();
       }
     });
   }
@@ -417,63 +465,67 @@ class _HomeScreenState extends State<HomeScreen>
   Future<String?> _promptForSwitchPassword(String scholarNo) async {
     final controller = TextEditingController();
     bool obscure = true;
-    return showDialog<String>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          backgroundColor: const Color(0xFF1E222D),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text(
-            'Re-authenticate Session',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Enter password for Scholar #$scholarNo to verify session switch:',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 13),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: controller,
-                obscureText: obscure,
-                autofocus: true,
-                style: const TextStyle(color: Colors.white),
-                decoration: InputDecoration(
-                  labelText: 'Password',
-                  labelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
-                  filled: true,
-                  fillColor: Colors.black.withValues(alpha: 0.3),
-                  suffixIcon: IconButton(
-                    icon: Icon(obscure ? Icons.visibility_off : Icons.visibility, color: Colors.white70),
-                    onPressed: () => setDialogState(() => obscure = !obscure),
-                  ),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+    try {
+      return await showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            backgroundColor: const Color(0xFF1E222D),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text(
+              'Re-authenticate Session',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Enter password for Scholar #$scholarNo to verify session switch:',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 13),
                 ),
-                onSubmitted: (val) => Navigator.of(ctx).pop(val.trim()),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: controller,
+                  obscureText: obscure,
+                  autofocus: true,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    labelText: 'Password',
+                    labelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
+                    filled: true,
+                    fillColor: Colors.black.withValues(alpha: 0.3),
+                    suffixIcon: IconButton(
+                      icon: Icon(obscure ? Icons.visibility_off : Icons.visibility, color: Colors.white70),
+                      onPressed: () => setDialogState(() => obscure = !obscure),
+                    ),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onSubmitted: (val) => Navigator.of(ctx).pop(val.trim()),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(null),
+                child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFD4AF37),
+                  foregroundColor: Colors.black,
+                ),
+                onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+                child: const Text('Verify & Switch', style: TextStyle(fontWeight: FontWeight.bold)),
               ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(null),
-              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFD4AF37),
-                foregroundColor: Colors.black,
-              ),
-              onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-              child: const Text('Verify & Switch', style: TextStyle(fontWeight: FontWeight.bold)),
-            ),
-          ],
         ),
-      ),
-    );
+      );
+    } finally {
+      controller.dispose();
+    }
   }
 
   Future<void> _switchActiveSession(SavedAccount account) async {
@@ -4852,7 +4904,10 @@ class _HomeScreenState extends State<HomeScreen>
               );
             }
 
-            if (snapshot.hasError) {
+            final cached = AuthService.getCachedNotices();
+            final hasRemoteDocs = snapshot.hasData && snapshot.data!.docs.isNotEmpty;
+
+            if (snapshot.hasError && cached.isEmpty) {
               return Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(24),
@@ -4882,7 +4937,21 @@ class _HomeScreenState extends State<HomeScreen>
               );
             }
 
-            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+            final notices = hasRemoteDocs
+                ? snapshot.data!.docs.map((doc) {
+                    final raw = doc.data();
+                    final data = raw is Map
+                        ? Map<String, dynamic>.from(raw)
+                        : <String, dynamic>{};
+                    return SchoolNotice.fromMap(doc.id, data);
+                  }).toList()
+                : (cached.isNotEmpty ? cached : SchoolNotice.getFoundationalNotices());
+
+            if (hasRemoteDocs) {
+              AuthService.cacheNotices(notices);
+            }
+
+            if (notices.isEmpty) {
               return Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(36),
@@ -4922,14 +4991,6 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
               );
             }
-
-            final notices = snapshot.data!.docs.map((doc) {
-              final raw = doc.data();
-              final data = raw is Map
-                  ? Map<String, dynamic>.from(raw)
-                  : <String, dynamic>{};
-              return SchoolNotice.fromMap(doc.id, data);
-            }).toList();
 
             return ListView.separated(
               shrinkWrap: true,
@@ -5100,6 +5161,25 @@ class _HomeScreenState extends State<HomeScreen>
   Future<void> _openCircularAttachment(SchoolNotice notice) async {
     final url = notice.attachmentUrl.trim();
     if (url.isEmpty) return;
+
+    if (url.startsWith('data:application/pdf;base64,') || url.startsWith('data:')) {
+      try {
+        final commaIdx = url.indexOf(',');
+        final b64 = commaIdx >= 0 ? url.substring(commaIdx + 1) : url;
+        final bytes = base64Decode(b64);
+        final tempDir = Directory.systemTemp;
+        final safeName = notice.attachmentName.isNotEmpty
+            ? notice.attachmentName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_')
+            : 'circular_${notice.id}.pdf';
+        final file = File('${tempDir.path}/$safeName');
+        await file.writeAsBytes(bytes, flush: true);
+        final opened = await launchUrl(Uri.file(file.path));
+        if (opened) return;
+      } catch (e) {
+        debugPrint('Error opening base64 pdf: $e');
+      }
+    }
+
     final uri = Uri.tryParse(url);
     if (uri == null) {
       if (!mounted) return;
@@ -5158,14 +5238,17 @@ class _HomeScreenState extends State<HomeScreen>
     ).then((result) {
       if (result != null && result.success && mounted) {
         setState(() {});
+        final localOnly = result.localOnly;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              result.attachmentUrl != null
-                  ? 'Published circular with PDF attachment!'
-                  : 'Published circular successfully!',
+              localOnly
+                  ? 'Saved on this device only. It was not broadcast to other users.'
+                  : result.attachmentUrl != null
+                      ? 'Published circular with PDF attachment!'
+                      : 'Published circular successfully!',
             ),
-            backgroundColor: Colors.green[700],
+            backgroundColor: localOnly ? Colors.orange[800] : Colors.green[700],
           ),
         );
       }
@@ -6501,6 +6584,7 @@ class _HomeScreenState extends State<HomeScreen>
                               b['due'] = 'Due in $newDays days (Renewed)';
                               b['renewalCount'] = count;
                             });
+                            _saveLibraryLoans();
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text(
@@ -6642,14 +6726,36 @@ class _HomeScreenState extends State<HomeScreen>
                     'Clear App Cache',
                     style: TextStyle(fontWeight: FontWeight.w700),
                   ),
-                  onTap: () {
+                  onTap: () async {
                     Navigator.pop(context);
+                    int freedBytes = 0;
+                    try {
+                      PaintingBinding.instance.imageCache.clear();
+                      PaintingBinding.instance.imageCache.clearLiveImages();
+                    } catch (_) {}
+                    try {
+                      final tempDir = Directory.systemTemp;
+                      if (tempDir.existsSync()) {
+                        final files = tempDir.listSync(recursive: false);
+                        for (final entity in files) {
+                          try {
+                            if (entity is File && (entity.path.contains('asb') || entity.path.contains('image_picker'))) {
+                              freedBytes += entity.lengthSync();
+                              entity.deleteSync();
+                            }
+                          } catch (_) {}
+                        }
+                      }
+                    } catch (_) {}
                     if (!mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
+                      SnackBar(
                         content: Text(
-                          'Temporary cache cleared. Performance optimized!',
+                          freedBytes > 0
+                              ? 'App cache cleared (${(freedBytes / 1024).toStringAsFixed(1)} KB reclaimed). Performance optimized!'
+                              : 'Memory image cache and temporary buffers cleared. Performance optimized!',
                         ),
+                        behavior: SnackBarBehavior.floating,
                       ),
                     );
                   },

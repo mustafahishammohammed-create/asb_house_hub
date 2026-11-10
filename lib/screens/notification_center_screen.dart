@@ -1,10 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/app_notification.dart';
 import '../services/notification_service.dart';
+import '../services/auth_service.dart';
 import 'academics_screen.dart';
 import 'class_group_screen.dart';
 import 'house_group_screen.dart';
+import 'chat_room_screen.dart';
+import 'digital_wallet_screen.dart';
+import 'election_chamber_screen.dart';
+import 'events_screen.dart';
+import 'sports_tournament_screen.dart';
 
 /// In-app notification center (M6).
 ///
@@ -76,6 +83,15 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     final type = notification.type;
     final room = notification.roomId.trim();
 
+    User? user;
+    try {
+      user = FirebaseAuth.instance.currentUser;
+    } catch (_) {
+      user = null;
+    }
+    final inferredHouse = (user != null ? AuthService.inferHouseFromUser(user) : null) ?? 'emerald';
+    final inferredName = user?.displayName ?? 'Student';
+
     if (cat == 'timetable' || type.startsWith('timetable')) {
       Navigator.push(
         context,
@@ -102,6 +118,58 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           builder: (_) => ClassGroupScreen(
             initialClassId: room.isNotEmpty ? room : null,
           ),
+        ),
+      );
+    } else if (cat == 'chat' || type.startsWith('chat')) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ChatRoomScreen(
+            roomId: room.isNotEmpty ? room : 'general_chat',
+            otherUserName: notification.title,
+            otherUserRole: 'Member',
+            otherUserHouse: inferredHouse,
+          ),
+        ),
+      );
+    } else if (cat == 'points' || cat == 'merit' || cat == 'demerit' || type.startsWith('point') || type.startsWith('merit')) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => DigitalWalletScreen(
+            userName: inferredName,
+            userHouse: inferredHouse,
+          ),
+        ),
+      );
+    } else if (cat == 'election' || type.startsWith('election')) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const ElectionChamberScreen(),
+        ),
+      );
+    } else if (cat == 'sports' || type.startsWith('sports')) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => SportsTournamentScreen(
+            userHouse: inferredHouse,
+          ),
+        ),
+      );
+    } else if (cat == 'event' || type.startsWith('event')) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const EventsScreen(),
+        ),
+      );
+    } else if (cat == 'circular' || cat == 'notice' || type.startsWith('circular')) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const AcademicsScreen(initialTab: 'circulars'),
         ),
       );
     }

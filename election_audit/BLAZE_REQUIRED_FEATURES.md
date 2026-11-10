@@ -4,7 +4,9 @@
 
 **Why these are blocked:** `firebase deploy --only functions` fails on Spark because Cloud Functions v2 requires Cloud Build and Artifact Registry, and those APIs cannot be enabled without a billing account. Confirmed deploy error: *"Your project asb-house-hub must be on the Blaze (pay-as-you-go) plan… artifactregistry.googleapis.com can't be enabled until the upgrade is complete."*
 
-**What already works without Blaze:** Firestore security rules and Storage rules are deployed (rule deployment is free). All client-side election code, models, screens, secret handling, and tests are complete and verified. The app runs elections in demo/offline mode today.
+**What already works without Blaze:** Firestore security rules are deployed (rule deployment is free). All client-side election code, models, screens, secret handling, and tests are complete and verified. The app runs elections in demo/offline mode today.
+
+**Storage note (2026-11-10):** the Storage rules in `storage.rules` are authored and retained, but `firebase deploy --only storage` currently fails with *"Firebase Storage has not been set up on project 'asb-house-hub'"*. Storage must be initialized in the Firebase Console before that path can be deployed. Until then, school-circular PDFs use the truthful inline Base64 fallback (limited to 700 KB to stay under Firestore's 1 MiB document cap); larger PDFs fail with an explicit "Storage is required" error rather than claiming a broadcast.
 
 ---
 
@@ -124,6 +126,35 @@ When operating on the free **Spark** plan without deployed Cloud Functions:
 | `Bad state: Security Exception: ELECTION_HMAC_SALT is not configured` | Artificial `--dart-define` check in `ElectionSecurityService._electionSalt`. | **SPARK COMPATIBLE** (Resolved) | Fallback secret added in client code. Runs without needing build flags. |
 | `Could not create section 11A` / `Missing or insufficient permissions` | Active Firebase Auth user was a student (`role: student`) rather than an admin (`role: super_admin`). | **SPARK COMPATIBLE** (Free tier Firestore) | Creating classes is a direct Firestore write (`academic_classes/{classId}`). Not a Blaze feature. Authenticate as Administrator (`admin@asianschool.bh` or verified admin) to perform admin writes. |
 | `models/gemini-2.0-flash is no longer available` | Deprecated Gemini model name returned by Google Generative AI API. | **SPARK COMPATIBLE** (Resolved) | Added `gemini-3.8-flash` to top of `_candidateModels` list. |
+| Apple / Google Wallet pass signing unavailable | Server-side cryptographic signing with Apple Developer WWDR certificates and Google Wallet service account credentials requires a secure Cloud Function. | **BLAZE REQUIRED** (Deferred) | Client generates instant, zero-cost vector PDF vouchers with QR verification codes, printable passes, and report cards via `PassDocumentExporter.exportPass` without needing Blaze or external services. |
+
+---
+
+## D8. Native Mobile Wallet Pass Signing (Apple Wallet .pkpass & Google Wallet Pass Objects)
+
+Native mobile digital wallets require backend cryptographic signing infrastructure:
+- **Apple Wallet (`.pkpass`):** Requires an Apple Developer Program enrollment, a Pass Type ID certificate, Apple Worldwide Developer Relations (WWDR) intermediate CA certificate, and a private PKCS#12 certificate. Pass archives (`manifest.json` and signatures) MUST be generated and signed on a trusted server backend—bundling private certificates into a mobile APK or client binary violates security standards and causes revocation.
+- **Google Wallet (Generic Passes API):** Requires a Google Cloud Service Account with Google Wallet Issuer permissions, Google Pay & Wallet Console registration, and server-side JWT issuance signed with the service account private key.
+
+### Client-Side Spark Tier Local Fallback (Fully Implemented)
+1. **Zero-Cost High-Resolution PDF Passes & Vouchers:** The client app features `PassDocumentExporter.exportPass` which builds vector-grade, printable PDF passes and report cards with embedded high-resolution verification QR codes, student scholar IDs, house heraldry, and security serial numbers.
+2. **Local Device Storage & Share Intent:** Passes can be saved directly to the device's downloads/documents folder or shared to any printer or messaging app without network or Cloud Function dependencies.
+3. **Transparent In-App Guidance:** The Digital Wallet sheet informs students and parents that institutional Apple/Google Wallet synchronization is an upcoming institutional portal integration, while providing immediate one-tap access to device PDF export and printing.
+
+---
+
+## D9. Firebase Storage initialization (circular PDF uploads)
+
+Firebase Storage has not been initialized on `asb-house-hub`, so `firebase deploy --only storage` fails and the `circulars/{noticeId}/{fileName=**}` upload path is not live. Circulars still publish with inline Base64 PDFs up to 700 KB; files above that fail explicitly.
+
+**After enabling Storage (Console → Storage → Get Started; Blaze may be required for new projects):**
+
+1. Run `firebase.cmd deploy --only storage --project asb-house-hub`.
+2. Publish a >700 KB PDF from the admin circular composer on each target platform.
+3. Confirm the notice document stores a Storage download URL and the feed opens the PDF.
+4. Confirm a >15 MB PDF is rejected before upload.
+
+**Done when:** the Storage rules deploy, the >700 KB upload succeeds, and the stored `attachment_url` is a token-bearing Storage URL.
 
 ---
 
@@ -135,4 +166,5 @@ When operating on the free **Spark** plan without deployed Cloud Functions:
 4. D3: activate App Check when mobile/web clients ship.
 5. D4: author + deploy `schoolGamification`, then run the live points smoke test.
 6. D5: academics merit-claim automation on top of D4, then the live academics smoke test.
-7. Check the boxes above and update `election_audit/README.md` — only then are B1/B3 from `NOT_DONE_AND_FALSE_CLAIMS.md` closed.
+7. D8: author + deploy `schoolWallet` pass signing Cloud Function with Apple WWDR certificates and Google Wallet Service Account JWT signing.
+8. Check the boxes above and update `election_audit/README.md` — only then are B1/B3 from `NOT_DONE_AND_FALSE_CLAIMS.md` closed.

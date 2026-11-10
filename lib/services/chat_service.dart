@@ -238,9 +238,10 @@ class ChatService {
     String roomId,
     String text, {
     String? receiverId,
+    String? attachmentUrl,
   }) async {
     final myUid = currentUserId;
-    if (myUid.isEmpty || text.trim().isEmpty) return;
+    if (myUid.isEmpty || (text.trim().isEmpty && (attachmentUrl == null || attachmentUrl.isEmpty))) return;
 
     String senderName = 'Me';
     try {
@@ -261,6 +262,7 @@ class ChatService {
           'sender_id': myUid,
           'sender_name': senderName,
           'text': text.trim(),
+          if (attachmentUrl != null && attachmentUrl.isNotEmpty) 'attachment_url': attachmentUrl,
           'timestamp': timestamp,
           'is_read': false,
           'push_alert_triggered': true,

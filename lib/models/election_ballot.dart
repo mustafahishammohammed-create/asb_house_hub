@@ -76,6 +76,12 @@ extension BallotStatusExt on BallotStatus {
   }
 }
 
+int _safeInt(dynamic val) {
+  if (val == null) return 0;
+  if (val is num) return val.toInt();
+  return int.tryParse(val.toString()) ?? 0;
+}
+
 class ElectionCandidate {
   final String id;
   final String scholarNo;
@@ -126,7 +132,7 @@ class ElectionCandidate {
       manifesto: (map['manifesto'] ?? map['statement'] ?? '').toString(),
       avatarUrl: (map['avatar_url'] ?? map['avatarUrl'] ?? '').toString(),
       classLevel: (map['class_level'] ?? map['classLevel'] ?? '').toString(),
-      votesCount: (map['votes_count'] ?? map['votesCount'] ?? map['count'] as num?)?.toInt() ?? 0,
+      votesCount: _safeInt(map['votes_count'] ?? map['votesCount'] ?? map['count']),
       isVerified: map['is_verified'] == true || map['isVerified'] == true,
     );
   }
@@ -254,7 +260,7 @@ class ElectionBallot implements Comparable<ElectionBallot> {
       startTime: parseDate(map['start_time'] ?? map['opensAt'] ?? map['startMs']),
       endTime: parseDate(map['end_time'] ?? map['closesAt'] ?? map['endMs']),
       candidates: candList,
-      totalVotesCast: (map['total_votes_cast'] as num?)?.toInt() ?? 0,
+      totalVotesCast: _safeInt(map['total_votes_cast'] ?? map['totalVotesCast']),
     );
   }
 

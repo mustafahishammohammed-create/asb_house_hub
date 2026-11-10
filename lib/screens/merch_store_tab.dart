@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import '../services/pass_document_exporter.dart';
 import '../theme/app_theme.dart';
 import '../services/voucher_security_service.dart';
 import '../services/auth_service.dart';
@@ -1147,26 +1148,40 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                         borderRadius: BorderRadius.circular(16),
                       ),
                     ),
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
+                    onPressed: () async {
+                      final itemsSummary = order.items
+                          .map((it) => '${it.qty}x ${it.product.name} (${it.size})')
+                          .join(', ');
+                      final sm = ScaffoldMessenger.of(context);
+                      final result = await PassDocumentExporter.exportPass(
+                        title: 'Official ASB Merch Collection Pass',
+                        subtitle: 'Order #${order.receiptId}',
+                        details: 'Items: $itemsSummary',
+                        totalInfo: 'Total Points Paid: ${order.totalPts} PTS',
+                        qrData: order.qrData.isNotEmpty ? order.qrData : 'ASB-ORDER-${order.receiptId}',
+                      );
+                      if (!mounted) return;
+                      sm.showSnackBar(
                         SnackBar(
-                          content: const Row(
+                          content: Row(
                             children: [
                               Icon(
-                                Icons.check_circle_rounded,
-                                color: Colors.greenAccent,
+                                result.success ? Icons.check_circle_rounded : Icons.error_outline_rounded,
+                                color: result.success ? Colors.greenAccent : Colors.redAccent,
                               ),
-                              SizedBox(width: 12),
+                              const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
-                                  'Pass saved to digital wallet! Present QR code at store counter.',
+                                  result.success
+                                      ? '✓ Pass & receipt PDF saved to: ${result.filePath}'
+                                      : 'Export failed: ${result.error}',
                                 ),
                               ),
                             ],
                           ),
                           behavior: SnackBarBehavior.floating,
                           backgroundColor: const Color(0xFF1F2937),
-                          duration: const Duration(seconds: 3),
+                          duration: const Duration(seconds: 4),
                         ),
                       );
                     },
@@ -2463,79 +2478,94 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
             const SizedBox(height: 14),
 
             // Drop of the Week Banner
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [widget.houseColor, widget.houseDark],
+            InkWell(
+              onTap: () {
+                setState(() {
+                  _selectedCategory = 'For You ($userHouseLabel)';
+                  _searchQuery = '';
+                });
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('🔥 Showing $userHouseLabel Collection Weekly Drop!'),
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              },
+              borderRadius: BorderRadius.circular(24),
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [widget.houseColor, widget.houseDark],
+                  ),
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: widget.houseColor.withValues(alpha: 0.35),
+                      blurRadius: 16,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
                 ),
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: [
-                  BoxShadow(
-                    color: widget.houseColor.withValues(alpha: 0.35),
-                    blurRadius: 16,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.local_fire_department_rounded,
-                    color: Colors.amber,
-                    size: 38,
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withValues(alpha: 0.35),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: const Text(
-                                'LIVE WEEKLY DROP',
-                                style: TextStyle(
-                                  color: Colors.amber,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: 1.0,
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.local_fire_department_rounded,
+                      color: Colors.amber,
+                      size: 38,
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.35),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Text(
+                                  'LIVE WEEKLY DROP',
+                                  style: TextStyle(
+                                    color: Colors.amber,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 1.0,
+                                  ),
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            const Text(
-                              'Ends in 02d : 14h',
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
+                              const SizedBox(width: 8),
+                              const Text(
+                                'Ends in 02d : 14h',
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Rep Your Allegiance: Premium $userHouseLabel Collection',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 17,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: -0.5,
+                            ],
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 6),
+                          Text(
+                            'Rep Your Allegiance: Premium $userHouseLabel Collection',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -0.5,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 16),

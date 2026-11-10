@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:file_selector/file_selector.dart';
+import '../services/pass_document_exporter.dart';
 import '../models/timetable_period.dart';
 import '../models/academic_assignment.dart';
 import '../models/exam_schedule_item.dart';
@@ -2358,6 +2360,20 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                 overflow: TextOverflow.ellipsis,
               ),
 
+              if (assignment.description.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  assignment.description,
+                  style: TextStyle(
+                    fontSize: 13,
+                    height: 1.4,
+                    color: isDark ? Colors.white60 : const Color(0xFF475569),
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+
               if (assignment.imageUrl != null && assignment.imageUrl!.isNotEmpty) ...[
                 const SizedBox(height: 10),
                 AcademicImageThumbnail(
@@ -2424,6 +2440,28 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                           ),
                         ],
                       ),
+                    ),
+                  ),
+
+                  // Submit Work / Rubric Modal Action
+                  ElevatedButton.icon(
+                    onPressed: () => _showSubmitAssignmentModal(context, assignment),
+                    icon: Icon(
+                      currentStatus == AssignmentStatus.pending
+                          ? Icons.upload_file_rounded
+                          : Icons.visibility_rounded,
+                      size: 15,
+                    ),
+                    label: Text(
+                      currentStatus == AssignmentStatus.pending ? 'Submit Work' : 'Rubric & Work',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFEEF2F6),
+                      foregroundColor: isDark ? Colors.white : const Color(0xFF0F172A),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      elevation: 0,
                     ),
                   ),
 
@@ -2536,6 +2574,311 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
         TextDirection.ltr,
       );
     }
+  }
+
+  void _showSubmitAssignmentModal(BuildContext context, AcademicAssignment assignment) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final notesController = TextEditingController(text: assignment.submissionNotes);
+    String? attachedFileName;
+    final currentStatus = _optimisticStatus[assignment.id] ?? assignment.status;
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          return Container(
+            padding: EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 20,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+            ),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF0F172A) : Colors.white,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 44,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF6366F1).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          assignment.subject.toUpperCase(),
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFF6366F1),
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '+${assignment.pointsReward} PTS',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFFF59E0B),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    assignment.title,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      color: isDark ? Colors.white : const Color(0xFF0F172A),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Instructor: ${assignment.teacherName} • ${assignment.formattedRemaining()}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white60 : const Color(0xFF64748B),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.description_outlined, size: 16, color: Color(0xFF6366F1)),
+                            SizedBox(width: 6),
+                            Text(
+                              'ASSIGNMENT BRIEF & RUBRIC',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.5,
+                                color: Color(0xFF6366F1),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          assignment.description.isNotEmpty
+                              ? assignment.description
+                              : 'Review chapter concepts and complete all assigned exercises. Submit clean working steps or attached document for assessment.',
+                          style: TextStyle(
+                            fontSize: 13,
+                            height: 1.45,
+                            color: isDark ? Colors.white70 : const Color(0xFF334155),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Rubric: Quality of answer (40%), Methodology (30%), Timeliness (30%).',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontStyle: FontStyle.italic,
+                            color: isDark ? Colors.white54 : const Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Student Submission Notes / Work Links:',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? Colors.white70 : const Color(0xFF334155),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: notesController,
+                    maxLines: 3,
+                    style: TextStyle(fontSize: 13, color: isDark ? Colors.white : Colors.black87),
+                    decoration: InputDecoration(
+                      hintText: 'Type your answer, paste links (GitHub, Google Drive, Docs), or notes for teacher...',
+                      hintStyle: const TextStyle(fontSize: 12, color: Colors.grey),
+                      filled: true,
+                      fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (attachedFileName != null)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.green.withValues(alpha: 0.4)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.attach_file_rounded, size: 18, color: Colors.green),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              attachedFileName!,
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, size: 16),
+                            onPressed: () => setModalState(() {
+                              attachedFileName = null;
+                            }),
+                          ),
+                        ],
+                      ),
+                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.attach_file_rounded, size: 16),
+                          label: const Text('Attach Solution File', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          onPressed: () async {
+                            try {
+                              const typeGroup = XTypeGroup(
+                                label: 'Homework Files',
+                                extensions: ['pdf', 'png', 'jpg', 'jpeg', 'docx', 'txt'],
+                              );
+                              final file = await openFile(acceptedTypeGroups: const [typeGroup]);
+                              if (file != null) {
+                                setModalState(() {
+                                  attachedFileName = file.name;
+                                });
+                              }
+                            } catch (e) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('File picker error: $e')),
+                                );
+                              }
+                            }
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.upload_file_rounded, size: 20),
+                      label: Text(
+                        currentStatus == AssignmentStatus.pending
+                            ? 'Turn In / Submit Homework'
+                            : 'Update Homework Submission',
+                        style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF6366F1),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      onPressed: () {
+                        final notes = notesController.text.trim();
+                        final finalNotes = attachedFileName != null
+                            ? '$notes\n[Attached File: $attachedFileName]'.trim()
+                            : notes;
+
+                        final updated = assignment.copyWith(
+                          status: AssignmentStatus.submitted,
+                          submittedAt: DateTime.now(),
+                          submissionNotes: finalNotes,
+                        );
+
+                        setState(() {
+                          _optimisticStatus[assignment.id] = AssignmentStatus.submitted;
+                        });
+
+                        widget.onStatusChanged?.call(updated);
+
+                        _authService.updateAssignmentStatus(
+                          assignmentId: assignment.id,
+                          newStatus: AssignmentStatus.submitted,
+                          classLevel: _effectiveClass,
+                          pointsReward: assignment.pointsReward,
+                        );
+
+                        Navigator.of(ctx).pop();
+
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Row(
+                              children: [
+                                const Icon(Icons.check_circle_rounded, color: Colors.greenAccent),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text('✓ Homework for "${assignment.title}" submitted to ${assignment.teacherName}!'),
+                                ),
+                              ],
+                            ),
+                            backgroundColor: const Color(0xFF1E293B),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 
   Widget _buildEmptyState(bool isDark, [bool isTeacherOrAdmin = false]) {
@@ -5401,6 +5744,65 @@ class _ReportCardTabState extends State<ReportCardTab> {
                     );
                   },
                 ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.picture_as_pdf_rounded, size: 20),
+                    label: const Text(
+                      'Download / Export Official Report Card PDF',
+                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF6366F1),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    onPressed: () async {
+                      final sm = ScaffoldMessenger.of(context);
+                      final subjectsSummary = card.subjectGrades
+                          .map((s) => '• ${s.subject}: ${s.score.toStringAsFixed(1)}/${s.maxScore.toStringAsFixed(1)} (${s.gradeLetter}, ${s.percentage.toStringAsFixed(1)}%)')
+                          .join('\n');
+                      final details = 'Scholar: ${card.studentName.isNotEmpty ? card.studentName : "Scholar"} (#$_effectiveScholarNo) • Class: $_effectiveClass\n'
+                          'Term: ${card.termName} (${card.academicYear})\n'
+                          'Attendance: ${card.attendanceRate.toStringAsFixed(1)}%\n\n'
+                          'Subjects Breakdown:\n$subjectsSummary\n\n'
+                          'Teacher Remarks: ${card.teacherRemarks.isNotEmpty ? card.teacherRemarks : "Commendable academic progress and disciplined conduct."}';
+                      final res = await PassDocumentExporter.exportPass(
+                        title: 'Official Academic Progress & Report Card',
+                        subtitle: 'ASB Ministry of Education Accredited Transcript',
+                        details: details,
+                        totalInfo: 'Overall Cumulative GPA: ${card.overallGpa.toStringAsFixed(2)} / 4.00',
+                        qrData: 'ASB-REPORT-${card.id}-$_effectiveScholarNo',
+                      );
+                      if (!mounted) return;
+                      sm.showSnackBar(
+                        SnackBar(
+                          content: Row(
+                            children: [
+                              Icon(
+                                res.success ? Icons.check_circle_rounded : Icons.error_outline_rounded,
+                                color: res.success ? Colors.greenAccent : Colors.redAccent,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  res.success
+                                      ? '✓ Official Report Card PDF saved to: ${res.filePath}'
+                                      : 'Export failed: ${res.error}',
+                                ),
+                              ),
+                            ],
+                          ),
+                          behavior: SnackBarBehavior.floating,
+                          backgroundColor: const Color(0xFF1E293B),
+                          duration: const Duration(seconds: 4),
+                        ),
+                      );
+                    },
+                  ),
+                ),
               ],
             ),
           ),
@@ -7034,6 +7436,7 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
     DateTime startDate = DateTime.now();
     DateTime endDate = DateTime.now();
     String? photoBase64;
+    String? pdfFileName;
     final picker = ImagePicker();
 
     showModalBottomSheet(
@@ -7204,22 +7607,54 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
                     if (photoBase64 != null) ...[
                       Stack(
                         children: [
-                          Container(
-                            height: 150,
-                            width: double.infinity,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: const Color(0xFF6366F1), width: 1.5),
-                            ),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: Image.memory(
-                                base64Decode(photoBase64!.split(',').last),
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) => const Center(child: Icon(Icons.broken_image)),
+                          if (photoBase64!.startsWith('data:application/pdf'))
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF6366F1).withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: const Color(0xFF6366F1), width: 1.5),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.picture_as_pdf_rounded, color: Colors.redAccent, size: 36),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          pdfFileName ?? 'Official_Medical_Certificate.pdf',
+                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        const SizedBox(height: 2),
+                                        const Text('Official PDF Certificate Attached', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          else
+                            Container(
+                              height: 150,
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: const Color(0xFF6366F1), width: 1.5),
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Image.memory(
+                                  base64Decode(photoBase64!.split(',').last),
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) => const Center(child: Icon(Icons.broken_image)),
+                                ),
                               ),
                             ),
-                          ),
                           Positioned(
                             top: 4,
                             right: 4,
@@ -7234,7 +7669,10 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
                                   padding: const EdgeInsets.all(12),
                                   icon: const Icon(Icons.close, size: 18, color: Colors.white),
                                   tooltip: 'Remove photo',
-                                  onPressed: () => setModalState(() => photoBase64 = null),
+                                  onPressed: () => setModalState(() {
+                                    photoBase64 = null;
+                                    pdfFileName = null;
+                                  }),
                                 ),
                               ),
                             ),
@@ -7242,65 +7680,105 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
                         ],
                       ),
                     ] else ...[
-                      Row(
+                      Column(
                         children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () async {
-                                try {
-                                  final xfile = await picker.pickImage(
-                                    source: ImageSource.camera,
-                                    imageQuality: 80,
-                                    maxWidth: 1200,
-                                  );
-                                  if (xfile != null) {
-                                    final bytes = await xfile.readAsBytes();
-                                    setModalState(() {
-                                      photoBase64 = 'data:image/jpeg;base64,${base64Encode(bytes)}';
-                                    });
-                                  }
-                                } catch (e) {
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('Camera unavailable: $e')),
-                                    );
-                                  }
-                                }
-                              },
-                              icon: const Icon(Icons.camera_alt_rounded, size: 18),
-                              label: const Text('Take Photo', style: TextStyle(fontWeight: FontWeight.w700)),
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: () async {
+                                    try {
+                                      final xfile = await picker.pickImage(
+                                        source: ImageSource.camera,
+                                        imageQuality: 80,
+                                        maxWidth: 1200,
+                                      );
+                                      if (xfile != null) {
+                                        final bytes = await xfile.readAsBytes();
+                                        setModalState(() {
+                                          photoBase64 = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+                                          pdfFileName = null;
+                                        });
+                                      }
+                                    } catch (e) {
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(content: Text('Camera unavailable: $e')),
+                                        );
+                                      }
+                                    }
+                                  },
+                                  icon: const Icon(Icons.camera_alt_rounded, size: 18),
+                                  label: const Text('Take Photo', style: TextStyle(fontWeight: FontWeight.w700)),
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                ),
                               ),
-                            ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: () async {
+                                    try {
+                                      final xfile = await picker.pickImage(
+                                        source: ImageSource.gallery,
+                                        imageQuality: 80,
+                                        maxWidth: 1200,
+                                      );
+                                      if (xfile != null) {
+                                        final bytes = await xfile.readAsBytes();
+                                        setModalState(() {
+                                          photoBase64 = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+                                          pdfFileName = null;
+                                        });
+                                      }
+                                    } catch (e) {
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(content: Text('Gallery picker failed: $e')),
+                                        );
+                                      }
+                                    }
+                                  },
+                                  icon: const Icon(Icons.photo_library_rounded, size: 18),
+                                  label: const Text('Upload Image', style: TextStyle(fontWeight: FontWeight.w700)),
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
+                          const SizedBox(height: 10),
+                          SizedBox(
+                            width: double.infinity,
                             child: OutlinedButton.icon(
                               onPressed: () async {
                                 try {
-                                  final xfile = await picker.pickImage(
-                                    source: ImageSource.gallery,
-                                    imageQuality: 80,
-                                    maxWidth: 1200,
+                                  const typeGroup = XTypeGroup(
+                                    label: 'Medical Certificate PDFs',
+                                    extensions: ['pdf'],
                                   );
-                                  if (xfile != null) {
-                                    final bytes = await xfile.readAsBytes();
+                                  final file = await openFile(acceptedTypeGroups: const [typeGroup]);
+                                  if (file != null) {
+                                    final bytes = await file.readAsBytes();
                                     setModalState(() {
-                                      photoBase64 = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+                                      pdfFileName = file.name;
+                                      photoBase64 = 'data:application/pdf;base64,${base64Encode(bytes)}';
                                     });
                                   }
                                 } catch (e) {
                                   if (context.mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('Gallery picker failed: $e')),
+                                      SnackBar(content: Text('PDF picker failed: $e')),
                                     );
                                   }
                                 }
                               },
-                              icon: const Icon(Icons.photo_library_rounded, size: 18),
-                              label: const Text('Upload Image', style: TextStyle(fontWeight: FontWeight.w700)),
+                              icon: const Icon(Icons.picture_as_pdf_rounded, size: 18, color: Colors.redAccent),
+                              label: const Text('Upload PDF Medical Certificate', style: TextStyle(fontWeight: FontWeight.w700)),
                               style: OutlinedButton.styleFrom(
                                 padding: const EdgeInsets.symmetric(vertical: 12),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

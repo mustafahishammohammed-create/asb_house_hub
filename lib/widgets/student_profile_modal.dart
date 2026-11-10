@@ -23,7 +23,7 @@ class StudentProfileModal extends StatefulWidget {
 
   const StudentProfileModal({
     super.key,
-    required this.scholarNo,
+    this.scholarNo = '',
     required this.studentName,
     required this.houseName,
     this.classLevel,
@@ -32,7 +32,7 @@ class StudentProfileModal extends StatefulWidget {
 
   static void show(
     BuildContext context, {
-    required String scholarNo,
+    String scholarNo = '',
     required String studentName,
     required String houseName,
     String? classLevel,
@@ -880,6 +880,7 @@ class _StudentProfileModalState extends State<StudentProfileModal>
   }
 
   Widget _buildConductLedgerTab(bool isDark, Color houseColor, String effectiveScholar) {
+    final isAdmin = _checkIsAdminUser();
     return StreamBuilder<List<QueryDocumentSnapshot>>(
       stream: _authService.getStudentConductStream(effectiveScholar),
       builder: (context, snapshot) {
@@ -966,6 +967,59 @@ class _StudentProfileModalState extends State<StudentProfileModal>
                       ),
                     ),
                   ),
+                  if (isAdmin) ...[
+                    const SizedBox(width: 4),
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Colors.redAccent),
+                      tooltip: 'Revoke Mistaken Entry',
+                      onPressed: () async {
+                        final confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (c) => AlertDialog(
+                            title: const Text('Revoke Conduct Entry?'),
+                            content: Text(
+                              'Are you sure you want to revoke this $type entry ("$reason", $pts PTS)?\n'
+                              'This will reverse points and remove it from the scholar\'s record.',
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(c, false),
+                                child: const Text('Cancel'),
+                              ),
+                              ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.redAccent,
+                                  foregroundColor: Colors.white,
+                                ),
+                                onPressed: () => Navigator.pop(c, true),
+                                child: const Text('Revoke Entry'),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (confirm == true) {
+                          final ok = await _authService.revokeConductRecord(
+                            recordId: docs[idx].id,
+                            scholarNo: effectiveScholar,
+                            points: pts,
+                            isMerit: isMerit,
+                          );
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  ok
+                                      ? '✓ Mistaken conduct entry revoked successfully.'
+                                      : 'Failed to revoke entry.',
+                                ),
+                                backgroundColor: ok ? Colors.green[700] : Colors.redAccent,
+                              ),
+                            );
+                          }
+                        }
+                      },
+                    ),
+                  ],
                 ],
               ),
             );

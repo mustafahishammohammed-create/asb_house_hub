@@ -101,6 +101,23 @@ class PassDocumentExporter {
 
   /// Writes generated PDF bytes to the downloads directory or application documents,
   /// returning the resolved output file path.
+  static Future<({bool success, String filePath, String? error})> exportPass({
+    required String title,
+    required String subtitle,
+    required String details,
+    required String totalInfo,
+    required String qrData,
+    String? customPath,
+  }) =>
+      exportPassToDisk(
+        title: title,
+        subtitle: subtitle,
+        details: details,
+        totalInfo: totalInfo,
+        qrData: qrData,
+        customPath: customPath,
+      );
+
   static Future<({bool success, String filePath, String? error})> exportPassToDisk({
     required String title,
     required String subtitle,
@@ -138,8 +155,8 @@ class PassDocumentExporter {
         final dl = home != null ? io.Directory('$home/Downloads') : null;
         targetDir = (dl != null && dl.existsSync()) ? dl.path : io.Directory.systemTemp.path;
       } else if (io.Platform.isAndroid) {
-        final dl = io.Directory('/storage/emulated/0/Download');
-        targetDir = dl.existsSync() ? dl.path : io.Directory.systemTemp.path;
+        // Safe against Android 10+ (API 29+) Scoped Storage restrictions
+        targetDir = io.Directory.systemTemp.path;
       } else {
         targetDir = io.Directory.systemTemp.path;
       }

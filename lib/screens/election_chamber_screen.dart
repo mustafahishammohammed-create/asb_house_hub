@@ -1,6 +1,8 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import '../services/pass_document_exporter.dart';
 import '../models/election_ballot.dart';
 import '../models/digital_ballot_cast.dart';
 import '../services/auth_service.dart';
@@ -1017,11 +1019,42 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
           ],
         ),
         actions: [
+          TextButton.icon(
+            icon: const Icon(Icons.copy_rounded, size: 16),
+            label: const Text('Copy Token'),
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: receipt.formattedReceiptNumber));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('✓ Receipt token copied to clipboard!')),
+              );
+            },
+          ),
+          TextButton.icon(
+            icon: const Icon(Icons.download_rounded, size: 16),
+            label: const Text('Export PDF'),
+            onPressed: () async {
+              final result = await PassDocumentExporter.exportPass(
+                title: 'Official Election Ballot Receipt',
+                subtitle: receipt.ballotTitle,
+                details: 'Candidate: ${receipt.candidateName} (${receipt.candidateHouse.toUpperCase()})\nPosition: ${receipt.runningPosition}',
+                totalInfo: 'Receipt Code: ${receipt.formattedReceiptNumber}',
+                qrData: receipt.formattedReceiptNumber,
+              );
+              if (dialogCtx.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(result.success ? '✓ Receipt PDF exported: ${result.filePath}' : 'Export error: ${result.error}'),
+                    backgroundColor: result.success ? Colors.green : Colors.redAccent,
+                  ),
+                );
+              }
+            },
+          ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: houseColor,
               foregroundColor: Colors.white,
-              minimumSize: const Size(100, 48),
+              minimumSize: const Size(80, 44),
             ),
             onPressed: () => Navigator.pop(dialogCtx),
             child: const Text('Done'),
@@ -1172,14 +1205,15 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
     );
   }
 
-  void _showCreateBallotModal(BuildContext context, Color houseColor) {
+  Future<void> _showCreateBallotModal(BuildContext context, Color houseColor) async {
     if (!_canManageElections) return;
     final titleController = TextEditingController(text: 'Student Council Election 2026');
     final scholarController = TextEditingController();
     final nameController = TextEditingController();
     final manifestoController = TextEditingController();
 
-    BallotPosition selectedPosition = BallotPosition.headBoy;
+    try {
+      BallotPosition selectedPosition = BallotPosition.headBoy;
     String selectedHouse = 'ruby';
     String selectedScope = 'all';
     final candidatesDraft = <ElectionCandidate>[];
@@ -1188,7 +1222,7 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
     String? rosterMatchInfo;
     bool isLookingUp = false;
 
-    showModalBottomSheet(
+    await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -1777,6 +1811,12 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
         },
       ),
     );
+    } finally {
+      titleController.dispose();
+      scholarController.dispose();
+      nameController.dispose();
+      manifestoController.dispose();
+    }
   }
 
   Future<void> _certifyBallotWinner(ElectionBallot ballot, Color houseColor) async {

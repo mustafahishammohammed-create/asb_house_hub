@@ -171,6 +171,43 @@ class _SchoolCircularComposerState extends State<SchoolCircularComposer> {
     );
   }
 
+  void _previewPdf(PickedCircularPdf pdf) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Icons.picture_as_pdf_rounded, color: Colors.red, size: 28),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                pdf.fileName,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('File Size: ${_formatSize(pdf.sizeBytes)}', style: const TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            const Text(
+              'Document Type: Adobe PDF Format\nValidated: Ready to broadcast to student body.',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+        ],
+      ),
+    );
+  }
+
   Widget _buildPdfPicker() {
     final pdf = _pdf;
     if (pdf == null) {
@@ -179,7 +216,7 @@ class _SchoolCircularComposerState extends State<SchoolCircularComposer> {
         onPressed: _busy ? null : _pickPdf,
         icon: const Icon(Icons.picture_as_pdf_rounded, size: 18),
         label: const Text(
-          'Attach PDF Circular (max 15 MB)',
+          'Attach PDF Circular (max 15 MB; 700 KB inline)',
           style: TextStyle(fontWeight: FontWeight.w700),
         ),
         style: OutlinedButton.styleFrom(
@@ -220,6 +257,12 @@ class _SchoolCircularComposerState extends State<SchoolCircularComposer> {
                 ),
               ],
             ),
+          ),
+          IconButton(
+            key: const Key('circular_preview_pdf'),
+            onPressed: () => _previewPdf(pdf),
+            tooltip: 'Preview PDF Document',
+            icon: const Icon(Icons.visibility_rounded, color: Colors.red, size: 20),
           ),
           IconButton(
             key: const Key('circular_remove_pdf'),
@@ -277,10 +320,14 @@ class _SchoolCircularComposerState extends State<SchoolCircularComposer> {
                   child: DropdownButtonFormField<String>(
                     key: const Key('circular_category_field'),
                     initialValue: _category,
+                    isExpanded: true,
                     decoration: _fieldDecoration('Category'),
                     items: _categories
                         .map(
-                          (c) => DropdownMenuItem(value: c, child: Text(c)),
+                          (c) => DropdownMenuItem(
+                            value: c,
+                            child: Text(c, overflow: TextOverflow.ellipsis),
+                          ),
                         )
                         .toList(),
                     onChanged: _busy
@@ -297,6 +344,7 @@ class _SchoolCircularComposerState extends State<SchoolCircularComposer> {
                   child: DropdownButtonFormField<String>(
                     key: const Key('circular_audience_field'),
                     initialValue: _audience,
+                    isExpanded: true,
                     decoration: _fieldDecoration('Audience'),
                     items: _audiences
                         .map(

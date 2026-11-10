@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image_picker/image_picker.dart';
 import '../services/chat_service.dart';
 import '../services/auth_service.dart';
 import '../services/hierarchy_service.dart';
+import '../widgets/academic_image.dart';
 import '../theme/app_theme.dart';
 
 /// Atmospheric wallpaper that blends both participants' house colors
@@ -169,6 +172,8 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
   late Animation<double> _pulseAnimation;
 
   StreamSubscription<DocumentSnapshot>? _roomSubscription;
+  String? _lastReadMessageId;
+  String? _pendingAttachment;
 
   @override
   void initState() {
@@ -375,12 +380,52 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
     return {};
   }
 
+  Future<void> _pickAttachment() async {
+    final picker = ImagePicker();
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt_rounded),
+              title: const Text('Take Photo'),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_rounded),
+              title: const Text('Choose from Gallery'),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return;
+    try {
+      final picked = await picker.pickImage(source: source, maxWidth: 1024, imageQuality: 80);
+      if (picked != null) {
+        final bytes = await picked.readAsBytes();
+        setState(() {
+          _pendingAttachment = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not attach image: $e')));
+      }
+    }
+  }
+
   void _send() async {
     final text = _msgController.text.trim();
-    if (text.isEmpty || _isSending) return;
+    final attachment = _pendingAttachment;
+    if ((text.isEmpty && (attachment == null || attachment.isEmpty)) || _isSending) return;
     _isSending = true;
     AppHaptics.light();
     _msgController.clear();
+    setState(() => _pendingAttachment = null);
     _focusNode.requestFocus();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -388,7 +433,11 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
       }
     });
     try {
-      await _chatService.sendMessage(widget.roomId, text);
+      await _chatService.sendMessage(
+        widget.roomId,
+        text.isNotEmpty ? text : '📷 Photo Attachment',
+        attachmentUrl: attachment,
+      );
     } catch (_) {} finally {
       if (mounted) {
         setState(() => _isSending = false);
@@ -698,9 +747,18 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
                     }
 
                     final docs = snapshot.data!.docs;
-                    Future.microtask(
-                      () => _chatService.markRoomAsRead(widget.roomId),
-                    );
+                    if (docs.isNotEmpty) {
+                      final latestDoc = docs.first;
+                      final latestData = _safeData(latestDoc);
+                      if (latestData['sender_id'] != myUid &&
+                          latestData['is_read'] != true &&
+                          _lastReadMessageId != latestDoc.id) {
+                        _lastReadMessageId = latestDoc.id;
+                        Future.microtask(
+                          () => _chatService.markRoomAsRead(widget.roomId),
+                        );
+                      }
+                    }
 
                     return ListView.builder(
                       reverse: true,
@@ -777,6 +835,23 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
                                   ),
                                   const SizedBox(height: 4),
                                 ],
+                                if (data['attachment_url'] != null && data['attachment_url'].toString().isNotEmpty) ...[
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: GestureDetector(
+                                      onTap: () => showAcademicImagePreview(
+                                        context,
+                                        data['attachment_url'].toString(),
+                                        data['sender_name'] ?? 'Attachment',
+                                      ),
+                                      child: Container(
+                                        constraints: const BoxConstraints(maxHeight: 180, maxWidth: 220),
+                                        child: buildAcademicImage(data['attachment_url'].toString(), fit: BoxFit.cover),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                ],
                                 Text(
                                   text,
                                   style: TextStyle(
@@ -846,10 +921,48 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
                   ],
                 ),
                 child: SafeArea(
-                  child: Row(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Expanded(
-                        child: TextField(
+                      if (_pendingAttachment != null)
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: myColor.withValues(alpha: 0.3)),
+                          ),
+                          child: Row(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: SizedBox(
+                                  width: 44,
+                                  height: 44,
+                                  child: buildAcademicImage(_pendingAttachment!, fit: BoxFit.cover),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              const Expanded(
+                                child: Text('Image attachment ready to send', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.close_rounded, size: 18),
+                                onPressed: () => setState(() => _pendingAttachment = null),
+                              ),
+                            ],
+                          ),
+                        ),
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: Icon(Icons.attach_file_rounded, color: isDark ? Colors.white70 : const Color(0xFF64748B)),
+                            tooltip: 'Attach Image / Photo',
+                            onPressed: _pickAttachment,
+                          ),
+                          Expanded(
+                            child: TextField(
                           controller: _msgController,
                           focusNode: _focusNode,
                           textInputAction: TextInputAction.send,
@@ -918,7 +1031,9 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
                       ),
                     ],
                   ),
-                ),
+                ],
+              ),
+            ),
               ),
             ],
           ),

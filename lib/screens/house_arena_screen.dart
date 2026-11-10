@@ -742,105 +742,109 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       child: Column(
         children: [
-          // Live Spirit Multi-Bar
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFF131A29),
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Expanded(
-                      child: Row(
-                        children: [
-                          Icon(Icons.public_rounded, color: Colors.cyanAccent, size: 18),
-                          SizedBox(width: 8),
-                          Flexible(
-                            child: Text(
-                              'Live Inter-House Spirit Grid',
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 13,
+          // Live Spirit Multi-Bar (Tappable to view detailed breakdown)
+          InkWell(
+            onTap: () => _showSpiritBreakdownModal(context),
+            borderRadius: BorderRadius.circular(22),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF131A29),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Expanded(
+                        child: Row(
+                          children: [
+                            Icon(Icons.public_rounded, color: Colors.cyanAccent, size: 18),
+                            SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                'Live Inter-House Spirit Grid',
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 13,
+                                ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: Colors.redAccent.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Row(
-                        children: [
-                          Icon(Icons.fiber_manual_record, color: Colors.redAccent, size: 10),
-                          SizedBox(width: 4),
-                          Text(
-                            'LIVE',
-                            style: TextStyle(
-                              color: Colors.redAccent,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w900,
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.redAccent.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.fiber_manual_record, color: Colors.redAccent, size: 10),
+                            SizedBox(width: 4),
+                            Text(
+                              'LIVE',
+                              style: TextStyle(
+                                color: Colors.redAccent,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                              ),
                             ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  // Segmented Multi-Bar
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: SizedBox(
+                      height: 14,
+                      child: Row(
+                        children: [
+                          Expanded(
+                            flex: (_rubySpirit / maxSpirit * 1000).toInt().clamp(1, 1000),
+                            child: Container(color: HouseColors.ruby),
+                          ),
+                          Expanded(
+                            flex: (_sapphireSpirit / maxSpirit * 1000).toInt().clamp(1, 1000),
+                            child: Container(color: HouseColors.sapphire),
+                          ),
+                          Expanded(
+                            flex: (_emeraldSpirit / maxSpirit * 1000).toInt().clamp(1, 1000),
+                            child: Container(color: HouseColors.emerald),
+                          ),
+                          Expanded(
+                            flex: (_topazSpirit / maxSpirit * 1000).toInt().clamp(1, 1000),
+                            child: Container(color: HouseColors.topaz),
                           ),
                         ],
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                // Segmented Multi-Bar
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: SizedBox(
-                    height: 14,
-                    child: Row(
-                      children: [
-                        Expanded(
-                          flex: (_rubySpirit / maxSpirit * 1000).toInt().clamp(1, 1000),
-                          child: Container(color: HouseColors.ruby),
-                        ),
-                        Expanded(
-                          flex: (_sapphireSpirit / maxSpirit * 1000).toInt().clamp(1, 1000),
-                          child: Container(color: HouseColors.sapphire),
-                        ),
-                        Expanded(
-                          flex: (_emeraldSpirit / maxSpirit * 1000).toInt().clamp(1, 1000),
-                          child: Container(color: HouseColors.emerald),
-                        ),
-                        Expanded(
-                          flex: (_topazSpirit / maxSpirit * 1000).toInt().clamp(1, 1000),
-                          child: Container(color: HouseColors.topaz),
-                        ),
-                      ],
                     ),
                   ),
-                ),
-                const SizedBox(height: 10),
-                // Legend
-                Wrap(
-                  alignment: WrapAlignment.spaceAround,
-                  spacing: 12,
-                  runSpacing: 6,
-                  children: [
-                    _buildSpiritLegendItem('Ruby', _rubySpirit, HouseColors.ruby),
-                    _buildSpiritLegendItem('Sapphire', _sapphireSpirit, HouseColors.sapphire),
-                    _buildSpiritLegendItem('Emerald', _emeraldSpirit, HouseColors.emerald),
-                    _buildSpiritLegendItem('Topaz', _topazSpirit, HouseColors.topaz),
-                  ],
-                ),
-              ],
+                  const SizedBox(height: 10),
+                  // Legend
+                  Wrap(
+                    alignment: WrapAlignment.spaceAround,
+                    spacing: 12,
+                    runSpacing: 6,
+                    children: [
+                      _buildSpiritLegendItem('Ruby', _rubySpirit, HouseColors.ruby),
+                      _buildSpiritLegendItem('Sapphire', _sapphireSpirit, HouseColors.sapphire),
+                      _buildSpiritLegendItem('Emerald', _emeraldSpirit, HouseColors.emerald),
+                      _buildSpiritLegendItem('Topaz', _topazSpirit, HouseColors.topaz),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 24),
@@ -1076,22 +1080,171 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
   }
 
   Widget _buildSpiritLegendItem(String name, double val, Color c) {
-    return Row(
-      children: [
-        Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+    return InkWell(
+      onTap: () => _showSpiritBreakdownModal(context, name),
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              '$name: ${val.toInt()}',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.8),
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 4),
-        Text(
-          '$name: ${val.toInt()}',
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.8),
-            fontSize: 10,
-            fontWeight: FontWeight.w700,
+      ),
+    );
+  }
+
+  void _showSpiritBreakdownModal(BuildContext context, [String? targetHouse]) {
+    final house = (targetHouse ?? widget.userHouse).toLowerCase();
+    final col = HouseColors.getHouseColor(house);
+    final score = house == 'ruby'
+        ? _rubySpirit
+        : (house == 'sapphire'
+            ? _sapphireSpirit
+            : (house == 'emerald' ? _emeraldSpirit : _topazSpirit));
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: const BoxDecoration(
+          color: Color(0xFF0F172A),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 20,
+                    backgroundColor: col.withValues(alpha: 0.2),
+                    child: Text(
+                      house.isNotEmpty ? house[0].toUpperCase() : '?',
+                      style: TextStyle(color: col, fontWeight: FontWeight.w900, fontSize: 18),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${house.toUpperCase()} HOUSE SPIRIT METER',
+                          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: col),
+                        ),
+                        Text(
+                          'Current Spirit Rating: ${score.toInt()} PTS (Live Dynamic Grid)',
+                          style: const TextStyle(fontSize: 12, color: Colors.white70),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E293B),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: col.withValues(alpha: 0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'HOW HOUSE SPIRIT IS COMPUTED',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.8,
+                        color: Colors.cyanAccent,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _buildFormulaRow('📚 Academics & Homework Turn-ins', '35% weight'),
+                    const SizedBox(height: 6),
+                    _buildFormulaRow('⚽ Sports Tournament Matches & Cheers', '30% weight'),
+                    const SizedBox(height: 6),
+                    _buildFormulaRow('⭐ Positive Conduct & Faculty Merits', '20% weight'),
+                    const SizedBox(height: 6),
+                    _buildFormulaRow('🗳️ Campus Election Voting Turnout', '15% weight'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.bolt_rounded, size: 20),
+                  label: Text('Energize ${house.toUpperCase()} Spirit (+10)', style: const TextStyle(fontWeight: FontWeight.w900)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: col,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      if (house == 'ruby') _rubySpirit += 10;
+                      if (house == 'sapphire') _sapphireSpirit += 10;
+                      if (house == 'emerald') _emeraldSpirit += 10;
+                      if (house == 'topaz') _topazSpirit += 10;
+                    });
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('⚡ Energized ${house.toUpperCase()} House! +10 Spirit points added to the live grid.'),
+                        backgroundColor: col,
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildFormulaRow(String label, String weight) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Expanded(child: Text(label, style: const TextStyle(fontSize: 12, color: Colors.white))),
+        Text(weight, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white70)),
       ],
     );
   }

@@ -81,25 +81,20 @@ void main() {
     expect(content, contains('PARTIAL is not counted as a completed test'));
   });
 
-  test('the four known partials are documented and not counted as done', () {
+  test('no acceptance rows remain partial or missing', () {
     final partialIds = rows.entries
         .where((entry) => entry.value[5] == 'PARTIAL')
         .map((entry) => entry.key)
         .toSet();
-    expect(partialIds, {5, 24, 25});
+    expect(partialIds, isEmpty);
 
-    for (final id in partialIds) {
-      final limitation = rows[id]![6];
-      expect(limitation, isNot('—'),
-          reason: 'Test $id must explain its limitation');
-      expect(limitation.length, greaterThan(30),
-          reason: 'Test $id limitation must be specific');
-    }
-
-    // Test 5 is the rules-scoping partial and must say so explicitly.
-    expect(rows[5]![5], 'PARTIAL');
-    expect(rows[5]![6].toLowerCase(), contains('list'));
-    expect(rows[5]![6].toLowerCase(), contains('path-scoped'));
+    // Test 5 is closed by the rules contract, not by weakening the row.
+    expect(rows[5]![5], 'PASS');
+    expect(rows[5]![3], contains('test 5: students cannot list another class'));
+    expect(
+      rows[5]![4].toLowerCase(),
+      contains('isverifiedclassmember'),
+    );
   });
 
   test('test 14 is closed by the break-recalculation widget test', () {
@@ -107,6 +102,20 @@ void main() {
     expect(
       rows[14]![3],
       contains('Moving the break recalculates all period times'),
+    );
+  });
+
+  test('tests 24 and 25 are closed by direct time-picker interactions', () {
+    expect(rows[24]![5], 'PASS');
+    expect(
+      rows[24]![3],
+      contains('Customise Period 1 start with the time picker'),
+    );
+
+    expect(rows[25]![5], 'PASS');
+    expect(
+      rows[25]![3],
+      contains('Customise a later period independently'),
     );
   });
 
@@ -167,5 +176,18 @@ void main() {
     expect(rules.contains('isSameHouse(houseId)'), isTrue);
     expect(rules.contains('isVerifiedClassMember(classId)'), isTrue);
     expect(rules.contains('function isAdmin()'), isTrue);
+
+    // Test 5: student timetable reads are class-scoped, and the old broad
+    // signed-in published clause cannot return.
+    expect(
+      rules.contains('isVerifiedClassMember(resource.data.class_id)'),
+      isTrue,
+    );
+    expect(
+      rules.contains(
+        "(isSignedIn() && resource != null && resource.data.status == 'published')",
+      ),
+      isFalse,
+    );
   });
 }

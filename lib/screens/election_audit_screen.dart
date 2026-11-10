@@ -1,9 +1,11 @@
 // lib/screens/election_audit_screen.dart
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../models/election_audit_record.dart';
 import '../models/digital_ballot_cast.dart';
 import '../services/auth_service.dart';
 import '../services/election_security_service.dart';
+import '../services/qr_decoder_service.dart';
 import '../theme/app_theme.dart';
 
 class ElectionAuditScreen extends StatefulWidget {
@@ -46,6 +48,39 @@ class _ElectionAuditScreenState extends State<ElectionAuditScreen> {
   void dispose() {
     _receiptController.dispose();
     super.dispose();
+  }
+
+  Future<void> _scanReceiptQr() async {
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(source: ImageSource.camera, maxWidth: 1200, imageQuality: 85);
+      if (picked != null) {
+        final bytes = await picked.readAsBytes();
+        final code = await QrDecoderService.decodeQrFromBytes(bytes);
+        if (code != null && code.isNotEmpty) {
+          setState(() {
+            _receiptController.text = code.trim();
+          });
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('✓ Scanned receipt code: $code')),
+            );
+          }
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('No QR code detected in photo. Please ensure camera is clear.')),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Camera scanner error: $e')),
+        );
+      }
+    }
   }
 
   void _handleVerifyReceipt(List<BallotCastReceipt> receipts) {
@@ -237,10 +272,21 @@ class _ElectionAuditScreenState extends State<ElectionAuditScreen> {
                           labelText: 'Receipt Number',
                           hintText: 'e.g. ASB-VOTE-E4F2A1B9',
                           prefixIcon: const Icon(Icons.receipt_long_rounded),
-                          suffixIcon: IconButton(
-                            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-                            icon: const Icon(Icons.clear_rounded),
-                            onPressed: () => _receiptController.clear(),
+                          suffixIcon: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                                icon: const Icon(Icons.qr_code_scanner_rounded, color: Colors.blue),
+                                tooltip: 'Scan Receipt QR Code',
+                                onPressed: _scanReceiptQr,
+                              ),
+                              IconButton(
+                                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                                icon: const Icon(Icons.clear_rounded),
+                                onPressed: () => setState(() => _receiptController.clear()),
+                              ),
+                            ],
                           ),
                         ),
                       ),

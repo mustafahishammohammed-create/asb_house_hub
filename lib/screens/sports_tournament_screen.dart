@@ -5,8 +5,10 @@ import '../models/player_sports_stats.dart';
 import '../models/sports_trophy.dart';
 import '../services/auth_service.dart';
 import '../services/hierarchy_service.dart';
+import '../services/pass_document_exporter.dart';
 import '../theme/app_theme.dart';
 import '../widgets/managed_modal_scope.dart';
+import '../widgets/student_profile_modal.dart';
 import 'live_match_hud_screen.dart';
 
 class SportsTournamentScreen extends StatefulWidget {
@@ -447,6 +449,7 @@ class _SportsTournamentScreenState extends State<SportsTournamentScreen>
                 rows: standings.map((s) {
                   final col = _getHouseColor(s.houseName);
                   return DataRow(
+                    onSelectChanged: (_) => _showHouseMatchLogsModal(context, s, fixtures),
                     cells: [
                       DataCell(
                         Row(
@@ -577,102 +580,111 @@ class _SportsTournamentScreenState extends State<SportsTournamentScreen>
                     final houseColor = _getHouseColor(p.houseName);
                     final isRank1 = index == 0;
 
-                    return Card(
-                      elevation: isRank1 ? 3 : 1,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        side: isRank1
-                            ? const BorderSide(color: Colors.amber, width: 1.5)
-                            : BorderSide.none,
+                    return InkWell(
+                      onTap: () => StudentProfileModal.show(
+                        context,
+                        scholarNo: p.scholarNo,
+                        studentName: p.studentName,
+                        houseName: p.houseName,
                       ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: Row(
-                          children: [
-                            // Rank Badge
-                            Container(
-                              width: 32,
-                              height: 32,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: isRank1
-                                    ? Colors.amber
-                                    : (index == 1
-                                        ? const Color(0xFFC0C0C0)
-                                        : (index == 2
-                                            ? const Color(0xFFCD7F32)
-                                            : Colors.grey.withValues(alpha: 0.2))),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  '#${index + 1}',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 12,
-                                    color: isRank1 || index < 3 ? Colors.black : null,
-                                  ),
+                      borderRadius: BorderRadius.circular(16),
+                      child: Card(
+                        elevation: isRank1 ? 3 : 1,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          side: isRank1
+                              ? const BorderSide(color: Colors.amber, width: 1.5)
+                              : BorderSide.none,
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Row(
+                            children: [
+                              // Rank Badge
+                              Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: isRank1
+                                      ? Colors.amber
+                                      : (index == 1
+                                          ? const Color(0xFFC0C0C0)
+                                          : (index == 2
+                                              ? const Color(0xFFCD7F32)
+                                              : Colors.grey.withValues(alpha: 0.2))),
                                 ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-
-                            // House Crest & Player Info
-                            CircleAvatar(
-                              radius: 16,
-                              backgroundColor: houseColor.withValues(alpha: 0.2),
-                              child: Text(
-                                p.houseName.isNotEmpty ? p.houseName[0].toUpperCase() : '?',
-                                style: TextStyle(
-                                  color: houseColor,
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    p.studentName,
-                                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    '${p.houseName.toUpperCase()} • #${p.scholarNo}',
-                                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-                                  ),
-                                ],
-                              ),
-                            ),
-
-                            // Primary Stat + MVP Count
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text(
-                                  '${p.primaryStat} ${p.statLabel}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 14,
-                                    color: Colors.amber,
-                                  ),
-                                ),
-                                if (p.mvpAwardsCount > 0)
-                                  Text(
-                                    '${p.mvpAwardsCount} ⭐ MVP',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 10.5,
-                                      color: Colors.orangeAccent,
+                                child: Center(
+                                  child: Text(
+                                    '#${index + 1}',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 12,
+                                      color: isRank1 || index < 3 ? Colors.black : null,
                                     ),
                                   ),
-                              ],
-                            ),
-                          ],
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+
+                              // House Crest & Player Info
+                              CircleAvatar(
+                                radius: 16,
+                                backgroundColor: houseColor.withValues(alpha: 0.2),
+                                child: Text(
+                                  p.houseName.isNotEmpty ? p.houseName[0].toUpperCase() : '?',
+                                  style: TextStyle(
+                                    color: houseColor,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      p.studentName,
+                                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      '${p.houseName.toUpperCase()} • #${p.scholarNo}',
+                                      style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                                    ),
+                                  ],
+                                ),
+                              ),
+
+                              // Primary Stat + MVP Count
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    '${p.primaryStat} ${p.statLabel}',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 14,
+                                      color: Colors.amber,
+                                    ),
+                                  ),
+                                  if (p.mvpAwardsCount > 0)
+                                    Text(
+                                      '${p.mvpAwardsCount} ⭐ MVP',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 10.5,
+                                        color: Colors.orangeAccent,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     );
@@ -714,6 +726,16 @@ class _SportsTournamentScreenState extends State<SportsTournamentScreen>
                     return Card(
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       child: ListTile(
+                        onTap: () {
+                          if (f.mvpName != null && f.mvpName!.isNotEmpty) {
+                            StudentProfileModal.show(
+                              context,
+                              scholarNo: '',
+                              studentName: f.mvpName!,
+                              houseName: f.houseA,
+                            );
+                          }
+                        },
                         leading: CircleAvatar(
                           backgroundColor: houseColor.withValues(alpha: 0.2),
                           child: const Icon(Icons.star_rounded, color: Colors.amber, size: 20),
@@ -798,125 +820,132 @@ class _SportsTournamentScreenState extends State<SportsTournamentScreen>
             final t = trophies[index];
             final winnerCol = _getHouseColor(t.winningHouse);
 
-            return Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    winnerCol.withValues(alpha: 0.25),
-                    const Color(0xFF0F172A),
-                  ],
-                ),
+            return Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () => _showTrophyDetailsModal(context, t),
                 borderRadius: BorderRadius.circular(22),
-                border: Border.all(color: Colors.amber, width: 1.5),
-                boxShadow: [
-                  BoxShadow(
-                    color: winnerCol.withValues(alpha: 0.3),
-                    blurRadius: 18,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Row(
-                            children: [
-                              Text(t.trophyTier.emoji, style: const TextStyle(fontSize: 28)),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      t.trophyTier.title,
-                                      style: const TextStyle(
-                                        color: Colors.amber,
-                                        fontWeight: FontWeight.w900,
-                                        fontSize: 14,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    Text(
-                                      t.sportType.displayName,
-                                      style: const TextStyle(color: Colors.white70, fontSize: 11),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.greenAccent.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: Colors.greenAccent),
-                          ),
-                          child: Text(
-                            '+${t.pointsAwarded} PTS',
-                            style: const TextStyle(
-                              color: Colors.greenAccent,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ),
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        winnerCol.withValues(alpha: 0.25),
+                        const Color(0xFF0F172A),
                       ],
                     ),
-                    const Divider(color: Colors.white12, height: 24),
-                    Text(
-                      t.tournamentTitle.toUpperCase(),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '🏆 Champions: ${t.winningHouse.toUpperCase()} HOUSE (+${t.pointsAwarded} PTS)\n🥈 Runners-Up: ${t.runnerUpHouse.toUpperCase()} HOUSE (+${t.runnerUpPoints} PTS)',
-                      style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.5),
-                    ),
-                    if (t.mvpName != null && t.mvpName!.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        '⭐ Tournament MVP: ${t.mvpName}',
-                        style: const TextStyle(color: Colors.amber, fontSize: 12, fontWeight: FontWeight.w800),
+                    borderRadius: BorderRadius.circular(22),
+                    border: Border.all(color: Colors.amber, width: 1.5),
+                    boxShadow: [
+                      BoxShadow(
+                        color: winnerCol.withValues(alpha: 0.3),
+                        blurRadius: 18,
+                        offset: const Offset(0, 6),
                       ),
                     ],
-                    const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: Text(
-                            'Awarded: ${t.awardedAt.day}/${t.awardedAt.month}/${t.awardedAt.year}',
-                            style: const TextStyle(color: Colors.white38, fontSize: 11),
-                            overflow: TextOverflow.ellipsis,
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Row(
+                                children: [
+                                  Text(t.trophyTier.emoji, style: const TextStyle(fontSize: 28)),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          t.trophyTier.title,
+                                          style: const TextStyle(
+                                            color: Colors.amber,
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 14,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        Text(
+                                          t.sportType.displayName,
+                                          style: const TextStyle(color: Colors.white70, fontSize: 11),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.greenAccent.withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: Colors.greenAccent),
+                              ),
+                              child: Text(
+                                '+${t.pointsAwarded} PTS',
+                                style: const TextStyle(
+                                  color: Colors.greenAccent,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const Divider(color: Colors.white12, height: 24),
+                        Text(
+                          t.tournamentTitle.toUpperCase(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.5,
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Certified: ${t.commissionerName}',
-                            style: const TextStyle(color: Colors.white38, fontSize: 11),
-                            textAlign: TextAlign.end,
-                            overflow: TextOverflow.ellipsis,
+                        const SizedBox(height: 8),
+                        Text(
+                          '🏆 Champions: ${t.winningHouse.toUpperCase()} HOUSE (+${t.pointsAwarded} PTS)\n🥈 Runners-Up: ${t.runnerUpHouse.toUpperCase()} HOUSE (+${t.runnerUpPoints} PTS)',
+                          style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.5),
+                        ),
+                        if (t.mvpName != null && t.mvpName!.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            '⭐ Tournament MVP: ${t.mvpName}',
+                            style: const TextStyle(color: Colors.amber, fontSize: 12, fontWeight: FontWeight.w800),
                           ),
+                        ],
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Awarded: ${t.awardedAt.day}/${t.awardedAt.month}/${t.awardedAt.year}',
+                                style: const TextStyle(color: Colors.white38, fontSize: 11),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Certified: ${t.commissionerName}',
+                                style: const TextStyle(color: Colors.white38, fontSize: 11),
+                                textAlign: TextAlign.end,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                  ],
+                  ),
                 ),
               ),
             );
@@ -1477,5 +1506,263 @@ class _SportsTournamentScreenState extends State<SportsTournamentScreen>
     },
   );
 }
+
+  void _showHouseMatchLogsModal(
+    BuildContext context,
+    HouseLeagueStanding standing,
+    List<SportsMatchFixture> allFixtures,
+  ) {
+    final houseName = standing.houseName.toLowerCase();
+    final col = _getHouseColor(houseName);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final houseMatches = allFixtures.where((f) {
+      return f.houseA.toLowerCase() == houseName || f.houseB.toLowerCase() == houseName;
+    }).toList();
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF0F172A) : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 20,
+                    backgroundColor: col.withValues(alpha: 0.2),
+                    child: Text(
+                      houseName.isNotEmpty ? houseName[0].toUpperCase() : '?',
+                      style: TextStyle(color: col, fontWeight: FontWeight.w900, fontSize: 18),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${standing.houseName.toUpperCase()} HOUSE',
+                          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: col),
+                        ),
+                        Text(
+                          '${standing.matchesPlayed} Matches • ${standing.won}W ${standing.drawn}D ${standing.lost}L • ${standing.points} PTS',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Tournament Match Logs',
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 14,
+                  color: isDark ? Colors.white : const Color(0xFF0F172A),
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (houseMatches.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Center(
+                    child: Text('No completed match fixtures on record for this house yet.', style: TextStyle(color: Colors.grey)),
+                  ),
+                )
+              else
+                ...houseMatches.map((f) {
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '${f.houseA.toUpperCase()} vs ${f.houseB.toUpperCase()}',
+                            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                          ),
+                        ),
+                        Text(
+                          f.formattedScore,
+                          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showTrophyDetailsModal(BuildContext context, SportsTrophyRecord trophy) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final winnerCol = _getHouseColor(trophy.winningHouse);
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF0F172A) : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Text(trophy.trophyTier.emoji, style: const TextStyle(fontSize: 32)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          trophy.tournamentTitle.toUpperCase(),
+                          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+                        ),
+                        Text(
+                          '${trophy.sportType.displayName} • ${trophy.trophyTier.title}',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.amber),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: winnerCol.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '🏆 Champions: ${trophy.winningHouse.toUpperCase()} HOUSE (+${trophy.pointsAwarded} PTS)',
+                      style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: winnerCol),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '🥈 Runners-Up: ${trophy.runnerUpHouse.toUpperCase()} HOUSE (+${trophy.runnerUpPoints} PTS)',
+                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                    ),
+                    if (trophy.mvpName != null && trophy.mvpName!.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        '⭐ Tournament MVP: ${trophy.mvpName}',
+                        style: const TextStyle(color: Colors.amber, fontSize: 12, fontWeight: FontWeight.w800),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Awarded: ${trophy.awardedAt.day}/${trophy.awardedAt.month}/${trophy.awardedAt.year}',
+                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
+                  Text(
+                    'Certified By: ${trophy.commissionerName}',
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.share_rounded, size: 18),
+                  label: const Text('Export Victory Certificate PDF', style: TextStyle(fontWeight: FontWeight.w800)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.amber[800],
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: () async {
+                    final sm = ScaffoldMessenger.of(context);
+                    Navigator.pop(ctx);
+                    final res = await PassDocumentExporter.exportPass(
+                      title: 'Official Sports Tournament Victory Certificate',
+                      subtitle: '${trophy.tournamentTitle} (${trophy.sportType.displayName})',
+                      details: 'Champions: ${trophy.winningHouse.toUpperCase()} HOUSE\n'
+                          'Runners-Up: ${trophy.runnerUpHouse.toUpperCase()} HOUSE\n'
+                          'Tournament MVP: ${trophy.mvpName ?? "N/A"}\n'
+                          'Certified by: ${trophy.commissionerName}',
+                      totalInfo: 'House Merit Reward: +${trophy.pointsAwarded} PTS Awarded',
+                      qrData: 'ASB-TROPHY-${trophy.trophyId}-${trophy.winningHouse}',
+                    );
+                    sm.showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          res.success
+                              ? '✓ Championship pass exported to: ${res.filePath}'
+                              : 'Export failed: ${res.error}',
+                        ),
+                        backgroundColor: res.success ? Colors.green[700] : Colors.redAccent,
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 

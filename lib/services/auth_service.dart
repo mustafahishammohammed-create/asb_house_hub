@@ -2086,6 +2086,171 @@ class AuthService {
     }
   }
 
+  /// Returns a curated foundational set of collegiate events when Firestore or local cache is empty.
+  static List<CampusEvent> getFoundationalEvents() {
+    final now = DateTime.now();
+    return [
+      CampusEvent(
+        id: 'event_live_stage_chants',
+        title: 'Inter-House Chants & Symphony Showdown',
+        description:
+            'The signature vocal and rhythmic battle where houses present original collegiate anthems and synchronization drills.',
+        category: EventCategory.cultural,
+        houseScope: 'All',
+        startTime: now.subtract(const Duration(minutes: 25)),
+        endTime: now.add(const Duration(hours: 1, minutes: 35)),
+        venue: 'Grand Auditorium Stage A',
+        pointsAwarded: 250,
+        pointsMultiplier: 2.0,
+        bannerUrl: '',
+        isLive: true,
+      ),
+      CampusEvent(
+        id: 'event_football_derby',
+        title: 'Collegiate Football Derby: Semi-Finals',
+        description:
+            'High-stakes house football clash. House squads compete for the golden boot and points toward the Annual Shield.',
+        category: EventCategory.sports,
+        houseScope: 'All',
+        startTime: now.add(const Duration(hours: 2, minutes: 15)),
+        endTime: now.add(const Duration(hours: 4, minutes: 15)),
+        venue: 'Main Campus Stadium Pitch',
+        pointsAwarded: 200,
+        pointsMultiplier: 1.5,
+        bannerUrl: '',
+      ),
+      CampusEvent(
+        id: 'event_brain_blitz_stem',
+        title: 'Brain Blitz STEM Olympiad & Algorithmic Hackathon',
+        description:
+            'Multi-round academic decathlon spanning mental arithmetic, physics challenges, and speed coding problems.',
+        category: EventCategory.academic,
+        houseScope: 'All',
+        startTime: now.add(const Duration(days: 1, hours: 1)),
+        endTime: now.add(const Duration(days: 1, hours: 4)),
+        venue: 'Discovery Science & STEM Wing',
+        pointsAwarded: 180,
+        pointsMultiplier: 1.0,
+        bannerUrl: '',
+      ),
+      CampusEvent(
+        id: 'event_arts_heraldry',
+        title: 'Grand Heraldry & Banner Crafting Exhibition',
+        description:
+            'House creative squads create monumental canvas banners celebrating their patron emblems and historic crests.',
+        category: EventCategory.arts,
+        houseScope: 'All',
+        startTime: now.add(const Duration(days: 2, hours: 3)),
+        endTime: now.add(const Duration(days: 2, hours: 6)),
+        venue: 'Senior Art Atrium & Workshop',
+        pointsAwarded: 120,
+        pointsMultiplier: 1.0,
+        bannerUrl: '',
+      ),
+      CampusEvent(
+        id: 'event_robostorm_tech',
+        title: 'RoboStorm Autonomous Battle Arena',
+        description:
+            'Student-built autonomous rovers navigate the obstacle labyrinth and compete in the beacon control challenge.',
+        category: EventCategory.tech,
+        houseScope: 'All',
+        startTime: now.add(const Duration(days: 3, hours: 2)),
+        endTime: now.add(const Duration(days: 3, hours: 5)),
+        venue: 'Engineering & Robotics Suite',
+        pointsAwarded: 160,
+        pointsMultiplier: 1.25,
+        bannerUrl: '',
+      ),
+      CampusEvent(
+        id: 'event_track_relay_championship',
+        title: '4x100m Sprint & Track Relay Championship',
+        description:
+            'The fastest sprinters across all grades sprint for glory on the all-weather synthetic running track.',
+        category: EventCategory.sports,
+        houseScope: 'All',
+        startTime: now.add(const Duration(days: 4, hours: 1)),
+        endTime: now.add(const Duration(days: 4, hours: 3)),
+        venue: 'Olympic Standard Track Oval',
+        pointsAwarded: 150,
+        pointsMultiplier: 1.0,
+        bannerUrl: '',
+      ),
+    ];
+  }
+
+  /// Schedule or publish a new campus event.
+  ///
+  /// In live mode the Firestore write is authoritative: a permission denial or
+  /// any other write failure returns `false` and caches nothing, so the UI
+  /// cannot claim the event was broadcast when it was not. Only a successful
+  /// live write (or local/demo mode) updates the device cache.
+  Future<bool> createCampusEvent(CampusEvent event) async {
+    Future<void> upsertCached(CampusEvent cachedEvent) async {
+      final updated = List<CampusEvent>.from(getCachedEvents());
+      final existingIndex = updated.indexWhere((e) => e.id == cachedEvent.id);
+      if (existingIndex >= 0) {
+        updated[existingIndex] = cachedEvent;
+      } else {
+        updated.add(cachedEvent);
+      }
+      updated.sort();
+      await cacheEvents(updated);
+    }
+
+    if (_isFirebaseLive) {
+      try {
+        if (firestoreFailureSimulated != null) {
+          throw firestoreFailureSimulated!;
+        }
+        final docRef = event.id.isNotEmpty
+            ? _firestore.collection('events').doc(event.id)
+            : _firestore.collection('events').doc();
+        final finalEvent = CampusEvent(
+          id: docRef.id,
+          title: event.title,
+          description: event.description,
+          category: event.category,
+          houseScope: event.houseScope,
+          startTime: event.startTime,
+          endTime: event.endTime,
+          venue: event.venue,
+          pointsAwarded: event.pointsAwarded,
+          pointsMultiplier: event.pointsMultiplier,
+          bannerUrl: event.bannerUrl,
+          isLive: event.isLive,
+        );
+        await docRef.set(finalEvent.toMap(), SetOptions(merge: true));
+        await upsertCached(finalEvent);
+        return true;
+      } catch (e) {
+        // Never fall back to the cache here: a cached event would look like a
+        // successful broadcast on this device while the school never saw it.
+        debugPrint('Firestore createCampusEvent write failed: $e');
+        return false;
+      }
+    }
+
+    // Local/demo mode: the event exists on this device only.
+    final localEvent = event.id.isNotEmpty
+        ? event
+        : CampusEvent(
+            id: 'event_${DateTime.now().millisecondsSinceEpoch}',
+            title: event.title,
+            description: event.description,
+            category: event.category,
+            houseScope: event.houseScope,
+            startTime: event.startTime,
+            endTime: event.endTime,
+            venue: event.venue,
+            pointsAwarded: event.pointsAwarded,
+            pointsMultiplier: event.pointsMultiplier,
+            bannerUrl: event.bannerUrl,
+            isLive: event.isLive,
+          );
+    await upsertCached(localEvent);
+    return true;
+  }
+
   static const String _kCachedBallotsKey = 'cached_election_ballots_list';
 
   /// Persist active election ballots to disk for zero-flash Frame-1 pre-hydration.
@@ -2717,7 +2882,7 @@ class AuthService {
     final email = cleanScholar == 'admin' ? 'admin@asianschool.bh' : _scholarToEmail(cleanScholar);
 
     try {
-      final results = await Future.wait([
+      final results = await Future.wait<dynamic>([
         _firestore
             .collection('users')
             .where('scholar_no', isEqualTo: cleanScholar)
@@ -2734,9 +2899,11 @@ class AuthService {
             .catchError((_) => null as dynamic),
       ]);
       for (final snap in results) {
-        if (snap.docs.isNotEmpty) return true;
+        if (snap != null && snap.docs.isNotEmpty) return true;
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('AuthService.checkScholarExists: Firestore query error: $e');
+    }
 
     // Fallback: check via Firestore REST runQuery
     try {
@@ -2766,7 +2933,9 @@ class AuthService {
           if (list[0]['document'] != null) return true;
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('AuthService.checkScholarExists: REST query error: $e');
+    }
 
     return false;
   }
@@ -4498,6 +4667,34 @@ class AuthService {
           });
     } catch (_) {
       return Stream.value(<QueryDocumentSnapshot>[]);
+    }
+  }
+
+  /// Revokes / deletes a mistakenly assigned conduct record and reverses the points delta.
+  Future<bool> revokeConductRecord({
+    required String recordId,
+    required String scholarNo,
+    required int points,
+    required bool isMerit,
+  }) async {
+    try {
+      await _firestore.collection('student_conduct').doc(recordId).delete();
+      final pointsDelta = isMerit ? -points : points.abs();
+      final userQuery = await _firestore
+          .collection('users')
+          .where('scholar_no', isEqualTo: scholarNo)
+          .limit(1)
+          .get();
+      if (userQuery.docs.isNotEmpty) {
+        await userQuery.docs.first.reference.update({
+          'points': FieldValue.increment(pointsDelta),
+          'merit_points': FieldValue.increment(pointsDelta),
+        });
+      }
+      return true;
+    } catch (e) {
+      debugPrint('Error revoking conduct record: $e');
+      return false;
     }
   }
 
@@ -6502,7 +6699,8 @@ class AuthService {
     required String fileName,
   }) {
     final cleanId = noticeId.trim().replaceAll(RegExp(r'[^A-Za-z0-9_\-]'), '_');
-    var cleanName = fileName.trim().replaceAll('\\', '/').split('/').last;
+    var cleanName =
+        fileName.trim().replaceAll('\\', '/').split('/').last.trim();
     cleanName = cleanName.replaceAll(RegExp(r'[^A-Za-z0-9._\- ]'), '_');
     if (cleanName.isEmpty) cleanName = 'circular.pdf';
     if (!cleanName.toLowerCase().endsWith('.pdf')) cleanName = '$cleanName.pdf';
@@ -6513,8 +6711,7 @@ class AuthService {
   }
 
   /// Uploads a circular PDF to Storage and returns a token-bearing download
-  /// URL. Returns `null` on any failure; the caller must not publish a notice
-  /// with a missing attachment, and must never report a phantom success.
+  /// URL, falling back to a self-contained Data URI when Storage is offline or tokenless.
   Future<String?> uploadCircularPdf({
     required Uint8List bytes,
     required String noticeId,
@@ -6538,57 +6735,106 @@ class AuthService {
         try {
           idToken = await currentUser?.getIdToken();
         } catch (_) {}
-        if (idToken == null || idToken.isEmpty) {
-          debugPrint('Circular PDF upload skipped: no Firebase auth token.');
-          return null;
-        }
-
-        final uploadUri = Uri.parse(
-          'https://firebasestorage.googleapis.com/v0/b/$bucket/o?uploadType=media&name=${Uri.encodeComponent(storagePath)}',
-        );
-        final response = await http
-            .post(
-              uploadUri,
-              headers: {
-                'Content-Type': 'application/pdf',
-                'Authorization': 'Bearer $idToken',
-              },
-              body: bytes,
-            )
-            .timeout(const Duration(seconds: 30));
-
-        if (response.statusCode != 200) {
-          debugPrint(
-            'Circular PDF upload returned ${response.statusCode}: ${response.body}',
+        if (idToken != null && idToken.isNotEmpty) {
+          final uploadUri = Uri.parse(
+            'https://firebasestorage.googleapis.com/v0/b/$bucket/o?uploadType=media&name=${Uri.encodeComponent(storagePath)}',
           );
-          return null;
-        }
+          final response = await http
+              .post(
+                uploadUri,
+                headers: {
+                  'Content-Type': 'application/pdf',
+                  'Authorization': 'Bearer $idToken',
+                },
+                body: bytes,
+              )
+              .timeout(const Duration(seconds: 15));
 
-        final bodyJson = jsonDecode(response.body) as Map<String, dynamic>;
-        final tokens = bodyJson['downloadTokens']?.toString();
-        if (tokens == null || tokens.isEmpty) {
-          debugPrint('Circular PDF upload returned no download token.');
-          return null;
+          if (response.statusCode == 200) {
+            final bodyJson = jsonDecode(response.body) as Map<String, dynamic>;
+            final tokens = bodyJson['downloadTokens']?.toString();
+            if (tokens != null && tokens.isNotEmpty) {
+              final token = tokens.split(',').first.trim();
+              return 'https://firebasestorage.googleapis.com/v0/b/$bucket/o/'
+                  '${Uri.encodeComponent(storagePath)}?alt=media&token=$token';
+            }
+          } else {
+            debugPrint(
+              'Circular PDF upload returned ${response.statusCode}: ${response.body}. Using Base64 fallback.',
+            );
+          }
+        } else {
+          debugPrint('Circular PDF upload: no active Firebase token. Using Base64 fallback.');
         }
-        final token = tokens.split(',').first.trim();
-        return 'https://firebasestorage.googleapis.com/v0/b/$bucket/o/'
-            '${Uri.encodeComponent(storagePath)}?alt=media&token=$token';
       } catch (e) {
-        debugPrint('Circular PDF Windows upload failed: $e');
+        debugPrint('Circular PDF Windows upload failed: $e. Falling back to Base64.');
+      }
+      if (bytes.length > kMaxInlineCircularPdfBytes) {
+        debugPrint(
+          'Circular PDF is ${bytes.length} bytes; too large for the inline '
+          'Firestore fallback (max $kMaxInlineCircularPdfBytes). Storage is required.',
+        );
         return null;
       }
+      final base64Str = base64Encode(bytes);
+      return 'data:application/pdf;base64,$base64Str';
     }
 
     try {
       final ref = FirebaseStorage.instance.ref().child(storagePath);
       await ref
           .putData(bytes, SettableMetadata(contentType: 'application/pdf'))
-          .timeout(const Duration(seconds: 30));
+          .timeout(const Duration(seconds: 20));
       return await ref.getDownloadURL().timeout(const Duration(seconds: 10));
     } catch (e) {
-      debugPrint('Circular PDF storage upload failed: $e');
-      return null;
+      debugPrint('Circular PDF storage upload failed: $e. Falling back to Base64.');
+      if (bytes.length > kMaxInlineCircularPdfBytes) {
+        debugPrint(
+          'Circular PDF is ${bytes.length} bytes; too large for the inline '
+          'Firestore fallback (max $kMaxInlineCircularPdfBytes). Storage is required.',
+        );
+        return null;
+      }
+      final base64Str = base64Encode(bytes);
+      return 'data:application/pdf;base64,$base64Str';
     }
+  }
+
+  static const String _kCachedNoticesKey = 'cached_school_notices_list';
+
+  /// Persist school notices to local device cache.
+  static Future<void> cacheNotices(List<SchoolNotice> notices) async {
+    try {
+      _prefs ??= await SharedPreferences.getInstance();
+      final jsonStr = jsonEncode(notices.map((n) => n.toMap()).toList());
+      await _prefs?.setString(_kCachedNoticesKey, jsonStr);
+    } catch (_) {}
+  }
+
+  /// Upsert a single notice to local cache.
+  static Future<void> cacheNotice(SchoolNotice notice) async {
+    final list = getCachedNotices();
+    list.removeWhere((n) => n.id == notice.id);
+    list.insert(0, notice);
+    if (list.length > 20) list.removeRange(20, list.length);
+    await cacheNotices(list);
+  }
+
+  /// Retrieve cached notices.
+  static List<SchoolNotice> getCachedNotices() {
+    try {
+      final raw = _prefs?.getString(_kCachedNoticesKey);
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          return decoded
+              .whereType<Map<String, dynamic>>()
+              .map((m) => SchoolNotice.fromMap(m['id']?.toString() ?? '', m))
+              .toList();
+        }
+      }
+    } catch (_) {}
+    return <SchoolNotice>[];
   }
 
   /// Publishes a school notice or circular with optional PDF attachment.
@@ -6640,39 +6886,69 @@ class AuthService {
       );
       if (attachmentUrl == null || attachmentUrl.trim().isEmpty) {
         return SchoolNoticePublishResult.failure(
-          'Could not upload the PDF circular. Check the connection and try again.',
+          attachmentBytes.length > kMaxInlineCircularPdfBytes
+              ? 'The PDF could not be uploaded. Files over 700 KB require Firebase '
+                  'Storage, so check the connection and try again.'
+              : 'Could not prepare the PDF attachment. Please try again.',
         );
       }
     }
 
-    try {
-      final data = <String, dynamic>{
-        'title': cleanTitle,
-        'content': cleanContent,
-        'category': category.trim().isEmpty ? 'General' : category.trim(),
-        'target_audience': targetAudience.trim().isEmpty
-            ? 'All Students'
-            : targetAudience.trim(),
-        'date': dateStr,
-        'created_at': FieldValue.serverTimestamp(),
-      };
-      if (attachmentUrl != null) {
-        data['attachment_url'] = attachmentUrl;
-        data['attachment_name'] = cleanAttachmentName;
-        data['attachment_size'] = attachmentBytes!.length;
-      }
+    final notice = SchoolNotice(
+      id: docId,
+      title: cleanTitle,
+      content: cleanContent,
+      category: category.trim().isEmpty ? 'General' : category.trim(),
+      targetAudience: targetAudience.trim().isEmpty
+          ? 'All Students'
+          : targetAudience.trim(),
+      date: dateStr,
+      attachmentUrl: attachmentUrl ?? '',
+      attachmentName: attachmentUrl == null ? '' : cleanAttachmentName,
+      attachmentSize: attachmentUrl == null ? 0 : attachmentBytes!.length,
+    );
 
-      await _firestore.collection('notices').doc(docId).set(data);
-      return SchoolNoticePublishResult.success(
-        noticeId: docId,
-        attachmentUrl: attachmentUrl,
-      );
-    } catch (e) {
-      debugPrint('publishSchoolNotice failed: $e');
-      return SchoolNoticePublishResult.failure(
-        'Could not publish the circular. Check your admin access and try again.',
-      );
+    if (_isFirebaseLive) {
+      try {
+        final data = <String, dynamic>{
+          'id': docId,
+          'title': cleanTitle,
+          'content': cleanContent,
+          'category': notice.category,
+          'target_audience': notice.targetAudience,
+          'date': dateStr,
+          'created_at': FieldValue.serverTimestamp(),
+        };
+        if (attachmentUrl != null) {
+          data['attachment_url'] = attachmentUrl;
+          data['attachment_name'] = cleanAttachmentName;
+          data['attachment_size'] = attachmentBytes!.length;
+        }
+
+        await _firestore.collection('notices').doc(docId).set(data);
+        await cacheNotice(notice);
+        return SchoolNoticePublishResult.success(
+          noticeId: docId,
+          attachmentUrl: attachmentUrl,
+        );
+      } catch (e) {
+        // A denied or failed remote write must never be reported as a
+        // broadcast. Keep the sheet open so the administrator can retry.
+        debugPrint('publishSchoolNotice write failed: $e');
+        return SchoolNoticePublishResult.failure(
+          'Could not broadcast the circular. Check your admin access and try again.',
+        );
+      }
     }
+
+    // Local/demo mode: this notice is visible only on this device. The caller
+    // surfaces that explicitly instead of implying a school-wide broadcast.
+    await cacheNotice(notice);
+    return SchoolNoticePublishResult.success(
+      noticeId: docId,
+      attachmentUrl: attachmentUrl,
+      localOnly: true,
+    );
   }
 
   // =========================================================================

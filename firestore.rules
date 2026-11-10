@@ -830,7 +830,9 @@ service cloud.firestore {
       (!('target_audience' in data) || (data.target_audience is string && data.target_audience.size() <= 100)) &&
       (!('date' in data) || (data.date is string && data.date.size() <= 50)) &&
       (!('created_at' in data) || data.created_at is timestamp) &&
-      (!('attachment_url' in data) || (data.attachment_url is string && data.attachment_url.size() <= 2000)) &&
+      // Allows a token-bearing Storage URL or a small Base64 PDF data URI
+      // (inline fallback capped at 700 KB upstream; Firestore caps the doc).
+      (!('attachment_url' in data) || (data.attachment_url is string && data.attachment_url.size() <= 1000000)) &&
       (!('attachment_name' in data) || (data.attachment_name is string && data.attachment_name.size() <= 200)) &&
       (!('attachment_size' in data) || (data.attachment_size is int && data.attachment_size >= 0 && data.attachment_size <= 15 * 1024 * 1024)) &&
       (!('house' in data) || (data.house is string && data.house.size() <= 50)) &&
@@ -1288,15 +1290,18 @@ service cloud.firestore {
     }
 
     // 3c. timetable_versions/{versionId} — recurring weekly timetable versions (M2)
-    // Published schedules are readable by any signed-in user so the M3
-    // client-side teacher/room conflict check can query other classes. Drafts,
-    // submitted and rejected versions remain class/editor/admin scoped.
+    // Students may read published versions only for their own verified class.
+    // A modified student client therefore cannot enumerate another class's
+    // timetable. Staff retain published/submitted reads across classes for the
+    // M3 teacher/room conflict check and the M7 approval queue; drafts remain
+    // editor-only. List queries must carry both the class and status filters.
     match /timetable_versions/{versionId} {
       allow read: if isSeniorAdmin() ||
-        (isSignedIn() && resource != null && resource.data.status == 'published') ||
-        (isSignedIn() && hasUserDoc() && 'class_id' in getUserData() &&
-          (resource == null || resource.data.class_id == getUserData().class_id) &&
-          (resource == null || resource.data.status == 'published' || isTimetableEditor(resource.data.class_id))) ||
+        (isAdmin() && resource != null &&
+          resource.data.status in ['published', 'submitted']) ||
+        (resource != null && isVerifiedClassMember(resource.data.class_id) &&
+          (resource.data.status == 'published' ||
+            isTimetableEditor(resource.data.class_id))) ||
         (resource != null && isTimetableEditor(resource.data.class_id));
 
       allow create: if isSignedIn() &&

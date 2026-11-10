@@ -1,5 +1,8 @@
 import 'dart:convert';
+import 'dart:io' as io;
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 
 /// Renders a base64 data-URL or network image with a broken-image fallback.
@@ -44,6 +47,51 @@ void showAcademicImagePreview(BuildContext context, String imageUrl, String titl
                   title,
                   style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16),
                   overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Semantics(
+                button: true,
+                label: 'Save image to device',
+                child: IconButton(
+                  constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                  icon: const Icon(Icons.download_rounded, color: Colors.white),
+                  tooltip: 'Save image to device',
+                  onPressed: () async {
+                    try {
+                      Uint8List? bytes;
+                      if (imageUrl.startsWith('data:image')) {
+                        bytes = base64Decode(imageUrl.split(',').last);
+                      } else {
+                        final res = await http.get(Uri.parse(imageUrl));
+                        if (res.statusCode == 200) {
+                          bytes = res.bodyBytes;
+                        }
+                      }
+                      if (bytes != null) {
+                        final fileName = 'ASB_Image_${DateTime.now().millisecondsSinceEpoch}.jpg';
+                        final targetDir = io.Directory.systemTemp.path;
+                        final file = io.File('$targetDir${io.Platform.pathSeparator}$fileName');
+                        await file.writeAsBytes(bytes, flush: true);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('✓ Image saved: ${file.path}'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        }
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Failed to save image: $e'),
+                            backgroundColor: Colors.redAccent,
+                          ),
+                        );
+                      }
+                    }
+                  },
                 ),
               ),
               Semantics(

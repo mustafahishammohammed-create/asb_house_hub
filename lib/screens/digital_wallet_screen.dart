@@ -1722,9 +1722,25 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
                               borderRadius: BorderRadius.circular(12),
                             ),
                           ),
-                          onPressed: () {
+                          onPressed: () async {
                             Navigator.pop(ctx);
-                            _dispatchAccessibleFeedback(context, _getPlatformPrintMessage(), icon: '🖨️');
+                            final res = await PassDocumentExporter.exportPass(
+                              title: title,
+                              subtitle: subtitle,
+                              details: details,
+                              totalInfo: totalInfo,
+                              qrData: qrData.isNotEmpty ? qrData : 'ASB-PASS-VERIFIED',
+                            );
+                            if (context.mounted) {
+                              final printMsg = _getPlatformPrintMessage();
+                              _dispatchAccessibleFeedback(
+                                context,
+                                res.success
+                                    ? '$printMsg Saved PDF copy to: ${res.filePath}'
+                                    : 'Print export error: ${res.error}',
+                                icon: '🖨️',
+                              );
+                            }
                           },
                         );
 

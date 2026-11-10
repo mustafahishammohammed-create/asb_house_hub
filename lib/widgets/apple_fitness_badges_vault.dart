@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/semantics.dart';
 import 'apple_fitness_badge.dart';
+import '../services/pass_document_exporter.dart';
 
 /// Complete Apple Fitness Awards Vault featuring 3D interactive medals,
 /// gyroscope-like pan inspection, authentic engraved backplates, and progress rings.
@@ -504,44 +505,62 @@ class _AppleFitnessBadgesVaultState extends State<AppleFitnessBadgesVault>
           ],
         );
 
-        return Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: const Color(0xFF090D16),
-            borderRadius: BorderRadius.circular(28),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-            gradient: const RadialGradient(
-              center: Alignment(0.7, -0.6),
-              radius: 1.4,
-              colors: [
-                Color(0xFF162035),
-                Color(0xFF0A0E18),
-                Color(0xFF060910),
+        return InkWell(
+          onTap: () {
+            setState(() {
+              _selectedFilterIndex = _selectedFilterIndex == 4 ? 0 : 4;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  _selectedFilterIndex == 4
+                      ? '✓ Filtered to Unlocked Honours Badges'
+                      : '✓ Showing All Honours Badges',
+                ),
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          },
+          borderRadius: BorderRadius.circular(28),
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: const Color(0xFF090D16),
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+              gradient: const RadialGradient(
+                center: Alignment(0.7, -0.6),
+                radius: 1.4,
+                colors: [
+                  Color(0xFF162035),
+                  Color(0xFF0A0E18),
+                  Color(0xFF060910),
+                ],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.6),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
+                ),
               ],
             ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.6),
-                blurRadius: 20,
-                offset: const Offset(0, 8),
-              ),
-            ],
+            child: isNarrow
+                ? Column(
+                    children: [
+                      gauge,
+                      const SizedBox(height: 16),
+                      details,
+                    ],
+                  )
+                : Row(
+                    children: [
+                      gauge,
+                      const SizedBox(width: 20),
+                      Expanded(child: details),
+                    ],
+                  ),
           ),
-          child: isNarrow
-              ? Column(
-                  children: [
-                    gauge,
-                    const SizedBox(height: 16),
-                    details,
-                  ],
-                )
-              : Row(
-                  children: [
-                    gauge,
-                    const SizedBox(width: 20),
-                    Expanded(child: details),
-                  ],
-                ),
         );
       },
     );
@@ -1317,14 +1336,35 @@ class _AppleFitnessBadgeModalState extends State<_AppleFitnessBadgeModal>
                         style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
                       ),
                       onPressed: b.unlocked
-                          ? () {
+                          ? () async {
                               Navigator.pop(context);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('🛡️ ${b.title} honour certificate ready to share!'),
-                                  backgroundColor: Colors.green,
-                                ),
+                              final shareText = '🏆 Official ASB House Hub Honour Award\n'
+                                  'Award: ${b.title}\n'
+                                  'Category: ${b.category}\n'
+                                  'Points: +${b.meritPoints} PTS\n'
+                                  'Scholar: ${widget.recipientName} (#${widget.scholarNo})\n'
+                                  'House: ${widget.houseName.toUpperCase()}';
+                              await Clipboard.setData(ClipboardData(text: shareText));
+                              final pdfRes = await PassDocumentExporter.exportPass(
+                                title: 'ASB House Hub Honour Certificate',
+                                subtitle: b.title,
+                                details: 'Category: ${b.category} • Value: ${b.meritPoints} PTS\nAwarded to: ${widget.recipientName} (#${widget.scholarNo})',
+                                totalInfo: 'Official House Distinction Verified',
+                                qrData: 'ASB-HONOUR-${b.id}-${widget.scholarNo}',
                               );
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      pdfRes.success
+                                          ? '🛡️ ${b.title} certificate copied to clipboard & exported to PDF (${pdfRes.filePath})!'
+                                          : '🛡️ ${b.title} award details copied to clipboard!',
+                                    ),
+                                    backgroundColor: Colors.green,
+                                    duration: const Duration(seconds: 4),
+                                  ),
+                                );
+                              }
                             }
                           : null,
                     ),

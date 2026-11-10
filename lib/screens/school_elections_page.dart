@@ -1440,7 +1440,8 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
     int maxGrade = 12;
     int durationDays = 7;
 
-    final created = await showDialog<bool>(
+    try {
+      final created = await showDialog<bool>(
       context: context,
       builder: (dialogCtx) => StatefulBuilder(
         builder: (ctx, setDlgState) {
@@ -1624,6 +1625,9 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
         );
       }
     });
+    } finally {
+      titleCtrl.dispose();
+    }
   }
 
   Future<void> add(String id) async {

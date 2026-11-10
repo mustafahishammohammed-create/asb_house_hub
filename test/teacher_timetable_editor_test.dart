@@ -86,6 +86,37 @@ void main() {
     });
   }
 
+  Future<void> pickPeriodStart(
+    WidgetTester tester,
+    int period,
+    String hour,
+    String minute,
+  ) async {
+    final button = find.byKey(Key('period_${period}_time_button'));
+    await tester.ensureVisible(button);
+    await tester.pumpAndSettle();
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+
+    // Material's time picker opens in dial mode. Switch to keyboard input so
+    // the test can enter an exact time deterministically.
+    final keyboard = find.byIcon(Icons.keyboard_outlined);
+    if (keyboard.evaluate().isNotEmpty) {
+      await tester.tap(keyboard);
+      await tester.pumpAndSettle();
+    }
+
+    final fields = find.descendant(
+      of: find.byType(Dialog),
+      matching: find.byType(TextField),
+    );
+    expect(fields, findsNWidgets(2));
+    await tester.enterText(fields.at(0), hour);
+    await tester.enterText(fields.at(1), minute);
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+  }
+
   group('M2e: Teacher 6-Day Timetable Editor Widget Tests', () {
     testWidgets('renders 6 school days (Saturday to Thursday) and 8 periods', (tester) async {
       tester.view.physicalSize = const Size(1080, 2400);
@@ -177,6 +208,74 @@ void main() {
       expect(find.text('After Period 6'), findsWidgets);
       expect(find.text('11:30 - 12:15'), findsOneWidget);
       expect(find.text('12:15 - 12:45'), findsOneWidget);
+      expect(find.text('12:45 - 13:30'), findsOneWidget);
+      expect(find.textContaining('Timetable Valid'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Customise Period 1 start with the time picker (Acceptance Test 24)',
+        (tester) async {
+      tester.view.physicalSize = const Size(1080, 3400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      await seedTeacherProfile();
+      await tester.pumpWidget(
+        MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+            child: child!,
+          ),
+          home: const TeacherTimetableEditorScreen(
+            classId: '11D',
+            initialDay: 'Saturday',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('07:45 - 08:30'), findsOneWidget);
+
+      await pickPeriodStart(tester, 1, '07', '00');
+
+      // Period 1 moved to 07:00-07:45, its end time stayed derived at +45m,
+      // and the other periods were not silently shifted.
+      expect(find.text('07:00 - 07:45'), findsOneWidget);
+      expect(find.text('07:45 - 08:30'), findsNothing);
+      expect(find.text('08:30 - 09:15'), findsOneWidget);
+      expect(find.textContaining('Timetable Valid'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Customise a later period independently (Acceptance Test 25)',
+        (tester) async {
+      tester.view.physicalSize = const Size(1080, 3400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      await seedTeacherProfile();
+      await tester.pumpWidget(
+        MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+            child: child!,
+          ),
+          home: const TeacherTimetableEditorScreen(
+            classId: '11D',
+            initialDay: 'Saturday',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('13:30 - 14:15'), findsOneWidget);
+      expect(find.text('12:45 - 13:30'), findsOneWidget);
+
+      await pickPeriodStart(tester, 8, '14', '30');
+
+      // Period 8 moved independently; Period 7 kept its original start/end.
+      expect(find.text('14:30 - 15:15'), findsOneWidget);
+      expect(find.text('13:30 - 14:15'), findsNothing);
       expect(find.text('12:45 - 13:30'), findsOneWidget);
       expect(find.textContaining('Timetable Valid'), findsOneWidget);
       expect(tester.takeException(), isNull);

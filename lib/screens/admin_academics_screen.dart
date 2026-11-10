@@ -244,6 +244,99 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
     }
   }
 
+  void _previewSubmittedTimetable(ClassTimetableVersion v) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Icons.calendar_view_day_rounded, color: Colors.blue),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                '${v.classId} ${v.dayOfWeek} (v${v.version}) Preview',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Created by: ${v.createdByName} • Effective: ${v.effectiveFrom.toLocal().toString().split(' ').first}',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                if (v.isTemporary)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      'Temporary Override for: ${v.overrideDate?.toLocal().toString().split(' ').first ?? 'Date'}',
+                      style: const TextStyle(fontSize: 12, color: Colors.amber, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                const Divider(height: 20),
+                if (v.slots.isEmpty)
+                  const Text('No slots in this version.', style: TextStyle(color: Colors.grey))
+                else
+                  ...v.slots.map((s) => Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Theme.of(ctx).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                'P${s.periodNumber}',
+                                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    s.subject.isEmpty ? 'Free Period' : s.subject,
+                                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                                  ),
+                                  Text(
+                                    '${s.teacherName.isNotEmpty ? s.teacherName : 'Teacher'} • ${s.room.isNotEmpty ? s.room : 'No room'} (${s.timeSlot})',
+                                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      )),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _rejectSubmittedTimetable(ClassTimetableVersion version) async {
     final controller = TextEditingController();
     final reason = await showDialog<String>(
@@ -1286,6 +1379,12 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
+                        TextButton.icon(
+                          onPressed: () => _previewSubmittedTimetable(v),
+                          icon: const Icon(Icons.visibility_rounded, size: 18),
+                          label: const Text('Preview'),
+                        ),
+                        const Spacer(),
                         OutlinedButton.icon(
                           onPressed: () => _rejectSubmittedTimetable(v),
                           icon: const Icon(Icons.close_rounded, size: 18),

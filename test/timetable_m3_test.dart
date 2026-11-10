@@ -827,18 +827,33 @@ void main() {
       );
     });
 
-    test('rules expose published schedules to signed-in users for cross-class checks',
+    test('rules expose published schedules to staff and scope students to their class',
         () {
       final matchStart = rulesContent.indexOf('match /timetable_versions/{versionId}');
       final createStart = rulesContent.indexOf('allow create:', matchStart);
       expect(matchStart, greaterThanOrEqualTo(0));
       expect(createStart, greaterThan(matchStart));
       final readBlock = rulesContent.substring(matchStart, createStart);
+
+      // Staff keep the cross-class reads needed by the M3 conflict check.
       expect(
         readBlock.contains("resource.data.status == 'published'"),
         isTrue,
       );
-      expect(readBlock.contains('isSignedIn()'), isTrue);
+      expect(readBlock.contains('isAdmin()'), isTrue);
+
+      // Students are scoped to their verified class, and the old broad
+      // signed-in clause must not come back (acceptance test 5).
+      expect(
+        readBlock.contains('isVerifiedClassMember(resource.data.class_id)'),
+        isTrue,
+      );
+      expect(
+        readBlock.contains(
+          "(isSignedIn() && resource != null && resource.data.status == 'published')",
+        ),
+        isFalse,
+      );
     });
 
     test('rules audit whitelist accepts copy and substitute actions', () {

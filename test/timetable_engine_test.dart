@@ -620,6 +620,42 @@ void main() {
           reason: 'the published freeze must guard the senior branch');
     });
 
+    test('test 5: students cannot list another class timetable (rule contract)', () {
+      final matchStart =
+          rulesContent.indexOf('match /timetable_versions/{versionId}');
+      final createStart = rulesContent.indexOf('allow create:', matchStart);
+      expect(matchStart, greaterThanOrEqualTo(0));
+      expect(createStart, greaterThan(matchStart));
+      final readBlock = rulesContent.substring(matchStart, createStart);
+
+      // Students are scoped by their verified profile class, and only see
+      // published versions (or drafts for classes they are allowed to edit).
+      expect(
+        readBlock.contains('isVerifiedClassMember(resource.data.class_id)'),
+        isTrue,
+      );
+      // Staff keep cross-class published/submitted reads for conflict checks
+      // and the approval queue; the retired broad clause allowed *any*
+      // signed-in user to enumerate every class.
+      expect(
+        readBlock.contains('(isAdmin() && resource != null'),
+        isTrue,
+      );
+      expect(
+        readBlock.contains(
+          "resource.data.status in ['published', 'submitted']",
+        ),
+        isTrue,
+      );
+      expect(
+        readBlock.contains(
+          "(isSignedIn() && resource != null && resource.data.status == 'published')",
+        ),
+        isFalse,
+      );
+      expect(readBlock.contains('resource == null'), isFalse);
+    });
+
     test('rules defines append-only timetable_audit collection', () {
       expect(rulesContent.contains("match /timetable_audit/{auditId}"), isTrue);
       expect(rulesContent.contains("allow update, delete: if false;"), isTrue);

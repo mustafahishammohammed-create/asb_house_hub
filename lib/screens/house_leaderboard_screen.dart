@@ -829,43 +829,47 @@ class _HouseLeaderboardScreenState extends State<HouseLeaderboardScreen> {
     final name = item['student_name'] ?? 'Student';
     final points = item['total_contributed'] ?? 0;
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(medal, style: const TextStyle(fontSize: 26)),
-        const SizedBox(height: 4),
-        Text(
-          name,
-          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
-        ),
-        Text(
-          '+$points Pts',
-          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: color),
-        ),
-        const SizedBox(height: 6),
-        Container(
-          height: height,
-          width: double.infinity,
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.15),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-            border: Border.all(color: color.withValues(alpha: 0.4), width: 1.5),
+    return InkWell(
+      onTap: () => _showStudentContributionModal(item, color),
+      borderRadius: BorderRadius.circular(16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(medal, style: const TextStyle(fontSize: 26)),
+          const SizedBox(height: 4),
+          Text(
+            name,
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
           ),
-          child: Center(
-            child: Text(
-              '#$rank',
-              style: TextStyle(
-                color: color,
-                fontWeight: FontWeight.w900,
-                fontSize: 24,
+          Text(
+            '+$points Pts',
+            style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: color),
+          ),
+          const SizedBox(height: 6),
+          Container(
+            height: height,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.15),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              border: Border.all(color: color.withValues(alpha: 0.4), width: 1.5),
+            ),
+            child: Center(
+              child: Text(
+                '#$rank',
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 24,
+                ),
               ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 

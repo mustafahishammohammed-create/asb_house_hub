@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../models/election_gazette.dart';
 import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/student_profile_modal.dart';
+import 'election_audit_screen.dart';
 import 'home_screen.dart';
 
 class ElectionGazetteScreen extends StatefulWidget {
@@ -88,24 +90,29 @@ class _ElectionGazetteScreenState extends State<ElectionGazetteScreen> {
                 final item = proclamations[index];
                 final houseColor = HouseColors.getHouseColor(item.winnerHouse);
 
-                return Container(
-                  decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                return Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () => _showProclamationAuditModal(context, item, houseColor),
                     borderRadius: BorderRadius.circular(24),
-                    border: Border.all(
-                      color: houseColor.withValues(alpha: 0.35),
-                      width: 1.5,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.06),
-                        blurRadius: 14,
-                        offset: const Offset(0, 4),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(
+                          color: houseColor.withValues(alpha: 0.35),
+                          width: 1.5,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.06),
+                            blurRadius: 14,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       // Header Badge
                       Container(
@@ -265,10 +272,180 @@ class _ElectionGazetteScreenState extends State<ElectionGazetteScreen> {
                       ),
                     ],
                   ),
-                );
-              },
+                ),
+              ),
             );
           },
+        );
+      },
+    ),
+  ),
+);
+}
+
+  void _showProclamationAuditModal(
+    BuildContext context,
+    CertifiedElectionResult item,
+    Color houseColor,
+  ) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF0F172A) : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Text(
+                  HouseColors.getHouseEmoji(item.winnerHouse),
+                  style: const TextStyle(fontSize: 24),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.runningPosition.toUpperCase(),
+                        style: TextStyle(
+                          color: houseColor,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 12,
+                        ),
+                      ),
+                      Text(
+                        'Official Election Audit Certificate',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          color: isDark ? Colors.white : const Color(0xFF0F172A),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: houseColor.withValues(alpha: 0.3)),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Winner:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      Text('${item.winnerName} (#${item.winnerScholarNo})', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('House:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      Text(item.winnerHouse.toUpperCase(), style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: houseColor)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Total Certified Votes:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      Text('${item.totalVotesReceived} Votes', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Victory Margin:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      Text('+${item.victoryMarginVotes} Votes', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: Colors.green)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Certified By:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      Text(item.commissionerName, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.verified_user_rounded, size: 18),
+                    label: const Text('Verify Ballot Audit', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: houseColor,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ElectionAuditScreen(
+                            ballotId: item.ballotId,
+                            ballotTitle: item.ballotTitle,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(width: 10),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.person_rounded, size: 18),
+                  label: const Text('Winner Profile', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    StudentProfileModal.show(
+                      context,
+                      scholarNo: item.winnerScholarNo,
+                      studentName: item.winnerName,
+                      houseName: item.winnerHouse,
+                    );
+                  },
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

@@ -31,6 +31,85 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  Future<void> _handleForgotPassword() async {
+    final resetCtrl = TextEditingController(text: _scholarController.text.trim());
+    try {
+      final sent = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Row(
+            children: [
+              Icon(Icons.lock_reset_rounded, color: Color(0xFF1E3A8A)),
+              SizedBox(width: 10),
+              Text('Reset Password', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Enter your Scholar Number or email to receive a password reset link:',
+                style: TextStyle(fontSize: 13, color: Colors.grey),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: resetCtrl,
+                keyboardType: TextInputType.text,
+                decoration: InputDecoration(
+                  labelText: 'Scholar # / Email',
+                  prefixIcon: const Icon(Icons.badge_outlined),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (resetCtrl.text.trim().isNotEmpty) {
+                  Navigator.pop(ctx, true);
+                }
+              },
+              child: const Text('Send Reset Link'),
+            ),
+          ],
+        ),
+      );
+
+      if (sent == true && mounted) {
+        final scholar = resetCtrl.text.trim();
+        try {
+          await _authService.resetPassword(scholar);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Password reset instructions sent for #$scholar. Please check your inbox.'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Could not send reset link: $e. Please verify your ID or contact admin.'),
+                backgroundColor: Colors.redAccent,
+              ),
+            );
+          }
+        }
+      }
+    } finally {
+      resetCtrl.dispose();
+    }
+  }
+
   Future<void> _handleLogin() async {
     if (_formKey.currentState?.validate() != true) return;
 
@@ -548,15 +627,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     Align(
                       alignment: Alignment.centerRight,
                       child: TextButton(
-                        onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Password reset contact school administrator.',
-                              ),
-                            ),
-                          );
-                        },
+                        onPressed: _handleForgotPassword,
                         child: const Text('Forgot Password?'),
                       ),
                     ),

@@ -635,12 +635,19 @@ class _HouseGroupScreenState extends State<HouseGroupScreen> {
             ],
             if (message.hasAttachment) ...[
               const SizedBox(height: 10),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: SizedBox(
-                  height: 170,
-                  width: double.infinity,
-                  child: buildAcademicImage(message.attachmentUrl),
+              GestureDetector(
+                onTap: () => showAcademicImagePreview(
+                  context,
+                  message.attachmentUrl,
+                  '${message.senderName} Attachment',
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: SizedBox(
+                    height: 170,
+                    width: double.infinity,
+                    child: buildAcademicImage(message.attachmentUrl),
+                  ),
                 ),
               ),
             ],

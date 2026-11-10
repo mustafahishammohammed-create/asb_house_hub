@@ -27,6 +27,15 @@ class _ConfettiOverlayState extends State<ConfettiOverlay>
     // Use addListener only to update particle positions — no setState needed;
     // AnimatedBuilder will rebuild only the canvas layer.
     _controller.addListener(_updateParticles);
+    _controller.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        if (mounted) {
+          setState(() {
+            _particles.clear();
+          });
+        }
+      }
+    });
 
     if (widget.show) {
       _startConfetti();
@@ -84,6 +93,7 @@ class _ConfettiOverlayState extends State<ConfettiOverlay>
   void dispose() {
     _controller.removeListener(_updateParticles);
     _controller.dispose();
+    _particles.clear();
     super.dispose();
   }
 

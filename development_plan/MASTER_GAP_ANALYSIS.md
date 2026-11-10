@@ -2,7 +2,7 @@
 
 Input: `MASTER DEVELOPMENT PROMPT — ASB DIGITAL CAMPUS` (12-section spec, attached 2026-11-08).
 Method: first-hand inspection of the current codebase (spec §12 requirement) before any implementation.
-Baseline: `mustafa1` at `15aa7c3`, plus the M8/P0 working batch (2026-11-09). M1–M7 are delivered; M8 dashboard/acceptance is delivered with four documented acceptance partials (tests 5, 22, 24, 25). `flutter analyze --no-pub` = **No issues found**; full suite green. Firebase **Spark** (no Blaze) — see `election_audit/BLAZE_REQUIRED_FEATURES.md` and `ACCEPTANCE_MATRIX.md`.
+Baseline: `mustafa1` at `15aa7c3`, plus the M8/P0 and follow-up batches through `b09a57d` (2026-11-10). M1-M7 are delivered; M8 dashboard/acceptance is delivered with **64/64 acceptance rows PASS and zero partials** (tests 5, 22, 24, 25 closed). `flutter analyze --no-pub` = **No issues found**; full suite **662/662**. Firebase **Spark** (no Blaze) - see `election_audit/BLAZE_REQUIRED_FEATURES.md` and `ACCEPTANCE_MATRIX.md`.
 
 Legend: **EXISTS** (keep) · **PARTIAL** (extend) · **MISSING** (build) · **CONFLICT** (spec contradicts current code).
 
@@ -23,7 +23,7 @@ Legend: **EXISTS** (keep) · **PARTIAL** (extend) · **MISSING** (build) · **CO
 - **DELIVERED** — Validation for period count, numbering, missing starts, chronology, overlaps, break placement, Friday rejection, and timetable-mismatched override dates; the editor blocks save/publish on errors.
 - **DELIVERED** — Client-side cross-class teacher/room double-booking detection with a blocking conflict dialog (tests 18–19). It is not transactional; concurrent publishes can race, and server-side validation at scale remains Blaze-deferred.
 - **DELIVERED** — Copy-to-selected-days (tests 31–32), temporary one-day schedules (33), and the M8 moving-break recalculation control (test 14).
-- **KNOWN LIMIT** — Cross-class published reads still cannot be strictly denied for list queries under the current collection layout (P1-04, acceptance test 5 PARTIAL).
+- **DELIVERED** — Student timetable reads are scoped to the verified class by Firestore rules; the broad signed-in published clause was removed (P1-04 fixed, acceptance test 5 PASS). Staff retain published/submitted cross-class reads for conflict checks and approval by design.
 
 ## 3. House communication groups (spec §3) — ✅ DELIVERED (M4, 2026-11-08)
 
@@ -62,7 +62,7 @@ Legend: **EXISTS** (keep) · **PARTIAL** (extend) · **MISSING** (build) · **CO
 - **DELIVERED** — Dashboard "today's timetable / Now / Next / Break" card driven by the **published section timetable**, with all eight periods plus the BRK row, published-only data, and a verified-class gate. Unverified profiles render a truthful notice instead of another class's schedule.
 - **DELIVERED** — Unread class/house/timetable counts from the M6 notification stream, opening the notification centre.
 - **DELIVERED** — Responsive dashboard padding at desktop widths; younger students do not see council/sports/AI/event-wall clutter or election/chat/claim cards.
-- **KNOWN LIMIT** — The dashboard/timetable UI scopes to the verified class, but the current `timetable_versions` collection rules cannot strictly deny list queries for another class (P1-04, acceptance test 5 PARTIAL).
+- **DELIVERED** — The dashboard/timetable UI scopes to the verified class and Firestore rules deny students another class's timetable; staff cross-class published/submitted reads remain for conflict checks and approval (P1-04 fixed, acceptance test 5 PASS).
 
 ---
 
@@ -91,7 +91,7 @@ Each module: model + service + rules + UI + tests, deployed and verified before 
 - **M5 — Class groups & academic communication. ✅ DELIVERED FOR SCOPE 2026-11-08.** Verified-class auto-membership; class-teacher and assigned-subject-teacher send; class representative/vice send; configurable `student_posting_enabled` (default read-only); categories, data-URL attachments, pin/hide/delete moderation; cross-class isolation in rules. *(Depends on M1 + M4 machinery.)* Class notification fan-out stays M6/test 62; rules tests are source contract. See `M5_VERIFICATION.md`.
 - **M6 — Notification engine (in-app, Spark). ✅ DELIVERED 2026-11-08.** Unified in-app notifications; timetable publish (test 60), house announcement (61), class announcement (62) fan-out; deterministic dedupe doc IDs; priority badges; unread badge counter; mark-read/mark-all-read; rules-enforced read-state protection. *(Depends on M2/M4/M5 events.)* See `M6_VERIFICATION.md`.
 - **M7 — Admin Command Center expansion. ✅ DELIVERED 2026-11-08, HARDENED 2026-11-09.** Academic/section management (LKG–12), verification, transfers, house assignment, academic year promotion (houses strictly preserved), timetable approval queue (approve/reject/audit), one-day override/restore, append-only audit log viewer, and user status management / unauthorized access blocking. Live write denials return `false` without phantom cache entries; batch promotion distinguishes roster-read errors from an empty roster and counts missing scholar numbers as failures; secondary notifications are best-effort. See `M7_VERIFICATION.md`.
-- **M8 — Dashboard & profile polish + acceptance. ✅ DELIVERED 2026-11-09, with 4 documented partials.** Verified-class dashboard (today/current/next/break), class-teacher field, unread breakdown, younger-student simplification, responsive layout, and the full 64-row spec §11 acceptance matrix. 60 tests PASS; tests 5, 22, 24, 25 are PARTIAL and explicitly not counted as done. See `M8_VERIFICATION.md` and `ACCEPTANCE_MATRIX.md`.
+- **M8 — Dashboard & profile polish + acceptance. ✅ DELIVERED 2026-11-10, all 64 rows PASS.** Verified-class dashboard (today/current/next/break), class-teacher field, unread breakdown, younger-student simplification, responsive layout, and the full 64-row spec §11 acceptance matrix. Tests 5, 22, 24, and 25 are closed by direct rules/widget evidence. See `M8_VERIFICATION.md` and `ACCEPTANCE_MATRIX.md`.
 
 **Blaze-deferred (add to BLAZE_REQUIRED_FEATURES.md):** server-side notification fan-out, atomic cross-collection promotion/transfer transactions, server timetable conflict validation at scale.
 
@@ -99,11 +99,10 @@ Each module: model + service + rules + UI + tests, deployed and verified before 
 
 Spec §11 tests 1–64 map to modules: 1–8 → M1; 9–20 → M2; 21–38 → M2/M3; 39–49 → M4; 50–54 → M5; 55–64 → M6/M7. The row-by-row evidence, status, and limitation is in `ACCEPTANCE_MATRIX.md` and enforced by `test/acceptance_matrix_test.dart`.
 
-**Current honest score:** 60 PASS · 4 PARTIAL · 0 MISSING. The partials are test 5 (timetable cross-class rules scoping, P1-04), test 22 (multi-class editor picker not directly widget-tested), and tests 24–25 (period time-picker interactions not directly automated). PARTIALs are not counted as passing.
+**Current honest score:** 64 PASS · 0 PARTIAL · 0 MISSING. Test 5 (student timetable cross-class reads) is closed by class-scoped Firestore rules; tests 22, 24, and 25 are closed by direct widget tests.
 
 ## Next work (post-M8)
 
-1. **P1-04 / acceptance test 5** — path-scoped timetable storage (or a per-class active-timetable document with `get`-only student access and staff-only `list`) so a modified client cannot read another class's schedule. This is the only security-scoping partial.
-2. **Acceptance tests 22, 24, 25** — add direct widget tests for the multi-class editor picker and the per-period time-picker interactions.
-3. **P1-01 secrets** — build the production release with all four `--dart-define` secrets and remove reliance on the development fallbacks.
-4. **Blaze-deferred** — server-side notification fan-out, atomic promotion/transfer transactions, and server-side timetable conflict validation at scale.
+1. **P1-01 secrets** — build the production release with all four `--dart-define` secrets and remove reliance on the development fallbacks.
+2. **Firebase Storage initialization** — enable Storage, deploy `storage.rules`, and verify >700 KB circular PDF uploads (D9 in `BLAZE_REQUIRED_FEATURES.md`).
+3. **Blaze-deferred** — server-side notification fan-out, atomic promotion/transfer transactions, and server-side timetable conflict validation at scale.

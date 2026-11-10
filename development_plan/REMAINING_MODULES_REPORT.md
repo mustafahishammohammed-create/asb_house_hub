@@ -22,7 +22,7 @@
 | **M5 — Class groups** | ✅ **DONE for scope** (2026-11-08, rules deployed). See [`M5_VERIFICATION.md`](M5_VERIFICATION.md). | verified-class auto-membership, class-teacher/subject-teacher/representative send, configurable student posting, cross-class isolation |
 | **M6 — Notification engine** | ✅ **DONE for scope** (2026-11-08, hardened 2026-11-09; rules deployed). See [`M6_VERIFICATION.md`](M6_VERIFICATION.md). | timetable publish (60), house announcement (61), class announcement (62), deterministic dedupe, priority, mark-all-read, truthful lookup/substitution failure reporting |
 | **M7 — Admin Command Center expansion** | ✅ **DONE for scope** (2026-11-08, hardened 2026-11-09; rules deployed). See [`M7_VERIFICATION.md`](M7_VERIFICATION.md). | academic/teacher/house/group/user mgmt, approval queue, audit viewer, promotion, truthful live-write and promotion failure reporting |
-| **M8 — Dashboard/profile + acceptance** | ✅ **DONE for scope** (2026-11-09). 60 PASS / 4 PARTIAL / 0 MISSING acceptance rows; partials explicitly not counted as done. See [`M8_VERIFICATION.md`](M8_VERIFICATION.md) and [`ACCEPTANCE_MATRIX.md`](ACCEPTANCE_MATRIX.md). | verified-class dashboard (today/Now/Next/Break), class teacher, unread breakdown, younger-student simplification, responsive layout, 64-row acceptance matrix |
+| **M8 — Dashboard/profile + acceptance** | ✅ **DONE for scope** (2026-11-10). 64 PASS / 0 PARTIAL / 0 MISSING acceptance rows. See [`M8_VERIFICATION.md`](M8_VERIFICATION.md) and [`ACCEPTANCE_MATRIX.md`](ACCEPTANCE_MATRIX.md). | verified-class dashboard (today/Now/Next/Break), class teacher, unread breakdown, younger-student simplification, responsive layout, 64-row acceptance matrix |
 
 **Separate, pre-existing workstreams (not part of M1–M8 but must not regress):**
 - **Academics security audit:** P0 + P1 **CLOSED** (A1–A6, A8, and A4 *interim* hardening). P2 **OPEN** (A7 hygiene items P2-1..P2-5, A9 items P2-6/P2-7). A4 *end-state* (atomic merit claim) deferred to Blaze **D5**. See `academics_audit/REMEDIATION_ROADMAP.md`.
@@ -237,7 +237,7 @@ Verified 2026-11-08 after V1–V4 remediation: **complete for scope**. The origi
 
 **Goal:** verified-class student dashboard + the complete spec §11 acceptance suite across roles × frontend × backend.
 **Depends on:** M1–M7 (capstone).
-**Current state:** ✅ **delivered 2026-11-09** for the stated Spark scope, with four honest partials.
+**Current state:** ✅ **delivered 2026-11-10** for the stated Spark scope, with all 64 acceptance rows PASS and zero partials.
 
 **Delivered requirements (spec §7, §10.1, §10.5–10.6):**
 - ✅ Dashboard "today's 8 periods / current / next / break" driven by the **published section timetable** (M2 active version), published-only, verified-class gated.
@@ -247,16 +247,16 @@ Verified 2026-11-08 after V1–V4 remediation: **complete for scope**. The origi
 - ✅ Responsive: desktop/laptop/tablet/mobile; narrow viewport overflow test.
 - ✅ **Full §11 acceptance suite (1–64)** mapped row-by-row in `ACCEPTANCE_MATRIX.md` and enforced by `test/acceptance_matrix_test.dart`.
 
-**Tests:** `test/dashboard_profile_test.dart` 6/6; `test/acceptance_matrix_test.dart` 6/6; `test/teacher_timetable_editor_test.dart` 12/12 (including the new moving-break test).
-**Honest score:** **60 PASS · 4 PARTIAL · 0 MISSING**. Partials: test 5 (timetable cross-class rules scoping, P1-04), test 22 (multi-class editor picker not directly widget-tested), tests 24–25 (per-period time-picker interactions not directly automated). PARTIALs are not counted as passing.
-**Definition of done:** dashboard/profile complete; suite green; rules deployed; release rebuilt; committed and pushed. The four partials are follow-ups, not phantom passes.
+**Tests:** `test/dashboard_profile_test.dart` 6/6; `test/acceptance_matrix_test.dart` 7/7; `test/circular_composer_test.dart` 9/9; `test/campus_event_test.dart` 5/5; `test/teacher_timetable_editor_test.dart` 15/15 (moving-break, multi-class picker, and time-picker tests); full suite 662/662.
+**Honest score:** **64 PASS · 0 PARTIAL · 0 MISSING**. Test 5 is closed by class-scoped Firestore rules; tests 22, 24, and 25 are closed by direct widget tests.
+**Definition of done:** dashboard/profile complete; suite green; Firestore rules deployed; release rebuilt; committed and pushed. No acceptance row is a phantom pass.
 **See:** [`M8_VERIFICATION.md`](M8_VERIFICATION.md) and [`ACCEPTANCE_MATRIX.md`](ACCEPTANCE_MATRIX.md).
 
 ---
 
 ## Acceptance — spec §11 tests 1–64 mapped to modules
 
-**Delivered 2026-11-09:** the authoritative row-by-row matrix is [`ACCEPTANCE_MATRIX.md`](ACCEPTANCE_MATRIX.md), enforced by `test/acceptance_matrix_test.dart`. Current honest score: **60 PASS · 4 PARTIAL · 0 MISSING**. The partials (tests 5, 22, 24, 25) are documented and **not** counted as passing. Every restriction is enforced in rules; rules tests remain source-contract assertions because the repo has no emulator harness (project convention).
+**Delivered 2026-11-10:** the authoritative row-by-row matrix is [`ACCEPTANCE_MATRIX.md`](ACCEPTANCE_MATRIX.md), enforced by `test/acceptance_matrix_test.dart`. Current honest score: **64 PASS · 0 PARTIAL · 0 MISSING**. Tests 5, 22, 24, and 25 are closed by direct evidence. Every restriction is enforced in rules; rules tests remain source-contract assertions because the repo has no emulator harness (project convention). Firebase Storage is not initialized, so circular PDFs above 700 KB remain blocked; this is recorded as D9 in `BLAZE_REQUIRED_FEATURES.md`.
 
 **§11.1 Academic classification (1–8) → M1 ✅ DONE**
 1 register Grade 11D · 2 verification · 3 11D membership on approval · 4 auto 11D timetable access · 5 cannot retrieve another class's timetable · 6 admin transfer 11D→11B · 7 info/timetable/group update · 8 house unchanged.

@@ -100,8 +100,9 @@ class LiveMatchEvent {
         ? ' by $playerName'
         : '';
     final minStr = minute != null ? ' ($minute\')' : '';
-    final houseDisplay =
-        '${houseName[0].toUpperCase()}${houseName.substring(1)} House';
+    final houseDisplay = houseName.isNotEmpty
+        ? '${houseName[0].toUpperCase()}${houseName.substring(1)} House'
+        : 'House';
 
     switch (eventType) {
       case MatchEventType.goal:

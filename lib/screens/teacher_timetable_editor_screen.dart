@@ -88,6 +88,15 @@ class _TeacherTimetableEditorScreenState
     _loadDayVersion(_selectedDay, overrideDate: _overrideDate);
   }
 
+  @override
+  void dispose() {
+    for (final c in _slotControllers) {
+      c.dispose();
+    }
+    _slotControllers.clear();
+    super.dispose();
+  }
+
   void _loadDayVersion(String day, {DateTime? overrideDate}) {
     for (final c in _slotControllers) {
       c.dispose();
@@ -885,27 +894,68 @@ class _TeacherTimetableEditorScreenState
                   day,
                   _effectiveFrom,
                 );
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        day,
-                        style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
+                return InkWell(
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    setState(() {
+                      _selectedDay = day;
+                      _loadDayVersion(day);
+                    });
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Switched timetable editor to $day.'),
+                        duration: const Duration(seconds: 2),
+                        behavior: SnackBarBehavior.floating,
                       ),
-                      const SizedBox(height: 4),
-                      if (v == null)
-                        const Text('No published schedule.', style: TextStyle(color: Colors.grey, fontSize: 12))
-                      else
-                        ...v.slots.map(
-                          (s) => Text(
-                            'P${s.periodNumber} (${s.timeSlot}): ${s.subject.isEmpty ? 'Free' : s.subject} ${s.room.isNotEmpty ? '[${s.room}]' : ''}',
-                            style: const TextStyle(fontSize: 12),
-                          ),
+                    );
+                  },
+                  borderRadius: BorderRadius.circular(10),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              day,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 15,
+                                color: day == _selectedDay ? const Color(0xFF6366F1) : null,
+                              ),
+                            ),
+                            if (day == _selectedDay) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF6366F1).withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Text(
+                                  'CURRENT',
+                                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Color(0xFF6366F1)),
+                                ),
+                              ),
+                            ],
+                            const Spacer(),
+                            const Icon(Icons.edit_calendar_rounded, size: 16, color: Colors.grey),
+                          ],
                         ),
-                      const Divider(height: 16),
-                    ],
+                        const SizedBox(height: 4),
+                        if (v == null)
+                          const Text('No published schedule. Tap to author.', style: TextStyle(color: Colors.grey, fontSize: 12))
+                        else
+                          ...v.slots.map(
+                            (s) => Text(
+                              'P${s.periodNumber} (${s.timeSlot}): ${s.subject.isEmpty ? 'Free' : s.subject} ${s.room.isNotEmpty ? '[${s.room}]' : ''}',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        const Divider(height: 16),
+                      ],
+                    ),
                   ),
                 );
               }).toList(),
