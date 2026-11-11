@@ -2,6 +2,30 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 enum EventCategory { all, cultural, sports, academic, arts, tech }
 
+/// Lifecycle of a campus event. Drafts are staff-only until published.
+enum CampusEventStatus { draft, published, cancelled }
+
+extension CampusEventStatusExt on CampusEventStatus {
+  String get label {
+    switch (this) {
+      case CampusEventStatus.draft:
+        return 'Draft';
+      case CampusEventStatus.published:
+        return 'Published';
+      case CampusEventStatus.cancelled:
+        return 'Cancelled';
+    }
+  }
+
+  static CampusEventStatus fromString(String? val) {
+    final clean = (val ?? '').trim().toLowerCase();
+    for (final s in CampusEventStatus.values) {
+      if (s.name == clean) return s;
+    }
+    return CampusEventStatus.published;
+  }
+}
+
 extension EventCategoryExt on EventCategory {
   String get displayName {
     switch (this) {
@@ -42,6 +66,11 @@ class CampusEvent implements Comparable<CampusEvent> {
   final double pointsMultiplier;
   final String bannerUrl; // Supports Base64 data URIs and HTTPS URLs
   final bool isLive;
+  final CampusEventStatus status;
+  final DateTime? createdAt;
+  final String authorUid;
+  final String authorName;
+  final String cancelledReason;
 
   CampusEvent({
     required this.id,
@@ -56,24 +85,53 @@ class CampusEvent implements Comparable<CampusEvent> {
     this.pointsMultiplier = 1.0,
     this.bannerUrl = '',
     this.isLive = false,
+    this.status = CampusEventStatus.published,
+    this.createdAt,
+    this.authorUid = '',
+    this.authorName = '',
+    this.cancelledReason = '',
   });
 
-  bool get isOngoing {
-    final now = DateTime.now();
-    return now.isAfter(startTime) && now.isBefore(endTime);
-  }
+  bool get isDraft => status == CampusEventStatus.draft;
 
-  bool get isUpcoming => DateTime.now().isBefore(startTime);
+  bool get isCancelled => status == CampusEventStatus.cancelled;
+
+  bool get isPublished => status == CampusEventStatus.published;
+
+  /// Cancelled events never run, regardless of the stored live flag.
+  bool isOngoingAt(DateTime now) =>
+      isPublished && now.isAfter(startTime) && now.isBefore(endTime);
+
+  bool isConcludedAt(DateTime now) => !now.isBefore(endTime);
+
+  /// The manual live flag is only honoured while the event is actually on.
+  bool isLiveAt(DateTime now) => isLive && isOngoingAt(now);
+
+  bool get isOngoing => isOngoingAt(DateTime.now());
+
+  bool get isUpcoming => isPublished && DateTime.now().isBefore(startTime);
 
   Duration get timeRemaining => endTime.difference(DateTime.now());
 
   String get formattedRemaining {
+    if (isCancelled) return 'Cancelled';
+    if (isDraft) return 'Draft';
+    final now = DateTime.now();
+    if (isConcludedAt(now)) return 'Concluded';
+    if (now.isBefore(startTime)) {
+      final until = startTime.difference(now);
+      if (until.inDays > 0) return 'Starts in ${until.inDays}d';
+      if (until.inHours > 0) return 'Starts in ${until.inHours}h';
+      return 'Starts in ${until.inMinutes}m';
+    }
     final rem = timeRemaining;
-    if (rem.isNegative) return 'Concluded';
-    if (rem.inHours > 0) return '${rem.inHours}h ${rem.inMinutes % 60}m remaining';
+    if (rem.inHours > 0) {
+      return '${rem.inHours}h ${rem.inMinutes % 60}m remaining';
+    }
     return '${rem.inMinutes}m remaining';
   }
 
+  /// Local cache / SharedPreferences representation (JSON-safe).
   Map<String, dynamic> toMap() {
     return {
       'id': id,
@@ -88,7 +146,81 @@ class CampusEvent implements Comparable<CampusEvent> {
       'points_multiplier': pointsMultiplier,
       'banner_url': bannerUrl,
       'is_live': isLive,
+      'status': status.name,
+      if (createdAt != null) 'created_at': createdAt!.toIso8601String(),
+      'author_uid': authorUid,
+      'author_name': authorName,
+      'cancelled_reason': cancelledReason,
     };
+  }
+
+  /// Firestore representation: timestamps are real Timestamps so rules and
+  /// ordering work, and `created_at` can use a server timestamp.
+  Map<String, dynamic> toFirestoreMap({bool serverTimestampCreatedAt = false}) {
+    return {
+      'id': id,
+      'title': title,
+      'description': description,
+      'category': category.name,
+      'house_scope': houseScope,
+      'start_time': Timestamp.fromDate(startTime),
+      'end_time': Timestamp.fromDate(endTime),
+      'venue': venue,
+      'points_awarded': pointsAwarded,
+      'points_multiplier': pointsMultiplier,
+      'banner_url': bannerUrl,
+      'is_live': isLive,
+      'status': status.name,
+      if (serverTimestampCreatedAt)
+        'created_at': FieldValue.serverTimestamp()
+      else if (createdAt != null)
+        'created_at': Timestamp.fromDate(createdAt!),
+      'author_uid': authorUid,
+      'author_name': authorName,
+      // Always present so re-publishing an edited event clears a stale reason
+      // instead of leaving it behind in the merged Firestore document.
+      'cancelled_reason': cancelledReason,
+    };
+  }
+
+  CampusEvent copyWith({
+    String? id,
+    String? title,
+    String? description,
+    EventCategory? category,
+    String? houseScope,
+    DateTime? startTime,
+    DateTime? endTime,
+    String? venue,
+    int? pointsAwarded,
+    double? pointsMultiplier,
+    String? bannerUrl,
+    bool? isLive,
+    CampusEventStatus? status,
+    DateTime? createdAt,
+    String? authorUid,
+    String? authorName,
+    String? cancelledReason,
+  }) {
+    return CampusEvent(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      description: description ?? this.description,
+      category: category ?? this.category,
+      houseScope: houseScope ?? this.houseScope,
+      startTime: startTime ?? this.startTime,
+      endTime: endTime ?? this.endTime,
+      venue: venue ?? this.venue,
+      pointsAwarded: pointsAwarded ?? this.pointsAwarded,
+      pointsMultiplier: pointsMultiplier ?? this.pointsMultiplier,
+      bannerUrl: bannerUrl ?? this.bannerUrl,
+      isLive: isLive ?? this.isLive,
+      status: status ?? this.status,
+      createdAt: createdAt ?? this.createdAt,
+      authorUid: authorUid ?? this.authorUid,
+      authorName: authorName ?? this.authorName,
+      cancelledReason: cancelledReason ?? this.cancelledReason,
+    );
   }
 
   factory CampusEvent.fromMap(Map<String, dynamic> map, {String? docId}) {
@@ -97,6 +229,19 @@ class CampusEvent implements Comparable<CampusEvent> {
       if (v is String) return DateTime.tryParse(v) ?? DateTime.now();
       return DateTime.now();
     }
+
+    DateTime? parseOptionalDate(dynamic v) {
+      if (v is Timestamp) return v.toDate();
+      if (v is String) return DateTime.tryParse(v);
+      return null;
+    }
+
+    final rawStatus = map['status']?.toString();
+    final status = rawStatus != null && rawStatus.isNotEmpty
+        ? CampusEventStatusExt.fromString(rawStatus)
+        : (map['is_published'] == false
+              ? CampusEventStatus.draft
+              : CampusEventStatus.published);
 
     return CampusEvent(
       id: docId ?? map['id']?.toString() ?? '',
@@ -111,9 +256,53 @@ class CampusEvent implements Comparable<CampusEvent> {
       pointsMultiplier: (map['points_multiplier'] as num?)?.toDouble() ?? 1.0,
       bannerUrl: map['banner_url']?.toString() ?? '',
       isLive: map['is_live'] == true,
+      status: status,
+      createdAt: parseOptionalDate(map['created_at']),
+      authorUid: map['author_uid']?.toString() ?? '',
+      authorName: map['author_name']?.toString() ?? '',
+      cancelledReason: map['cancelled_reason']?.toString() ?? '',
     );
   }
 
   @override
   int compareTo(CampusEvent other) => startTime.compareTo(other.startTime);
+}
+
+/// One student's RSVP for a campus event, stored at
+/// `events/{eventId}/registrations/{uid}`.
+class EventRegistration {
+  final String uid;
+  final String eventId;
+  final String studentName;
+  final String scholarNo;
+  final DateTime? createdAt;
+
+  const EventRegistration({
+    required this.uid,
+    required this.eventId,
+    this.studentName = '',
+    this.scholarNo = '',
+    this.createdAt,
+  });
+
+  factory EventRegistration.fromMap(
+    Map<String, dynamic> map, {
+    required String docId,
+    required String eventId,
+  }) {
+    DateTime? created;
+    final raw = map['created_at'];
+    if (raw is Timestamp) {
+      created = raw.toDate();
+    } else if (raw is String) {
+      created = DateTime.tryParse(raw);
+    }
+    return EventRegistration(
+      uid: docId,
+      eventId: eventId,
+      studentName: map['student_name']?.toString() ?? '',
+      scholarNo: map['scholar_no']?.toString() ?? '',
+      createdAt: created,
+    );
+  }
 }

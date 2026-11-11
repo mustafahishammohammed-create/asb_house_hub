@@ -1,73 +1,110 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../models/campus_event.dart';
 import '../services/auth_service.dart';
+import '../services/hierarchy_service.dart';
 import '../theme/app_theme.dart';
 import 'home_screen.dart';
 
-/// Screen for displaying Campus House Events, category navigation, live stage HUD, and details.
+/// Screen for displaying Campus House Events, filters, the live-event HUD, and details.
 class EventsScreen extends StatefulWidget {
   final String userHouse;
   final DateTime? mockNow;
 
-  const EventsScreen({
-    super.key,
-    this.userHouse = 'emerald',
-    this.mockNow,
-  });
+  const EventsScreen({super.key, this.userHouse = 'emerald', this.mockNow});
 
   @override
   State<EventsScreen> createState() => _EventsScreenState();
 }
 
 class _EventsScreenState extends State<EventsScreen> {
-  static const String _kRegisteredEventsKey = 'registered_campus_events_set';
   final _authService = AuthService();
+  late final bool _isStaff;
+  late final String _uid;
+  late final String _studentName;
+  late final String _scholarNo;
+  late final Stream<List<CampusEvent>> _eventsStream;
   EventCategory _selectedCategory = EventCategory.all;
   String _searchQuery = '';
-  final Set<String> _registeredEventIds = {};
+  String _selectedHouse = 'any';
 
   @override
   void initState() {
     super.initState();
-    _loadRegisteredEvents();
+    final profile = AuthService.getCachedProfile();
+    final role = AuthService.getCachedRole();
+    final scholarNo = AuthService.getCachedScholarNo();
+    _isStaff =
+        HierarchyService.isSuperAdmin(scholarNo: scholarNo, role: role) ||
+        HierarchyService.isTeacherOrFaculty(scholarNo: scholarNo, role: role);
+    _uid = AuthService.getCachedUid() ?? _authService.currentUser?.uid ?? '';
+    _studentName =
+        (profile?['full_name'] ?? _authService.currentUser?.displayName ?? '')
+            .toString();
+    _scholarNo = scholarNo ?? '';
+    _eventsStream = _authService.getEventsStream(
+      house: widget.userHouse,
+      includeDrafts: _isStaff,
+    );
   }
 
-  Future<void> _loadRegisteredEvents() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final list = prefs.getStringList(_kRegisteredEventsKey);
-      if (list != null && mounted) {
-        setState(() {
-          _registeredEventIds.addAll(list);
-        });
-      }
-    } catch (_) {}
+  DateTime get _now => widget.mockNow ?? DateTime.now();
+
+  Future<void> _reloadEvents({required bool seedSamples}) async {
+    final messenger = ScaffoldMessenger.of(context);
+    if (seedSamples) {
+      await AuthService.cacheEvents(AuthService.getFoundationalEvents());
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Sample campus events loaded on this device only.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } else {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Reloading campus events from Firestore...'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+    if (mounted) setState(() {});
   }
 
-  Future<void> _toggleRegistration(String eventId) async {
-    setState(() {
-      if (_registeredEventIds.contains(eventId)) {
-        _registeredEventIds.remove(eventId);
-      } else {
-        _registeredEventIds.add(eventId);
-      }
-    });
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setStringList(_kRegisteredEventsKey, _registeredEventIds.toList());
-    } catch (_) {}
+  void _showMessage(String message, {bool error = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: error ? Colors.red[700] : Colors.green[700],
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final houseColor = HouseColors.getHouseColor(widget.userHouse);
-    final cachedEvents = AuthService.getCachedEvents();
+    final viewerHouse = AuthService.normalizeCampusHouse(widget.userHouse);
+    final cachedEvents = AuthService.getCachedEvents()
+        .where(
+          (event) =>
+              _isStaff ||
+              (event.status != CampusEventStatus.draft &&
+                  (AuthService.normalizeCampusHouse(event.houseScope) ==
+                          'all' ||
+                      AuthService.normalizeCampusHouse(event.houseScope) ==
+                          viewerHouse)),
+        )
+        .toList();
+    final now = _now;
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+      backgroundColor: isDark
+          ? const Color(0xFF0F172A)
+          : const Color(0xFFF8FAFC),
       appBar: AppBar(
         title: const Text(
           'Campus House Events',
@@ -79,54 +116,68 @@ class _EventsScreenState extends State<EventsScreen> {
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
             tooltip: 'Reload Campus Events',
-            onPressed: () async {
-              final messenger = ScaffoldMessenger.of(context);
-              await AuthService.cacheEvents(AuthService.getFoundationalEvents());
-              messenger.showSnackBar(
-                const SnackBar(
-                  content: Text('✓ Official collegiate events refreshed!'),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
-              if (mounted) setState(() {});
-            },
+            onPressed: () =>
+                _reloadEvents(seedSamples: !AuthService.isFirebaseLive),
           ),
-          IconButton(
-            icon: const Icon(Icons.add_circle_outline_rounded),
-            tooltip: 'Schedule Campus Event',
-            onPressed: () => _showCreateEventModal(context, houseColor),
-          ),
+          if (_isStaff)
+            IconButton(
+              icon: const Icon(Icons.add_circle_outline_rounded),
+              tooltip: 'Publish Campus Event',
+              onPressed: () => _showEventComposer(context, houseColor),
+            ),
         ],
       ),
       body: StreamBuilder<List<CampusEvent>>(
         initialData: cachedEvents,
-        stream: _authService.getEventsStream(),
+        stream: _eventsStream,
         builder: (context, snapshot) {
           final events = snapshot.data ?? cachedEvents;
           final filtered = events.where((e) {
-            final matchesCat = _selectedCategory == EventCategory.all ||
+            final matchesCat =
+                _selectedCategory == EventCategory.all ||
                 e.category == _selectedCategory;
-            final matchesSearch = _searchQuery.isEmpty ||
+            final matchesHouse =
+                _selectedHouse == 'any' ||
+                AuthService.normalizeCampusHouse(e.houseScope) ==
+                    _selectedHouse;
+            final matchesSearch =
+                _searchQuery.isEmpty ||
                 e.title.toLowerCase().contains(_searchQuery.toLowerCase()) ||
                 e.venue.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-                e.description.toLowerCase().contains(_searchQuery.toLowerCase());
-            return matchesCat && matchesSearch;
+                e.description.toLowerCase().contains(
+                  _searchQuery.toLowerCase(),
+                );
+            return matchesCat && matchesHouse && matchesSearch;
           }).toList();
 
-          final liveEvents = events.where((e) => e.isLive || e.isOngoing).toList();
+          final liveEvents = events
+              .where((e) => e.isLiveAt(now) || e.isOngoingAt(now))
+              .toList();
 
           return FocusTraversalGroup(
             policy: OrderedTraversalPolicy(),
             child: CustomScrollView(
               slivers: [
-                // Live Stage Telemetry HUD
+                // Live event HUD. This is a schedule indicator, not a media
+                // stream: tapping it opens the normal event details.
                 if (liveEvents.isNotEmpty)
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      child: _buildLiveStageHUD(liveEvents, houseColor, isDark),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      child: _buildLiveStageHUD(
+                        liveEvents,
+                        houseColor,
+                        isDark,
+                        now,
+                      ),
                     ),
                   ),
+
+                if (snapshot.hasError)
+                  SliverToBoxAdapter(child: _buildStreamError(isDark)),
 
                 // Category Filter Bar
                 SliverToBoxAdapter(
@@ -136,21 +187,37 @@ class _EventsScreenState extends State<EventsScreen> {
                   ),
                 ),
 
+                // House Scope Filter Bar
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: _buildHouseFilterBar(houseColor, isDark),
+                  ),
+                ),
+
                 // Search Bar
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
                     child: TextField(
                       decoration: InputDecoration(
                         hintText: 'Search events, stages, venues...',
                         prefixIcon: const Icon(Icons.search_rounded),
                         filled: true,
-                        fillColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                        fillColor: isDark
+                            ? const Color(0xFF1E293B)
+                            : Colors.white,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(16),
                           borderSide: BorderSide.none,
                         ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
                       ),
                       onChanged: (v) => setState(() => _searchQuery = v.trim()),
                     ),
@@ -167,13 +234,10 @@ class _EventsScreenState extends State<EventsScreen> {
                   SliverPadding(
                     padding: const EdgeInsets.all(16),
                     sliver: SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final event = filtered[index];
-                          return _buildEventCard(event, houseColor, isDark);
-                        },
-                        childCount: filtered.length,
-                      ),
+                      delegate: SliverChildBuilderDelegate((context, index) {
+                        final event = filtered[index];
+                        return _buildEventCard(event, houseColor, isDark, now);
+                      }, childCount: filtered.length),
                     ),
                   ),
               ],
@@ -184,15 +248,140 @@ class _EventsScreenState extends State<EventsScreen> {
     );
   }
 
-  Widget _buildLiveStageHUD(List<CampusEvent> liveEvents, Color houseColor, bool isDark) {
+  Widget _buildStreamError(bool isDark) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.red.withValues(alpha: isDark ? 0.15 : 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.cloud_off_rounded, color: Colors.redAccent, size: 20),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Could not load the live campus schedule. Showing this device\'s cached events.',
+              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHouseFilterBar(Color houseColor, bool isDark) {
+    const houses = <String>[
+      'any',
+      'all',
+      'ruby',
+      'sapphire',
+      'emerald',
+      'topaz',
+    ];
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Text(
+              'House:',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: isDark ? Colors.white70 : const Color(0xFF475569),
+              ),
+            ),
+          ),
+          ...houses.map((scope) {
+            final selected = _selectedHouse == scope;
+            final label = scope == 'any'
+                ? 'All'
+                : scope == 'all'
+                ? 'School-wide'
+                : '${scope[0].toUpperCase()}${scope.substring(1)}';
+            final color = scope == 'any' || scope == 'all'
+                ? houseColor
+                : HouseColors.getHouseColor(scope);
+            return Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Semantics(
+                button: true,
+                selected: selected,
+                label: scope == 'any'
+                    ? 'Show events from every house'
+                    : scope == 'all'
+                    ? 'Show school-wide events'
+                    : 'Show $label house events',
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    minHeight: 44,
+                    minWidth: 44,
+                  ),
+                  child: InkWell(
+                    onTap: () => setState(() => _selectedHouse = scope),
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? color
+                            : (isDark ? const Color(0xFF1E293B) : Colors.white),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: selected
+                              ? color
+                              : (isDark
+                                    ? const Color(0xFF334155)
+                                    : const Color(0xFFE2E8F0)),
+                        ),
+                      ),
+                      child: Text(
+                        label,
+                        style: TextStyle(
+                          color: selected
+                              ? Colors.white
+                              : (isDark
+                                    ? Colors.white70
+                                    : const Color(0xFF334155)),
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLiveStageHUD(
+    List<CampusEvent> liveEvents,
+    Color houseColor,
+    bool isDark,
+    DateTime now,
+  ) {
     final firstLive = liveEvents.first;
     return Semantics(
       liveRegion: true,
-      label: 'Live Stage Alert: ${firstLive.title} is ongoing now at ${firstLive.venue}. Tap to join live stage session. ${firstLive.formattedRemaining}',
+      label:
+          'Live event: ${firstLive.title} is ongoing now at ${firstLive.venue}. Tap for event details.',
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () => _showLiveStageModal(context, firstLive, houseColor),
+          onTap: () =>
+              _showEventDetailsModal(context, firstLive, houseColor, now),
           borderRadius: BorderRadius.circular(20),
           child: Container(
             padding: const EdgeInsets.all(16),
@@ -220,7 +409,10 @@ class _EventsScreenState extends State<EventsScreen> {
                 Row(
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.redAccent,
                         borderRadius: BorderRadius.circular(8),
@@ -228,10 +420,14 @@ class _EventsScreenState extends State<EventsScreen> {
                       child: const Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.fiber_manual_record, color: Colors.white, size: 12),
+                          Icon(
+                            Icons.fiber_manual_record,
+                            color: Colors.white,
+                            size: 12,
+                          ),
                           SizedBox(width: 4),
                           Text(
-                            'LIVE STAGE',
+                            'HAPPENING NOW',
                             style: TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w900,
@@ -265,19 +461,29 @@ class _EventsScreenState extends State<EventsScreen> {
                 const SizedBox(height: 4),
                 Row(
                   children: [
-                    const Icon(Icons.location_on_rounded, color: Colors.white70, size: 14),
+                    const Icon(
+                      Icons.location_on_rounded,
+                      color: Colors.white70,
+                      size: 14,
+                    ),
                     const SizedBox(width: 4),
                     Expanded(
                       child: Text(
                         firstLive.venue,
-                        style: const TextStyle(color: Colors.white70, fontSize: 13),
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 13,
+                        ),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     if (firstLive.pointsMultiplier > 1.0) ...[
                       const SizedBox(width: 8),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.amber,
                           borderRadius: BorderRadius.circular(6),
@@ -302,7 +508,11 @@ class _EventsScreenState extends State<EventsScreen> {
     );
   }
 
-  Widget _buildCategoryFilterBar(List<CampusEvent> events, Color houseColor, bool isDark) {
+  Widget _buildCategoryFilterBar(
+    List<CampusEvent> events,
+    Color houseColor,
+    bool isDark,
+  ) {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -325,7 +535,10 @@ class _EventsScreenState extends State<EventsScreen> {
                   onTap: () => setState(() => _selectedCategory = cat),
                   borderRadius: BorderRadius.circular(24),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
                     decoration: BoxDecoration(
                       color: isSelected
                           ? houseColor
@@ -334,7 +547,9 @@ class _EventsScreenState extends State<EventsScreen> {
                       border: Border.all(
                         color: isSelected
                             ? houseColor
-                            : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                            : (isDark
+                                  ? const Color(0xFF334155)
+                                  : const Color(0xFFE2E8F0)),
                       ),
                       boxShadow: isSelected
                           ? [
@@ -354,7 +569,9 @@ class _EventsScreenState extends State<EventsScreen> {
                           style: TextStyle(
                             color: isSelected
                                 ? Colors.white
-                                : (isDark ? Colors.white70 : const Color(0xFF334155)),
+                                : (isDark
+                                      ? Colors.white70
+                                      : const Color(0xFF334155)),
                             fontWeight: FontWeight.w800,
                             fontSize: 13,
                           ),
@@ -362,7 +579,10 @@ class _EventsScreenState extends State<EventsScreen> {
                         if (count > 0) ...[
                           const SizedBox(width: 6),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
                               color: isSelected
                                   ? Colors.white.withValues(alpha: 0.25)
@@ -374,7 +594,9 @@ class _EventsScreenState extends State<EventsScreen> {
                               style: TextStyle(
                                 color: isSelected
                                     ? Colors.white
-                                    : (isDark ? Colors.white70 : const Color(0xFF334155)),
+                                    : (isDark
+                                          ? Colors.white70
+                                          : const Color(0xFF334155)),
                                 fontWeight: FontWeight.w800,
                                 fontSize: 11,
                               ),
@@ -393,11 +615,74 @@ class _EventsScreenState extends State<EventsScreen> {
     );
   }
 
-  Widget _buildEventCard(CampusEvent event, Color houseColor, bool isDark) {
+  Widget _buildStatusBadge(CampusEvent event, DateTime now) {
+    late final String label;
+    late final Color color;
+    if (event.isCancelled) {
+      label = 'CANCELLED';
+      color = Colors.red;
+    } else if (event.isDraft) {
+      label = 'DRAFT';
+      color = Colors.orange;
+    } else if (event.isConcludedAt(now)) {
+      label = 'CONCLUDED';
+      color = Colors.blueGrey;
+    } else if (event.isLiveAt(now)) {
+      label = 'LIVE NOW';
+      color = Colors.redAccent;
+    } else if (now.isBefore(event.startTime)) {
+      label = 'UPCOMING';
+      color = Colors.blue;
+    } else {
+      label = 'ONGOING';
+      color = Colors.green;
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w900,
+          fontSize: 9.5,
+          letterSpacing: 0.4,
+        ),
+      ),
+    );
+  }
+
+  String _remainingLabel(CampusEvent event, DateTime now) {
+    if (event.isCancelled) return 'Cancelled';
+    if (event.isDraft) return 'Draft';
+    if (event.isConcludedAt(now)) return 'Concluded';
+    if (now.isBefore(event.startTime)) {
+      final until = event.startTime.difference(now);
+      if (until.inDays > 0) return 'Starts in ${until.inDays}d';
+      if (until.inHours > 0) return 'Starts in ${until.inHours}h';
+      return 'Starts in ${until.inMinutes}m';
+    }
+    final rem = event.endTime.difference(now);
+    if (rem.inHours > 0) {
+      return '${rem.inHours}h ${rem.inMinutes % 60}m remaining';
+    }
+    return '${rem.inMinutes}m remaining';
+  }
+
+  Widget _buildEventCard(
+    CampusEvent event,
+    Color houseColor,
+    bool isDark,
+    DateTime now,
+  ) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () => _showEventDetailsModal(context, event, houseColor),
+        onTap: () => _showEventDetailsModal(context, event, houseColor, now),
         borderRadius: BorderRadius.circular(20),
         child: Container(
           margin: const EdgeInsets.only(bottom: 16),
@@ -421,8 +706,13 @@ class _EventsScreenState extends State<EventsScreen> {
               // Banner Image (using Resilient Photo Engine)
               if (event.bannerUrl.isNotEmpty)
                 ClipRRect(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-                  child: HomeScreen.buildResilientImage(event.bannerUrl, height: 160),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(20),
+                  ),
+                  child: HomeScreen.buildResilientImage(
+                    event.bannerUrl,
+                    height: 160,
+                  ),
                 ),
 
               Padding(
@@ -433,7 +723,10 @@ class _EventsScreenState extends State<EventsScreen> {
                     Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
                           decoration: BoxDecoration(
                             color: houseColor.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(8),
@@ -448,18 +741,28 @@ class _EventsScreenState extends State<EventsScreen> {
                             ),
                           ),
                         ),
-                        if (event.houseScope != 'All') ...[
+                        if (AuthService.normalizeCampusHouse(
+                              event.houseScope,
+                            ) !=
+                            'all') ...[
                           const SizedBox(width: 8),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
                             decoration: BoxDecoration(
-                              color: HouseColors.getHouseColor(event.houseScope).withValues(alpha: 0.15),
+                              color: HouseColors.getHouseColor(
+                                event.houseScope,
+                              ).withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
                               '${event.houseScope.toUpperCase()} EXCLUSIVE',
                               style: TextStyle(
-                                color: HouseColors.getHouseColor(event.houseScope),
+                                color: HouseColors.getHouseColor(
+                                  event.houseScope,
+                                ),
                                 fontWeight: FontWeight.w900,
                                 fontSize: 10,
                               ),
@@ -467,9 +770,14 @@ class _EventsScreenState extends State<EventsScreen> {
                           ),
                         ],
                         const Spacer(),
-                        if (event.pointsMultiplier > 1.0)
+                        _buildStatusBadge(event, now),
+                        if (event.pointsMultiplier > 1.0) ...[
+                          const SizedBox(width: 6),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
                             decoration: BoxDecoration(
                               color: Colors.amber.withValues(alpha: 0.2),
                               borderRadius: BorderRadius.circular(8),
@@ -484,6 +792,7 @@ class _EventsScreenState extends State<EventsScreen> {
                               ),
                             ),
                           ),
+                        ],
                       ],
                     ),
                     const SizedBox(height: 10),
@@ -499,7 +808,9 @@ class _EventsScreenState extends State<EventsScreen> {
                       Text(
                         event.description,
                         style: TextStyle(
-                          color: isDark ? Colors.grey.shade400 : Colors.grey.shade700,
+                          color: isDark
+                              ? Colors.grey.shade400
+                              : Colors.grey.shade700,
                           fontSize: 13,
                           height: 1.4,
                         ),
@@ -510,21 +821,35 @@ class _EventsScreenState extends State<EventsScreen> {
                     const SizedBox(height: 12),
                     Row(
                       children: [
-                        const Icon(Icons.location_on_outlined, size: 16, color: Colors.grey),
+                        const Icon(
+                          Icons.location_on_outlined,
+                          size: 16,
+                          color: Colors.grey,
+                        ),
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
                             event.venue,
-                            style: const TextStyle(color: Colors.grey, fontSize: 12),
+                            style: const TextStyle(
+                              color: Colors.grey,
+                              fontSize: 12,
+                            ),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         const SizedBox(width: 8),
-                        const Icon(Icons.access_time_rounded, size: 16, color: Colors.grey),
+                        const Icon(
+                          Icons.access_time_rounded,
+                          size: 16,
+                          color: Colors.grey,
+                        ),
                         const SizedBox(width: 4),
                         Text(
-                          event.formattedRemaining,
-                          style: const TextStyle(color: Colors.grey, fontSize: 12),
+                          _remainingLabel(event, now),
+                          style: const TextStyle(
+                            color: Colors.grey,
+                            fontSize: 12,
+                          ),
                         ),
                       ],
                     ),
@@ -538,20 +863,27 @@ class _EventsScreenState extends State<EventsScreen> {
     );
   }
 
-  void _showEventDetailsModal(BuildContext context, CampusEvent event, Color houseColor) {
+  void _showEventDetailsModal(
+    BuildContext context,
+    CampusEvent event,
+    Color houseColor,
+    DateTime now,
+  ) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    var registrationBusy = false;
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setModalState) {
-          final isRegistered = _registeredEventIds.contains(event.id);
           return Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               color: isDark ? const Color(0xFF0F172A) : Colors.white,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(24),
+              ),
             ),
             child: SingleChildScrollView(
               child: Column(
@@ -572,14 +904,20 @@ class _EventsScreenState extends State<EventsScreen> {
                   if (event.bannerUrl.isNotEmpty) ...[
                     ClipRRect(
                       borderRadius: BorderRadius.circular(16),
-                      child: HomeScreen.buildResilientImage(event.bannerUrl, height: 160),
+                      child: HomeScreen.buildResilientImage(
+                        event.bannerUrl,
+                        height: 160,
+                      ),
                     ),
                     const SizedBox(height: 14),
                   ],
                   Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: houseColor.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(8),
@@ -593,18 +931,26 @@ class _EventsScreenState extends State<EventsScreen> {
                           ),
                         ),
                       ),
-                      if (event.houseScope != 'All') ...[
+                      if (AuthService.normalizeCampusHouse(event.houseScope) !=
+                          'all') ...[
                         const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
                           decoration: BoxDecoration(
-                            color: HouseColors.getHouseColor(event.houseScope).withValues(alpha: 0.15),
+                            color: HouseColors.getHouseColor(
+                              event.houseScope,
+                            ).withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
                             '${event.houseScope.toUpperCase()} EXCLUSIVE',
                             style: TextStyle(
-                              color: HouseColors.getHouseColor(event.houseScope),
+                              color: HouseColors.getHouseColor(
+                                event.houseScope,
+                              ),
                               fontWeight: FontWeight.w900,
                               fontSize: 10,
                             ),
@@ -612,9 +958,14 @@ class _EventsScreenState extends State<EventsScreen> {
                         ),
                       ],
                       const Spacer(),
-                      if (event.pointsMultiplier > 1.0)
+                      _buildStatusBadge(event, now),
+                      if (event.pointsMultiplier > 1.0) ...[
+                        const SizedBox(width: 6),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.amber.withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(8),
@@ -629,6 +980,7 @@ class _EventsScreenState extends State<EventsScreen> {
                             ),
                           ),
                         ),
+                      ],
                     ],
                   ),
                   const SizedBox(height: 12),
@@ -643,21 +995,37 @@ class _EventsScreenState extends State<EventsScreen> {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      const Icon(Icons.location_on_outlined, size: 16, color: Colors.grey),
+                      const Icon(
+                        Icons.location_on_outlined,
+                        size: 16,
+                        color: Colors.grey,
+                      ),
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
                           event.venue,
-                          style: const TextStyle(fontSize: 13, color: Colors.grey, fontWeight: FontWeight.w600),
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey,
+                            fontWeight: FontWeight.w600,
+                          ),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       const SizedBox(width: 8),
-                      const Icon(Icons.access_time_rounded, size: 16, color: Colors.grey),
+                      const Icon(
+                        Icons.access_time_rounded,
+                        size: 16,
+                        color: Colors.grey,
+                      ),
                       const SizedBox(width: 4),
                       Text(
-                        event.formattedRemaining,
-                        style: const TextStyle(fontSize: 13, color: Colors.grey, fontWeight: FontWeight.w600),
+                        _remainingLabel(event, now),
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ],
                   ),
@@ -666,85 +1034,300 @@ class _EventsScreenState extends State<EventsScreen> {
                     width: double.infinity,
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                      color: isDark
+                          ? const Color(0xFF1E293B)
+                          : const Color(0xFFF8FAFC),
                       borderRadius: BorderRadius.circular(14),
                       border: Border.all(
-                        color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                        color: isDark
+                            ? const Color(0xFF334155)
+                            : const Color(0xFFE2E8F0),
                       ),
                     ),
                     child: Text(
                       event.description.isNotEmpty
                           ? event.description
-                          : 'Official House Competition event hosted at The Asian School Bahrain. Join and earn points for your house.',
+                          : 'A campus event hosted at The Asian School Bahrain. Contact the organising staff for participation details.',
                       style: TextStyle(
                         fontSize: 14,
                         height: 1.5,
-                        color: isDark ? Colors.white70 : const Color(0xFF334155),
+                        color: isDark
+                            ? Colors.white70
+                            : const Color(0xFF334155),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 10),
                   Row(
                     children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          icon: Icon(
-                            isRegistered ? Icons.check_circle_rounded : Icons.how_to_reg_rounded,
-                            size: 18,
-                          ),
-                          label: Text(
-                            isRegistered ? '✓ Registered' : 'Register / RSVP',
-                            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: isRegistered ? Colors.green : houseColor,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                          onPressed: () {
-                            final willRegister = !isRegistered;
-                            _toggleRegistration(event.id);
-                            setModalState(() {});
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  willRegister
-                                      ? '✓ RSVP confirmed for "${event.title}"! House participation logged.'
-                                      : 'Registration cancelled for "${event.title}".',
-                                ),
-                                backgroundColor: willRegister ? Colors.green[700] : const Color(0xFF334155),
-                                behavior: SnackBarBehavior.floating,
-                              ),
-                            );
-                          },
-                        ),
+                      const Icon(
+                        Icons.event_rounded,
+                        size: 16,
+                        color: Colors.grey,
                       ),
-                      const SizedBox(width: 10),
-                      OutlinedButton.icon(
-                        icon: const Icon(Icons.calendar_today_rounded, size: 16),
-                        label: const Text('Add to Calendar', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          '${_formatDateTime(event.startTime)} – ${_formatDateTime(event.endTime)}',
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            color: Colors.grey,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                        onPressed: () async {
-                          final eventInfo = '📅 Event: ${event.title}\n'
-                              '📍 Venue: ${event.venue}\n'
-                              '⏰ Starts: ${event.startTime.toLocal()}\n'
-                              '🏆 House: ${event.houseScope} • Reward: +${event.pointsAwarded} PTS\n'
-                              'Brief: ${event.description}';
-                          await Clipboard.setData(ClipboardData(text: eventInfo));
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('✓ Event schedule details copied to clipboard & added to device calendar!'),
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                        },
                       ),
                     ],
+                  ),
+                  if (event.isCancelled) ...[
+                    const SizedBox(height: 14),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.red.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Text(
+                        event.cancelledReason.isNotEmpty
+                            ? 'This event was cancelled by the organising staff. '
+                                  'Reason: ${event.cancelledReason}. '
+                                  'Registration is closed.'
+                            : 'This event was cancelled by the organising staff. Registration is closed.',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.redAccent,
+                        ),
+                      ),
+                    ),
+                  ],
+                  if (event.isDraft) ...[
+                    const SizedBox(height: 14),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.orange.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: const Text(
+                        'Private staff draft. Students cannot see this event until it is published.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.orange,
+                        ),
+                      ),
+                    ),
+                  ],
+                  if (_isStaff) ...[
+                    const SizedBox(height: 18),
+                    Text(
+                      'Staff controls',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                        color: isDark
+                            ? Colors.white70
+                            : const Color(0xFF475569),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.edit_rounded, size: 17),
+                            label: const Text(
+                              'Edit Event',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 12.5,
+                              ),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            onPressed: () {
+                              Navigator.of(ctx).pop();
+                              _showEventComposer(
+                                context,
+                                houseColor,
+                                existing: event,
+                              );
+                            },
+                          ),
+                        ),
+                        if (!event.isCancelled) ...[
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              icon: const Icon(
+                                Icons.event_busy_rounded,
+                                size: 17,
+                              ),
+                              label: const Text(
+                                'Cancel Event',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 12.5,
+                                ),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.redAccent,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              onPressed: () {
+                                Navigator.of(ctx).pop();
+                                _confirmCancelEvent(event);
+                              },
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    _buildAttendeesSection(event, isDark),
+                  ] else if (!event.isDraft) ...[
+                    const SizedBox(height: 20),
+                    StreamBuilder<bool>(
+                      stream: _uid.isEmpty
+                          ? Stream.value(false)
+                          : _authService.getEventRegistrationStream(
+                              eventId: event.id,
+                              uid: _uid,
+                            ),
+                      builder: (context, regSnapshot) {
+                        if (regSnapshot.hasError) {
+                          return const Text(
+                            'Could not load your registration status.',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: Colors.redAccent,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          );
+                        }
+                        final isRegistered = regSnapshot.data ?? false;
+                        final blocked =
+                            event.isCancelled ||
+                            event.isConcludedAt(now) ||
+                            registrationBusy ||
+                            _uid.isEmpty;
+                        return SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            icon: registrationBusy
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : Icon(
+                                    isRegistered
+                                        ? Icons.check_circle_rounded
+                                        : Icons.how_to_reg_rounded,
+                                    size: 18,
+                                  ),
+                            label: Text(
+                              _uid.isEmpty
+                                  ? 'Sign in to register'
+                                  : event.isCancelled
+                                  ? 'Registration closed'
+                                  : event.isConcludedAt(now)
+                                  ? 'Event concluded'
+                                  : isRegistered
+                                  ? 'Registered — tap to withdraw'
+                                  : 'Register / RSVP',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 13,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: isRegistered
+                                  ? Colors.green
+                                  : houseColor,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            onPressed: blocked
+                                ? null
+                                : () async {
+                                    setModalState(
+                                      () => registrationBusy = true,
+                                    );
+                                    final ok = await _authService
+                                        .setEventRegistration(
+                                          eventId: event.id,
+                                          uid: _uid,
+                                          register: !isRegistered,
+                                          studentName: _studentName,
+                                          scholarNo: _scholarNo,
+                                        );
+                                    if (!mounted) return;
+                                    setModalState(
+                                      () => registrationBusy = false,
+                                    );
+                                    _showMessage(
+                                      !ok
+                                          ? 'Could not update your registration. Check your connection and try again.'
+                                          : isRegistered
+                                          ? 'Registration withdrawn for "${event.title}".'
+                                          : 'Registration confirmed for "${event.title}".',
+                                      error: !ok,
+                                    );
+                                  },
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      icon: const Icon(Icons.copy_rounded, size: 16),
+                      label: const Text(
+                        'Copy event details',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                      onPressed: () async {
+                        final eventInfo =
+                            'Event: ${event.title}\n'
+                            'Venue: ${event.venue}\n'
+                            'Starts: ${event.startTime.toLocal()}\n'
+                            'Ends: ${event.endTime.toLocal()}\n'
+                            'House: ${event.houseScope} • Reward: +${event.pointsAwarded} PTS\n'
+                            'Brief: ${event.description}';
+                        await Clipboard.setData(ClipboardData(text: eventInfo));
+                        if (!mounted) return;
+                        _showMessage('Event details copied to clipboard.');
+                      },
+                    ),
                   ),
                 ],
               ),
@@ -755,131 +1338,183 @@ class _EventsScreenState extends State<EventsScreen> {
     );
   }
 
-  void _showLiveStageModal(BuildContext context, CampusEvent event, Color houseColor) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.all(24),
+  String _formatDateTime(DateTime value) {
+    const months = <String>[
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    final local = value.toLocal();
+    final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+    final minute = local.minute.toString().padLeft(2, '0');
+    final suffix = local.hour < 12 ? 'AM' : 'PM';
+    return '${months[local.month - 1]} ${local.day}, $hour:$minute $suffix';
+  }
+
+  Widget _buildAttendeesSection(CampusEvent event, bool isDark) {
+    if (!AuthService.isFirebaseLive) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF0F172A) : Colors.white,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.04),
+          borderRadius: BorderRadius.circular(12),
         ),
-        child: Column(
+        child: const Text(
+          'Participant records are stored in Firebase. Local sample events cannot collect RSVPs.',
+          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+        ),
+      );
+    }
+    return StreamBuilder<List<EventRegistration>>(
+      stream: _authService.getEventAttendeesStream(event.id),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const Text(
+            'Could not load the participant list.',
+            style: TextStyle(
+              fontSize: 12.5,
+              color: Colors.redAccent,
+              fontWeight: FontWeight.w600,
+            ),
+          );
+        }
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData) {
+          return const Row(
+            children: [
+              SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              SizedBox(width: 8),
+              Text(
+                'Loading registrations...',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+              ),
+            ],
+          );
+        }
+        final attendees = snapshot.data ?? const <EventRegistration>[];
+        if (attendees.isEmpty) {
+          return const Text(
+            'No student registrations yet.',
+            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+          );
+        }
+        final shown = attendees.take(25).toList();
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: (isDark ? Colors.white : Colors.black).withValues(
+              alpha: 0.04,
+            ),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${attendees.length} registered participant${attendees.length == 1 ? '' : 's'}',
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 6),
+              ...shown.map(
+                (registration) => Padding(
+                  padding: const EdgeInsets.only(bottom: 3),
+                  child: Text(
+                    registration.scholarNo.isNotEmpty
+                        ? '${registration.studentName} (${registration.scholarNo})'
+                        : registration.studentName,
+                    style: const TextStyle(fontSize: 12.5),
+                  ),
+                ),
+              ),
+              if (attendees.length > shown.length)
+                Text(
+                  '+${attendees.length - shown.length} more',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey,
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _confirmCancelEvent(CampusEvent event) async {
+    if (!_isStaff || event.id.isEmpty) {
+      _showMessage('Only staff can cancel a campus event.', error: true);
+      return;
+    }
+    final reasonController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Cancel this event?'),
+        content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.redAccent,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(Icons.fiber_manual_record, color: Colors.white, size: 12),
-                      SizedBox(width: 4),
-                      Text(
-                        'LIVE BROADCAST STAGE',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  event.formattedRemaining,
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
-                ),
-              ],
+            Text(
+              '"${event.title}" will remain visible with a cancelled badge. '
+              'Students will no longer be able to register.',
             ),
             const SizedBox(height: 12),
-            Text(
-              event.title,
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              '📍 ${event.venue}',
-              style: const TextStyle(fontSize: 14, color: Colors.grey, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.red.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Row(
-                    children: [
-                      Icon(Icons.campaign_rounded, color: Colors.redAccent, size: 20),
-                      SizedBox(width: 8),
-                      Text(
-                        'Live Telemetry & Chants Stream',
-                        style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    event.description.isNotEmpty
-                        ? event.description
-                        : 'Live competition in progress. Spectators earn house spirit points for attending and cheering.',
-                    style: const TextStyle(fontSize: 13, height: 1.4),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.volume_up_rounded, size: 18),
-                label: const Text('Join Live Stage Audio & Cheering Squad', style: TextStyle(fontWeight: FontWeight.w900)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.redAccent,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('🎉 Connected to Live Stage session! Your cheering counts toward spirit points.'),
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
-                },
+            TextField(
+              controller: reasonController,
+              maxLength: 300,
+              decoration: const InputDecoration(
+                labelText: 'Reason (optional)',
+                hintText: 'e.g. Venue unavailable',
               ),
             ),
           ],
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Keep Event'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red[700]),
+            child: const Text('Cancel Event'),
+          ),
+        ],
       ),
     );
+    final reason = reasonController.text.trim();
+    reasonController.dispose();
+    if (confirmed != true) return;
+
+    final ok = await _authService.cancelCampusEvent(event.id, reason: reason);
+    if (!mounted) return;
+    _showMessage(
+      ok
+          ? 'Event cancelled. Students can no longer register.'
+          : 'Could not cancel the event. Check your staff access and try again.',
+      error: !ok,
+    );
+    if (ok) setState(() {});
   }
 
   Widget _buildEmptyState(bool isDark) {
@@ -898,10 +1533,7 @@ class _EventsScreenState extends State<EventsScreen> {
             const SizedBox(height: 16),
             const Text(
               'No Events Scheduled',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-              ),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 8),
             Text(
@@ -920,36 +1552,52 @@ class _EventsScreenState extends State<EventsScreen> {
               children: [
                 ElevatedButton.icon(
                   onPressed: () async {
-                    final messenger = ScaffoldMessenger.of(context);
                     setState(() {
                       _searchQuery = '';
                       _selectedCategory = EventCategory.all;
+                      _selectedHouse = 'any';
                     });
-                    await AuthService.cacheEvents(AuthService.getFoundationalEvents());
-                    messenger.showSnackBar(
-                      const SnackBar(
-                        content: Text('✓ Loaded official campus house events!'),
-                        behavior: SnackBarBehavior.floating,
-                      ),
+                    await _reloadEvents(
+                      seedSamples: !AuthService.isFirebaseLive,
                     );
-                    if (mounted) setState(() {});
                   },
-                  icon: const Icon(Icons.event_available_rounded, size: 18),
-                  label: const Text('Load Campus Events', style: TextStyle(fontWeight: FontWeight.w800)),
+                  icon: Icon(
+                    AuthService.isFirebaseLive
+                        ? Icons.refresh_rounded
+                        : Icons.event_available_rounded,
+                    size: 18,
+                  ),
+                  label: Text(
+                    AuthService.isFirebaseLive
+                        ? 'Retry Campus Events'
+                        : 'Load Sample Events',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: houseColor,
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                 ),
-                OutlinedButton.icon(
-                  onPressed: () => _showCreateEventModal(context, houseColor),
-                  icon: const Icon(Icons.add_circle_outline_rounded, size: 18),
-                  label: const Text('Schedule Event', style: TextStyle(fontWeight: FontWeight.w800)),
-                  style: OutlinedButton.styleFrom(
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                if (_isStaff)
+                  OutlinedButton.icon(
+                    onPressed: () => _showEventComposer(context, houseColor),
+                    icon: const Icon(
+                      Icons.add_circle_outline_rounded,
+                      size: 18,
+                    ),
+                    label: const Text(
+                      'Publish Event',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
                   ),
-                ),
               ],
             ),
           ],
@@ -958,15 +1606,56 @@ class _EventsScreenState extends State<EventsScreen> {
     );
   }
 
-  void _showCreateEventModal(BuildContext context, Color houseColor) {
+  /// Staff composer for creating, drafting, editing and publishing events.
+  /// Students never reach this method; the entry points are staff-gated and
+  /// the method guards again in case it is called indirectly.
+  void _showEventComposer(
+    BuildContext context,
+    Color houseColor, {
+    CampusEvent? existing,
+  }) {
+    if (!_isStaff) {
+      _showMessage(
+        'Only staff can publish or edit campus events.',
+        error: true,
+      );
+      return;
+    }
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final titleController = TextEditingController();
-    final venueController = TextEditingController();
-    final descController = TextEditingController();
-    final pointsController = TextEditingController(text: '150');
-    var selectedCat = EventCategory.cultural;
-    var selectedMultiplier = 1.0;
-    var isLiveEvent = false;
+    final titleController = TextEditingController(text: existing?.title ?? '');
+    final venueController = TextEditingController(text: existing?.venue ?? '');
+    final descController = TextEditingController(
+      text: existing?.description ?? '',
+    );
+    final pointsController = TextEditingController(
+      text: '${existing?.pointsAwarded ?? 150}',
+    );
+    final now = DateTime.now();
+    final initialStart =
+        existing?.startTime ??
+        DateTime(
+          now.year,
+          now.month,
+          now.day,
+          now.hour,
+        ).add(const Duration(hours: 2));
+    var startTime = initialStart;
+    var endTime =
+        existing?.endTime ?? initialStart.add(const Duration(hours: 2));
+    var selectedCat = existing != null && existing.category != EventCategory.all
+        ? existing.category
+        : EventCategory.cultural;
+    var selectedScope = AuthService.normalizeCampusHouse(
+      existing?.houseScope ?? 'all',
+    );
+    var selectedMultiplier = existing?.pointsMultiplier ?? 1.0;
+    var isLiveEvent = existing?.isLive ?? false;
+    var saving = false;
+
+    String scopeLabel(String scope) {
+      if (scope == 'all') return 'School-wide';
+      return '${scope[0].toUpperCase()}${scope.substring(1)} House';
+    }
 
     showModalBottomSheet<void>(
       context: context,
@@ -974,6 +1663,176 @@ class _EventsScreenState extends State<EventsScreen> {
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setModalState) {
+          Future<DateTime?> pickDateTime(DateTime initial) async {
+            final date = await showDatePicker(
+              context: ctx,
+              initialDate: initial,
+              firstDate: DateTime(now.year - 1),
+              lastDate: DateTime(now.year + 3),
+            );
+            if (date == null) return null;
+            if (!ctx.mounted) return null;
+            final time = await showTimePicker(
+              context: ctx,
+              initialTime: TimeOfDay.fromDateTime(initial),
+            );
+            if (time == null) return null;
+            return DateTime(
+              date.year,
+              date.month,
+              date.day,
+              time.hour,
+              time.minute,
+            );
+          }
+
+          Future<void> persist(CampusEventStatus status) async {
+            if (saving) return;
+            final points = int.tryParse(pointsController.text.trim());
+            if (points == null) {
+              _showMessage('Enter points as a whole number.', error: true);
+              return;
+            }
+            final draftEvent = CampusEvent(
+              id: existing?.id ?? '',
+              title: titleController.text.trim(),
+              description: descController.text.trim(),
+              category: selectedCat,
+              houseScope: selectedScope,
+              startTime: startTime,
+              endTime: endTime,
+              venue: venueController.text.trim(),
+              pointsAwarded: points,
+              pointsMultiplier: selectedMultiplier,
+              bannerUrl: existing?.bannerUrl ?? '',
+              isLive: isLiveEvent,
+              status: status,
+              createdAt: existing?.createdAt,
+              authorUid: existing?.authorUid ?? _uid,
+              authorName: existing?.authorName ?? _studentName,
+            );
+            final validation = AuthService.validateCampusEvent(draftEvent);
+            if (validation != null) {
+              _showMessage(validation, error: true);
+              return;
+            }
+            if (!AuthService.isFirebaseLive &&
+                status == CampusEventStatus.draft) {
+              _showMessage(
+                'Private drafts need a live Firebase connection. '
+                'Publish to save this event on the device instead.',
+                error: true,
+              );
+              return;
+            }
+            setModalState(() => saving = true);
+            final wasLive = AuthService.isFirebaseLive;
+            final ok = existing == null
+                ? await _authService.createCampusEvent(draftEvent)
+                : await _authService.updateCampusEvent(draftEvent);
+            if (!mounted) return;
+            setModalState(() => saving = false);
+            if (!ok) {
+              _showMessage(
+                'Could not save "${draftEvent.title}". Check your staff '
+                'access, required fields, and connection.',
+                error: true,
+              );
+              return;
+            }
+            if (!ctx.mounted) return;
+            Navigator.of(ctx).pop();
+            final action = status == CampusEventStatus.draft
+                ? 'Draft saved. Only staff can see it.'
+                : wasLive
+                ? (existing == null
+                      ? 'Event published to the campus schedule.'
+                      : 'Event changes saved.')
+                : 'Event saved on this device only. '
+                      'Campus sync needs Firebase.';
+            _showMessage(action);
+            setState(() {});
+          }
+
+          Future<void> previewAndPublish() async {
+            final points = int.tryParse(pointsController.text.trim());
+            final preview = CampusEvent(
+              id: existing?.id ?? 'preview',
+              title: titleController.text.trim(),
+              description: descController.text.trim(),
+              category: selectedCat,
+              houseScope: selectedScope,
+              startTime: startTime,
+              endTime: endTime,
+              venue: venueController.text.trim(),
+              pointsAwarded: points ?? 0,
+              pointsMultiplier: selectedMultiplier,
+              status: CampusEventStatus.published,
+            );
+            final needsPreview =
+                existing == null || existing.isDraft || existing.isCancelled;
+            if (!needsPreview) {
+              await persist(existing.status);
+              return;
+            }
+            final validation = AuthService.validateCampusEvent(preview);
+            if (validation != null) {
+              _showMessage(validation, error: true);
+              return;
+            }
+            final confirmed = await showDialog<bool>(
+              context: context,
+              builder: (dialogContext) => AlertDialog(
+                title: const Text('Publish this event?'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      preview.title,
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 8),
+                    Text('Venue: ${preview.venue}'),
+                    Text('Starts: ${_formatDateTime(preview.startTime)}'),
+                    Text('Ends: ${_formatDateTime(preview.endTime)}'),
+                    Text('Audience: ${scopeLabel(selectedScope)}'),
+                    Text('Category: ${preview.category.displayName}'),
+                    Text(
+                      'Reward: +${preview.pointsAwarded} points '
+                      '(x${preview.pointsMultiplier.toStringAsFixed(1)})',
+                    ),
+                    if (preview.description.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        preview.description,
+                        maxLines: 4,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(false),
+                    child: const Text('Keep Editing'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(true),
+                    child: const Text('Publish'),
+                  ),
+                ],
+              ),
+            );
+            if (confirmed != true) return;
+            await persist(CampusEventStatus.published);
+          }
+
+          final primaryLabel = existing == null
+              ? 'Preview & Publish'
+              : existing.isDraft || existing.isCancelled
+              ? 'Preview & Publish'
+              : 'Save Changes';
           return Container(
             padding: EdgeInsets.only(
               left: 20,
@@ -983,7 +1842,9 @@ class _EventsScreenState extends State<EventsScreen> {
             ),
             decoration: BoxDecoration(
               color: isDark ? const Color(0xFF0F172A) : Colors.white,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(24),
+              ),
             ),
             child: SingleChildScrollView(
               child: Column(
@@ -1001,34 +1862,49 @@ class _EventsScreenState extends State<EventsScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  const Text(
-                    'Schedule Campus Event',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+                  Text(
+                    existing == null
+                        ? 'Publish Campus Event'
+                        : existing.isDraft
+                        ? 'Edit Private Draft'
+                        : 'Edit Campus Event',
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Publish a new House fixture, Live Stage, or academic Olympiad.',
+                    existing == null
+                        ? 'Staff-only. Preview, save a private draft, or publish to the campus schedule.'
+                        : 'Changes are validated against the same rules as publication.',
                     style: TextStyle(
                       fontSize: 13,
-                      color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                      color: isDark
+                          ? Colors.grey.shade400
+                          : Colors.grey.shade600,
                     ),
                   ),
                   const SizedBox(height: 16),
                   TextField(
                     controller: titleController,
+                    maxLength: 200,
                     decoration: InputDecoration(
                       labelText: 'Event Title',
                       hintText: 'e.g. Inter-House Debate Championship',
                       filled: true,
-                      fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                      fillColor: isDark
+                          ? const Color(0xFF1E293B)
+                          : const Color(0xFFF1F5F9),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide.none,
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 4),
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
                         child: DropdownButtonFormField<EventCategory>(
@@ -1036,7 +1912,9 @@ class _EventsScreenState extends State<EventsScreen> {
                           decoration: InputDecoration(
                             labelText: 'Category',
                             filled: true,
-                            fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                            fillColor: isDark
+                                ? const Color(0xFF1E293B)
+                                : const Color(0xFFF1F5F9),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                               borderSide: BorderSide.none,
@@ -1044,10 +1922,12 @@ class _EventsScreenState extends State<EventsScreen> {
                           ),
                           items: EventCategory.values
                               .where((c) => c != EventCategory.all)
-                              .map((c) => DropdownMenuItem(
-                                    value: c,
-                                    child: Text(c.displayName),
-                                  ))
+                              .map(
+                                (c) => DropdownMenuItem(
+                                  value: c,
+                                  child: Text(c.displayName),
+                                ),
+                              )
                               .toList(),
                           onChanged: (v) {
                             if (v != null) {
@@ -1058,25 +1938,44 @@ class _EventsScreenState extends State<EventsScreen> {
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: DropdownButtonFormField<double>(
-                          initialValue: selectedMultiplier,
+                        child: DropdownButtonFormField<String>(
+                          initialValue: selectedScope,
                           decoration: InputDecoration(
-                            labelText: 'Multiplier',
+                            labelText: 'House Scope',
                             filled: true,
-                            fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                            fillColor: isDark
+                                ? const Color(0xFF1E293B)
+                                : const Color(0xFFF1F5F9),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                               borderSide: BorderSide.none,
                             ),
                           ),
                           items: const [
-                            DropdownMenuItem(value: 1.0, child: Text('1.0x Normal')),
-                            DropdownMenuItem(value: 1.5, child: Text('1.5x Derby')),
-                            DropdownMenuItem(value: 2.0, child: Text('2.0x Live Stage')),
+                            DropdownMenuItem(
+                              value: 'all',
+                              child: Text('School-wide'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'ruby',
+                              child: Text('Ruby'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'sapphire',
+                              child: Text('Sapphire'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'emerald',
+                              child: Text('Emerald'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'topaz',
+                              child: Text('Topaz'),
+                            ),
                           ],
                           onChanged: (v) {
                             if (v != null) {
-                              setModalState(() => selectedMultiplier = v);
+                              setModalState(() => selectedScope = v);
                             }
                           },
                         ),
@@ -1085,15 +1984,19 @@ class _EventsScreenState extends State<EventsScreen> {
                   ),
                   const SizedBox(height: 12),
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
                         child: TextField(
                           controller: venueController,
+                          maxLength: 120,
                           decoration: InputDecoration(
                             labelText: 'Venue / Stage',
                             hintText: 'e.g. Auditorium Stage A',
                             filled: true,
-                            fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                            fillColor: isDark
+                                ? const Color(0xFF1E293B)
+                                : const Color(0xFFF1F5F9),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                               borderSide: BorderSide.none,
@@ -1110,7 +2013,9 @@ class _EventsScreenState extends State<EventsScreen> {
                             labelText: 'Points Awarded',
                             hintText: '150',
                             filled: true,
-                            fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                            fillColor: isDark
+                                ? const Color(0xFF1E293B)
+                                : const Color(0xFFF1F5F9),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                               borderSide: BorderSide.none,
@@ -1120,83 +2025,231 @@ class _EventsScreenState extends State<EventsScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<double>(
+                          initialValue: selectedMultiplier,
+                          decoration: InputDecoration(
+                            labelText: 'Points Multiplier',
+                            filled: true,
+                            fillColor: isDark
+                                ? const Color(0xFF1E293B)
+                                : const Color(0xFFF1F5F9),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 1.0,
+                              child: Text('1.0x Normal'),
+                            ),
+                            DropdownMenuItem(
+                              value: 1.5,
+                              child: Text('1.5x Derby'),
+                            ),
+                            DropdownMenuItem(
+                              value: 2.0,
+                              child: Text('2.0x Feature'),
+                            ),
+                          ],
+                          onChanged: (v) {
+                            if (v != null) {
+                              setModalState(() => selectedMultiplier = v);
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.event_rounded, size: 17),
+                          label: Text(
+                            'Starts\n${_formatDateTime(startTime)}',
+                            style: const TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 12,
+                              horizontal: 8,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          onPressed: () async {
+                            final picked = await pickDateTime(startTime);
+                            if (picked == null) return;
+                            setModalState(() {
+                              startTime = picked;
+                              if (!endTime.isAfter(startTime)) {
+                                endTime = startTime.add(
+                                  const Duration(hours: 2),
+                                );
+                              }
+                            });
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.event_busy_rounded, size: 17),
+                          label: Text(
+                            'Ends\n${_formatDateTime(endTime)}',
+                            style: const TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 12,
+                              horizontal: 8,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          onPressed: () async {
+                            final picked = await pickDateTime(endTime);
+                            if (picked == null) return;
+                            setModalState(() => endTime = picked);
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
                   TextField(
                     controller: descController,
-                    maxLines: 2,
+                    maxLines: 3,
+                    maxLength: 3000,
                     decoration: InputDecoration(
                       labelText: 'Description & House Guidelines',
-                      hintText: 'Rules, participant criteria, and schedule brief...',
+                      hintText:
+                          'Rules, participant criteria, and schedule brief...',
                       filled: true,
-                      fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                      fillColor: isDark
+                          ? const Color(0xFF1E293B)
+                          : const Color(0xFFF1F5F9),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide.none,
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  SwitchListTile(
-                    title: const Text('Mark as Live Stage Now', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-                    subtitle: const Text('Pushes instant red telemetry banner to all campus hubs', style: TextStyle(fontSize: 12)),
-                    value: isLiveEvent,
-                    onChanged: (val) => setModalState(() => isLiveEvent = val),
-                    contentPadding: EdgeInsets.zero,
+                  const SizedBox(height: 4),
+                  Material(
+                    color: Colors.transparent,
+                    child: SwitchListTile(
+                      title: const Text(
+                        'Highlight as live while it is running',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                        ),
+                      ),
+                      subtitle: const Text(
+                        'The live badge only shows between the start and end time.',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      value: isLiveEvent,
+                      onChanged: (val) =>
+                          setModalState(() => isLiveEvent = val),
+                      contentPadding: EdgeInsets.zero,
+                    ),
                   ),
+                  if (!AuthService.isFirebaseLive) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Local mode: published events stay on this device. '
+                      'Private drafts require Firebase.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isDark
+                            ? Colors.grey.shade400
+                            : Colors.grey.shade600,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      icon: const Icon(Icons.send_rounded, size: 18),
-                      label: const Text('Broadcast & Schedule Event', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14)),
+                      icon: saving
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : Icon(
+                              existing == null ||
+                                      existing.isDraft ||
+                                      existing.isCancelled
+                                  ? Icons.send_rounded
+                                  : Icons.save_rounded,
+                              size: 18,
+                            ),
+                      label: Text(
+                        primaryLabel,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 14,
+                        ),
+                      ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: houseColor,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
-                      onPressed: () async {
-                        final title = titleController.text.trim();
-                        final venue = venueController.text.trim();
-                        if (title.isEmpty) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Please enter an event title.')),
-                          );
-                          return;
-                        }
-                        final now = DateTime.now();
-                        final pts = int.tryParse(pointsController.text.trim()) ?? 100;
-                        final newEvent = CampusEvent(
-                          id: 'event_${now.millisecondsSinceEpoch}',
-                          title: title,
-                          description: descController.text.trim(),
-                          category: selectedCat,
-                          houseScope: 'All',
-                          startTime: isLiveEvent ? now.subtract(const Duration(minutes: 5)) : now.add(const Duration(hours: 2)),
-                          endTime: isLiveEvent ? now.add(const Duration(hours: 2)) : now.add(const Duration(hours: 4)),
-                          venue: venue.isNotEmpty ? venue : 'Campus Main Grounds',
-                          pointsAwarded: pts,
-                          pointsMultiplier: selectedMultiplier,
-                          isLive: isLiveEvent,
-                        );
-                        final messenger = ScaffoldMessenger.of(context);
-                        Navigator.of(ctx).pop();
-                        final wasLive = AuthService.isFirebaseLive;
-                        final ok = await _authService.createCampusEvent(newEvent);
-                        final message = !ok
-                            ? 'Could not publish "${newEvent.title}". Check your staff access and try again.'
-                            : wasLive
-                                ? '✓ Event "${newEvent.title}" published to campus schedule!'
-                                : 'Event "${newEvent.title}" saved on this device only. Campus broadcast needs Firebase.';
-                        messenger.showSnackBar(
-                          SnackBar(
-                            content: Text(message),
-                            backgroundColor: ok ? Colors.green[700] : Colors.red[700],
-                            behavior: SnackBarBehavior.floating,
+                      onPressed: saving ? null : previewAndPublish,
+                    ),
+                  ),
+                  if (existing == null || existing.isDraft) ...[
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.save_outlined, size: 17),
+                        label: const Text(
+                          'Save Private Draft',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                        );
-                        if (mounted) setState(() {});
-                      },
+                        ),
+                        onPressed: saving || !AuthService.isFirebaseLive
+                            ? null
+                            : () => persist(CampusEventStatus.draft),
+                      ),
+                    ),
+                  ],
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: saving ? null : () => Navigator.of(ctx).pop(),
+                      child: const Text('Close'),
                     ),
                   ),
                 ],

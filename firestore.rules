@@ -376,6 +376,10 @@ service cloud.firestore {
         getUserData().house_name.lower() == houseId.lower();
     }
 
+    function getCampusEvent(eventId) {
+      return get(/databases/$(database)/documents/events/$(eventId)).data;
+    }
+
     // Authorised senders: house captains/vice-captains, council officers
     // (sports captains, head boy/girl, etc.), and staff/faculty.
     // Regular students and prefects remain read-only.
@@ -814,6 +818,54 @@ service cloud.firestore {
       (!('content' in data) || (data.content is string && data.content.size() <= 5000)) &&
       (!('author_name' in data) || (data.author_name is string && data.author_name.size() <= 100)) &&
       (!('tags' in data) || (data.tags is list && data.tags.size() <= 10));
+    }
+
+    // Campus events have their own lifecycle schema (draft/published/cancelled)
+    // and are not announcements: they carry house scope, points, banners and a
+    // live flag. Keeping a dedicated validator prevents the two collections
+    // from drifting apart.
+    function isValidCampusEvent(data) {
+      return hasOnlyAllowedFields([
+        'id', 'title', 'description', 'category', 'house_scope',
+        'start_time', 'end_time', 'venue', 'points_awarded',
+        'points_multiplier', 'banner_url', 'is_live', 'status',
+        'created_at', 'updated_at', 'author_uid', 'author_name',
+        'cancelled_reason'
+      ]) &&
+      hasRequiredFields([
+        'title', 'start_time', 'end_time', 'venue', 'category',
+        'house_scope', 'status'
+      ]) &&
+      (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
+      data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
+      (!('description' in data) ||
+        (data.description is string && data.description.size() <= 3000)) &&
+      data.category is string &&
+      data.category in ['cultural', 'sports', 'academic', 'arts', 'tech'] &&
+      data.house_scope is string &&
+      data.house_scope in ['all', 'ruby', 'sapphire', 'emerald', 'topaz'] &&
+      data.start_time is timestamp && data.end_time is timestamp &&
+      data.end_time > data.start_time &&
+      data.venue is string && data.venue.size() >= 1 && data.venue.size() <= 120 &&
+      (!('points_awarded' in data) ||
+        (data.points_awarded is int &&
+          data.points_awarded >= 0 && data.points_awarded <= 5000)) &&
+      (!('points_multiplier' in data) ||
+        ((data.points_multiplier is int || data.points_multiplier is float) &&
+          data.points_multiplier >= 0 && data.points_multiplier <= 10)) &&
+      (!('banner_url' in data) ||
+        (data.banner_url is string && data.banner_url.size() <= 500000)) &&
+      (!('is_live' in data) || data.is_live is bool) &&
+      data.status is string &&
+      data.status in ['draft', 'published', 'cancelled'] &&
+      (!('created_at' in data) || data.created_at is timestamp) &&
+      (!('updated_at' in data) || data.updated_at is timestamp) &&
+      (!('author_uid' in data) ||
+        (data.author_uid is string && data.author_uid.size() <= 128)) &&
+      (!('author_name' in data) ||
+        (data.author_name is string && data.author_name.size() <= 120)) &&
+      (!('cancelled_reason' in data) ||
+        (data.cancelled_reason is string && data.cancelled_reason.size() <= 500));
     }
 
     function isValidSchoolNotice(data) {
@@ -1471,9 +1523,58 @@ service cloud.firestore {
       allow write: if isAdmin() && isValidSchoolNotice(request.resource.data);
     }
 
+    // 9c. events/{eventId} and events/{eventId}/registrations/{uid}
+    // Staff publish lifecycle-managed campus events. Students may only read
+    // published events that are school-wide or belong to their own house, and
+    // each student owns exactly one RSVP document under the event.
     match /events/{eventId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin() && isValidAnnouncement(request.resource.data);
+      allow read: if isSignedIn() && (
+        isAdmin() ||
+        (resource.data.status == 'published' &&
+          (resource.data.house_scope == 'all' ||
+            isSameHouse(resource.data.house_scope)))
+      );
+      allow create: if isAdmin() &&
+        isValidCampusEvent(request.resource.data) &&
+        request.resource.data.author_uid == request.auth.uid;
+      // Any staff member may edit or cancel, but authorship never changes.
+      // Legacy documents without an author can be claimed once by staff.
+      allow update: if isAdmin() &&
+        isValidCampusEvent(request.resource.data) &&
+        (!('author_uid' in resource.data) ||
+          request.resource.data.author_uid == resource.data.author_uid);
+      // Events are cancelled, not deleted, so the schedule keeps an audit
+      // trail. Only senior administrators may hard-delete by exception.
+      allow delete: if isSeniorAdmin();
+
+      match /registrations/{registrationUid} {
+        allow read: if isSignedIn() &&
+          (request.auth.uid == registrationUid || isAdmin());
+        allow create: if isSignedIn() &&
+          request.auth.uid == registrationUid &&
+          exists(/databases/$(database)/documents/events/$(eventId)) &&
+          getCampusEvent(eventId).status == 'published' &&
+          request.time < getCampusEvent(eventId).end_time &&
+          (getCampusEvent(eventId).house_scope == 'all' ||
+            isSameHouse(getCampusEvent(eventId).house_scope) ||
+            isAdmin()) &&
+          request.resource.data.keys().hasOnly([
+            'uid', 'event_id', 'student_name', 'scholar_no', 'created_at'
+          ]) &&
+          request.resource.data.uid == request.auth.uid &&
+          request.resource.data.event_id == eventId &&
+          (!('student_name' in request.resource.data) ||
+            (request.resource.data.student_name is string &&
+              request.resource.data.student_name.size() <= 120)) &&
+          (!('scholar_no' in request.resource.data) ||
+            (request.resource.data.scholar_no is string &&
+              request.resource.data.scholar_no.size() <= 64)) &&
+          (!('created_at' in request.resource.data) ||
+            request.resource.data.created_at is timestamp);
+        allow delete: if isSignedIn() &&
+          (request.auth.uid == registrationUid || isAdmin());
+        allow update: if false;
+      }
     }
 
     // 9b. house_groups/{houseId} and messages/{messageId}

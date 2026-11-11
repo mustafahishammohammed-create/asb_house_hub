@@ -247,8 +247,9 @@ Verified 2026-11-08 after V1–V4 remediation: **complete for scope**. The origi
 - ✅ Responsive: desktop/laptop/tablet/mobile; narrow viewport overflow test.
 - ✅ **Full §11 acceptance suite (1–64)** mapped row-by-row in `ACCEPTANCE_MATRIX.md` and enforced by `test/acceptance_matrix_test.dart`.
 
-**Tests:** `test/dashboard_profile_test.dart` 6/6; `test/acceptance_matrix_test.dart` 7/7; `test/circular_composer_test.dart` 9/9; `test/campus_event_test.dart` 5/5; `test/teacher_timetable_editor_test.dart` 15/15 (moving-break, multi-class picker, and time-picker tests); full suite 662/662.
+**Tests:** `test/dashboard_profile_test.dart` 6/6; `test/acceptance_matrix_test.dart` 7/7; `test/circular_composer_test.dart` 9/9; `test/campus_event_test.dart` **23/23**; `test/teacher_timetable_editor_test.dart` 15/15 (moving-break, multi-class picker, and time-picker tests); full suite **680/680**.
 **Honest score:** **64 PASS · 0 PARTIAL · 0 MISSING**. Test 5 is closed by class-scoped Firestore rules; tests 22, 24, and 25 are closed by direct widget tests.
+**Campus-events follow-up:** the non-Blaze gaps from the academic proposal are closed — staff composer with preview/publish/edit/cancel, private drafts, house-scoped reads and filtering, server timestamps, lifecycle badges, registration records, and staff participant lists. Remaining limits are no authenticated live E2E run, no device-calendar/push reminder, no live audio, and no automatic points for attendance. See [`M8_VERIFICATION.md`](M8_VERIFICATION.md).
 **Definition of done:** dashboard/profile complete; suite green; Firestore rules deployed; release rebuilt; committed and pushed. No acceptance row is a phantom pass.
 **See:** [`M8_VERIFICATION.md`](M8_VERIFICATION.md) and [`ACCEPTANCE_MATRIX.md`](ACCEPTANCE_MATRIX.md).
 
