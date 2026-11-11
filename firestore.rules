@@ -380,6 +380,20 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/events/$(eventId)).data;
     }
 
+    // Campus events can target a grade band. The numeric grade is stored on
+    // users/{uid} as 0 for LKG/UKG and 1–12 for Grade 1–12. Missing values are
+    // treated as unrestricted so legacy profiles and documents keep working.
+    function hasUserGrade() {
+      return isSignedIn() && hasUserDoc() &&
+        'grade' in getUserData() && getUserData().grade is int;
+    }
+
+    function isGradeEligibleFor(data) {
+      return !hasUserGrade() ||
+        ((!('grade_min' in data) || data.grade_min <= getUserData().grade) &&
+         (!('grade_max' in data) || data.grade_max >= getUserData().grade));
+    }
+
     // Authorised senders: house captains/vice-captains, council officers
     // (sports captains, head boy/girl, etc.), and staff/faculty.
     // Regular students and prefects remain read-only.
@@ -482,6 +496,7 @@ service cloud.firestore {
       return hasOnlyAllowedFields([
         'uid', 'scholar_no', 'full_name', 'role', 'house_name',
         'class_level', 'division', 'class_id', 'class_verified',
+        'grade',
         'points', 'points_contributed',
         'created_at', 'updated_at', 'age', 'position_title', 'designation',
         'status'
@@ -507,6 +522,7 @@ service cloud.firestore {
       (!('division' in data) || (data.division is string && data.division.size() <= 10)) &&
       (!('class_id' in data) || (data.class_id is string && data.class_id.size() <= 10)) &&
       (!('class_verified' in data) || data.class_verified is bool) &&
+      (!('grade' in data) || (data.grade is int && data.grade >= 0 && data.grade <= 12)) &&
       (!('points' in data) || (data.points is int && data.points >= 0 && data.points <= 1000000)) &&
       (!('points_contributed' in data) || (data.points_contributed is int && data.points_contributed >= -100000 && data.points_contributed <= 1000000)) &&
       (!('age' in data) || (data.age is int && data.age >= 4 && data.age <= 25)) &&
@@ -830,7 +846,7 @@ service cloud.firestore {
         'start_time', 'end_time', 'venue', 'points_awarded',
         'points_multiplier', 'banner_url', 'is_live', 'status',
         'created_at', 'updated_at', 'author_uid', 'author_name',
-        'cancelled_reason'
+        'cancelled_reason', 'grade_min', 'grade_max'
       ]) &&
       hasRequiredFields([
         'title', 'start_time', 'end_time', 'venue', 'category',
@@ -865,7 +881,12 @@ service cloud.firestore {
       (!('author_name' in data) ||
         (data.author_name is string && data.author_name.size() <= 120)) &&
       (!('cancelled_reason' in data) ||
-        (data.cancelled_reason is string && data.cancelled_reason.size() <= 500));
+        (data.cancelled_reason is string && data.cancelled_reason.size() <= 500)) &&
+      ((!('grade_min' in data) && !('grade_max' in data)) ||
+        (('grade_min' in data) && ('grade_max' in data) &&
+          data.grade_min is int && data.grade_min >= 0 && data.grade_min <= 12 &&
+          data.grade_max is int && data.grade_max >= 0 && data.grade_max <= 12 &&
+          data.grade_min <= data.grade_max));
     }
 
     function isValidSchoolNotice(data) {
@@ -1528,7 +1549,18 @@ service cloud.firestore {
     // published events that are school-wide or belong to their own house, and
     // each student owns exactly one RSVP document under the event.
     match /events/{eventId} {
-      allow read: if isSignedIn() && (
+      // Firestore rules are not filters: a per-document grade condition on a
+      // list query would reject the whole event stream. Keep list reads
+      // constrained by status + house (which the client queries filter on),
+      // and enforce the grade band on direct document reads and RSVPs below.
+      allow get: if isSignedIn() && (
+        isAdmin() ||
+        (resource.data.status == 'published' &&
+          (resource.data.house_scope == 'all' ||
+            isSameHouse(resource.data.house_scope)) &&
+          isGradeEligibleFor(resource.data))
+      );
+      allow list: if isSignedIn() && (
         isAdmin() ||
         (resource.data.status == 'published' &&
           (resource.data.house_scope == 'all' ||
@@ -1558,6 +1590,7 @@ service cloud.firestore {
           (getCampusEvent(eventId).house_scope == 'all' ||
             isSameHouse(getCampusEvent(eventId).house_scope) ||
             isAdmin()) &&
+          isGradeEligibleFor(getCampusEvent(eventId)) &&
           request.resource.data.keys().hasOnly([
             'uid', 'event_id', 'student_name', 'scholar_no', 'created_at'
           ]) &&

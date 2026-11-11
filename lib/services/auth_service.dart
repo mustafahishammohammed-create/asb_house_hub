@@ -2650,6 +2650,7 @@ class AuthService {
   Stream<List<CampusEvent>> getEventsStream({
     String? house,
     bool includeDrafts = false,
+    int? gradeIndex,
   }) {
     if (!_isFirebaseLive) {
       final cleanHouse = (house ?? '').trim().toLowerCase();
@@ -2664,6 +2665,7 @@ class AuthService {
                   normalizeCampusHouse(e.houseScope) == 'all' ||
                   normalizeCampusHouse(e.houseScope) == cleanHouse,
             )
+            .where((e) => includeDrafts || eventMatchesGrade(e, gradeIndex))
             .toList()
           ..sort(),
       );
@@ -2726,6 +2728,10 @@ class AuthService {
             (snap) {
               perStream[streamIndex] = snap.docs
                   .map((doc) => CampusEvent.fromMap(doc.data(), docId: doc.id))
+                  .where(
+                    (event) =>
+                        includeDrafts || eventMatchesGrade(event, gradeIndex),
+                  )
                   .toList();
               emit();
             },
@@ -2865,6 +2871,43 @@ class AuthService {
     return _kCampusEventHouseScopes.contains(clean) ? clean : 'all';
   }
 
+  /// Parses a profile grade into 0 (LKG/UKG) or 1–12. Returns null when the
+  /// value is missing or unrecognized.
+  static int? campusGradeIndex(dynamic raw) {
+    final value = (raw ?? '').toString().trim();
+    if (value.isEmpty) return null;
+    final upper = value.toUpperCase();
+    if (upper == 'LKG' || upper == 'UKG') return 0;
+    int? parsed;
+    if (raw is int) {
+      parsed = raw;
+    } else if (raw is num) {
+      parsed = raw.toInt();
+    } else {
+      final match = RegExp(r'\d+').firstMatch(value);
+      if (match != null) parsed = int.tryParse(match.group(0)!);
+    }
+    if (parsed == null || parsed < 0 || parsed > 12) return null;
+    return parsed;
+  }
+
+  /// The signed-in viewer's grade index, read from the cached profile.
+  static int? getViewerGradeIndex() {
+    final profile = getCachedProfile();
+    if (profile == null) return null;
+    return campusGradeIndex(
+      profile['grade'] ?? profile['class_level'] ?? profile['class'],
+    );
+  }
+
+  /// Whether [event] targets [gradeIndex]. A null index means the caller has
+  /// no grade context (staff or an older profile) and sees every event.
+  static bool eventMatchesGrade(CampusEvent event, int? gradeIndex) {
+    if (gradeIndex == null) return true;
+    if (event.targetsAllGrades) return true;
+    return gradeIndex >= event.gradeMin && gradeIndex <= event.gradeMax;
+  }
+
   /// Shared client-side validation matching `isValidCampusEvent` in the rules.
   static String? validateCampusEvent(CampusEvent event) {
     if (event.title.trim().isEmpty) return 'Enter an event title.';
@@ -2885,6 +2928,15 @@ class AuthService {
     if (rawHouseScope.isNotEmpty &&
         !_kCampusEventHouseScopes.contains(rawHouseScope)) {
       return 'Choose a valid house scope.';
+    }
+    if (event.gradeMin < 0 ||
+        event.gradeMin > 12 ||
+        event.gradeMax < 0 ||
+        event.gradeMax > 12) {
+      return 'Choose a valid grade range.';
+    }
+    if (event.gradeMin > event.gradeMax) {
+      return 'The starting grade must not be above the ending grade.';
     }
     if (!event.endTime.isAfter(event.startTime)) {
       return 'The event must end after it starts.';
@@ -4378,6 +4430,7 @@ class AuthService {
     final cleanHouse = houseName.trim().toLowerCase();
     final cleanGrade =
         AcademicStructure.normalizeGrade(classLevel) ?? classLevel.trim();
+    final cleanGradeIndex = campusGradeIndex(cleanGrade);
     final cleanSection = division.trim().toUpperCase();
     final profileData = {
       'full_name': fullName,
@@ -4390,6 +4443,7 @@ class AuthService {
       'house_name': cleanHouse,
       'created_at': FieldValue.serverTimestamp(),
       'role': 'student',
+      'grade': ?cleanGradeIndex,
     };
     await _firestore.collection('users').doc(uid).set(profileData);
     await cacheHouse(cleanHouse);
@@ -4557,6 +4611,18 @@ class AuthService {
       if (doc.exists && doc.data() != null) {
         final data = Map<String, dynamic>.from(doc.data()!);
         data['uid'] = uid;
+        // Backfill the numeric grade used by campus-event targeting. Older
+        // profiles only stored class_level; the write is best-effort and is
+        // skipped once the field is present.
+        final resolvedGrade = campusGradeIndex(
+          data['class_level'] ?? data['grade'] ?? data['class'],
+        );
+        if (resolvedGrade != null && data['grade'] != resolvedGrade) {
+          data['grade'] = resolvedGrade;
+          doc.reference
+              .set({'grade': resolvedGrade}, SetOptions(merge: true))
+              .catchError((_) {});
+        }
         final docScholar = (data['scholar_no'] ?? scholarNo ?? '')
             .toString()
             .trim();

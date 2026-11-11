@@ -23,6 +23,7 @@ class _EventsScreenState extends State<EventsScreen> {
   late final String _uid;
   late final String _studentName;
   late final String _scholarNo;
+  late final int? _viewerGrade;
   late final Stream<List<CampusEvent>> _eventsStream;
   EventCategory _selectedCategory = EventCategory.all;
   String _searchQuery = '';
@@ -42,9 +43,11 @@ class _EventsScreenState extends State<EventsScreen> {
         (profile?['full_name'] ?? _authService.currentUser?.displayName ?? '')
             .toString();
     _scholarNo = scholarNo ?? '';
+    _viewerGrade = _isStaff ? null : AuthService.getViewerGradeIndex();
     _eventsStream = _authService.getEventsStream(
       house: widget.userHouse,
       includeDrafts: _isStaff,
+      gradeIndex: _viewerGrade,
     );
   }
 
@@ -91,12 +94,13 @@ class _EventsScreenState extends State<EventsScreen> {
     final cachedEvents = AuthService.getCachedEvents()
         .where(
           (event) =>
-              _isStaff ||
-              (event.status != CampusEventStatus.draft &&
+              (event.status != CampusEventStatus.draft || _isStaff) &&
+              (_isStaff ||
                   (AuthService.normalizeCampusHouse(event.houseScope) ==
                           'all' ||
                       AuthService.normalizeCampusHouse(event.houseScope) ==
-                          viewerHouse)),
+                          viewerHouse)) &&
+              AuthService.eventMatchesGrade(event, _viewerGrade),
         )
         .toList();
     final now = _now;
@@ -263,7 +267,7 @@ class _EventsScreenState extends State<EventsScreen> {
           SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Could not load the live campus schedule. Showing this device\'s cached events.',
+              'Live campus schedule unavailable. Showing previously loaded events.',
               style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
             ),
           ),
@@ -769,6 +773,27 @@ class _EventsScreenState extends State<EventsScreen> {
                             ),
                           ),
                         ],
+                        if (!event.targetsAllGrades) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.teal.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              event.gradeRangeLabel.toUpperCase(),
+                              style: const TextStyle(
+                                color: Colors.teal,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ),
+                        ],
                         const Spacer(),
                         _buildStatusBadge(event, now),
                         if (event.pointsMultiplier > 1.0) ...[
@@ -951,6 +976,27 @@ class _EventsScreenState extends State<EventsScreen> {
                               color: HouseColors.getHouseColor(
                                 event.houseScope,
                               ),
+                              fontWeight: FontWeight.w900,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ),
+                      ],
+                      if (!event.targetsAllGrades) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.teal.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            event.gradeRangeLabel.toUpperCase(),
+                            style: const TextStyle(
+                              color: Colors.teal,
                               fontWeight: FontWeight.w900,
                               fontSize: 10,
                             ),
@@ -1322,6 +1368,7 @@ class _EventsScreenState extends State<EventsScreen> {
                             'Starts: ${event.startTime.toLocal()}\n'
                             'Ends: ${event.endTime.toLocal()}\n'
                             'House: ${event.houseScope} • Reward: +${event.pointsAwarded} PTS\n'
+                            'Grades: ${event.gradeRangeLabel}\n'
                             'Brief: ${event.description}';
                         await Clipboard.setData(ClipboardData(text: eventInfo));
                         if (!mounted) return;
@@ -1650,12 +1697,21 @@ class _EventsScreenState extends State<EventsScreen> {
     );
     var selectedMultiplier = existing?.pointsMultiplier ?? 1.0;
     var isLiveEvent = existing?.isLive ?? false;
+    var limitGrades = existing != null && !existing.targetsAllGrades;
+    var selectedGradeMin = limitGrades ? existing.gradeMin : 1;
+    var selectedGradeMax = limitGrades ? existing.gradeMax : 12;
     var saving = false;
 
     String scopeLabel(String scope) {
       if (scope == 'all') return 'School-wide';
       return '${scope[0].toUpperCase()}${scope.substring(1)} House';
     }
+
+    String gradeLabel(int grade) => grade <= 0 ? 'LKG/UKG' : 'Grade $grade';
+
+    String gradeRangeLabel(int min, int max) => min == max
+        ? gradeLabel(min)
+        : '${gradeLabel(min)} – ${gradeLabel(max)}';
 
     showModalBottomSheet<void>(
       context: context,
@@ -1710,6 +1766,8 @@ class _EventsScreenState extends State<EventsScreen> {
               createdAt: existing?.createdAt,
               authorUid: existing?.authorUid ?? _uid,
               authorName: existing?.authorName ?? _studentName,
+              gradeMin: limitGrades ? selectedGradeMin : 0,
+              gradeMax: limitGrades ? selectedGradeMax : 12,
             );
             final validation = AuthService.validateCampusEvent(draftEvent);
             if (validation != null) {
@@ -1768,6 +1826,8 @@ class _EventsScreenState extends State<EventsScreen> {
               pointsAwarded: points ?? 0,
               pointsMultiplier: selectedMultiplier,
               status: CampusEventStatus.published,
+              gradeMin: limitGrades ? selectedGradeMin : 0,
+              gradeMax: limitGrades ? selectedGradeMax : 12,
             );
             final needsPreview =
                 existing == null || existing.isDraft || existing.isCancelled;
@@ -1797,6 +1857,9 @@ class _EventsScreenState extends State<EventsScreen> {
                     Text('Starts: ${_formatDateTime(preview.startTime)}'),
                     Text('Ends: ${_formatDateTime(preview.endTime)}'),
                     Text('Audience: ${scopeLabel(selectedScope)}'),
+                    Text(
+                      'Grades: ${limitGrades ? gradeRangeLabel(selectedGradeMin, selectedGradeMax) : 'All grades'}',
+                    ),
                     Text('Category: ${preview.category.displayName}'),
                     Text(
                       'Reward: +${preview.pointsAwarded} points '
@@ -1982,6 +2045,117 @@ class _EventsScreenState extends State<EventsScreen> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 12),
+                  Material(
+                    color: isDark
+                        ? const Color(0xFF1E293B)
+                        : const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(12),
+                    clipBehavior: Clip.antiAlias,
+                    child: SwitchListTile(
+                      value: limitGrades,
+                      onChanged: (value) {
+                        setModalState(() {
+                          limitGrades = value;
+                          if (value) {
+                            selectedGradeMin = 1;
+                            selectedGradeMax = 12;
+                          }
+                        });
+                      },
+                      title: const Text(
+                        'Limit to a grade range',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      subtitle: Text(
+                        limitGrades
+                            ? gradeRangeLabel(
+                                selectedGradeMin,
+                                selectedGradeMax,
+                              )
+                            : 'All grades can see this event',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      dense: true,
+                    ),
+                  ),
+                  if (limitGrades) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<int>(
+                            key: ValueKey('grade_from_$selectedGradeMin'),
+                            initialValue: selectedGradeMin,
+                            decoration: InputDecoration(
+                              labelText: 'From grade',
+                              filled: true,
+                              fillColor: isDark
+                                  ? const Color(0xFF1E293B)
+                                  : const Color(0xFFF1F5F9),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide.none,
+                              ),
+                            ),
+                            items: List<DropdownMenuItem<int>>.generate(
+                              13,
+                              (index) => DropdownMenuItem(
+                                value: index,
+                                child: Text(gradeLabel(index)),
+                              ),
+                            ),
+                            onChanged: (value) {
+                              if (value == null) return;
+                              setModalState(() {
+                                selectedGradeMin = value;
+                                if (selectedGradeMax < value) {
+                                  selectedGradeMax = value;
+                                }
+                              });
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: DropdownButtonFormField<int>(
+                            key: ValueKey('grade_to_$selectedGradeMax'),
+                            initialValue: selectedGradeMax,
+                            decoration: InputDecoration(
+                              labelText: 'To grade',
+                              filled: true,
+                              fillColor: isDark
+                                  ? const Color(0xFF1E293B)
+                                  : const Color(0xFFF1F5F9),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide.none,
+                              ),
+                            ),
+                            items: List<DropdownMenuItem<int>>.generate(
+                              13,
+                              (index) => DropdownMenuItem(
+                                value: index,
+                                child: Text(gradeLabel(index)),
+                              ),
+                            ),
+                            onChanged: (value) {
+                              if (value == null) return;
+                              setModalState(() {
+                                selectedGradeMax = value;
+                                if (selectedGradeMin > value) {
+                                  selectedGradeMin = value;
+                                }
+                              });
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,

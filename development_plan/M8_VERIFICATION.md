@@ -1,8 +1,9 @@
 # M8 verification — dashboard, profile polish, and §11 acceptance
 
 **Date:** 2026-11-10
+**Last verified:** 2026-11-11 (grade targeting and stream-error banner wording)
 **Branch:** `mustafa1`
-**Baseline:** `15aa7c3` (M7 hardening), plus the M8 and follow-up batches through `71a1afb`, plus the campus-events completion batch.
+**Baseline:** `15aa7c3` (M7 hardening), plus the M8 and follow-up batches through `71a1afb`, plus the campus-events lifecycle and grade-targeting batches.
 **Method:** first-hand implementation and test runs; read of `home_screen.dart`, `notification_service.dart`, `app_notification.dart`, `academic_class.dart`, `teacher_timetable_editor_screen.dart`, `school_circular_composer.dart`, `school_notice.dart`, `firestore.rules`, `storage.rules`, the M2–M7 verification files, and the full test suite. No claim below is copied from an earlier report without being re-checked.
 
 ## Verdict
@@ -25,10 +26,10 @@ A follow-up campus-events batch closes the remaining non-Blaze gaps from `ACADEM
 | **Acceptance matrix** | `development_plan/ACCEPTANCE_MATRIX.md` has exactly 64 rows, one per spec test, with implementation, automated evidence, rules evidence, status, and limitation. `test/acceptance_matrix_test.dart` enforces row count, IDs, summary counts, cited-file existence, and key rules contracts. |
 | **Truthful event publishing** | `AuthService.createCampusEvent`, `updateCampusEvent`, `cancelCampusEvent`, and `setEventRegistration` treat the live Firestore write as authoritative: a permission denial or any other write failure returns `false` and claims nothing. Local/demo mode caches published events and labels the result device-only; private drafts are rejected offline rather than written to the shared device cache. `test/campus_event_test.dart` covers local caching, id synthesis, live denial, drafts, updates, cancellation, and RSVP denial. |
 | **Campus-event lifecycle** | `CampusEvent` carries `draft` / `published` / `cancelled` status, house scope, audit fields, and `isOngoingAt`, `isConcludedAt`, and `isLiveAt` derivations. `events_screen.dart` renders `DRAFT`, `UPCOMING`, `LIVE NOW`, `CONCLUDED`, and `CANCELLED` badges, closes registration after cancellation or conclusion, and stores and displays the optional cancellation reason. The manual `is_live` flag only highlights an event inside its own start/end window; it cannot keep an event live forever. |
-| **Staff composer and house scope** | Staff entry points are gated to `HierarchyService.isSuperAdmin || isTeacherOrFaculty`, matching the Firestore `isAdmin()` write gate. The composer validates title, venue, category, house scope, and start-before-end; offers preview-before-publish, private draft save, edit, and cancel-with-reason; and uses server timestamps for `created_at` / `updated_at`. The list exposes an All/School-wide/Ruby/Sapphire/Emerald/Topaz filter. Students only see published school-wide or own-house events. |
+| **Staff composer, house scope, and grade range** | Staff entry points are gated to `HierarchyService.isSuperAdmin || isTeacherOrFaculty`, matching the Firestore `isAdmin()` write gate. The composer validates title, venue, category, house scope, optional grade range, and start-before-end; offers preview-before-publish, private draft save, edit, and cancel-with-reason; and uses server timestamps for `created_at` / `updated_at`. The list exposes an All/School-wide/Ruby/Sapphire/Emerald/Topaz filter. A "Limit to a grade range" switch adds From/To grade dropdowns (LKG/UKG = 0, Grade 1–12 = 1–12); house scope and grade range apply together. Students only see published school-wide or own-house events that also match their grade. |
 | **Student registration and participant lists** | Registration is written to `events/{eventId}/registrations/{uid}` with the signed-in UID, event id, optional name/scholar number, and server timestamp. Students can create/delete only their own record; staff can read the participant list. Local sample events do not pretend to collect attendees. Widget tests assert a student sees no staff publish action, a staff member can open the composer, and house filtering removes unrelated events. |
 
-## Campus-events completion batch
+## Campus-events completion and grade-targeting batches
 
 The following gaps from `ACADEMIC_CHANGE_PROPOSAL.md` row **Events** are closed for Spark scope:
 
@@ -39,7 +40,8 @@ The following gaps from `ACADEMIC_CHANGE_PROPOSAL.md` row **Events** are closed 
 5. **Server timestamps and validation.** Writes use `created_at` / `updated_at` server timestamps. Model and rules both enforce title, description length, category, venue, house scope, non-zero duration, and start-before-end.
 6. **Registration records.** `setEventRegistration` writes a self-owned document under `events/{eventId}/registrations/{uid}` in live mode and uses a device-local registered set only in local mode. The rules also read the parent event and require it to still be `published`, before its `end_time`, and either school-wide, in the student's house, or accessed by staff. A denied write returns `false`; the UI never shows a confirmed RSVP after a failure.
 7. **Participant lists.** Staff see the event's attendee stream with names and scholar numbers (up to 25 shown plus a count). Local sample events explicitly state that participant records require Firebase.
-8. **Honest copy.** Removed claims that card actions insert a device-calendar entry, that the live panel streams audio, that cheering earns spirit points, and that event attendance automatically awards points.
+8. **Honest copy.** Removed claims that card actions insert a device-calendar entry, that the live panel streams audio, that cheering earns spirit points, and that event attendance automatically awards points. The stream-error banner now says "Live campus schedule unavailable. Showing previously loaded events." instead of implying a real device-calendar feature.
+9. **Grade targeting.** Staff can optionally publish to a grade band via "Limit to a grade range" with From/To grade dropdowns. `grade_min` / `grade_max` are stored on the event (`0` = LKG/UKG, `1–12` = Grade 1–12, `0–12` = all grades). `users.grade` is backfilled from `class_level`. Because Firestore rules are not filters, list queries remain scoped by status and house and the grade band is applied client-side for the list; direct document reads and registration creates are grade-gated in the rules with `isGradeEligibleFor(...)`. Missing grade fields fail open for legacy documents, and an invalid or reversed range is rejected client-side and by the rules.
 
 Rules were compiled and released to `cloud.firestore` on 2026-11-10. There is still no authenticated end-to-end Firebase test or emulator harness, so denial behaviour is verified by unit tests plus the deployed rules source contract, not by an executed denied request.
 
@@ -51,8 +53,8 @@ Rules were compiled and released to `cloud.firestore` on 2026-11-10. There is st
 | `flutter test test/teacher_timetable_editor_test.dart` | **15/15 passed** (includes the moving-break, multi-class picker, and time-picker tests) |
 | `flutter test test/acceptance_matrix_test.dart` | **7/7 passed** |
 | `flutter test test/circular_composer_test.dart` | **9/9 passed** |
-| `flutter test test/campus_event_test.dart` | **23/23 passed** (lifecycle, serialization, validation, drafts, updates, cancellation reason, scoped streams, registration, attendees, rules contracts, staff/student UI) |
-| `flutter test` (full suite) | **680/680 passed** |
+| `flutter test test/campus_event_test.dart` | **27/27 passed** (lifecycle, serialization, validation, drafts, updates, cancellation reason, grade targeting, scoped streams, registration, attendees, rules contracts, staff/student UI) |
+| `flutter test` (full suite) | **684/684 passed** |
 | `flutter analyze --no-pub` | **No issues found** |
 | `firebase.cmd deploy --only firestore:rules` | **compiled successfully; released to `cloud.firestore`** |
 | `firebase.cmd deploy --only storage` | **blocked:** Firebase Storage is not initialized on `asb-house-hub`; see D9 in `BLAZE_REQUIRED_FEATURES.md` |
@@ -62,10 +64,10 @@ Rules were compiled and released to `cloud.firestore` on 2026-11-10. There is st
 
 | Artifact | Size | Timestamp |
 |---|---|---|
-| `build\windows\x64\runner\Release\data\app.so` | 13,599,624 bytes | 2026-11-11 14:49:21 |
+| `build\windows\x64\runner\Release\data\app.so` | 13,616,008 bytes | 2026-11-11 15:22:13 |
 | `build\windows\x64\runner\Release\asb_house_hub.exe` | 16,165,888 bytes | 2026-11-11 14:49:26 |
 
-The Dart snapshot was rebuilt after the circular, timetable-rules, campus-events, cancellation-reason, and stream-merge changes. The desktop launchers (`Launch_ASB_House_Hub.bat`, `Run_ASB_House_Hub.bat`) run this Release executable.
+The Dart snapshot was rebuilt after the circular, timetable-rules, campus-events, cancellation-reason, grade-targeting, and stream-merge changes. The desktop launchers (`Launch_ASB_House_Hub.bat`, `Run_ASB_House_Hub.bat`) run this Release executable.
 
 ## Acceptance status
 
@@ -83,7 +85,7 @@ The four previously open rows were closed by direct evidence in this batch:
 
 ## Honest limits (Spark / project convention)
 
-1. **Rules tests are source-contract assertions.** No Firebase emulator harness exists. Firestore rules are compiled and deployed; the key contracts are asserted in the suite. Evaluated denial is not claimed beyond that convention.
+1. **Rules tests are source-contract assertions.** No Firebase emulator harness exists. Firestore rules are compiled and deployed; the key contracts are asserted in the suite. Evaluated denial is not claimed beyond that convention. Campus-event list queries stay status/house-scoped because rules are not filters; per-event grade bands are applied client-side for lists and enforced by rules on direct document reads and registration creates.
 2. **Firebase Storage is not initialized.** `firebase deploy --only storage` fails with *"Firebase Storage has not been set up on project 'asb-house-hub'"*. Circular PDFs therefore use the inline Base64 fallback up to 700 KB; larger files fail with an explicit Storage-required error. See D9 in `election_audit/BLAZE_REQUIRED_FEATURES.md`.
 3. **No Cloud Functions or FCM.** Notification fan-out is client-side, capped at 500 roster lookups, 400 writes per batch, and 100 streamed notifications.
 4. **P1-01 secrets remain a documented residual risk.** The release was built without `--dart-define` values, so it uses the development fallbacks. A production build must pass `ELECTION_HMAC_SALT`, `VAULT_SECRET`, `GAMIFICATION_HMAC_SECRET`, and `SPORTS_CERT_SECRET`. Removing the fallbacks without supplying the defines would break live account switching, elections, gamification, and sports signatures.
@@ -98,13 +100,16 @@ The four previously open rows were closed by direct evidence in this batch:
 - `lib/models/app_notification.dart` — `NotificationUnreadBreakdown`.
 - `lib/models/school_notice.dart` — circular/notice model, publish result, inline-size ceiling.
 - `lib/services/notification_service.dart` — unread breakdown stream + widget-test override.
-- `lib/services/auth_service.dart` — truthful circular publish/upload, notice cache, foundational events/notices.
+- `lib/models/campus_event.dart` — status/audit fields, cancellation reason, grade range (`grade_min` / `grade_max`) and registration DTO.
+- `lib/services/auth_service.dart` — truthful circular publish/upload, notice cache, foundational events/notices, grade-aware event streams, profile grade backfill, and registration/cancellation writes.
 - `lib/screens/home_screen.dart` — M8 dashboard, circular feed/composer, attachment opening, cache controls.
+- `lib/screens/events_screen.dart` — staff composer with grade-range controls, lifecycle badges, grade badges, honest stream-error banner, registration, and cached fallback.
 - `lib/screens/teacher_timetable_editor_screen.dart` — moving-break control and period time pickers.
 - `lib/widgets/school_circular_composer.dart` — title/details/category/audience/PDF composer with truthful errors.
 - `test/dashboard_profile_test.dart` — 6 dashboard/profile tests.
 - `test/teacher_timetable_editor_test.dart` — moving-break, multi-class picker, and time-picker tests.
 - `test/circular_composer_test.dart` — 9 circular service/composer/rules tests.
+- `test/campus_event_test.dart` — 27 campus-event lifecycle, grade-targeting, registration, stream, rules-contract, and widget tests.
 - `test/acceptance_matrix_test.dart` — 7 matrix/rules guards.
 - `test/timetable_engine_test.dart`, `test/timetable_m3_test.dart` — student timetable read-scoping contracts.
 - `test/widget_test.dart` — P0 regex-absence assertions.
@@ -122,7 +127,7 @@ The four previously open rows were closed by direct evidence in this batch:
 - [x] Responsive narrow/wide layouts; no overflow in tests.
 - [x] 64-row acceptance matrix + enforceable harness.
 - [x] Exact bootstrap admin emails; no prefix elevation.
-- [x] Full suite green (680/680), analyzer clean, Firestore rules deployed, release rebuilt.
-- [x] Campus events: staff composer with preview/publish/edit/cancel, private drafts, house filtering, server timestamps, venue/category/time validation, concluded/cancelled rendering, registration records, and participant lists.
+- [x] Full suite green (684/684), analyzer clean, Firestore rules deployed, release rebuilt.
+- [x] Campus events: staff composer with preview/publish/edit/cancel, private drafts, house filtering, optional grade-range targeting, server timestamps, venue/category/time validation, concluded/cancelled rendering, registration records, and participant lists.
 - [x] Zero partials: tests 5, 22, 24, and 25 closed by direct evidence.
 - [x] Circular PDF composer with title/details/category/audience, truthful upload failures, and local-only warning.

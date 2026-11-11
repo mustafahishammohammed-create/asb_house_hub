@@ -72,6 +72,11 @@ class CampusEvent implements Comparable<CampusEvent> {
   final String authorName;
   final String cancelledReason;
 
+  /// Lowest and highest targeted grade index. 0 covers LKG/UKG, 1–12 map to
+  /// Grade 1–Grade 12. The default (0–12) means every grade.
+  final int gradeMin;
+  final int gradeMax;
+
   CampusEvent({
     required this.id,
     required this.title,
@@ -90,7 +95,18 @@ class CampusEvent implements Comparable<CampusEvent> {
     this.authorUid = '',
     this.authorName = '',
     this.cancelledReason = '',
+    this.gradeMin = 0,
+    this.gradeMax = 12,
   });
+
+  bool get targetsAllGrades => gradeMin <= 0 && gradeMax >= 12;
+
+  String get gradeRangeLabel {
+    if (targetsAllGrades) return 'All grades';
+    String label(int grade) => grade <= 0 ? 'LKG/UKG' : 'Grade $grade';
+    if (gradeMin == gradeMax) return label(gradeMin);
+    return '${label(gradeMin)}–${label(gradeMax)}';
+  }
 
   bool get isDraft => status == CampusEventStatus.draft;
 
@@ -151,6 +167,8 @@ class CampusEvent implements Comparable<CampusEvent> {
       'author_uid': authorUid,
       'author_name': authorName,
       'cancelled_reason': cancelledReason,
+      'grade_min': gradeMin,
+      'grade_max': gradeMax,
     };
   }
 
@@ -180,6 +198,8 @@ class CampusEvent implements Comparable<CampusEvent> {
       // Always present so re-publishing an edited event clears a stale reason
       // instead of leaving it behind in the merged Firestore document.
       'cancelled_reason': cancelledReason,
+      'grade_min': gradeMin,
+      'grade_max': gradeMax,
     };
   }
 
@@ -201,6 +221,8 @@ class CampusEvent implements Comparable<CampusEvent> {
     String? authorUid,
     String? authorName,
     String? cancelledReason,
+    int? gradeMin,
+    int? gradeMax,
   }) {
     return CampusEvent(
       id: id ?? this.id,
@@ -220,6 +242,8 @@ class CampusEvent implements Comparable<CampusEvent> {
       authorUid: authorUid ?? this.authorUid,
       authorName: authorName ?? this.authorName,
       cancelledReason: cancelledReason ?? this.cancelledReason,
+      gradeMin: gradeMin ?? this.gradeMin,
+      gradeMax: gradeMax ?? this.gradeMax,
     );
   }
 
@@ -261,6 +285,8 @@ class CampusEvent implements Comparable<CampusEvent> {
       authorUid: map['author_uid']?.toString() ?? '',
       authorName: map['author_name']?.toString() ?? '',
       cancelledReason: map['cancelled_reason']?.toString() ?? '',
+      gradeMin: ((map['grade_min'] as num?)?.toInt() ?? 0).clamp(0, 12),
+      gradeMax: ((map['grade_max'] as num?)?.toInt() ?? 12).clamp(0, 12),
     );
   }
 

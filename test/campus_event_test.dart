@@ -193,6 +193,34 @@ void main() {
       expect(roundTripped.isCancelled, isTrue);
     });
 
+    test('grade targeting defaults to all grades and round-trips', () {
+      final all = lifecycleEvent();
+      expect(all.targetsAllGrades, isTrue);
+      expect(all.gradeRangeLabel, 'All grades');
+
+      final targeted = lifecycleEvent().copyWith(gradeMin: 5, gradeMax: 8);
+      expect(targeted.targetsAllGrades, isFalse);
+      expect(targeted.gradeRangeLabel, 'Grade 5–Grade 8');
+      expect(targeted.toMap()['grade_min'], 5);
+      expect(targeted.toMap()['grade_max'], 8);
+      expect(targeted.toFirestoreMap()['grade_min'], 5);
+      expect(targeted.toFirestoreMap()['grade_max'], 8);
+
+      final roundTripped = CampusEvent.fromMap(targeted.toMap());
+      expect(roundTripped.gradeMin, 5);
+      expect(roundTripped.gradeMax, 8);
+      expect(roundTripped.gradeRangeLabel, 'Grade 5–Grade 8');
+    });
+
+    test('grade parser handles canonical, numeric and kindergarten values', () {
+      expect(AuthService.campusGradeIndex('Grade 6'), 6);
+      expect(AuthService.campusGradeIndex('10 B'), 10);
+      expect(AuthService.campusGradeIndex('LKG'), 0);
+      expect(AuthService.campusGradeIndex('UKG'), 0);
+      expect(AuthService.campusGradeIndex('Staff'), isNull);
+      expect(AuthService.campusGradeIndex(null), isNull);
+    });
+
     test('fromMap understands lifecycle status and legacy is_published', () {
       final live = CampusEvent.fromMap({
         'title': 'Translated Event',
@@ -275,6 +303,23 @@ void main() {
       expect(AuthService.getCachedEvents(), isEmpty);
     });
 
+    test('rejects an invalid or reversed grade range', () async {
+      final reversed = event().copyWith(gradeMin: 9, gradeMax: 3);
+      expect(
+        AuthService.validateCampusEvent(reversed),
+        'The starting grade must not be above the ending grade.',
+      );
+      expect(await auth.createCampusEvent(reversed), isFalse);
+      expect(AuthService.getCachedEvents(), isEmpty);
+
+      final outOfRange = event().copyWith(gradeMin: 1, gradeMax: 13);
+      expect(
+        AuthService.validateCampusEvent(outOfRange),
+        'Choose a valid grade range.',
+      );
+      expect(await auth.createCampusEvent(outOfRange), isFalse);
+    });
+
     test('local drafts are never stored in the shared device cache', () async {
       final draft = event().copyWith(status: CampusEventStatus.draft);
 
@@ -314,24 +359,51 @@ void main() {
       expect(cached.cancelledReason, 'Venue unavailable');
     });
 
-    test('local event stream hides drafts and other houses', () async {
-      await AuthService.cacheEvents([
-        event(id: 'all_event').copyWith(houseScope: 'all'),
-        event(id: 'ruby_event').copyWith(houseScope: 'ruby'),
-        event(id: 'topaz_event').copyWith(houseScope: 'topaz'),
-        event(id: 'draft_event').copyWith(status: CampusEventStatus.draft),
-      ]);
+    test(
+      'local event stream hides drafts, other houses, and other grades',
+      () async {
+        await AuthService.cacheEvents([
+          event(id: 'all_event').copyWith(houseScope: 'all'),
+          event(id: 'ruby_event').copyWith(houseScope: 'ruby'),
+          event(id: 'topaz_event').copyWith(houseScope: 'topaz'),
+          event(id: 'draft_event').copyWith(status: CampusEventStatus.draft),
+          event(
+            id: 'middle_event',
+          ).copyWith(houseScope: 'all', gradeMin: 5, gradeMax: 8),
+          event(
+            id: 'senior_event',
+          ).copyWith(houseScope: 'all', gradeMin: 9, gradeMax: 12),
+        ]);
 
-      final ruby = await auth.getEventsStream(house: 'ruby').first;
-      expect(ruby.map((e) => e.id), containsAll(['all_event', 'ruby_event']));
-      expect(ruby.map((e) => e.id), isNot(contains('topaz_event')));
-      expect(ruby.map((e) => e.id), isNot(contains('draft_event')));
+        final ruby = await auth.getEventsStream(house: 'ruby').first;
+        expect(ruby.map((e) => e.id), containsAll(['all_event', 'ruby_event']));
+        expect(ruby.map((e) => e.id), isNot(contains('topaz_event')));
+        expect(ruby.map((e) => e.id), isNot(contains('draft_event')));
 
-      final staff = await auth
-          .getEventsStream(house: 'ruby', includeDrafts: true)
-          .first;
-      expect(staff.map((e) => e.id), contains('draft_event'));
-    });
+        final gradeSix = await auth
+            .getEventsStream(house: 'ruby', gradeIndex: 6)
+            .first;
+        expect(
+          gradeSix.map((e) => e.id),
+          containsAll(['all_event', 'ruby_event', 'middle_event']),
+        );
+        expect(gradeSix.map((e) => e.id), isNot(contains('senior_event')));
+
+        final gradeTen = await auth
+            .getEventsStream(house: 'ruby', gradeIndex: 10)
+            .first;
+        expect(
+          gradeTen.map((e) => e.id),
+          containsAll(['all_event', 'ruby_event', 'senior_event']),
+        );
+        expect(gradeTen.map((e) => e.id), isNot(contains('middle_event')));
+
+        final staff = await auth
+            .getEventsStream(house: 'ruby', includeDrafts: true)
+            .first;
+        expect(staff.map((e) => e.id), contains('draft_event'));
+      },
+    );
   });
 
   group('student registration records', () {
@@ -420,12 +492,21 @@ void main() {
         ),
       );
       expect(body, contains('points_awarded'));
+      expect(body, contains("'grade_min', 'grade_max'"));
+      expect(body, contains('data.grade_min <= data.grade_max'));
+      expect(body, contains('data.grade_min >= 0'));
+      expect(body, contains('data.grade_max <= 12'));
     });
 
     test('events are staff-written and lifecycle-scoped for students', () {
       expect(rules.contains('match /events/{eventId}'), isTrue);
       expect(rules.contains("resource.data.status == 'published'"), isTrue);
       expect(rules.contains('isSameHouse(resource.data.house_scope)'), isTrue);
+      expect(rules.contains('function isGradeEligibleFor(data)'), isTrue);
+      expect(rules.contains('isGradeEligibleFor(resource.data)'), isTrue);
+      expect(rules.contains("'grade' in getUserData()"), isTrue);
+      expect(RegExp(r'allow get: if isSignedIn\(\)').hasMatch(rules), isTrue);
+      expect(RegExp(r'allow list: if isSignedIn\(\)').hasMatch(rules), isTrue);
       expect(
         RegExp(
           r'allow create: if isAdmin\(\) &&\s+isValidCampusEvent\(request\.resource\.data\)',
@@ -447,6 +528,10 @@ void main() {
       );
       expect(
         rules.contains('isSameHouse(getCampusEvent(eventId).house_scope)'),
+        isTrue,
+      );
+      expect(
+        rules.contains('isGradeEligibleFor(getCampusEvent(eventId))'),
         isTrue,
       );
       expect(
@@ -552,6 +637,41 @@ void main() {
       expect(find.text('Save Private Draft'), findsOneWidget);
       expect(find.text('House Scope'), findsOneWidget);
       expect(find.textContaining('Starts\n'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('staff can limit an event to a grade range', (tester) async {
+      await AuthService.cacheProfile({
+        'uid': 'teacher_1',
+        'full_name': 'Teacher One',
+        'scholar_no': 'T100',
+        'role': 'teacher',
+        'house_name': 'ruby',
+      });
+
+      tester.view.physicalSize = const Size(1000, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        const MaterialApp(home: EventsScreen(userHouse: 'ruby')),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Publish Campus Event'));
+      await tester.pumpAndSettle();
+
+      final gradeToggle = find.text('Limit to a grade range');
+      await tester.ensureVisible(gradeToggle);
+      await tester.pumpAndSettle();
+      await tester.tap(gradeToggle);
+      await tester.pumpAndSettle();
+
+      expect(find.text('From grade'), findsOneWidget);
+      expect(find.text('To grade'), findsOneWidget);
+      expect(find.text('Grade 1'), findsWidgets);
+      expect(find.text('Grade 12'), findsWidgets);
       expect(tester.takeException(), isNull);
     });
   });
