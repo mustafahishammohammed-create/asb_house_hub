@@ -77,6 +77,13 @@ class _SignupScreenState extends State<SignupScreen> {
         setState(() => _errorMessage = 'Scholar number must be 5 or 6 digits');
         return false;
       }
+      if (scholar == '11209' || scholar.toLowerCase() == 'admin') {
+        setState(
+          () => _errorMessage =
+              'This scholar number is reserved. Please sign in instead.',
+        );
+        return false;
+      }
     } else if (_currentStep == 1) {
       if (_classLevel == null || _division == null) {
         setState(() => _errorMessage = 'Please select both Grade and Section');
@@ -140,9 +147,9 @@ class _SignupScreenState extends State<SignupScreen> {
         password: _passwordController.text,
         fullName: _nameController.text.trim(),
         age: _age,
-        classLevel: _classLevel ?? 'Grade 10',
-        division: _division ?? 'A',
-        houseName: _houseName ?? 'ruby',
+        classLevel: _classLevel!,
+        division: _division!,
+        houseName: _houseName!,
       );
 
       if (!mounted) return;

@@ -575,7 +575,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        '• Encrypted',
+                        '• Private',
                         style: TextStyle(
                           fontSize: 10.5,
                           color: isDark ? Colors.white54 : Colors.black45,
@@ -968,7 +968,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
                           textInputAction: TextInputAction.send,
                           textCapitalization: TextCapitalization.sentences,
                           decoration: InputDecoration(
-                            hintText: 'Type an encrypted message...',
+                            hintText: 'Type a message...',
                             hintStyle: TextStyle(
                               color: isDark ? Colors.white38 : Colors.grey[400],
                               fontSize: 14,

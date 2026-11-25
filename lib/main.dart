@@ -33,9 +33,9 @@ void main() async {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 4),
-              Text(
-                details.exceptionAsString(),
-                style: const TextStyle(fontSize: 11, color: Colors.white38),
+              const Text(
+                'Please retry, or contact the school administrator if this persists.',
+                style: TextStyle(fontSize: 11, color: Colors.white38),
                 textAlign: TextAlign.center,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,

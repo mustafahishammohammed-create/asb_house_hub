@@ -50,16 +50,9 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
     );
   }
 
-  bool get _isApplePlatform =>
-      !kIsWeb &&
-      (defaultTargetPlatform == TargetPlatform.iOS ||
-          defaultTargetPlatform == TargetPlatform.macOS);
+  String get _walletButtonLabel => 'Pass Info';
 
-  String get _walletButtonLabel =>
-      _isApplePlatform ? 'Add to Apple Wallet' : 'Save to Google Wallet';
-
-  IconData get _walletButtonIcon =>
-      _isApplePlatform ? Icons.apple : Icons.account_balance_wallet_rounded;
+  IconData get _walletButtonIcon => Icons.info_outline_rounded;
 
   @override
   void initState() {
@@ -120,7 +113,7 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
             SizedBox(width: 10),
             Expanded(
               child: Text(
-                ' Apple / Google Wallet Passes',
+                'ASB Digital Passes',
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontWeight: FontWeight.w900,
@@ -244,7 +237,9 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
           details: order.items
               .map((i) => '${i.qty}x ${i.product.name} (${i.size})')
               .join('\n'),
-          totalInfo: '${order.totalPts} Pts Paid',
+          totalInfo: order.totalPts > 0
+              ? '${order.totalPts} Pts Paid'
+              : 'BHD payment — not verified',
           accentColor: houseColor,
         );
       },
@@ -774,14 +769,14 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
       child: Column(
         children: [
           _buildPassCard(
-            title: 'TUITION & ACTIVITY FEE RECEIPT',
-            subtitle: 'Receipt #REC-2026-T2',
-            status: 'PAID IN FULL 🟢',
-            statusColor: Colors.greenAccent,
-            qrData: 'ASB-FEE:${widget.scholarNo}:PAID:TERM2',
+            title: 'SAMPLE FEE RECEIPT (NO PAYMENT RECORD)',
+            subtitle: 'Illustrative preview — not an official receipt',
+            status: 'SAMPLE — NOT PAID',
+            statusColor: Colors.amber,
+            qrData: 'ASB-SAMPLE-FEE:${widget.scholarNo}:NO-PAYMENT-RECORD',
             details:
-                'Term 2 Inter-House Activity Dues\nSports & Lab Equipment Fee\nVerified Electronic Payment',
-            totalInfo: 'Amount: BHD 150.000',
+                'This layout is a sample only.\nNo tuition or activity payment has been recorded.\nContact the school finance office for an official receipt.',
+            totalInfo: 'No payment recorded',
             accentColor: houseColor,
           ),
         ],
@@ -1156,13 +1151,13 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Icon(
-                                      Icons.nfc_rounded,
+                                      Icons.qr_code_rounded,
                                       size: 15,
                                       color: accentColor.withValues(alpha: 0.9),
                                     ),
                                     const SizedBox(width: 4),
                                     Text(
-                                      'NFC Active',
+                                      'QR PASS',
                                       style: TextStyle(
                                         color: accentColor,
                                         fontSize: 10,
@@ -1245,7 +1240,6 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
                             subtitle: subtitle,
                             serial: 'ASB-${widget.scholarNo}',
                             accentColor: accentColor,
-                            isAppleWallet: _isApplePlatform,
                           );
                         },
                       );
@@ -1322,7 +1316,6 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
     required String subtitle,
     required String serial,
     required Color accentColor,
-    required bool isAppleWallet,
   }) {
     showModalBottomSheet(
       context: context,
@@ -1375,9 +1368,7 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
                   Semantics(
                     header: true,
                     child: Text(
-                      isAppleWallet
-                          ? 'Added to Apple Wallet'
-                          : 'Saved to Google Wallet',
+                      'Local Pass Preview',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 22,
@@ -1388,9 +1379,7 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    isAppleWallet
-                        ? 'This pass is now safely synchronized to your Apple Wallet keychain.'
-                        : 'This pass is now saved to your Google Wallet and ready for NFC access.',
+                    'This pass stays inside ASB House Hub. It is not added to Apple Wallet or Google Wallet. Use Pass & Receipt to export a PDF.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.7),
@@ -1420,10 +1409,8 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
                               color: accentColor.withValues(alpha: 0.2),
                               borderRadius: BorderRadius.circular(14),
                             ),
-                            child: Icon(
-                              isAppleWallet
-                                  ? Icons.apple
-                                  : Icons.account_balance_wallet_rounded,
+                            child: const Icon(
+                              Icons.badge_rounded,
                               color: Colors.white,
                               size: 28,
                             ),
@@ -1443,7 +1430,7 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  'Serial: $serial • Express Mode On ⚡',
+                                  'Serial: $serial • Local preview',
                                   style: TextStyle(
                                     color: Colors.white.withValues(alpha: 0.6),
                                     fontSize: 11,

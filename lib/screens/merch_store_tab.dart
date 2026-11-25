@@ -926,7 +926,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Apple Wallet Pass Header
+                // House collection pass header (local QR pass, not a Wallet pass)
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -950,7 +950,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                       ],
                     ),
                     Icon(
-                      Icons.apple,
+                      Icons.qr_code_2_rounded,
                       color: Colors.white.withValues(alpha: 0.8),
                       size: 26,
                     ),
@@ -1111,7 +1111,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                           Text(
                             order.totalPts > 0
                                 ? '${order.totalPts} Pts'
-                                : 'PAID (BHD)',
+                                : 'BHD — UNVERIFIED',
                             style: TextStyle(
                               color: widget.houseColor,
                               fontWeight: FontWeight.w900,
@@ -1157,7 +1157,9 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                         title: 'Official ASB Merch Collection Pass',
                         subtitle: 'Order #${order.receiptId}',
                         details: 'Items: $itemsSummary',
-                        totalInfo: 'Total Points Paid: ${order.totalPts} PTS',
+                        totalInfo: order.totalPts > 0
+                            ? 'Total Points Paid: ${order.totalPts} PTS'
+                            : 'BHD order — payment not verified in app',
                         qrData: order.qrData.isNotEmpty ? order.qrData : 'ASB-ORDER-${order.receiptId}',
                       );
                       if (!mounted) return;
@@ -1389,7 +1391,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                                         child: Text(
                                           order.totalPts > 0
                                               ? '${order.totalPts} Pts Paid'
-                                              : 'Verified Store Order',
+                                              : 'BHD order — payment unverified',
                                           overflow: TextOverflow.ellipsis,
                                           style: TextStyle(
                                             fontWeight: FontWeight.w900,
@@ -2610,7 +2612,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                         ),
                         const SizedBox(height: 2),
                         const Text(
-                          'Verified School Merchandise • Orders fulfilled directly to Digital Wallet',
+                          'School merchandise catalogue • Orders are requests, not confirmed payments',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,

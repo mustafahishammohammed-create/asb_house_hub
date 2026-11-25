@@ -378,6 +378,7 @@ void main() {
       final success = await authService.updateAssignmentStatus(
         assignmentId: 'assign_math_2',
         newStatus: AssignmentStatus.graded,
+        classLevel: 'Grade 10',
         scholarNo: '11209',
         pointsReward: 20,
       );

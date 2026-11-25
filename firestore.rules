@@ -488,6 +488,42 @@ service cloud.firestore {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
     }
 
+    // A student may provision/refresh their own election roster row, but may
+    // never grant themselves a staff role, election capability, or another
+    // scholar's identity. This closes the school_members -> isSuperAdmin()
+    // escalation path while keeping normal roster self-provisioning working.
+    function isValidSelfSchoolMember(data) {
+      return hasUserDoc() &&
+        data.active == true &&
+        data.role == 'student' &&
+        data.scholar_no is string &&
+        data.scholar_no == getUserData().scholar_no &&
+        data.display_name is string &&
+        data.display_name.size() >= 1 &&
+        data.display_name.size() <= 100 &&
+        data.house is string &&
+        data.house.lower() in ['ruby', 'sapphire', 'emerald', 'topaz'] &&
+        // House and grade drive election eligibility, so a self-provisioned
+        // roster row must mirror the immutable users profile rather than
+        // letting a student move themselves into another house or grade band.
+        (
+          ('house_name' in getUserData() &&
+            data.house.lower() == getUserData().house_name.lower()) ||
+          (!('house_name' in getUserData()) &&
+            'house' in getUserData() &&
+            data.house.lower() == getUserData().house.lower())
+        ) &&
+        data.grade is int &&
+        data.grade >= 0 &&
+        data.grade <= 12 &&
+        (!('grade' in getUserData()) || data.grade == getUserData().grade) &&
+        (!('capabilities' in data) || (
+          data.capabilities is map &&
+          (!('manage_elections' in data.capabilities) ||
+            data.capabilities.manage_elections == false)
+        ));
+    }
+
     // ===============================================================
     // Domain Validators
     // ===============================================================
@@ -1201,8 +1237,9 @@ service cloud.firestore {
 
     // 1. users/{userId}
     match /users/{userId} {
-      // Read: allow read for student directory lookup, account existence verification, and sibling auth
-      allow read: if true;
+      // Read: authenticated directory lookup only. Public reads let anyone,
+      // including unauthenticated clients, enumerate scholar numbers.
+      allow read: if isSignedIn();
 
       // Create: user creating their own document; role MUST be 'student' on self-registration
       // unless authenticated as bootstrap super admin (admin@asianschool.bh, 11209@asianschool.bh) or existing super admin
@@ -1244,7 +1281,14 @@ service cloud.firestore {
         (
           isOwner(userId) &&
           request.resource.data.role == resource.data.role &&
-          areImmutableFieldsUnchanged(['role', 'points', 'points_contributed', 'scholar_no', 'created_at', 'uid', 'class_id', 'class_verified', 'status'])
+          areImmutableFieldsUnchanged([
+            'role', 'points', 'points_contributed', 'scholar_no',
+            'created_at', 'uid', 'class_id', 'class_verified', 'status',
+            // Identity, house, and grade are admin/roster controlled; a
+            // self-update must not move a student into another house,
+            // eligibility band, or display-name impersonation.
+            'house_name', 'grade', 'class_level', 'division', 'full_name'
+          ])
         )
       );
 
@@ -1667,20 +1711,34 @@ service cloud.firestore {
     }
 
     // 10. chats/{channelId} and chats/{channelId}/messages/{messageId}
+    // Direct messages and staff rooms are private to their participants.
+    // Queries must include where('participants', arrayContains: uid), which
+    // chat_service.dart already does for the channel list.
     match /chats/{channelId} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() &&
+        'participants' in resource.data &&
+        request.auth.uid in resource.data.participants;
       allow create: if isSignedIn() &&
         ('participants' in request.resource.data) &&
         request.auth.uid in request.resource.data.participants;
       allow update: if isSignedIn() && (
-        (resource.data != null && 'participants' in resource.data && request.auth.uid in resource.data.participants) ||
+        (
+          resource.data != null &&
+          'participants' in resource.data &&
+          request.auth.uid in resource.data.participants &&
+          request.resource.data.participants == resource.data.participants
+        ) ||
         isAdmin()
       );
       allow delete: if isAdmin();
 
       match /messages/{messageId} {
-        allow read: if isSignedIn();
-        allow create: if isSignedIn() &&
+        function isChannelParticipant() {
+          return isSignedIn() &&
+            request.auth.uid in get(/databases/$(database)/documents/chats/$(channelId)).data.participants;
+        }
+        allow read: if isChannelParticipant();
+        allow create: if isChannelParticipant() &&
           request.resource.data.sender_id == request.auth.uid &&
           isValidChatMessage(request.resource.data);
         allow update: if isSignedIn() && (
@@ -1832,23 +1890,35 @@ service cloud.firestore {
     // 19. school_members/{memberId} (Zero-Trust Elections v2 Roster)
     match /school_members/{memberId} {
       allow read: if isSignedIn();
-      allow write: if isSignedIn() && (isOwner(memberId) || isAdmin());
+      allow create: if isAdmin() ||
+        (isOwner(memberId) && isValidSelfSchoolMember(request.resource.data));
+      allow update: if isAdmin() ||
+        (isOwner(memberId) &&
+          isValidSelfSchoolMember(request.resource.data) &&
+          request.resource.data.role == resource.data.role &&
+          request.resource.data.scholar_no == resource.data.scholar_no &&
+          request.resource.data.house == resource.data.house &&
+          request.resource.data.grade == resource.data.grade &&
+          (!('capabilities' in resource.data) ||
+            request.resource.data.capabilities == resource.data.capabilities));
+      allow delete: if isAdmin();
     }
 
     // 20. election_polls_v2/{pollId} (Zero-Trust Elections v2 Published Polls)
+    // Counts and participation receipts are written only by the Admin SDK
+    // callable. A signed-in client must never be able to alter a tally.
     match /election_polls_v2/{pollId} {
       allow read: if true;
       allow write: if isAdmin();
 
       match /counts/{candidateId} {
         allow read: if true;
-        allow write: if isSignedIn();
+        allow write: if false;
       }
 
       match /participation/{key} {
         allow read: if false;
-        allow create: if isSignedIn();
-        allow update, delete: if false;
+        allow create, update, delete: if false;
       }
     }
 

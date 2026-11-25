@@ -6431,7 +6431,7 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
             Semantics(
               liveRegion: true,
               label:
-                  'Warning: Academic attendance at ${summary.percentage.toStringAsFixed(1)} percent is below the mandatory 75 percent Ministry threshold',
+                  'Warning: Academic attendance at ${summary.percentage!.toStringAsFixed(1)} percent is below the mandatory 75 percent Ministry threshold',
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
@@ -6713,8 +6713,14 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
   }
 
   Widget _buildSummaryCard(AttendanceSummary summary, bool isDark) {
+    final pct = summary.percentage;
+    final hasData = summary.hasData;
     final compliant = summary.isMinistryCompliant;
-    final badgeColor = compliant ? const Color(0xFF10B981) : const Color(0xFFEF4444);
+    final badgeColor = !hasData
+        ? const Color(0xFF64748B)
+        : compliant
+            ? const Color(0xFF10B981)
+            : const Color(0xFFEF4444);
 
     return Container(
       width: double.infinity,
@@ -6755,7 +6761,7 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${summary.percentage.toStringAsFixed(1)}%',
+                    hasData ? '${pct!.toStringAsFixed(1)}%' : 'No data',
                     style: TextStyle(
                       fontSize: 32,
                       fontWeight: FontWeight.w900,
@@ -6778,15 +6784,21 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
-                        compliant ? Icons.verified : Icons.error_outline,
+                        !hasData
+                            ? Icons.info_outline
+                            : compliant
+                                ? Icons.verified
+                                : Icons.error_outline,
                         size: 14,
                         color: badgeColor,
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        compliant
-                            ? 'Ministry 75% Met'
-                            : 'Below 75% Threshold',
+                        !hasData
+                            ? 'No attendance data'
+                            : compliant
+                                ? 'Ministry 75% Met'
+                                : 'Below 75% Threshold',
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w800,
@@ -6803,7 +6815,7 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
           ClipRRect(
             borderRadius: BorderRadius.circular(6),
             child: LinearProgressIndicator(
-              value: (summary.percentage / 100.0).clamp(0.0, 1.0),
+              value: hasData ? (pct! / 100.0).clamp(0.0, 1.0) : 0.0,
               minHeight: 8,
               backgroundColor:
                   isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),

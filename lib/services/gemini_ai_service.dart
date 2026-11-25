@@ -119,12 +119,10 @@ class GeminiAiService {
     try {
       final records = AuthService.getCachedAttendanceRecords(scholarNo: scholarNo);
       if (records.isNotEmpty) {
-        final total = records.length;
-        final present = records.where((r) => r.status == AttendanceStatus.present).length;
-        final lateCount = records.where((r) => r.status == AttendanceStatus.late).length;
-        final pct = (present / total) * 100.0;
+        final summary = AttendanceSummary.fromRecords(records);
+        final pct = summary.percentage!;
         buffer.writeln('\n[Attendance Metrics]');
-        buffer.writeln('Total Tracked Days: $total, Present: $present, Late: $lateCount');
+        buffer.writeln('Total Tracked Days: ${summary.totalDays}, Present: ${summary.presentDays}, Late: ${summary.lateDays}, Excused: ${summary.excusedDays}, Absent: ${summary.absentDays}');
         buffer.writeln('Attendance Percentage: ${pct.toStringAsFixed(1)}%');
         if (pct < 75.0) {
           buffer.writeln('⚠️ STATUTORY ATTENDANCE WARNING: Student attendance (${pct.toStringAsFixed(1)}%) is BELOW the mandatory CBSE 75% minimum threshold!');
@@ -132,7 +130,7 @@ class GeminiAiService {
           buffer.writeln('✅ Attendance Status: Satisfies statutory CBSE 75% threshold.');
         }
       } else {
-        buffer.writeln('\n[Attendance Metrics] No attendance records logged yet (100% baseline).');
+        buffer.writeln('\n[Attendance Metrics] No attendance records logged yet. Attendance data is unavailable.');
       }
     } catch (_) {}
 
@@ -402,7 +400,7 @@ ${liveContext ?? ''}
     final effectiveClass = classLevel ?? (AuthService.getCachedProfile()?['class_level']?.toString() ?? 'Grade 10');
 
     // 1. Timetable / Schedule Queries
-    if (lower.contains('timetable') || lower.contains('period') || lower.contains('class') || lower.contains('schedule for today') || (lower.contains('schedule') && !lower.contains('exam'))) {
+    if (lower.contains('timetable') || lower.contains('period') || lower.contains('class schedule') || lower.contains('my class') || lower.contains('next class') || lower.contains('schedule for today') || (lower.contains('schedule') && !lower.contains('exam'))) {
       final periods = AuthService.getCachedTimetable(classLevel: effectiveClass);
       if (periods.isNotEmpty) {
         final buffer = StringBuffer();
@@ -422,18 +420,15 @@ ${liveContext ?? ''}
     if (lower.contains('attendance') || lower.contains('present') || lower.contains('absent') || lower.contains('percentage')) {
       final records = AuthService.getCachedAttendanceRecords(scholarNo: effectiveScholar);
       if (records.isNotEmpty) {
-        final total = records.length;
-        final present = records.where((r) => r.status == AttendanceStatus.present).length;
-        final lateCount = records.where((r) => r.status == AttendanceStatus.late).length;
-        final absent = records.where((r) => r.status == AttendanceStatus.absent).length;
-        final pct = (present / total) * 100.0;
+        final summary = AttendanceSummary.fromRecords(records);
+        final pct = summary.percentage!;
         final isUnderThreshold = pct < 75.0;
 
         final buffer = StringBuffer();
         buffer.writeln('📊 Live Attendance Audit for $studentName\n');
         buffer.writeln('• Scholar No: $effectiveScholar');
-        buffer.writeln('• Total Recorded Sessions: $total days');
-        buffer.writeln('• Present: $present | Late: $lateCount | Absent: $absent');
+        buffer.writeln('• Total Recorded Sessions: ${summary.totalDays} days');
+        buffer.writeln('• Present: ${summary.presentDays} | Late: ${summary.lateDays} | Excused: ${summary.excusedDays} | Absent: ${summary.absentDays}');
         buffer.writeln('• Attendance Percentage: ${pct.toStringAsFixed(1)}%\n');
 
         if (isUnderThreshold) {
@@ -443,7 +438,7 @@ ${liveContext ?? ''}
         }
         return buffer.toString();
       } else {
-        return '📊 Live Attendance Audit\nNo attendance logs recorded yet for Scholar $effectiveScholar. Your baseline attendance is at 100%!';
+        return '📊 Live Attendance Audit\nNo attendance logs recorded yet for Scholar $effectiveScholar. Attendance data is unavailable.';
       }
     }
 

@@ -569,10 +569,9 @@ class _HouseAiChatScreenState extends State<HouseAiChatScreen> {
   Widget _buildQuickGlanceStatusBar(Color houseColor, bool isDark) {
     // 1. Attendance pill
     final records = AuthService.getCachedAttendanceRecords(scholarNo: widget.scholarNo);
-    final totalAtt = records.length;
-    final presentAtt = records.where((r) => r.status == AttendanceStatus.present).length;
-    final attPct = totalAtt > 0 ? (presentAtt / totalAtt) * 100.0 : 100.0;
-    final attWarning = attPct < 75.0 && totalAtt > 0;
+    final summary = AttendanceSummary.fromRecords(records);
+    final attPct = summary.percentage;
+    final attWarning = attPct != null && attPct < 75.0;
 
     // 2. House Standings pill
     final standings = AuthService.getCachedHouseStandings();
@@ -601,9 +600,19 @@ class _HouseAiChatScreenState extends State<HouseAiChatScreen> {
         children: [
           // Attendance Chip
           _buildStatusPill(
-            icon: attWarning ? Icons.warning_amber_rounded : Icons.check_circle_rounded,
-            label: '${attPct.toStringAsFixed(0)}% Attendance',
-            color: attWarning ? Colors.redAccent : Colors.green,
+            icon: attPct == null
+                ? Icons.info_outline_rounded
+                : attWarning
+                    ? Icons.warning_amber_rounded
+                    : Icons.check_circle_rounded,
+            label: attPct != null
+                ? '${attPct.toStringAsFixed(0)}% Attendance'
+                : 'No attendance data',
+            color: attPct == null
+                ? Colors.grey
+                : attWarning
+                    ? Colors.redAccent
+                    : Colors.green,
             isDark: isDark,
             onTap: () => _handleSendMessage('What is my attendance percentage and CBSE compliance status?'),
           ),

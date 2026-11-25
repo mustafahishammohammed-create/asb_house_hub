@@ -304,7 +304,38 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
     _comboResetTimer?.cancel();
     _blitzTimer?.cancel();
     _advanceTimer?.cancel();
+    // Flush earned reactor energy before leaving the screen.
+    _flushSpiritDelta();
     super.dispose();
+  }
+
+  /// Persist any pending spirit delta. Called every fifth tap and from
+  /// dispose(), so closing the arena does not silently discard earned energy.
+  void _flushSpiritDelta() {
+    final deltaToCommit = _unflushedSpiritDelta;
+    if (deltaToCommit <= 0) return;
+    _unflushedSpiritDelta = 0.0;
+
+    final houseKey = widget.userHouse.toLowerCase();
+    const validHouses = ['ruby', 'sapphire', 'emerald', 'topaz'];
+    if (!validHouses.contains(houseKey)) return;
+
+    try {
+      final payload = <String, dynamic>{
+        houseKey: FieldValue.increment(deltaToCommit),
+        'last_updated': FieldValue.serverTimestamp(),
+      };
+      if (widget.scholarNo.trim().isNotEmpty) {
+        payload['last_contributor'] = widget.scholarNo.trim();
+      }
+      FirebaseFirestore.instance
+          .collection('system_config')
+          .doc('house_spirit_reactor')
+          .set(payload, SetOptions(merge: true))
+          .catchError((e) {
+            debugPrint('Spirit reactor commit rejected or offline: $e');
+          });
+    } catch (_) {}
   }
 
   // --- Reactor Tap Logic ---
@@ -365,27 +396,8 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
     });
 
     // Debounced persist to Firestore: atomic FieldValue.increment for caller's house only
-    if (_localTapCount % 5 == 0 && _unflushedSpiritDelta > 0) {
-      final deltaToCommit = _unflushedSpiritDelta;
-      _unflushedSpiritDelta = 0.0;
-      final validHouses = const ['ruby', 'sapphire', 'emerald', 'topaz'];
-      if (validHouses.contains(houseKey)) {
-        try {
-          final payload = <String, dynamic>{
-            houseKey: FieldValue.increment(deltaToCommit),
-            'last_updated': FieldValue.serverTimestamp(),
-          };
-          if (widget.scholarNo.trim().isNotEmpty) {
-            payload['last_contributor'] = widget.scholarNo.trim();
-          }
-          FirebaseFirestore.instance
-              .collection('system_config')
-              .doc('house_spirit_reactor')
-              .set(payload, SetOptions(merge: true)).catchError((e) {
-            debugPrint('Spirit reactor commit rejected or offline: $e');
-          });
-        } catch (_) {}
-      }
+    if (_localTapCount % 5 == 0) {
+      _flushSpiritDelta();
     }
   }
 

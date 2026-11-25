@@ -6328,19 +6328,16 @@ class _HomeScreenState extends State<HomeScreen>
     Color color,
   ) {
     // Dynamically calculate attendance rate from cached attendance records
+    // using the shared institutional policy. No records means no data, not 100%.
     final records = AuthService.getCachedAttendanceRecords(scholarNo: scholarNo);
+    final summary = AttendanceSummary.fromRecords(records);
     String attendanceDisplay;
-    if (records.isNotEmpty) {
-      final presentCount = records
-          .where((r) => r.status == AttendanceStatus.present || r.status == AttendanceStatus.excused)
-          .length;
-      final lateCount = records.where((r) => r.status == AttendanceStatus.late).length;
-      final rate = ((presentCount + (lateCount * 0.5)) / records.length) * 100.0;
-      attendanceDisplay = '${rate.toStringAsFixed(1)}%';
+    if (summary.hasData) {
+      attendanceDisplay = '${summary.percentage!.toStringAsFixed(1)}%';
     } else if (_profile?['attendance_rate'] != null) {
       attendanceDisplay = '${_profile!['attendance_rate']}%';
     } else {
-      attendanceDisplay = '100.0%';
+      attendanceDisplay = 'No attendance data';
     }
 
     final standingDisplay = _profile?['academic_standing']?.toString() ?? 'High Honors 🏆';
@@ -6519,15 +6516,42 @@ class _HomeScreenState extends State<HomeScreen>
                     Icon(Icons.local_library_rounded, color: color, size: 28),
                     const SizedBox(width: 12),
                     const Text(
-                      'ASB Library Portal',
+                      'ASB Library Portal (Sample)',
                       style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
                     ),
                   ],
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Your currently borrowed textbooks and literature catalog.',
+                  'Sample preview only. This portal is not connected to the school library system; the loans below are illustrative.',
                   style: TextStyle(color: Colors.grey, fontSize: 13),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.amber.withValues(alpha: 0.45),
+                    ),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.info_outline_rounded, size: 18),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'SAMPLE DATA — no live library connection',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 20),
                 ...books.map(
@@ -6588,13 +6612,13 @@ class _HomeScreenState extends State<HomeScreen>
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text(
-                                  'Renewed "${b['title']}" for an additional 14 days! (Due in ${b['dueDays']} days)',
+                                  'Sample renewal: "${b['title']}" extended by 14 days (Due in ${b['dueDays']} days). This does not update a real library account.',
                                 ),
                               ),
                             );
                           },
                           child: const Text(
-                            'Renew Loan',
+                            'Simulate Renewal',
                             style: TextStyle(
                               fontWeight: FontWeight.w800,
                               fontSize: 12,
@@ -6615,7 +6639,6 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   void _showAppSettingsModal(Color color) {
-    bool pushNotifs = true;
     bool soundEffects = true;
     bool darkTheme = AppThemeController.isDarkMode(context);
 
@@ -6651,16 +6674,16 @@ class _HomeScreenState extends State<HomeScreen>
                 const SizedBox(height: 20),
                 SwitchListTile(
                   title: const Text(
-                    'Push Notifications',
+                    'In-App Notifications',
                     style: TextStyle(fontWeight: FontWeight.w700),
                   ),
                   subtitle: const Text(
-                    'Live house point alerts & council messages',
+                    'Alerts appear inside the app only. Background push is not configured.',
                     style: TextStyle(fontSize: 12),
                   ),
-                  value: pushNotifs,
+                  value: true,
                   activeThumbColor: color,
-                  onChanged: (v) => setModalState(() => pushNotifs = v),
+                  onChanged: null,
                 ),
                 SwitchListTile(
                   title: const Text(

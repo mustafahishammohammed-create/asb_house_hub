@@ -483,7 +483,20 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
       }
     }
 
-    // 2. Direct client fallback (Spark free plan compliant)
+    // 2. Direct client fallback (Spark free plan compliant).
+    //
+    // Votes and participation receipts are server-authoritative: the rules now
+    // deny client writes to election_polls_v2/{id}/counts and /participation.
+    // If the callable is unavailable in a live environment, fail closed with a
+    // clear message instead of attempting a transaction that cannot succeed
+    // (or, worse, silently reintroducing a tally-write path).
+    if (_isFirebaseLive && (action == 'vote' || action == 'receipt')) {
+      throw StateError(
+        'Secure election service is unavailable. Voting requires the deployed '
+        'schoolElection Cloud Function. Please contact the election administrator.',
+      );
+    }
+
     return await _callFirestoreFallback(action, id, args, user);
   }
 
@@ -2743,6 +2756,34 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
             body: Column(
               children: [
                 if (busy) const LinearProgressIndicator(),
+                if (_isFirebaseLive)
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withValues(alpha: isDark ? 0.16 : 0.14),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.amber.withValues(alpha: 0.5),
+                      ),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.shield_outlined, size: 18),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Voting is server-verified. If the schoolElection service is unavailable, ballots cannot be cast.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 // Prestigious Commission Hero Card
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

@@ -142,10 +142,12 @@ void main() {
     expect(rules.contains("matches('(?i)^11209@.*')"), isFalse);
 
     // Owners cannot rewrite their class/verification/status.
+    // Whitespace is normalized so the contract survives multi-line formatting.
+    final normalizedRules = rules.replaceAll(RegExp(r'\s+'), ' ');
     expect(
-      rules.contains(
-        "areImmutableFieldsUnchanged(['role', 'points', 'points_contributed', "
-        "'scholar_no', 'created_at', 'uid', 'class_id', 'class_verified', 'status'])",
+      normalizedRules.contains(
+        "'role', 'points', 'points_contributed', 'scholar_no', "
+        "'created_at', 'uid', 'class_id', 'class_verified', 'status'",
       ),
       isTrue,
     );

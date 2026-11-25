@@ -1048,10 +1048,10 @@ void main() {
     expect(tamperedResult.isValid, isFalse);
     expect(tamperedResult.isTampered, isTrue);
 
-    // Legacy format
+    // Legacy unsigned format is rejected by design.
     final legacyResult = VoucherSecurityService.validateVoucherPayload('ASB-ORDER-ASB-999');
-    expect(legacyResult.isValid, isTrue);
-    expect(legacyResult.billNo, 'ASB-999');
+    expect(legacyResult.isValid, isFalse);
+    expect(legacyResult.error, contains('Unsigned legacy voucher'));
 
     // Completely malformed
     final malformedResult = VoucherSecurityService.validateVoucherPayload('garbage-data');
@@ -1988,7 +1988,7 @@ void main() {
     expect(find.byType(ExcludeSemantics), findsWidgets);
 
     // 5. Verify action buttons have >= 48dp minimum height
-    final walletBtnFinder = find.widgetWithText(ElevatedButton, 'Save to Google Wallet');
+    final walletBtnFinder = find.widgetWithText(ElevatedButton, 'Pass Info');
     expect(walletBtnFinder, findsOneWidget);
     final walletBtn = tester.widget<ElevatedButton>(walletBtnFinder);
     expect(walletBtn.style?.minimumSize?.resolve({})?.height, greaterThanOrEqualTo(48.0));
@@ -2027,7 +2027,7 @@ void main() {
     await tester.pump();
 
     // Verify both action buttons render without overflow
-    expect(find.text('Save to Google Wallet'), findsOneWidget);
+    expect(find.text('Pass Info'), findsOneWidget);
     expect(find.text('Pass & Receipt'), findsOneWidget);
   });
 
@@ -2156,10 +2156,11 @@ void main() {
     expect(gPass['barcode']['value'], 'ASB-ID:2310910:RUBY:HMAC_TOKEN');
   });
 
-  testWidgets('DigitalWalletScreen adapts wallet button between iOS and Android/Windows platforms', (
+  testWidgets('DigitalWalletScreen pass button stays platform-neutral and never claims Apple or Google Wallet', (
     WidgetTester tester,
   ) async {
-    // 1. Simulate iOS platform
+    // The pass is a local preview only. The label must not imply an Apple or
+    // Google Wallet integration on any platform.
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
     addTearDown(() => debugDefaultTargetPlatformOverride = null);
 
@@ -2178,8 +2179,9 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Add to Apple Wallet'), findsOneWidget);
-    expect(find.byIcon(Icons.apple), findsOneWidget);
+    expect(find.text('Pass Info'), findsOneWidget);
+    expect(find.text('Add to Apple Wallet'), findsNothing);
+    expect(find.byIcon(Icons.apple), findsNothing);
 
     // 2. Simulate Android platform
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
@@ -2198,8 +2200,8 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Save to Google Wallet'), findsOneWidget);
-    expect(find.byIcon(Icons.account_balance_wallet_rounded), findsWidgets);
+    expect(find.text('Pass Info'), findsOneWidget);
+    expect(find.text('Save to Google Wallet'), findsNothing);
 
     debugDefaultTargetPlatformOverride = null;
   });
@@ -2222,14 +2224,18 @@ void main() {
     );
     await tester.pump();
 
-    // Tap Save to Google Wallet button
-    final walletBtnFinder = find.widgetWithText(ElevatedButton, 'Save to Google Wallet');
+    // Tap the Pass Info button
+    final walletBtnFinder = find.widgetWithText(ElevatedButton, 'Pass Info');
     expect(walletBtnFinder, findsOneWidget);
     await tester.tap(walletBtnFinder);
     await tester.pumpAndSettle();
 
     // 1. Verify modal title and header semantics
-    expect(find.text('Saved to Google Wallet'), findsOneWidget);
+    expect(find.text('Local Pass Preview'), findsOneWidget);
+    expect(
+      find.textContaining('not added to Apple Wallet or Google Wallet'),
+      findsOneWidget,
+    );
     final headerFinder = find.byWidgetPredicate(
       (w) => w is Semantics && w.properties.header == true,
     );
@@ -2248,7 +2254,7 @@ void main() {
     // 4. Tap Done button to dismiss
     await tester.tap(doneBtnFinder);
     await tester.pumpAndSettle();
-    expect(find.text('Saved to Google Wallet'), findsNothing);
+    expect(find.text('Local Pass Preview'), findsNothing);
   });
 
   testWidgets('DigitalWalletScreen electronic receipt preview modal accessibility and actions', (
@@ -3190,7 +3196,7 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.text('Verified School Merchandise • Orders fulfilled directly to Digital Wallet'),
+      find.text('School merchandise catalogue • Orders are requests, not confirmed payments'),
       findsOneWidget,
     );
     expect(find.text('YOUR HOUSE POINTS WALLET'), findsNothing);

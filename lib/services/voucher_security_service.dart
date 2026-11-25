@@ -86,7 +86,7 @@ class VoucherSecurityService {
     required String scholarNo,
     required int timestampMillis,
   }) {
-    if (token.isEmpty || billNo.isEmpty || points <= 0) return false;
+    if (token.isEmpty || billNo.isEmpty || points < 0) return false;
     final expected = generateVoucherToken(
       billNo: billNo,
       points: points,
@@ -108,19 +108,8 @@ class VoucherSecurityService {
   }) validateVoucherPayload(String rawPayload) {
     final trimmed = rawPayload.trim();
     if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) {
-      // Legacy token fallback check (e.g. ASB-ORDER-ASB-123456)
-      if (trimmed.startsWith('ASB-ORDER-')) {
-        final id = trimmed.replaceFirst('ASB-ORDER-', '');
-        return (
-          isValid: true,
-          isTampered: false,
-          billNo: id,
-          points: null,
-          scholarNo: null,
-          items: <String>[],
-          error: null,
-        );
-      }
+      // Legacy unsigned vouchers are no longer accepted: without a signature
+      // anyone could print or edit a QR code and redeem merchandise.
       return (
         isValid: false,
         isTampered: false,
@@ -128,7 +117,8 @@ class VoucherSecurityService {
         points: null,
         scholarNo: null,
         items: <String>[],
-        error: 'Not a valid voucher QR payload',
+        error:
+            'Unsigned legacy voucher rejected. Ask staff to reissue a signed pass.',
       );
     }
 
@@ -169,26 +159,37 @@ class VoucherSecurityService {
         );
       }
 
-      // If token is present, strictly verify HMAC
-      if (token.isNotEmpty && ts > 0) {
-        final matches = validateVoucherToken(
-          token: token,
+      // A signature is mandatory. A JSON payload without one is treated as
+      // unsigned, not as a legacy-compatible voucher.
+      if (token.isEmpty || ts <= 0) {
+        return (
+          isValid: false,
+          isTampered: false,
           billNo: billNo,
           points: points,
           scholarNo: scholarNo,
-          timestampMillis: ts,
+          items: items,
+          error: 'Missing cryptographic signature',
         );
-        if (!matches) {
-          return (
-            isValid: false,
-            isTampered: true,
-            billNo: billNo,
-            points: points,
-            scholarNo: scholarNo,
-            items: items,
-            error: 'Cryptographic signature mismatch — possible tampering detected!',
-          );
-        }
+      }
+
+      final matches = validateVoucherToken(
+        token: token,
+        billNo: billNo,
+        points: points,
+        scholarNo: scholarNo,
+        timestampMillis: ts,
+      );
+      if (!matches) {
+        return (
+          isValid: false,
+          isTampered: true,
+          billNo: billNo,
+          points: points,
+          scholarNo: scholarNo,
+          items: items,
+          error: 'Cryptographic signature mismatch — possible tampering detected!',
+        );
       }
 
       return (

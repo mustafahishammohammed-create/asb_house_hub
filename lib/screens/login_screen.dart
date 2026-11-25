@@ -213,12 +213,12 @@ class _LoginScreenState extends State<LoginScreen> {
       return 'Connection timed out. Please check your internet connection and try again.';
     }
     if (error.contains('user-not-found')) {
-      return 'No account found with these credentials.';
+      return 'Incorrect scholar number or password.';
     }
     if (error.contains('wrong-password') ||
         error.contains('invalid-credential') ||
         error.contains('invalid-login-credentials')) {
-      return 'Incorrect password. Please try again.';
+      return 'Incorrect scholar number or password.';
     }
     if (error.contains('too-many-requests')) {
       return 'Too many attempts. Please try again later.';

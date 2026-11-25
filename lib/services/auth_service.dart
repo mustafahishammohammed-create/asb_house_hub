@@ -756,10 +756,14 @@ class AuthService {
     try {
       final cLevel = (classLevel != null && classLevel.trim().isNotEmpty)
           ? classLevel.trim()
-          : (period.classLevel.isNotEmpty
-                ? period.classLevel
-                : (getCachedProfile()?['class_level']?.toString() ??
-                      'Grade 10'));
+          : (period.classLevel.trim().isNotEmpty
+                ? period.classLevel.trim()
+                : (getCachedProfile()?['class_level']?.toString().trim() ??
+                      ''));
+      if (cLevel.isEmpty) {
+        debugPrint('saveTimetablePeriod rejected: no class level available.');
+        return false;
+      }
 
       final effectiveDay = period.dayOfWeek.isNotEmpty
           ? period.dayOfWeek
@@ -827,7 +831,11 @@ class AuthService {
     try {
       final cLevel = (classLevel != null && classLevel.trim().isNotEmpty)
           ? classLevel.trim()
-          : (getCachedProfile()?['class_level']?.toString() ?? 'Grade 10');
+          : (getCachedProfile()?['class_level']?.toString().trim() ?? '');
+      if (cLevel.isEmpty) {
+        debugPrint('deleteTimetablePeriod rejected: no class level available.');
+        return false;
+      }
 
       // 1. Delete from Firestore first if live
       if (_isFirebaseLive) {
@@ -878,7 +886,11 @@ class AuthService {
     try {
       final cLevel = (classLevel != null && classLevel.trim().isNotEmpty)
           ? classLevel.trim()
-          : (getCachedProfile()?['class_level']?.toString() ?? 'Grade 10');
+          : (getCachedProfile()?['class_level']?.toString().trim() ?? '');
+      if (cLevel.isEmpty) {
+        debugPrint('clearTimetableForDay rejected: no class level available.');
+        return false;
+      }
 
       if (_isFirebaseLive) {
         try {
@@ -918,7 +930,13 @@ class AuthService {
     try {
       final cLevel = (classLevel != null && classLevel.trim().isNotEmpty)
           ? classLevel.trim()
-          : (getCachedProfile()?['class_level']?.toString() ?? 'Grade 10');
+          : (getCachedProfile()?['class_level']?.toString().trim() ?? '');
+      if (cLevel.isEmpty) {
+        debugPrint(
+          'populateDefaultCBSEWeeklyTimetable rejected: no class level available.',
+        );
+        return false;
+      }
 
       const standardDays = [
         'Sunday',
@@ -1475,34 +1493,61 @@ class AuthService {
     int pointsReward = 20,
   }) async {
     try {
-      if (newStatus == AssignmentStatus.graded) {
-        final userRole = getCachedRole() ?? currentUser?.displayName ?? '';
-        final currentScholar =
-            (scholarNo != null && scholarNo.trim().isNotEmpty)
-            ? scholarNo.trim()
-            : (getCachedScholarNo() ?? '');
-        if (!HierarchyService.canGradeAcademics(
-          role: userRole,
-          scholarNo: currentScholar,
-        )) {
-          debugPrint(
-            'Unauthorized: Account ($userRole, $currentScholar) cannot transition assignment to graded state',
-          );
-          return false;
-        }
+      final userRole = getCachedRole() ?? currentUser?.displayName ?? '';
+      final sNo = (scholarNo != null && scholarNo.trim().isNotEmpty)
+          ? scholarNo.trim()
+          : (getCachedScholarNo() ?? '');
+      final canGrade = HierarchyService.canGradeAcademics(
+        role: userRole,
+        scholarNo: sNo,
+      );
+
+      if (newStatus == AssignmentStatus.graded && !canGrade) {
+        debugPrint(
+          'Unauthorized: Account ($userRole, $sNo) cannot transition assignment to graded state',
+        );
+        return false;
+      }
+
+      if (!canGrade && sNo.isEmpty) {
+        debugPrint(
+          'updateAssignmentStatus rejected: no verified scholar for student submission.',
+        );
+        return false;
       }
 
       final cLevel = (classLevel != null && classLevel.trim().isNotEmpty)
           ? classLevel.trim()
-          : (getCachedProfile()?['class_level']?.toString() ?? 'Grade 10');
+          : (getCachedProfile()?['class_level']?.toString().trim() ?? '');
+      if (cLevel.isEmpty) {
+        debugPrint('updateAssignmentStatus rejected: no class level available.');
+        return false;
+      }
 
-      final sNo = (scholarNo != null && scholarNo.trim().isNotEmpty)
-          ? scholarNo.trim()
-          : (getCachedScholarNo() ?? '');
-
-      final effectiveHouse = (house != null && house.trim().isNotEmpty)
+      final houseRaw = (house != null && house.trim().isNotEmpty)
           ? house.trim().toLowerCase()
-          : (getCachedHouse() ?? 'ruby');
+          : (getCachedHouse() ?? '');
+      final effectiveHouse =
+          const ['ruby', 'sapphire', 'emerald', 'topaz'].contains(houseRaw)
+          ? houseRaw
+          : '';
+
+      final hasExplicitScholar =
+          scholarNo != null && scholarNo.trim().isNotEmpty;
+      final isTargetedSubmission =
+          (!canGrade && sNo.isNotEmpty) || (canGrade && hasExplicitScholar);
+      if (isTargetedSubmission && (sNo.isEmpty || effectiveHouse.isEmpty)) {
+        debugPrint(
+          'updateAssignmentStatus rejected: verified scholar and house are required for a submission.',
+        );
+        return false;
+      }
+      final shouldAwardPoints =
+          newStatus == AssignmentStatus.graded &&
+          pointsReward > 0 &&
+          sNo.isNotEmpty &&
+          effectiveHouse.isNotEmpty &&
+          (!canGrade || hasExplicitScholar);
 
       final now = DateTime.now();
       final updateData = <String, dynamic>{'status': newStatus.name};
@@ -1515,16 +1560,6 @@ class AuthService {
       // 1. Update Firestore document if live, failing truthfully on server denial
       if (_isFirebaseLive) {
         try {
-          final userRole = getCachedRole() ?? currentUser?.displayName ?? '';
-          final currentScholar =
-              (scholarNo != null && scholarNo.trim().isNotEmpty)
-              ? scholarNo.trim()
-              : (getCachedScholarNo() ?? '');
-          final canGrade = HierarchyService.canGradeAcademics(
-            role: userRole,
-            scholarNo: currentScholar,
-          );
-
           if (canGrade) {
             // Staff / Council: update the authoritative class-level assignment record
             await _firestore
@@ -1537,9 +1572,6 @@ class AuthService {
 
           // Isolated per-scholar submission tracking: only write to submissions subcollection
           // on student self-submissions, or when an explicit target student scholarNo is provided
-          final isTargetedSubmission =
-              (!canGrade && sNo.isNotEmpty) ||
-              (canGrade && scholarNo != null && scholarNo.trim().isNotEmpty);
           if (isTargetedSubmission) {
             final subDoc = <String, dynamic>{
               'scholar_no': sNo,
@@ -1591,7 +1623,7 @@ class AuthService {
       await cacheAssignments(updatedList, classLevel: cLevel);
 
       // 3. When marked GRADED, award verified merit points using GamificationSecurityService
-      if (newStatus == AssignmentStatus.graded && pointsReward > 0) {
+      if (shouldAwardPoints) {
         final token = GamificationSecurityService.generateScoreProofToken(
           scholarNo: sNo,
           activityId: 'assignment_$assignmentId',
@@ -1618,10 +1650,14 @@ class AuthService {
     try {
       final cLevel = (classLevel != null && classLevel.trim().isNotEmpty)
           ? classLevel.trim()
-          : (assignment.classLevel.isNotEmpty
-                ? assignment.classLevel
-                : (getCachedProfile()?['class_level']?.toString() ??
-                      'Grade 10'));
+          : (assignment.classLevel.trim().isNotEmpty
+                ? assignment.classLevel.trim()
+                : (getCachedProfile()?['class_level']?.toString().trim() ??
+                      ''));
+      if (cLevel.isEmpty) {
+        debugPrint('publishAssignment rejected: no class level available.');
+        return false;
+      }
 
       final updatedAssignment = assignment.copyWith(classLevel: cLevel);
 
@@ -1691,7 +1727,11 @@ class AuthService {
     try {
       final cLevel = (classLevel != null && classLevel.trim().isNotEmpty)
           ? classLevel.trim()
-          : (getCachedProfile()?['class_level']?.toString() ?? 'Grade 10');
+          : (getCachedProfile()?['class_level']?.toString().trim() ?? '');
+      if (cLevel.isEmpty) {
+        debugPrint('deleteAssignment rejected: no class level available.');
+        return false;
+      }
 
       // 1. Delete from Firestore first if live
       if (_isFirebaseLive) {
@@ -2169,11 +2209,23 @@ class AuthService {
 
       final effectiveHouse = (house != null && house.trim().isNotEmpty)
           ? house.trim().toLowerCase()
-          : (getCachedHouse() ?? 'ruby');
+          : (getCachedHouse() ?? '');
+      if (effectiveHouse.isEmpty) {
+        debugPrint(
+          'Honours merit claim rejected: no verified house available.',
+        );
+        return false;
+      }
 
       final cLevel = (classLevel != null && classLevel.trim().isNotEmpty)
           ? classLevel.trim()
-          : (getCachedProfile()?['class_level']?.toString() ?? 'Grade 10');
+          : (getCachedProfile()?['class_level']?.toString().trim() ?? '');
+      if (cLevel.isEmpty) {
+        debugPrint(
+          'Honours merit claim rejected: no verified class level available.',
+        );
+        return false;
+      }
 
       // 1. Audit A4 Hardening: Verify report card document authenticity & ownership
       double verifiedGpa = 0.0;
@@ -2290,6 +2342,37 @@ class AuthService {
     }
   }
 
+  /// Build the canonical report-card document ID.
+  ///
+  /// The academic year is part of the ID so the same term in a later year
+  /// cannot overwrite the previous year's card. Cards published before this
+  /// change keep their legacy `rep_<scholar>_<term>` IDs and remain readable
+  /// because report cards are queried by scholar/term fields, not by ID.
+  static String buildReportCardId({
+    required String scholarNo,
+    required String termName,
+    String academicYear = '',
+  }) {
+    final cleanScholar = scholarNo.trim();
+    final safeTerm = termName.trim().toLowerCase().replaceAll(
+      RegExp(r'[^a-z0-9]'),
+      '_',
+    );
+    final year = academicYear.trim().isNotEmpty
+        ? academicYear.trim()
+        : _currentAcademicYear();
+    final safeYear = year.replaceAll(RegExp(r'[^0-9]'), '');
+    return safeYear.isEmpty
+        ? 'rep_${cleanScholar}_$safeTerm'
+        : 'rep_${cleanScholar}_${safeYear}_$safeTerm';
+  }
+
+  static String _currentAcademicYear() {
+    final now = DateTime.now();
+    final startYear = now.month >= 8 ? now.year : now.year - 1;
+    return '$startYear-${startYear + 1}';
+  }
+
   /// Issue and publish an official student academic report card to Firestore and local cache.
   /// Saved under classes/{classLevel}/report_cards/{cardId}.
   Future<void> publishStudentReportCard({
@@ -2297,7 +2380,7 @@ class AuthService {
     required String studentName,
     required String classLevel,
     required String termName,
-    String academicYear = '2026-2027',
+    String academicYear = '',
     required double overallGpa,
     required double overallPercentage,
     double attendanceRate = 100.0,
@@ -2305,17 +2388,28 @@ class AuthService {
     List<SubjectGrade> subjectGrades = const [],
     String? imageUrl,
   }) async {
-    final cleanClass = classLevel.trim().isNotEmpty
-        ? classLevel.trim()
-        : 'Grade 10';
+    final cleanClass = classLevel.trim();
+    if (cleanClass.isEmpty) {
+      throw ArgumentError(
+        'A class level is required to publish a report card.',
+      );
+    }
     final cleanScholar = scholarNo.trim().isNotEmpty
         ? scholarNo.trim()
         : (getCachedScholarNo() ?? '');
-    final safeTerm = termName.trim().toLowerCase().replaceAll(
-      RegExp(r'[^a-z0-9]'),
-      '_',
+    if (cleanScholar.isEmpty) {
+      throw ArgumentError(
+        'A scholar number is required to publish a report card.',
+      );
+    }
+    final cleanYear = academicYear.trim().isNotEmpty
+        ? academicYear.trim()
+        : _currentAcademicYear();
+    final cardId = buildReportCardId(
+      scholarNo: cleanScholar,
+      termName: termName,
+      academicYear: cleanYear,
     );
-    final cardId = 'rep_${cleanScholar}_$safeTerm';
 
     final card = AcademicReportCard(
       id: cardId,
@@ -2326,9 +2420,7 @@ class AuthService {
       termName: termName.trim().isNotEmpty
           ? termName.trim()
           : 'Term 1 Mid-Term',
-      academicYear: academicYear.trim().isNotEmpty
-          ? academicYear.trim()
-          : '2026-2027',
+      academicYear: cleanYear,
       classLevel: cleanClass,
       overallGpa: overallGpa,
       overallPercentage: overallPercentage,
@@ -2364,7 +2456,17 @@ class AuthService {
       classLevel: cleanClass,
       scholarNo: cleanScholar,
     );
-    final updated = [card, ...existing.where((c) => c.id != card.id)];
+    final updated = [
+      card,
+      ...existing.where(
+        (c) =>
+            c.id != card.id &&
+            !(c.scholarNo == cleanScholar &&
+                c.termName.trim().toLowerCase() ==
+                    card.termName.toLowerCase() &&
+                c.academicYear == card.academicYear),
+      ),
+    ];
     await cacheReportCards(
       updated,
       classLevel: cleanClass,
@@ -2486,12 +2588,16 @@ class AuthService {
       final d = date ?? DateTime.now();
       final docId =
           '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-      final cleanClass = classLevel.trim().isNotEmpty
-          ? classLevel.trim()
-          : 'Grade 10';
-      final cleanScholar = scholarNo.trim().isNotEmpty
-          ? scholarNo.trim()
-          : (getCachedScholarNo() ?? '');
+      final cleanClass = classLevel.trim();
+      if (cleanClass.isEmpty) {
+        debugPrint('markStudentAttendance rejected: no class level provided.');
+        return false;
+      }
+      final cleanScholar = scholarNo.trim();
+      if (cleanScholar.isEmpty) {
+        debugPrint('markStudentAttendance rejected: no scholar number provided.');
+        return false;
+      }
 
       final record = AttendanceRecord(
         id: docId,
@@ -2775,7 +2881,7 @@ class AuthService {
         pointsAwarded: 250,
         pointsMultiplier: 2.0,
         bannerUrl: '',
-        isLive: true,
+        isLive: false,
       ),
       CampusEvent(
         id: 'event_football_derby',
@@ -3872,32 +3978,43 @@ class AuthService {
   }
 
   /// Switch the active student session on this device.
-  /// Passwords are only required when adding an account. Switching accounts
-  /// seamlessly swaps the active profile without re-prompting or timeout blocking.
+  ///
+  /// When Firebase is live, switching is a real authentication event: the
+  /// target account's password is required and a failed sign-in aborts the
+  /// switch. Swapping only the local cache would let anyone holding the device
+  /// impersonate a saved account without knowing its credentials.
+  ///
+  /// In an offline/no-Firebase session (unit tests, first-run recovery) the
+  /// local cache swap remains available so the device is not bricked.
   Future<UserCredential?> switchAccount(SavedAccount account) async {
     final cleanScholar = account.scholarNo.trim();
     UserCredential? liveCred;
 
-    // Step 1: If credentials exist and Firebase is live, attempt background/quick auth sync.
-    // Non-blocking and non-fatal: never prevent switching if network is slow or password omitted.
-    final pwd = account.password;
-    if (_isFirebaseLive &&
-        currentUser?.uid != account.uid &&
-        pwd != null &&
-        pwd.isNotEmpty) {
-      try {
-        if (cleanScholar.toLowerCase() == 'admin') {
-          liveCred = await signInAdmin(
-            password: pwd,
-          ).timeout(const Duration(seconds: 15));
-        } else {
-          liveCred = await signIn(
-            scholarNo: cleanScholar,
-            password: pwd,
-          ).timeout(const Duration(seconds: 15));
-        }
-      } catch (e) {
-        debugPrint('switchAccount live auth sync note (non-blocking): $e');
+    // Step 1: Re-authenticate against Firebase before touching local state.
+    if (_isFirebaseLive && currentUser?.uid != account.uid) {
+      final pwd = account.password;
+      if (pwd == null || pwd.isEmpty) {
+        throw FirebaseAuthException(
+          code: 'requires-recent-login',
+          message:
+              'Enter the password for scholar #$cleanScholar to switch accounts.',
+        );
+      }
+      if (cleanScholar.toLowerCase() == 'admin') {
+        liveCred = await signInAdmin(
+          password: pwd,
+        ).timeout(const Duration(seconds: 15));
+      } else {
+        liveCred = await signIn(
+          scholarNo: cleanScholar,
+          password: pwd,
+        ).timeout(const Duration(seconds: 15));
+      }
+      if (liveCred == null) {
+        throw FirebaseAuthException(
+          code: 'invalid-credential',
+          message: 'Incorrect scholar number or password.',
+        );
       }
     }
 
@@ -3935,77 +4052,6 @@ class AuthService {
     await recordActiveAccount(profile: prof, password: account.password);
 
     return liveCred;
-  }
-
-  /// Check whether a scholar account exists in Firestore without triggering permission errors or timeouts.
-  Future<bool> checkScholarExists(String cleanScholar) async {
-    final email = cleanScholar == 'admin'
-        ? 'admin@asianschool.bh'
-        : _scholarToEmail(cleanScholar);
-
-    try {
-      final results = await Future.wait<dynamic>([
-        _firestore
-            .collection('users')
-            .where('scholar_no', isEqualTo: cleanScholar)
-            .limit(1)
-            .get()
-            .timeout(const Duration(seconds: 4))
-            .catchError((_) => null as dynamic),
-        _firestore
-            .collection('users')
-            .where('email', isEqualTo: email)
-            .limit(1)
-            .get()
-            .timeout(const Duration(seconds: 4))
-            .catchError((_) => null as dynamic),
-      ]);
-      for (final snap in results) {
-        if (snap != null && snap.docs.isNotEmpty) return true;
-      }
-    } catch (e) {
-      debugPrint('AuthService.checkScholarExists: Firestore query error: $e');
-    }
-
-    // Fallback: check via Firestore REST runQuery
-    try {
-      final projectId = DefaultFirebaseOptions.windows.projectId;
-      final restUrl = Uri.parse(
-        'https://firestore.googleapis.com/v1/projects/$projectId/databases/(default)/documents:runQuery',
-      );
-      final restBody = jsonEncode({
-        'structuredQuery': {
-          'from': [
-            {'collectionId': 'users'},
-          ],
-          'where': {
-            'fieldFilter': {
-              'field': {'fieldPath': 'scholar_no'},
-              'op': 'EQUAL',
-              'value': {'stringValue': cleanScholar},
-            },
-          },
-          'limit': 1,
-        },
-      });
-      final res = await http
-          .post(
-            restUrl,
-            headers: {'Content-Type': 'application/json'},
-            body: restBody,
-          )
-          .timeout(const Duration(seconds: 4));
-      if (res.statusCode == 200) {
-        final list = jsonDecode(res.body);
-        if (list is List && list.isNotEmpty) {
-          if (list[0]['document'] != null) return true;
-        }
-      }
-    } catch (e) {
-      debugPrint('AuthService.checkScholarExists: REST query error: $e');
-    }
-
-    return false;
   }
 
   /// Verify credentials against Firebase Identity Toolkit REST API without disrupting active user session.
@@ -4107,19 +4153,13 @@ class AuthService {
         profile: profile,
       );
     } else {
-      // 400 Bad Request: Check whether account does not exist or password is wrong
-      final exists = await checkScholarExists(cleanScholar);
-      if (exists) {
-        throw FirebaseAuthException(
-          code: 'wrong-password',
-          message: 'Password wrong for scholar #$cleanScholar.',
-        );
-      } else {
-        throw FirebaseAuthException(
-          code: 'user-not-found',
-          message: 'Account not found for scholar #$cleanScholar.',
-        );
-      }
+      // Return a single generic failure: the REST endpoint also distinguishes
+      // missing accounts from bad passwords, which would leak registration
+      // status to an unauthenticated caller.
+      throw FirebaseAuthException(
+        code: 'invalid-credential',
+        message: 'Incorrect scholar number or password.',
+      );
     }
   }
 
@@ -4267,33 +4307,17 @@ class AuthService {
             ),
           );
     } on FirebaseAuthException catch (e) {
-      if (e.code == 'user-not-found') {
-        throw FirebaseAuthException(
-          code: 'user-not-found',
-          message: 'Account not found for scholar #$cleanScholar.',
-        );
-      }
-      if (e.code == 'wrong-password') {
-        throw FirebaseAuthException(
-          code: 'wrong-password',
-          message: 'Password wrong for scholar #$cleanScholar.',
-        );
-      }
-      if (e.code == 'invalid-credential' ||
+      // Firebase distinguishes "no such account" from "wrong password".
+      // Collapse both into one response so the login screen cannot be used
+      // to enumerate which scholar numbers are registered.
+      if (e.code == 'user-not-found' ||
+          e.code == 'wrong-password' ||
+          e.code == 'invalid-credential' ||
           e.code == 'invalid-login-credentials') {
-        // Distinguish between account not found vs wrong password using Firestore
-        final exists = await checkScholarExists(cleanScholar);
-        if (!exists) {
-          throw FirebaseAuthException(
-            code: 'user-not-found',
-            message: 'Account not found for scholar #$cleanScholar.',
-          );
-        } else {
-          throw FirebaseAuthException(
-            code: 'wrong-password',
-            message: 'Password wrong for scholar #$cleanScholar.',
-          );
-        }
+        throw FirebaseAuthException(
+          code: 'invalid-credential',
+          message: 'Incorrect scholar number or password.',
+        );
       }
       rethrow;
     }
@@ -4311,7 +4335,10 @@ class AuthService {
       }
 
       final inferred = inferHouseFromScholarNo(cleanScholar);
-      final house = extractHouse(liveProfile) ?? inferred ?? 'emerald';
+      // Do not invent a house when the authoritative profile has none. An
+      // empty value surfaces as "unassigned" instead of silently placing the
+      // student in another house's standings and eligibility scope.
+      final house = extractHouse(liveProfile) ?? inferred ?? '';
       final role = liveProfile?['role']?.toString() ?? 'student';
       final isSuper = HierarchyService.isSuperAdmin(
         scholarNo: cleanScholar,
@@ -4412,6 +4439,18 @@ class AuthService {
     required String division,
     required String houseName,
   }) async {
+    final cleanScholar = scholarNo.trim().toLowerCase().split('@').first;
+
+    // The 11209/admin identity is provisioned out-of-band and is the
+    // bootstrap super-admin. Signup must never be able to claim it.
+    if (cleanScholar == '11209' || cleanScholar == 'admin') {
+      throw FirebaseAuthException(
+        code: 'operation-not-allowed',
+        message:
+            'This scholar number is reserved. Please sign in instead or contact the school administrator.',
+      );
+    }
+
     final email = _scholarToEmail(scholarNo);
 
     // Step 1 — Create auth user
@@ -4501,13 +4540,10 @@ class AuthService {
             .toString()
             .trim();
     final houseRaw =
-        (prof['house_name'] ?? prof['house'] ?? getCachedHouse() ?? 'ruby')
+        (prof['house_name'] ?? prof['house'] ?? getCachedHouse() ?? '')
             .toString()
             .trim()
             .toLowerCase();
-    final house = ['ruby', 'sapphire', 'emerald', 'topaz'].contains(houseRaw)
-        ? houseRaw
-        : 'ruby';
     final roleRaw = (prof['role'] ?? 'student').toString().trim().toLowerCase();
 
     final isStaffOrAdmin =
@@ -4525,8 +4561,14 @@ class AuthService {
           role: roleRaw,
         );
 
-    // Parse grade (1 to 12) from class_level or grade
-    int grade = 10;
+    const validHouses = ['ruby', 'sapphire', 'emerald', 'topaz'];
+    final hasValidHouse = validHouses.contains(houseRaw);
+    // Never invent a house for a student. Staff/admin defaults are display-only.
+    final house = hasValidHouse ? houseRaw : (isStaffOrAdmin ? 'ruby' : '');
+
+    // Parse grade (1 to 12) from class_level or grade. No Grade 10 default:
+    // an unknown grade stays null so election eligibility fails closed.
+    int? grade;
     final rawGrade = prof['grade'] ?? prof['class_level'] ?? prof['class'];
     if (rawGrade is int) {
       grade = rawGrade.clamp(1, 12);
@@ -4547,24 +4589,31 @@ class AuthService {
       'role': isStaffOrAdmin ? 'admin' : 'student',
       'scholar_no': scholarNo.isNotEmpty
           ? scholarNo
-          : (isStaffOrAdmin
-                ? 'admin'
-                : 'SCH-${effectiveUid.length >= 6 ? effectiveUid.substring(0, 6).toUpperCase() : "001"}'),
+          : (isStaffOrAdmin ? 'admin' : ''),
       'display_name': displayName.isNotEmpty ? displayName : 'Student Scholar',
       'house': house,
-      'grade': grade,
+      'grade': grade ?? 0,
       'capabilities': {'manage_elections': isStaffOrAdmin},
       'last_verified': FieldValue.serverTimestamp(),
     };
 
+    final canWriteStudentRow =
+        hasValidHouse && grade != null && scholarNo.isNotEmpty;
     if (effectiveUid.isNotEmpty && _isFirebaseLive) {
-      try {
-        final docRef = _firestore
-            .collection('school_members')
-            .doc(effectiveUid);
-        await docRef.set(memberRecord, SetOptions(merge: true));
-      } catch (e) {
-        debugPrint('ensureSchoolMemberRecord sync note: $e');
+      if (!isStaffOrAdmin && !canWriteStudentRow) {
+        debugPrint(
+          'ensureSchoolMemberRecord: refusing to write incomplete student '
+          'roster row for uid=$effectiveUid (house="$houseRaw", grade=$grade).',
+        );
+      } else {
+        try {
+          final docRef = _firestore
+              .collection('school_members')
+              .doc(effectiveUid);
+          await docRef.set(memberRecord, SetOptions(merge: true));
+        } catch (e) {
+          debugPrint('ensureSchoolMemberRecord sync note: $e');
+        }
       }
     }
 
@@ -5442,8 +5491,11 @@ class AuthService {
     final contributorRef = (scholarNo.trim().isNotEmpty && scholarNo != '---')
         ? _firestore.collection('house_contributors').doc(scholarNo.trim())
         : null;
+    final conductRef = _firestore.collection('student_conduct').doc();
 
-    // 1. Atomically adjust house points and student contributor totals in a single transaction
+    // 1. Atomically adjust house points, student contributor totals, and the
+    // student_conduct audit record in a single transaction. If any write
+    // fails, neither the points nor the reason log is committed.
     await _firestore.runTransaction((tx) async {
       // Reads first
       final houseSnap = await tx.get(houseRef);
@@ -5494,24 +5546,23 @@ class AuthService {
           });
         }
       }
+
+      tx.set(conductRef, {
+        'scholar_no': scholarNo.trim(),
+        'student_name': studentName,
+        'house_name': hName,
+        'type': type,
+        'points': delta,
+        'reason': sanitizedReason,
+        'teacher_name': teacherName,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
     });
 
     // Write-through update local disk standings cache
     await incrementCachedHousePoints(hName, delta);
 
-    // 2. Add to student_conduct log
-    await _firestore.collection('student_conduct').add({
-      'scholar_no': scholarNo.trim(),
-      'student_name': studentName,
-      'house_name': hName,
-      'type': type,
-      'points': delta,
-      'reason': sanitizedReason,
-      'teacher_name': teacherName,
-      'timestamp': FieldValue.serverTimestamp(),
-    });
-
-    // 4. Update user document and trigger push notification queue
+    // 3. Update user document and trigger push notification queue
     try {
       final userQuery = await _firestore
           .collection('users')
@@ -8323,6 +8374,23 @@ class AuthService {
     );
 
     if (_isFirebaseLive) {
+      // If current Firebase Auth session is unauthenticated, attempt auto-reauth
+      // using saved admin credentials if available on device.
+      if (currentUser == null) {
+        final saved = getSavedAccounts();
+        final adminAcc = saved
+            .where((a) =>
+                a.scholarNo.toLowerCase() == 'admin' &&
+                a.password != null &&
+                a.password!.isNotEmpty)
+            .firstOrNull;
+        if (adminAcc != null && adminAcc.password != null) {
+          try {
+            await signInAdmin(password: adminAcc.password!);
+          } catch (_) {}
+        }
+      }
+
       try {
         final data = <String, dynamic>{
           'id': docId,
@@ -8349,9 +8417,18 @@ class AuthService {
         // A denied or failed remote write must never be reported as a
         // broadcast. Keep the sheet open so the administrator can retry.
         debugPrint('publishSchoolNotice write failed: $e');
-        return SchoolNoticePublishResult.failure(
-          'Could not broadcast the circular. Check your admin access and try again.',
-        );
+        final errStr = e.toString();
+        String message =
+            'Could not broadcast the circular. Check your admin access and try again.';
+        if (errStr.contains('permission-denied')) {
+          message =
+              'Could not broadcast the circular. Firestore permission denied. Ensure you are signed in with an official admin account (e.g. admin@asianschool.bh).';
+        } else if (errStr.contains('unavailable') ||
+            errStr.contains('network-request-failed')) {
+          message =
+              'Could not broadcast the circular. Network connection failed. Please check your connection and try again.';
+        }
+        return SchoolNoticePublishResult.failure(message);
       }
     }
 

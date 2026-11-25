@@ -18,6 +18,24 @@ service firebase.storage {
       return request.resource.size <= maxMegabytes * 1024 * 1024;
     }
 
+    // Cross-service role lookup. Missing user docs or missing roles deny.
+    function userRole() {
+      return firestore.get(
+        /databases/(default)/documents/users/$(request.auth.uid)
+      ).data.role;
+    }
+
+    function isStaffOrAdmin() {
+      return isSignedIn() && (
+        userRole() == 'admin' ||
+        userRole() == 'super_admin' ||
+        userRole() == 'teacher' ||
+        userRole() == 'faculty' ||
+        userRole() == 'principal' ||
+        userRole() == 'staff'
+      );
+    }
+
     // House Point Claim Certificates (Images & PDFs up to 10MB)
     match /house_claims/{house}/{fileName=**} {
       allow read: if isSignedIn();
@@ -44,13 +62,13 @@ service firebase.storage {
     // Exam Schedules & Academic Resources (Images & PDFs up to 15MB)
     match /exam_schedules/{fileName=**} {
       allow read: if isSignedIn();
-      allow write: if isSignedIn() && (isImage() || isPdf()) && isUnderMaxSize(15);
+      allow write: if isStaffOrAdmin() && (isImage() || isPdf()) && isUnderMaxSize(15);
     }
 
     // School Circulars & Official Notices (PDFs up to 15MB)
     match /circulars/{noticeId}/{fileName=**} {
       allow read: if isSignedIn();
-      allow write: if isSignedIn() && isPdf() && isUnderMaxSize(15);
+      allow write: if isStaffOrAdmin() && isPdf() && isUnderMaxSize(15);
     }
 
     // Explicit Default Deny for all other write paths (wildcard write removed for security)
