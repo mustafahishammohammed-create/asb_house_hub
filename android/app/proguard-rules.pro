@@ -1,9 +1,9 @@
-# Flutter Wrapper
--keep class io.flutter.app.** { *; }
+# Keep plugin wrappers without retaining the entire Flutter embedding.
+# This app does not use deferred components; a blanket io.flutter.** keep
+# retains optional Play Core code whose dependencies are intentionally absent.
 -keep class io.flutter.plugin.** { *; }
 -keep class io.flutter.util.** { *; }
 -keep class io.flutter.view.** { *; }
--keep class io.flutter.** { *; }
 -keep class io.flutter.plugins.** { *; }
 
 # Firebase Rules
