@@ -3,14 +3,14 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// Enforceable guard for `development_plan/ACCEPTANCE_MATRIX.md`.
+/// Enforceable guard for `docs/audits/development_plan/ACCEPTANCE_MATRIX.md`.
 ///
 /// This does not pretend to execute Firebase emulator denials. It guarantees
 /// that the 64-row matrix is complete, that every cited test file exists, that
 /// the documented PASS/PARTIAL counts match the summary, and that the key
 /// deployed rules contracts have not regressed.
 void main() {
-  final matrixFile = File('development_plan/ACCEPTANCE_MATRIX.md');
+  final matrixFile = File('docs/audits/development_plan/ACCEPTANCE_MATRIX.md');
   final rulesFile = File('firestore.rules');
 
   late String content;

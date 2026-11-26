@@ -4,7 +4,16 @@ A comprehensive Flutter application for ASB House Hub, featuring house point tra
 
 ## Audit and backend readiness
 
-The [26 November 2026 deep audit](ASB_HOUSE_HUB_DEEP_AUDIT_2026-11-26.md) records verified fixes, 44 remaining findings, test evidence, and reproduction commands. See [Blaze requirements](election_audit/BLAZE_REQUIRED_FEATURES.md) before deploying backend services. Local fixes have not been deployed; passing builds do not establish production readiness.
+The [26 November 2026 deep audit](docs/audits/ASB_HOUSE_HUB_DEEP_AUDIT_2026-11-26.md) and [feature catalogue](docs/reports/ASB_HOUSE_HUB_FEATURE_CATALOGUE.md) record verified fixes, findings, test evidence, and reproduction commands. See [Blaze requirements](docs/audits/elections/BLAZE_REQUIRED_FEATURES.md) before deploying backend services.
+
+## Repository Structure
+
+- `lib/` — Flutter application source (`models/`, `screens/`, `services/`, `theme/`, `widgets/`, `l10n/`)
+- `test/` — Automated unit, widget, and rules-contract tests
+- `functions/` — Firebase Cloud Functions (`elections-v2.js`, `library-v2.js`, `index.js`) and emulator security tests
+- `docs/` — Organized documentation (`audits/`, `reports/`, `proposals/`, `assets/`)
+- `tool/` — Development, icon, inventory, and gap-probe scripts (`scripts/` for Windows launch helpers)
+- `audit/` — Local emulator gap-probe output directory (`known-gap-probes.json`)
 
 ## Features
 

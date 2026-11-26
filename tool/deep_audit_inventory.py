@@ -38,7 +38,7 @@ TARGETS = {
     "ios/Runner/Info.plist", "ios/Runner.xcodeproj/project.pbxproj",
     "ios/Runner/AppDelegate.swift", "ios/Runner/SceneDelegate.swift",
     "android/app/src/main/kotlin/bh/asianschool/asb_house_hub/MainActivity.kt",
-    "windows/runner/main.cpp", "web/index.html", "run_windows.bat",
+    "windows/runner/main.cpp", "web/index.html", "tool/scripts/run_windows.bat",
     "lib/models/sports_trophy.dart", "lib/models/sports_tournament.dart",
     "lib/models/match_telemetry.dart", "lib/widgets/school_circular_composer.dart",
     "lib/widgets/account_switcher_modal.dart", "lib/widgets/academic_image.dart",

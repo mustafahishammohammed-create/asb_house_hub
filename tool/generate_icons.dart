@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:image/image.dart' as img;
 
 void main() {
-  final file = File('Crystal_gemstone_app_icon_design_2K_20261004203115.jpg');
+  final file = File('docs/assets/Crystal_gemstone_app_icon_design_2K_20261004203115.jpg');
   if (!file.existsSync()) {
     print('Error: 2K source image not found!');
     return;
