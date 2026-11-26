@@ -64,6 +64,12 @@ class _SignupScreenState extends State<SignupScreen> {
       ? HouseColors.getHouseAccentColor(_houseName!)
       : HouseColors.rubyAccent;
 
+  String get _formattedHouseName {
+    final clean = (_houseName ?? '').trim();
+    if (clean.isEmpty) return 'House';
+    return '${clean[0].toUpperCase()}${clean.substring(1)}';
+  }
+
   bool _validateStep(int step) {
     if (step == 0) {
       final fullName = _nameController.text.trim();
@@ -306,7 +312,7 @@ class _SignupScreenState extends State<SignupScreen> {
                         ),
                         const SizedBox(width: 5),
                         Text(
-                          '${_houseName![0].toUpperCase()}${_houseName!.substring(1)}',
+                          _formattedHouseName,
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w800,
@@ -579,8 +585,8 @@ class _SignupScreenState extends State<SignupScreen> {
               ? activeColor
               : (isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8));
 
-          final stepTitle = (index == 2 && _houseName != null)
-              ? '${_houseName![0].toUpperCase()}${_houseName!.substring(1)}'
+          final stepTitle = (index == 2 && (_houseName?.trim().isNotEmpty ?? false))
+              ? _formattedHouseName
               : (steps[index]['title'] as String);
 
           return Expanded(
@@ -1076,7 +1082,7 @@ class _SignupScreenState extends State<SignupScreen> {
                                           WrapCrossAlignment.center,
                                       children: [
                                         Text(
-                                          '${_houseName![0].toUpperCase()}${_houseName!.substring(1)} House',
+                                          '$_formattedHouseName House',
                                           style: TextStyle(
                                             fontSize: 18,
                                             fontWeight: FontWeight.w800,

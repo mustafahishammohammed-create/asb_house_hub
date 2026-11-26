@@ -264,7 +264,7 @@ class _TeacherTimetableEditorScreenState
       helpText: 'Select Start Time for Period ${controller.periodNumber}',
     );
 
-    if (picked != null) {
+    if (picked != null && mounted) {
       setState(() {
         controller.startMinute = picked.hour * 60 + picked.minute;
       });
@@ -285,7 +285,7 @@ class _TeacherTimetableEditorScreenState
       helpText: 'Select Break Start Time (30 Minutes Fixed)',
     );
 
-    if (picked != null) {
+    if (picked != null && mounted) {
       setState(() {
         _breakStartMinute = picked.hour * 60 + picked.minute;
       });
@@ -304,7 +304,7 @@ class _TeacherTimetableEditorScreenState
       lastDate: DateTime(2030, 12, 31),
       helpText: 'Effective Starting Date',
     );
-    if (picked != null) {
+    if (picked != null && mounted) {
       setState(() => _effectiveFrom = picked);
     }
   }
@@ -472,11 +472,13 @@ class _TeacherTimetableEditorScreenState
       }
       return;
     }
+    if (!mounted) return;
     if (conflicts.isNotEmpty) {
       await _showConflictDialog(conflicts);
       return;
     }
 
+    if (!mounted) return;
     setState(() => _saving = true);
     bool ok;
     if (_isOverrideMode) {

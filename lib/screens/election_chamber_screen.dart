@@ -1955,6 +1955,7 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
             return b;
           }).toList();
           await AuthService.cacheBallots(updated);
+          if (!mounted) return;
           setState(() {});
           messenger.showSnackBar(
             SnackBar(

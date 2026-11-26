@@ -664,7 +664,7 @@ class _TimetableTabState extends State<TimetableTab> {
                       ),
                       child: Center(
                         child: Text(
-                          day.substring(0, 3).toUpperCase(),
+                          (day.length >= 3 ? day.substring(0, 3) : day).toUpperCase(),
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w900,
