@@ -43,6 +43,8 @@ const String kSchoolDomain = 'asianschool.bh';
 class CredentialVaultService {
   static const String tokenPrefix = 'enc:v1:';
   static String? _testOverrideSecret;
+  static String? _ephemeralDeviceSecret;
+  static const String _kDeviceVaultKey = 'device_vault_key_v1';
 
   /// Sets an ephemeral test secret for test harnesses.
   /// Never ships in production release binaries.
@@ -57,8 +59,16 @@ class CredentialVaultService {
     if (_testOverrideSecret != null && _testOverrideSecret!.isNotEmpty) {
       return _testOverrideSecret!;
     }
-    // Safe resilient fallback for live operation when VAULT_SECRET is omitted
-    return 'asb_house_hub_vault_secret_production_2026';
+    final persisted = AuthService._prefs?.getString(_kDeviceVaultKey);
+    if (persisted != null && persisted.isNotEmpty) {
+      return persisted;
+    }
+    final rnd = Random.secure();
+    final keyBytes = List<int>.generate(32, (_) => rnd.nextInt(256));
+    final generated = base64Url.encode(keyBytes);
+    _ephemeralDeviceSecret ??= generated;
+    AuthService._prefs?.setString(_kDeviceVaultKey, _ephemeralDeviceSecret!);
+    return _ephemeralDeviceSecret!;
   }
 
   /// Encrypts a plaintext credential string into an authenticated tamper-evident token.
@@ -5156,12 +5166,13 @@ class AuthService {
     return effectiveClaimId;
   }
 
-  /// Stream pending claims for Admin review.
-  Stream<QuerySnapshot> getPendingClaimsStream() {
+  /// Stream pending claims for Admin review (bounded).
+  Stream<QuerySnapshot> getPendingClaimsStream({int limit = 150}) {
     try {
       return _firestore
           .collection('house_claims')
           .where('status', isEqualTo: 'pending')
+          .limit(limit)
           .snapshots();
     } catch (_) {
       return const Stream.empty();
@@ -5181,11 +5192,12 @@ class AuthService {
     }
   }
 
-  /// Stream approved claims for Admin and Council gallery view.
-  Stream<QuerySnapshot> getApprovedClaimsStream() {
+  /// Stream approved claims for Admin and Council gallery view (bounded).
+  Stream<QuerySnapshot> getApprovedClaimsStream({int limit = 150}) {
     return _firestore
         .collection('house_claims')
         .where('status', isEqualTo: 'approved')
+        .limit(limit)
         .snapshots();
   }
 
@@ -6154,12 +6166,16 @@ class AuthService {
     }
   }
 
-  /// Stream contributors for a house leaderboard.
-  Stream<QuerySnapshot> getHouseContributorsStream(String houseName) {
+  /// Stream contributors for a house leaderboard (bounded).
+  Stream<QuerySnapshot> getHouseContributorsStream(
+    String houseName, {
+    int limit = 150,
+  }) {
     try {
       return _firestore
           .collection('house_contributors')
           .where('house_name', isEqualTo: houseName.toLowerCase())
+          .limit(limit)
           .snapshots();
     } catch (_) {
       return const Stream.empty();
@@ -8673,9 +8689,10 @@ class AuthService {
     return <MedicalLeaveRequest>[];
   }
 
-  /// Stream of all submitted medical leaves for Admin / Faculty approval.
+  /// Stream of submitted medical leaves (bounded for Admin / Faculty approval).
   Stream<List<MedicalLeaveRequest>> getMedicalLeavesStream({
     String? scholarNo,
+    int limit = 150,
   }) {
     try {
       Query query = _firestore
@@ -8684,6 +8701,7 @@ class AuthService {
       if (scholarNo != null && scholarNo.isNotEmpty) {
         query = query.where('scholar_no', isEqualTo: scholarNo.trim());
       }
+      query = query.limit(limit);
       return query
           .snapshots()
           .map((snap) {

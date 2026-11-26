@@ -54,6 +54,7 @@ void main() async {
     debugPrint('Initialization preferences warning: $e');
   }
 
+  String? firebaseInitError;
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
@@ -74,19 +75,25 @@ void main() async {
     }
   } catch (e) {
     debugPrint('Firebase initialization warning: $e');
+    if (kReleaseMode) {
+      firebaseInitError = e.toString();
+    }
   }
 
-  runApp(const ASBHouseHubApp());
+  runApp(ASBHouseHubApp(firebaseInitError: firebaseInitError));
 }
 
 class ASBHouseHubApp extends StatelessWidget {
-  const ASBHouseHubApp({super.key});
+  final String? firebaseInitError;
+  const ASBHouseHubApp({super.key, this.firebaseInitError});
 
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<ThemeMode>(
       valueListenable: AppThemeController.themeModeNotifier,
       builder: (context, currentMode, _) {
+        final hasInitFailure =
+            kReleaseMode && (firebaseInitError != null || Firebase.apps.isEmpty);
         return MaterialApp(
           title: 'ASB House Hub',
           debugShowCheckedModeBanner: false,
@@ -95,9 +102,43 @@ class ASBHouseHubApp extends StatelessWidget {
           themeMode: currentMode,
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
-          home: const AuthGate(),
+          home: hasInitFailure
+              ? const _BackendUnavailableScreen()
+              : const AuthGate(),
         );
       },
+    );
+  }
+}
+
+class _BackendUnavailableScreen extends StatelessWidget {
+  const _BackendUnavailableScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.cloud_off_rounded, size: 52, color: Colors.amber),
+              SizedBox(height: 16),
+              Text(
+                'Secure School Backend Unavailable',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: 8),
+              Text(
+                'ASB House Hub could not connect to Firebase Authentication and Cloud Firestore. Please verify your network connection and restart the app.',
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

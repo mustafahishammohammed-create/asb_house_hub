@@ -347,3 +347,17 @@ test("rules (O16): report card honours merit claim enforces GPA >= 3.80 and one-
   await assertSucceeds(updateDoc(doc(kid, "classes/10A/report_cards/high-gpa"), { is_merit_claimed: true }));
   await assertFails(updateDoc(doc(kid, "classes/10A/report_cards/high-gpa"), { is_merit_claimed: false }));
 });
+
+test("rules (O29): student cannot initiate a DM directly with another student", async () => {
+  await db.doc("users/student-1").set(student("92001"));
+  await db.doc("users/student-2").set(student("92002"));
+  await db.doc("users/teacher-1").set({ ...student("49001"), role: "teacher" });
+
+  const s1 = env.authenticatedContext("student-1", { email: "92001@asianschool.bh" }).firestore();
+  await assertFails(setDoc(doc(s1, "chats/student-1_student-2"), {
+    participants: ["student-1", "student-2"],
+  }));
+  await assertSucceeds(setDoc(doc(s1, "chats/student-1_teacher-1"), {
+    participants: ["student-1", "teacher-1"],
+  }));
+});

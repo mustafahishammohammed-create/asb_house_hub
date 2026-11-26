@@ -9,6 +9,8 @@ import 'package:asb_house_hub/models/class_timetable.dart';
 import 'package:asb_house_hub/models/sports_tournament.dart';
 import 'package:asb_house_hub/models/sports_trophy.dart';
 import 'package:asb_house_hub/screens/merch_store_tab.dart';
+import 'package:asb_house_hub/services/auth_service.dart';
+import 'package:asb_house_hub/services/chat_service.dart';
 import 'package:asb_house_hub/services/gamification_security_service.dart';
 import 'package:asb_house_hub/services/gemini_ai_service.dart';
 import 'package:asb_house_hub/services/pass_document_exporter.dart';
@@ -195,6 +197,21 @@ void main() {
       final gradle = File('android/app/build.gradle.kts').readAsStringSync();
       expect(gradle, contains('key.properties'));
       expect(gradle, contains('signingConfigs.getByName("release")'));
+    });
+
+    test('CredentialVaultService uses per-device random secret without static default literal', () {
+      CredentialVaultService.setTestSecret(null);
+      final tokenA = CredentialVaultService.encrypt('secret_value_1');
+      final tokenB = CredentialVaultService.encrypt('secret_value_1');
+      expect(tokenA, isNotNull);
+      expect(tokenA, isNot(equals(tokenB)));
+      expect(CredentialVaultService.decrypt(tokenA), equals('secret_value_1'));
+      CredentialVaultService.setTestSecret('TEST_VAULT_SECRET_2026');
+    });
+
+    test('ChatService.isCouncilOrAdminRole fails closed for default Student fallback', () {
+      expect(ChatService.isCouncilOrAdminRole('student', 'Student', null), isFalse);
+      expect(ChatService.isCouncilOrAdminRole('teacher', 'Ms. Smith', '40001'), isTrue);
     });
   });
 }
