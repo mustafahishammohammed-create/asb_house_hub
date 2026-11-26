@@ -64,12 +64,17 @@ class _SignupScreenState extends State<SignupScreen> {
       ? HouseColors.getHouseAccentColor(_houseName!)
       : HouseColors.rubyAccent;
 
-  bool _validateCurrentStep() {
-    setState(() => _errorMessage = null);
-
-    if (_currentStep == 0) {
-      if (_nameController.text.trim().length < 2) {
+  bool _validateStep(int step) {
+    if (step == 0) {
+      final fullName = _nameController.text.trim();
+      if (fullName.length < 2) {
         setState(() => _errorMessage = 'Please enter your full name');
+        return false;
+      }
+      if (fullName.length > 100) {
+        setState(
+          () => _errorMessage = 'Full name must be 100 characters or fewer',
+        );
         return false;
       }
       final scholar = _scholarController.text.trim();
@@ -84,17 +89,17 @@ class _SignupScreenState extends State<SignupScreen> {
         );
         return false;
       }
-    } else if (_currentStep == 1) {
+    } else if (step == 1) {
       if (_classLevel == null || _division == null) {
         setState(() => _errorMessage = 'Please select both Grade and Section');
         return false;
       }
-    } else if (_currentStep == 2) {
+    } else if (step == 2) {
       if (_houseName == null) {
         setState(() => _errorMessage = 'Please select your House to continue');
         return false;
       }
-    } else if (_currentStep == 3) {
+    } else if (step == 3) {
       if (_passwordController.text.length < 6) {
         setState(
           () => _errorMessage = 'Password must be at least 6 characters',
@@ -109,7 +114,26 @@ class _SignupScreenState extends State<SignupScreen> {
     return true;
   }
 
+  bool _validateCurrentStep() {
+    setState(() => _errorMessage = null);
+    return _validateStep(_currentStep);
+  }
+
+  bool _validateUpToStep(int targetStep) {
+    setState(() => _errorMessage = null);
+    for (int step = _currentStep; step < targetStep; step++) {
+      if (!_validateStep(step)) {
+        if (_currentStep != step) {
+          setState(() => _currentStep = step);
+        }
+        return false;
+      }
+    }
+    return true;
+  }
+
   void _nextStep() {
+    if (_isLoading) return;
     if (_validateCurrentStep()) {
       if (_currentStep < 3) {
         setState(() {
@@ -125,6 +149,7 @@ class _SignupScreenState extends State<SignupScreen> {
   }
 
   void _prevStep() {
+    if (_isLoading) return;
     if (_currentStep > 0) {
       setState(() {
         _currentStep--;
@@ -136,11 +161,13 @@ class _SignupScreenState extends State<SignupScreen> {
   }
 
   Future<void> _handleSignup() async {
+    if (_isLoading) return;
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
+    AuthService.authTransitionInProgress.value = true;
     try {
       await _authService.signUp(
         scholarNo: _scholarController.text.trim(),
@@ -155,7 +182,11 @@ class _SignupScreenState extends State<SignupScreen> {
       if (!mounted) return;
 
       Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
+        MaterialPageRoute(
+          builder: (_) => HomeScreen(
+            key: ValueKey('home_${DateTime.now().millisecondsSinceEpoch}'),
+          ),
+        ),
         (_) => false,
       );
     } catch (e) {
@@ -164,23 +195,42 @@ class _SignupScreenState extends State<SignupScreen> {
         _errorMessage = _parseFirebaseError(e.toString());
       });
     } finally {
+      AuthService.authTransitionInProgress.value = false;
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
   String _parseFirebaseError(String error) {
+    if (error.contains('TimeoutException') ||
+        error.contains('timed out') ||
+        error.contains('Future not completed')) {
+      return 'Connection timed out. Please check your internet connection and try again.';
+    }
     if (error.contains('email-already-in-use')) {
       return 'An account already exists for this scholar number.';
     }
     if (error.contains('weak-password')) {
       return 'Password is too weak. Choose a stronger password.';
     }
-    if (error.contains('network-request-failed')) {
+    if (error.contains('operation-not-allowed')) {
+      return 'This scholar number is reserved. Please sign in instead or contact the school administrator.';
+    }
+    if (error.contains('invalid-email')) {
+      return 'Invalid scholar number format.';
+    }
+    if (error.contains('too-many-requests')) {
+      return 'Too many attempts. Please try again later.';
+    }
+    if (error.contains('permission-denied')) {
+      return 'Registration was rejected by server rules. Verify your details or contact an administrator.';
+    }
+    if (error.contains('network-request-failed') ||
+        error.contains('unavailable')) {
       return 'Network error. Check your connection.';
     }
     return error
         .replaceAll('Exception: ', '')
-        .replaceAll('[firebase_auth/', '[');
+        .replaceFirst(RegExp(r'^\[firebase_auth/[^\]]+\]\s*'), '');
   }
 
   @override
@@ -346,38 +396,41 @@ class _SignupScreenState extends State<SignupScreen> {
   }
 
   Widget _buildErrorBanner() {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 24),
-      padding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 12,
-      ),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFEE2E2),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: const Color(0xFFFCA5A5),
+    return Semantics(
+      liveRegion: true,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 24),
+        padding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
         ),
-      ),
-      child: Row(
-        children: [
-          const Icon(
-            Icons.error_outline_rounded,
-            color: Color(0xFFDC2626),
-            size: 20,
+        decoration: BoxDecoration(
+          color: const Color(0xFFFEE2E2),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: const Color(0xFFFCA5A5),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              _errorMessage!,
-              style: const TextStyle(
-                color: Color(0xFFDC2626),
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.error_outline_rounded,
+              color: Color(0xFFDC2626),
+              size: 20,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                _errorMessage!,
+                style: const TextStyle(
+                  color: Color(0xFFDC2626),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -535,9 +588,10 @@ class _SignupScreenState extends State<SignupScreen> {
               children: [
                 Expanded(
                   child: InkWell(
-                    onTap: isUnlocked && !isCurrent
+                    onTap: isUnlocked && !isCurrent && !_isLoading
                         ? () {
-                            if (index < _currentStep || _validateCurrentStep()) {
+                            if (index < _currentStep ||
+                                _validateUpToStep(index)) {
                               setState(() {
                                 _currentStep = index;
                                 _errorMessage = null;
@@ -686,6 +740,10 @@ class _SignupScreenState extends State<SignupScreen> {
             TextFormField(
               controller: _nameController,
               textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.next,
+              inputFormatters: [
+                LengthLimitingTextInputFormatter(100),
+              ],
               decoration: InputDecoration(
                 labelText: 'Full Name',
                 prefixIcon: Icon(
@@ -707,6 +765,8 @@ class _SignupScreenState extends State<SignupScreen> {
             TextFormField(
               controller: _scholarController,
               keyboardType: TextInputType.number,
+              textInputAction: TextInputAction.done,
+              onFieldSubmitted: (_) => _nextStep(),
               inputFormatters: [
                 FilteringTextInputFormatter.digitsOnly,
                 LengthLimitingTextInputFormatter(6),
@@ -1286,6 +1346,7 @@ class _SignupScreenState extends State<SignupScreen> {
             TextFormField(
               controller: _passwordController,
               obscureText: _obscurePassword,
+              textInputAction: TextInputAction.next,
               onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
                 labelText: 'Password',
@@ -1333,6 +1394,8 @@ class _SignupScreenState extends State<SignupScreen> {
             TextFormField(
               controller: _confirmPasswordController,
               obscureText: _obscureConfirm,
+              textInputAction: TextInputAction.done,
+              onFieldSubmitted: (_) => _nextStep(),
               onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
                 labelText: 'Confirm Password',

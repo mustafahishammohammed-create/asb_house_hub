@@ -293,6 +293,12 @@ class AuthService {
   TimetableService get timetableService =>
       TimetableService(firestore: _firestore);
 
+  /// Signals that an interactive sign-in or sign-up transaction is still
+  /// persisting/verifying profile state, so AuthGate waits before switching
+  /// away from the active auth screen.
+  static final ValueNotifier<bool> authTransitionInProgress =
+      ValueNotifier<bool>(false);
+
   @visibleForTesting
   static bool? isFirebaseLiveOverride;
 
@@ -4307,6 +4313,15 @@ class AuthService {
             ),
           );
     } on FirebaseAuthException catch (e) {
+      // Protected 11209/admin administrator identity: if 11209@asianschool.bh is
+      // not provisioned separately in Firebase Auth, verify against the
+      // protected admin@asianschool.bh account using the supplied password.
+      if (cleanScholar == '11209' &&
+          (e.code == 'user-not-found' ||
+              e.code == 'invalid-credential' ||
+              e.code == 'invalid-login-credentials')) {
+        return signInAdmin(password: password);
+      }
       // Firebase distinguishes "no such account" from "wrong password".
       // Collapse both into one response so the login screen cannot be used
       // to enumerate which scholar numbers are registered.
@@ -4324,7 +4339,7 @@ class AuthService {
 
     final user = cred.user;
     if (user != null) {
-      GlobalWalletStore.resetSession();
+      await clearCache();
 
       // Fetch live authoritative profile from Firestore in real-time
       Map<String, dynamic>? liveProfile;
@@ -4355,6 +4370,8 @@ class AuthService {
         'full_name': fullName,
         'house_name': house,
         'role': isSuper ? 'super_admin' : role,
+        if (isSuper && liveProfile?['class_level'] == null)
+          'class_level': 'Staff',
         if (liveProfile?['class_level'] != null)
           'class_level': liveProfile!['class_level'],
         if (liveProfile?['division'] != null)
@@ -4408,7 +4425,7 @@ class AuthService {
           .catchError((_) {});
     }
 
-    GlobalWalletStore.resetSession();
+    await clearCache();
 
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs?.setString('cached_scholar_no', 'admin');
@@ -4440,6 +4457,7 @@ class AuthService {
     required String houseName,
   }) async {
     final cleanScholar = scholarNo.trim().toLowerCase().split('@').first;
+    final cleanName = fullName.trim();
 
     // The 11209/admin identity is provisioned out-of-band and is the
     // bootstrap super-admin. Signup must never be able to claim it.
@@ -4450,8 +4468,19 @@ class AuthService {
             'This scholar number is reserved. Please sign in instead or contact the school administrator.',
       );
     }
+    if (cleanName.length < 2 || cleanName.length > 100) {
+      throw ArgumentError('Full name must be between 2 and 100 characters.');
+    }
+    if (cleanScholar.length < 4 || cleanScholar.length > 20) {
+      throw ArgumentError('Scholar number must be between 4 and 20 characters.');
+    }
 
-    final email = _scholarToEmail(scholarNo);
+    final cleanHouse = houseName.trim().toLowerCase();
+    final cleanGrade =
+        AcademicStructure.normalizeGrade(classLevel) ?? classLevel.trim();
+    final cleanGradeIndex = campusGradeIndex(cleanGrade);
+    final cleanSection = division.trim().toUpperCase();
+    final email = _scholarToEmail(cleanScholar);
 
     // Step 1 — Create auth user
     final credential = await _auth.createUserWithEmailAndPassword(
@@ -4464,16 +4493,14 @@ class AuthService {
       throw Exception('Registration failed: user profile is null.');
     }
 
-    // Step 2 — Save profile to Firestore `users` collection
+    // Step 2 — Save profile to Firestore `users` collection.
+    // Roll back the Auth user if profile creation fails so the scholar number
+    // is not left orphaned with an Auth-only account.
     final uid = user.uid;
-    final cleanHouse = houseName.trim().toLowerCase();
-    final cleanGrade =
-        AcademicStructure.normalizeGrade(classLevel) ?? classLevel.trim();
-    final cleanGradeIndex = campusGradeIndex(cleanGrade);
-    final cleanSection = division.trim().toUpperCase();
     final profileData = {
-      'full_name': fullName,
-      'scholar_no': scholarNo,
+      'uid': uid,
+      'full_name': cleanName,
+      'scholar_no': cleanScholar,
       'age': age,
       'class_level': cleanGrade,
       'division': cleanSection,
@@ -4484,13 +4511,25 @@ class AuthService {
       'role': 'student',
       'grade': ?cleanGradeIndex,
     };
-    await _firestore.collection('users').doc(uid).set(profileData);
+    try {
+      await _firestore
+          .collection('users')
+          .doc(uid)
+          .set(profileData)
+          .timeout(const Duration(seconds: 15));
+    } catch (_) {
+      await user.delete().catchError((_) {});
+      await _auth.signOut().catchError((_) {});
+      rethrow;
+    }
+
+    await clearCache();
     await cacheHouse(cleanHouse);
     await cacheProfile(profileData);
     await recordActiveAccount(profile: profileData, password: password);
 
-    // Update display name
-    await user.updateDisplayName(fullName);
+    // Best-effort Auth display name and election roster sync after profile commit.
+    await user.updateDisplayName(cleanName).catchError((_) {});
 
     await ensureSchoolMemberRecord(
       uid: uid,
@@ -4571,15 +4610,20 @@ class AuthService {
     int? grade;
     final rawGrade = prof['grade'] ?? prof['class_level'] ?? prof['class'];
     if (rawGrade is int) {
-      grade = rawGrade.clamp(1, 12);
+      grade = rawGrade.clamp(0, 12);
     } else if (rawGrade is num) {
-      grade = rawGrade.toInt().clamp(1, 12);
+      grade = rawGrade.toInt().clamp(0, 12);
     } else if (rawGrade is String) {
-      final match = RegExp(r'\d+').firstMatch(rawGrade);
-      if (match != null) {
-        final parsed = int.tryParse(match.group(0)!);
-        if (parsed != null && parsed >= 1 && parsed <= 12) {
-          grade = parsed;
+      final upper = rawGrade.trim().toUpperCase();
+      if (upper == 'LKG' || upper == 'UKG') {
+        grade = 0;
+      } else {
+        final match = RegExp(r'\d+').firstMatch(rawGrade);
+        if (match != null) {
+          final parsed = int.tryParse(match.group(0)!);
+          if (parsed != null && parsed >= 0 && parsed <= 12) {
+            grade = parsed;
+          }
         }
       }
     }
@@ -4797,7 +4841,10 @@ class AuthService {
 
   /// Send password reset email.
   Future<void> resetPassword(String scholarNo) async {
-    final email = _scholarToEmail(scholarNo);
+    final clean = scholarNo.trim().toLowerCase();
+    final email = clean == 'admin'
+        ? 'admin@asianschool.bh'
+        : _scholarToEmail(clean);
     await _auth.sendPasswordResetEmail(email: email);
   }
 

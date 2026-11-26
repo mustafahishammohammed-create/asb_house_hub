@@ -108,13 +108,24 @@ class AuthGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<User?>(
-      stream: authStateStream ?? AuthService().authStateChanges,
-      builder: (context, snapshot) {
-        final hasCompletedOnboarding = AuthService.hasCompletedOnboarding();
+    return ValueListenableBuilder<bool>(
+      valueListenable: AuthService.authTransitionInProgress,
+      builder: (context, transitionInProgress, _) {
+        return StreamBuilder<User?>(
+          stream: authStateStream ?? AuthService().authStateChanges,
+          builder: (context, snapshot) {
+            final hasCompletedOnboarding = AuthService.hasCompletedOnboarding();
 
-        // 1. Loading / Waiting state guard
-        if (snapshot.connectionState == ConnectionState.waiting) {
+            // Keep LoginScreen/SignupScreen mounted while an active login or
+            // registration transaction is still writing/verifying profile state.
+            if (transitionInProgress) {
+              return hasCompletedOnboarding
+                  ? const LoginScreen()
+                  : const OnboardingScreen();
+            }
+
+            // 1. Loading / Waiting state guard
+            if (snapshot.connectionState == ConnectionState.waiting) {
           final currentUser = AuthService().currentUser;
           final cachedProfile = AuthService.getCachedProfile();
           final cachedHouse = AuthService.getCachedHouse();
@@ -210,11 +221,13 @@ class AuthGate extends StatelessWidget {
           return HomeScreen(key: ValueKey('home_${user.uid}'));
         }
 
-        // 4. User is signed out (snapshot.data == null)
-        if (!hasCompletedOnboarding) {
-          return const OnboardingScreen();
-        }
-        return const LoginScreen();
+            // 4. User is signed out (snapshot.data == null)
+            if (!hasCompletedOnboarding) {
+              return const OnboardingScreen();
+            }
+            return const LoginScreen();
+          },
+        );
       },
     );
   }
