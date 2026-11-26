@@ -1,5 +1,7 @@
 # ASB House Hub — Full Application and Firebase Plan Audit
 
+> Historical report. Current findings, fixes, and verification are in the [26 November deep audit](ASB_HOUSE_HUB_DEEP_AUDIT_2026-11-26.md). Preserve the accepted project exceptions documented here; older completion claims are not current release certification.
+
 **Application:** ASB House Hub (`asb_house_hub`, version `1.0.1+2`)  
 **Repository:** `C:\Users\User\OneDrive\Desktop\asb_house_hub_flutter`  
 **Firebase project:** `asb-house-hub`  

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -170,6 +171,30 @@ void main() {
       await tester.pumpAndSettle();
       return popped;
     }
+
+    testWidgets('closing the composer while picking a PDF is safe',
+        (tester) async {
+      for (final fail in [false, true]) {
+        final pending = Completer<PickedCircularPdf?>();
+        await openComposer(
+          tester,
+          pickPdf: () => pending.future,
+          onPublish: ({required title, required content, required category,
+            required targetAudience, pdf}) async =>
+              throw StateError('Publishing was not requested'),
+        );
+        await tester.tap(find.byKey(const Key('circular_pdf_picker')));
+        await tester.pump();
+        await tester.pumpWidget(const SizedBox.shrink());
+        if (fail) {
+          pending.completeError(StateError('Picker closed'));
+        } else {
+          pending.complete(PickedCircularPdf(bytes: pdfBytes(), fileName: 'circular.pdf'));
+        }
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+      }
+    });
 
     testWidgets('admin attaches a PDF, picks details, and publishes',
         (tester) async {

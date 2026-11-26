@@ -540,6 +540,7 @@ class _HomeScreenState extends State<HomeScreen>
       accountToSwitch = account.copyWith(password: pwd);
     }
 
+    if (!mounted) return;
     setState(() {
       _loading = true;
       if (!_pulseController.isAnimating) {

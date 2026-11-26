@@ -57,6 +57,7 @@ class _ElectionAuditScreenState extends State<ElectionAuditScreen> {
       if (picked != null) {
         final bytes = await picked.readAsBytes();
         final code = await QrDecoderService.decodeQrFromBytes(bytes);
+        if (!mounted) return;
         if (code != null && code.isNotEmpty) {
           setState(() {
             _receiptController.text = code.trim();

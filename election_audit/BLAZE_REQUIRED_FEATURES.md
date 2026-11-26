@@ -1,170 +1,180 @@
-# Blaze Plan Required Features — Deferred Until Upgrade
+# Blaze requirements and backend readiness
 
-**Status:** DEFERRED by explicit user decision (2026-11-06): the project stays on the Spark (free) plan for now. Nothing in this file is broken or forgotten — it is parked until the Firebase project `asb-house-hub` is upgraded to Blaze (pay-as-you-go).
+Updated: **26 November 2026**. Project: `asb-house-hub`.
 
-**Why these are blocked:** `firebase deploy --only functions` fails on Spark because Cloud Functions v2 requires Cloud Build and Artifact Registry, and those APIs cannot be enabled without a billing account. Confirmed deploy error: *"Your project asb-house-hub must be on the Blaze (pay-as-you-go) plan… artifactregistry.googleapis.com can't be enabled until the upgrade is complete."*
+This replaces the earlier contradictory completion claims. The last recorded project decision is to remain on Spark. This audit did not change billing or deploy anything. A read-only `firebase functions:list --project asb-house-hub --json` check returned `{"status":"success","result":[]}`: **no Cloud Functions are currently deployed**. Billing linkage and Storage initialization were not independently rechecked.
 
-**What already works without Blaze:** Firestore security rules are deployed (rule deployment is free). All client-side election code, models, screens, secret handling, and tests are complete and verified. The app runs elections in demo/offline mode today.
+See the [deep audit](../ASB_HOUSE_HUB_DEEP_AUDIT_2026-11-26.md) for confirmed defects, fixes, evidence, and the remaining release blockers. Upgrading billing does not implement missing code, repair authorization, connect the UI, or establish production readiness.
 
-**Storage note (2026-11-10):** the Storage rules in `storage.rules` are authored and retained, but `firebase deploy --only storage` currently fails with *"Firebase Storage has not been set up on project 'asb-house-hub'"*. Storage must be initialized in the Firebase Console before that path can be deployed. Until then, school-circular PDFs use the truthful inline Base64 fallback (limited to 700 KB to stay under Firestore's 1 MiB document cap); larger PDFs fail with an explicit "Storage is required" error rather than claiming a broadcast.
+## What actually requires Blaze
 
----
+| Capability | Firebase billing requirement | Repository state |
+|---|---|---|
+| Deploy Firebase Cloud Functions | Blaze | Three exports authored; none deployed; production prerequisites remain |
+| Cloud Storage uploads/downloads | Blaze | SDK/REST upload paths and rules exist; owner binding and trigger safety need work |
+| Cloud Vision certificate analysis via the Storage trigger | Billing-enabled Vision plus Functions and Storage | Authored heuristic; not signature authentication; unsafe to deploy as-is |
+| Firestore rules, schema fixes, transactions, client bug fixes | No Blaze requirement within Spark limits | Must be fixed now; do not defer them to billing |
+| Trusted server services hosted elsewhere | Depends on that hosting provider | Blaze is required for the proposed Firebase Functions implementation, not for every possible backend |
+| Native Apple/Google Wallet signing | Issuer credentials and a trusted signer | Not authored; a Firebase-hosted signer would require Blaze |
+| Gemini Developer API | Its own model/account quotas and billing | Firebase Blaze does not repair deprecated model IDs or provision Gemini credentials |
 
-## D1. Deploy Cloud Functions (the master switch)
+Firebase documents the Storage Blaze requirement as effective starting **3 February 2026**, including continued access to legacy default buckets. The old wording “Blaze may be required for new projects” is obsolete. [Firebase Storage billing changes](https://firebase.google.com/docs/storage/faqs-storage-changes-announced-sept-2024)
 
-**Command (after upgrade):**
-```bash
-cd functions
-npm install
-firebase deploy --only functions
+## D1. Cloud Functions deployment — authored, not release-ready
+
+Exports in `functions/index.js`:
+
+1. `schoolElection` from `functions/elections-v2.js`: lifecycle, voting, receipt lookup, participation, certification, and audit writes.
+2. `schoolLibrary` from `functions/library-v2.js`: transactional checkout, return, and one renewal.
+3. `verifyCertificateSignature`: Storage finalization trigger using Vision logo/text detection.
+
+The audit fixed cancelled-poll certification, incorrect winner scholar numbers, and missing candidate mutation audit entries. Emulator tests cover those paths and duplicate voting. That is local behavioral verification, not an HTTP/Auth/App Check or deployed service smoke test.
+
+Prerequisites before deployment:
+
+- Use the pinned Node.js **22** runtime. The former `>=18` declaration did not select a safe deployment target. Node 18 and Node 20 are past their published decommission dates; Node 22 is supported on the audit date. [Cloud Run functions runtime schedule](https://docs.cloud.google.com/functions/docs/runtime-support)
+- Resolve the remaining dependency advisories and validate upgrades. Compatible updates removed the high/critical production advisories; moderate advisories remain. Do not blindly use `npm audit fix --force`.
+- Provision trustworthy school membership and capability records. The client still maps teachers to `role: admin` and swallows failed provisioning; the hardened rules now require a super admin to grant roster roles/capabilities.
+- Remove live privileged election fallbacks and lock published poll/draft/gazette mutations to the intended server lifecycle. Only counts and participation are presently client-write-disabled.
+- Repair the certificate pipeline in D9. Do not deploy the trigger with its current overwrite/race behavior.
+- Choose function/bucket regions, service identities, secrets, timeouts, instance limits, and monitoring deliberately; verify bucket-trigger compatibility.
+
+Local validation from the repository root:
+
+```powershell
+npm --prefix functions ci
+npm --prefix functions run check
+firebase emulators:exec --project demo-asb-audit --config firebase.audit.json --only firestore "node --test functions/test/security.test.js"
 ```
 
-Three authored, syntax-checked functions are waiting in `functions/`. None of them are live until this deploy succeeds:
+Only after implementation, verification, and the chosen billing upgrade:
 
-### D1a. `schoolElection` callable (`functions/elections-v2.js`)
-The entire live election backend. Until deployed, every live election action fails closed (Firestore rules lock direct writes with `write: if false`, and the callable URL returns 404). Features that activate on deploy:
-- Live vote casting with server-side transaction locks (one scholar, one vote)
-- Server-issued receipts and receipt lookup
-- `getMyParticipation` batch lookup (up to 50 polls per call)
-- Draft lifecycle: `create`, `add`, `remove`, `publish`, `deleteDraft` (server-side candidate management, no phantom ballots)
-- Result lifecycle: `certify`, `close`, `cancel`
-- Append-only audit log (`audit/{uuid}`) on all privileged actions
-- Strict roster-derived winner house (no fallback house bias)
-- Normalized participation keys (`scholarNo.trim().toLowerCase()` before hashing)
-- App Check flag support (see D3)
-
-### D1b. `schoolLibrary` callable (`functions/library-v2.js`)
-Live library circulation: `checkout`, `return`, `renew` with server-side loan state checks.
-
-### D1c. `verifyCertificateSignature` (`functions/index.js`)
-Storage trigger on `house_claims/` uploads: Cloud Vision logo detection + OCR fallback to AI-scan competition certificates and write `ai_status`/`ai_confidence` for the staff moderation queue. **Also requires the Cloud Vision API**, which itself needs billing enabled.
-
-**Done when:** `firebase functions:list` shows all three functions deployed, and a test call to `schoolElection` returns a proper auth error (not 404).
-
----
-
-## D2. Live end-to-end smoke test (audit item B3)
-
-Cannot run until D1 is deployed. After deploy, on a live signed-in build:
-1. Staff: create draft → add candidate (roster lookup) → publish.
-2. Student: vote → receive receipt → confirm second vote attempt is rejected.
-3. Student: confirm participation badge shows via `getMyParticipation`.
-4. Staff: close → certify → confirm gazette publishes with correct winner house and real margin.
-5. Staff: cancel a test poll → confirm audit entries exist and are append-only.
-6. Confirm direct Firestore client writes to `election_polls_v2` are denied by rules.
-
-**Done when:** all six steps pass on the live project with no client-side fallback used.
-
----
-
-## D3. App Check enforcement activation (mobile/web only)
-
-The server already supports it: `functions/elections-v2.js:100` reads `ENFORCE_APP_CHECK === "true"` (currently defaults off so Windows desktop — which has no official FlutterFire App Check provider — is not locked out).
-
-After D1, when shipping Android/iOS/web clients:
-1. Register apps in Firebase App Check with Play Integrity (Android), DeviceCheck/App Attest (iOS), reCAPTCHA Enterprise (web).
-2. Add client attestation activation in `lib/` before `Firebase.initializeApp` usage.
-3. Set the function environment flag `ENFORCE_APP_CHECK=true` and redeploy.
-4. Keep Windows desktop builds on the compensating controls (Firebase Auth + claims-based roles + locked rules + server transactions).
-
-**Done when:** calls without a valid App Check token are rejected on mobile/web, and desktop continues to work.
-
----
-
-## Go-live build reminder (not Blaze-blocked, but required for live use)
-
-Release builds now fail closed without secrets. Any live build must supply:
-```bash
-flutter build windows --release --dart-define=ELECTION_HMAC_SALT=<value> --dart-define=VAULT_SECRET=<value> --dart-define=GAMIFICATION_HMAC_SECRET=<value> --dart-define=SPORTS_CERT_SECRET=<value>
+```powershell
+firebase deploy --only firestore:rules --project asb-house-hub
+firebase deploy --only storage --project asb-house-hub
+firebase deploy --only functions --project asb-house-hub
+firebase functions:list --project asb-house-hub
 ```
-Without these, election hashing and vault operations throw `StateError` by design (audit items A1/A2), and gamification/sports token minting fails closed (G2). Test harnesses inject ephemeral values via `setTestSalt`/`setTestSecret` and never ship them.
 
----
+**Done when:** required functions are deployed, real signed-in requests pass end-to-end tests, unauthorized requests fail, errors are surfaced truthfully, and monitoring is working. A 404 disappearing is insufficient.
 
-## D4. Gamification / points server authority (from gamification_audit)
+## D2. Election end-to-end acceptance — pending
 
-The points audit (`gamification_audit/README.md`, 2026-11-07) found the student points economy was phantom without a server (G1). **All interim no-Blaze hardening is now complete and independently verified** (round 6, `753c976`): truthful failures, secret eradication, rules validators/bounds, council/captain privileges, per-student submissions, cache provenance — G1–G13 and R-1..R-7/N-1/N-2 all closed in `gamification_audit/REMEDIATION_ROADMAP.md` P0–P2. Student live awards remain intentionally fail-closed until the server authority below ships. The real fix needs:
+- Staff: provision an authorized manager; create a draft; add/remove candidates; publish.
+- Student: eligibility derives from a verified roster, not self-entered signup data.
+- Vote twice, concurrently, from two devices: exactly one count and one receipt.
+- Reload/reinstall/switch accounts: participation remains correct. Batch participation is capped at 50 in the backend; the client must chunk larger sets instead of silently losing badges.
+- Close and certify: a real scholar number appears in the gazette; house points are awarded once. A cancelled ballot never certifies.
+- Ensure legacy election screens use the same backend and candidate identity mapping.
+- Implement readable manager audit history: the function writes `election_polls_v2/{id}/audit`, while the current audit UI reads `election_audits`.
+- Reject direct client tampering with all authoritative lifecycle documents, not only tallies.
 
-1. **`schoolGamification` callable** (new, to be authored): server-side activity validation, Firestore-backed cooldowns with server timestamps, atomic awards, idempotency keys, consumed-nonce store, append-only audit log. Then lock `house_points`/`house_contributors` direct writes in rules.
-2. **Sports certification callable**: mint/verify match tokens server-side; remove the client salt.
-3. **Live points smoke test**: student earns → ledger reflects it exactly once; sports lead cannot exceed bounds; replay/clock tricks rejected; election certify leaves the local cache equal to the server ledger (G12 in `gamification_audit/FINAL_POINTS_REPORT.md`).
+**Done when:** these pass in staging and then on the intended live clients, including timeouts and permission failures.
 
-Interim no-Blaze hardening (truthful failures, secret eradication, rules validators) is **done** — tracked and closed in `gamification_audit/REMEDIATION_ROADMAP.md` P0–P2 (verified 2026-11-08).
+## D3. App Check — client integration and rollout design missing
 
-**Done when:** the callable is deployed, direct points writes are locked, and the live points smoke test passes.
+Only the election callable has an `ENFORCE_APP_CHECK` switch. `firebase_app_check` is absent from `pubspec.yaml`; raw HTTP calls do not send an App Check header. The library callable does not share the enforcement option.
 
----
+Activate App Check **after** `Firebase.initializeApp()` and before using protected services. The previous instruction to activate it before Firebase initialization was incorrect. [Flutter App Check setup](https://firebase.google.com/docs/app-check/flutter/default-providers)
 
-## D5. Academics server authority (from academics_audit)
+Enforcement is applied to an endpoint, not selectively waived for desktop. Enabling it on the existing shared election endpoint will also reject Windows callers without a valid token. Define and test a supported desktop/custom-provider strategy before switching it on; an unprotected duplicate endpoint would undermine the protection. Claims, ownership checks, verified roster identity, rate controls, and transactions remain necessary regardless of App Check.
 
-The academics audit (`academics_audit/README.md`, 2026-11-08, HEAD `91114ea`) found 7 findings (A1–A7). All client/rules interim fixes are no-Blaze and tracked in `academics_audit/REMEDIATION_ROADMAP.md` P0–P2. One end-state feature needs server authority:
+**Done when:** supported clients supply attestation, missing/invalid tokens fail, desktop behavior is explicitly supported, and real error responses cannot trigger a privileged Firestore fallback.
 
-1. **Atomic honours merit claim** (A4): today `claimReportCardHonoursMerit` trusts the caller's GPA and its `is_merit_claimed` flag write is admin-only, so the flag can never persist from a student device — currently harmless only because student awards are fail-closed pending D4. The callable must: read the report card → verify ownership + document GPA ≥ 3.80 → check `is_merit_claimed == false` → award points and set the flag in one transaction with an idempotency key. Rides on D4's `schoolGamification`.
-2. **Live academics smoke test**: re-run the P0–P2 manual checklist (owner-only report cards, staff-only publish/leave review, truthful failures) against the deployed callables.
+## D4. Gamification and sports authority — not authored
 
-**Policy note (user-confirmed 2026-11-08):** medical leave **never** excuses attendance — a scholar with a submitted or approved leave is still marked **absent**. The earlier "leave → excused-attendance automation" idea is **cancelled**; no such feature is to be built. The only fix needed was the misleading doc comment (done, no-Blaze).
+No `schoolGamification` or sports certification callable is exported.
 
-**Done when:** the merit callable is deployed, the claim is idempotent across cache clear/reinstall, and the live academics smoke passes.
+Required backend behavior:
 
----
+- Authoritative challenge/quiz grading, eligibility, bounded awards, server time, durable cooldowns, and consumed nonces.
+- Atomic house/contributor/user ledger updates with stable operation IDs and audit records.
+- Server-controlled match scoring, certification, MVP/trophy awards, and replay-safe corrections.
+- A restricted transition from current staff/council direct writes; per-write +500 limits do not stop repeated inflation.
+- Migration/reconciliation for existing conflicting balances and legacy awards.
 
-## D6. Server-side notification fan-out and atomic promotion transactions (M6/M7)
+Spark-compatible defects to fix before or alongside this work: the gamification transaction reads after writing; cooldown/nonces are consumed before persistence; sports model payloads do not match rules; failed live score writes can return success; client secrets remain embedded. These are not billing restrictions.
 
-1. **Server-side notification fan-out (M6):** Currently implemented via client-side batched writes into `users/{uid}/notifications`. On Blaze, a background Cloud Function triggered on timetable publishes, house announcements, and class announcements should handle roster fan-out atomically on the server.
-2. **Atomic cross-collection promotion transactions (M7):** Currently runs client-side sequential writes with failure tracking and honest `PromotionResult` reporting. On Blaze, promotion should run inside a server transaction or callable function guaranteeing all-or-nothing execution across all student documents.
-3. **Server-side timetable conflict validation at scale (M3/M7):** Scalable indexing and background validation across hundreds of concurrent sections.
+**Done when:** legitimate awards persist exactly once across retries/devices, rejected writes do not consume rewards, signed client input cannot mint points, and all ledgers reconcile.
 
----
+## D5. Academic merit claims — not authored
 
-## D7. Client Symptom Diagnostic Matrix (Spark vs Blaze)
+Build an atomic honours claim that reads the server report card, verifies the owner's trusted identity and document GPA, checks the claim marker, writes the award and marker together, and survives retry/reinstall.
 
-When operating on the free **Spark** plan without deployed Cloud Functions:
+The current method trusts a caller GPA and cannot complete its student-owned flag update under the rules. Repair identity ownership first: merely narrowing report-card reads does not stop a profile that impersonates the target scholar.
 
-| Symptom / Error | Cause | Plan Scope | Resolution |
-| :--- | :--- | :--- | :--- |
-| `TimeoutException after 0:00:15.000000: Future not completed` on `call('getMyParticipation')` / `schoolElection` | `us-central1-*.cloudfunctions.net/schoolElection` callable is not deployed because Cloud Functions v2 requires a billing account. | **BLAZE REQUIRED** | Client now automatically catches the HTTP failure/timeout and falls back to client-side Firestore and local cache logic (`_callFirestoreFallback`). |
-| `Bad state: Security Exception: ELECTION_HMAC_SALT is not configured` | Artificial `--dart-define` check in `ElectionSecurityService._electionSalt`. | **SPARK COMPATIBLE** (Resolved) | Fallback secret added in client code. Runs without needing build flags. |
-| `Could not create section 11A` / `Missing or insufficient permissions` | Active Firebase Auth user was a student (`role: student`) rather than an admin (`role: super_admin`). | **SPARK COMPATIBLE** (Free tier Firestore) | Creating classes is a direct Firestore write (`academic_classes/{classId}`). Not a Blaze feature. Authenticate as Administrator (`admin@asianschool.bh` or verified admin) to perform admin writes. |
-| `models/gemini-2.0-flash is no longer available` | Deprecated Gemini model name returned by Google Generative AI API. | **SPARK COMPATIBLE** (Resolved) | Added `gemini-3.8-flash` to top of `_candidateModels` list. |
-| Apple / Google Wallet pass signing unavailable | Server-side cryptographic signing with Apple Developer WWDR certificates and Google Wallet service account credentials requires a secure Cloud Function. | **BLAZE REQUIRED** (Deferred) | Client generates instant, zero-cost vector PDF vouchers with QR verification codes, printable passes, and report cards via `PassDocumentExporter.exportPass` without needing Blaze or external services. |
+**Preserved project policy:** submitted or approved medical leave does **not** excuse attendance. Do not add leave-to-excused-attendance automation.
 
----
+## D6. Notifications, promotions, and timetable coordination — not authored
 
-## D8. Native Mobile Wallet Pass Signing (Apple Wallet .pkpass & Google Wallet Pass Objects)
+- **Notification fan-out:** move authoritative event generation to a trusted backend with an outbox, deterministic recipient IDs, pagination, retry tracking, and deduplication. The client currently stops recipient lookup at 500 and writes batches of 400. An entire school fan-out is not one unlimited atomic transaction.
+- **Remote push:** add FCM token registration/refresh, permission handling, backend delivery, routing, and platform setup. The present UI correctly labels notifications as in-app only. FCM availability and deploying a Firebase delivery function are separate questions.
+- **Promotion:** coordinate users, roster membership, verification, audit, and notifications. Define chunked resumable semantics for large cohorts; do not promise unbounded all-or-nothing transactions.
+- **Timetables:** use authoritative resource reservations or another transaction-safe conflict design. Client read/check/write sequences race under concurrent publishers.
 
-Native mobile digital wallets require backend cryptographic signing infrastructure:
-- **Apple Wallet (`.pkpass`):** Requires an Apple Developer Program enrollment, a Pass Type ID certificate, Apple Worldwide Developer Relations (WWDR) intermediate CA certificate, and a private PKCS#12 certificate. Pass archives (`manifest.json` and signatures) MUST be generated and signed on a trusted server backend—bundling private certificates into a mobile APK or client binary violates security standards and causes revocation.
-- **Google Wallet (Generic Passes API):** Requires a Google Cloud Service Account with Google Wallet Issuer permissions, Google Pay & Wallet Console registration, and server-side JWT issuance signed with the service account private key.
+**Done when:** retries and partial failures are observable, cohort changes converge, revoked privileges do not survive in `school_members`, and concurrent conflicting timetable publishes are rejected.
 
-### Client-Side Spark Tier Local Fallback (Fully Implemented)
-1. **Zero-Cost High-Resolution PDF Passes & Vouchers:** The client app features `PassDocumentExporter.exportPass` which builds vector-grade, printable PDF passes and report cards with embedded high-resolution verification QR codes, student scholar IDs, house heraldry, and security serial numbers.
-2. **Local Device Storage & Share Intent:** Passes can be saved directly to the device's downloads/documents folder or shared to any printer or messaging app without network or Cloud Function dependencies.
-3. **Transparent In-App Guidance:** The Digital Wallet sheet informs students and parents that institutional Apple/Google Wallet synchronization is an upcoming institutional portal integration, while providing immediate one-tap access to device PDF export and printing.
+## D7. Corrected symptom matrix
 
----
+| Symptom | Actual classification | Action |
+|---|---|---|
+| Election callable 404/timeout | Functions currently absent; other network failures are also possible | Deploy a verified backend; preserve real errors; live vote/receipt must fail closed |
+| Admin election action appears to work while callable fails | Client fallback and broad admin rules still permit bypass | Remove fallback and harden lifecycle rules; this is a code defect |
+| `permission-denied` creating a class, chat, trophy, or upload | Role/query/schema/path mismatch may be responsible | Inspect the exact rule and payload; billing is not a universal remedy |
+| Missing build-time HMAC/vault define | Current code has compiled fallback keys | Migrate trust/credentials; injecting another shared key into the app is not a security fix |
+| Gemini 2.0/1.5 requests fail | Stale model candidates in the client | Select a supported model and test the API independently of Firebase billing |
+| Library renewal displays a result | Current portal is explicitly a sample | Wire the UI to `schoolLibrary`; a deploy alone does not connect it |
+| PDF export on web | Export is unimplemented; now returns a truthful failure | Implement a real browser download; no Blaze requirement |
 
-## D9. Firebase Storage initialization (circular PDF uploads)
+## D8. Native Wallet signing — not authored
 
-Firebase Storage has not been initialized on `asb-house-hub`, so `firebase deploy --only storage` fails and the `circulars/{noticeId}/{fileName=**}` upload path is not live. Circulars still publish with inline Base64 PDFs up to 700 KB; files above that fail explicitly.
+The client can prepare pass-like JSON, but there is no exported `schoolWallet`, Apple archive/signature generation, or Google issuer integration. Keep private certificates/service-account keys on a trusted backend, with authenticated ownership checks, revocation, and key rotation.
 
-**After enabling Storage (Console → Storage → Get Started; Blaze may be required for new projects):**
+The current PDF fallback is a plain text PDF with a textual verification payload. It does **not** embed a scannable QR image, school artwork, or a platform share/print flow. Android/iOS output goes to temporary storage; web export now fails honestly. Fixing these client limitations does not require Blaze.
 
-1. Run `firebase.cmd deploy --only storage --project asb-house-hub`.
-2. Publish a >700 KB PDF from the admin circular composer on each target platform.
-3. Confirm the notice document stores a Storage download URL and the feed opens the PDF.
-4. Confirm a >15 MB PDF is rejected before upload.
+**Done when:** real signed passes can be added to the intended wallets, updates/revocations work, and PDF/printing is separately tested on each supported platform.
 
-**Done when:** the Storage rules deploy, the >700 KB upload succeeds, and the stored `attachment_url` is a token-bearing Storage URL.
+## D9. Storage and certificate verification — Blaze plus substantial fixes
 
----
+Storage supports more than circular PDFs: certificates, profile photos, and academic resources also use it. The old document's “circulars only” scope was incomplete.
 
-## Completion order when Blaze is available
+Before enabling uploads/trigger processing:
 
-1. Upgrade project to Blaze in Firebase Console (billing).
-2. D1: deploy functions (enable Cloud Build, Artifact Registry, Cloud Vision APIs if prompted).
-3. D2: run the live smoke test checklist.
-4. D3: activate App Check when mobile/web clients ship.
-5. D4: author + deploy `schoolGamification`, then run the live points smoke test.
-6. D5: academics merit-claim automation on top of D4, then the live academics smoke test.
-7. D8: author + deploy `schoolWallet` pass signing Cloud Function with Apple WWDR certificates and Google Wallet Service Account JWT signing.
-8. Check the boxes above and update `election_audit/README.md` — only then are B1/B3 from `NOT_DONE_AND_FALSE_CLAIMS.md` closed.
+1. Bind each object to its uploader UID and an authorized claim/document; prevent overwriting another student's certificate. Current claim paths are writable by every authenticated user and all Storage objects have a broad authenticated read grant.
+2. Create an authoritative claim/upload intent before finalization and bind it to object generation. The current client uploads before creating the claim.
+3. The trigger must never create a partial claim from a filename or overwrite `scholar_no`, house, or human review status. Current success and error branches do all of these through Admin SDK merge writes.
+4. Record scan output with generation/event deduplication and retries. Preserve approved/rejected state on late or repeated delivery.
+5. Describe logo/OCR matches as review hints, not verified signatures. The current OCR path assigns a fixed 85% confidence; handle PDFs with a supported document-processing path.
+6. Verify staff role coverage and delete behavior in Storage rules; current `request.resource` upload predicates do not authorize deletion.
+7. Enforce byte/document limits before upload and Base64 encoding. Circular fallback remains limited to 700 KB; certificate/photo fallbacks lack comparable byte guards.
+
+After these changes and Storage initialization, deploy rules and test small/large uploads, unauthorized overwrites/reads, deletion, timeout cleanup, repeated trigger delivery, and delayed human reviews.
+
+## D10. Orders, payments, vouchers, and ID issuance — missing trusted backend
+
+Add a server-owned product/price catalogue, inventory controls, real payment verification when money is collected, authoritative point debits where points are spent, idempotent order creation, and atomic redemption. Bind QR/ID credentials to server records and cover all important fields with a server-only signing key or public-key verification scheme.
+
+Current rules permit a student to create `verified`/`ready` orders with arbitrary items and zero price; redemption uses a separate read then update and can claim local-only success after live errors. Those defects must be corrected even while remaining on Spark. A trusted Firebase Functions implementation would require Blaze, but Firestore transactions and tighter rules themselves do not.
+
+## D11. Identity, roster, and suspension lifecycle — prerequisite, not just billing
+
+Current self-signup does not bind `users.scholar_no` to a verified school identity or enforce uniqueness. Emulator probes confirmed that an unrelated authenticated account can adopt another scholar number and read that scholar's report card. Membership grades/houses originate from the same self-entered profile.
+
+Provide verified school provisioning/enrollment and atomic synchronization of role, house, grade, active status, and capabilities. Suspensions must revoke access in rules and backend authorization, not just update a UI field. Super admins must provision staff capabilities under the new rules. Review existing records for privileges granted under older permissive rules; new rules do not clean old data.
+
+The existing `admin`/`11209` bootstrap exception is retained per the recorded project decision. Its unverified-email grant remains an accepted high-impact risk; document and monitor that exception explicitly. Do not describe client signup guards as server-side account reservation.
+
+## D12. AI service and credential handling — optional backend design
+
+The current candidates are `gemini-2.0-flash`, `gemini-1.5-flash`, and `gemini-1.5-pro`; the previous document's claim that a newer candidate was already installed was false. Google's lifecycle documentation lists Gemini 2.0 Flash as shut down on 1 June 2026. [Gemini deprecations](https://ai.google.dev/gemini-api/docs/deprecations)
+
+Choose/test a supported model, move API keys out of plaintext preferences/URL query strings, disclose what academic data is sent, and distinguish cached local heuristics from live AI output. A Firebase-hosted proxy requires Blaze; model selection, local secure storage, and accurate UI labeling do not.
+
+## Completion order and release evidence
+
+1. Resolve identity, storage ownership, authoritative election paths, order/points integrity, and schema mismatches from the deep audit. Establish verified roster provisioning and cleanup.
+2. Re-run Flutter and emulator checks; add missing Storage, trigger, callable transport, and platform integration tests.
+3. When the project chooses billing, configure budgets/monitoring, initialize the intended bucket/APIs, and deploy the verified backend/rules in staging first.
+4. Wire each client feature to its service. Configure App Check only after every intended client has an attestation strategy.
+5. Run live acceptance on Windows/Android/iOS/web as supported; record deployed versions, rule releases, function regions, and results.
+6. Mark individual D-items complete only with that evidence. Billing activation or a passing local unit suite does not close them.

@@ -201,6 +201,10 @@ exports.schoolElection = onCall({ enforceAppCheck: shouldEnforceAppCheck }, asyn
       const box = (await tx.get(poll)).data();
       requireState(Boolean(box), "Publish the ballot first.");
       if (box.status === "certified") return { pollId, result: box.result };
+      requireState(
+        box.status === "published" || box.status === "closed",
+        "Only published or closed ballots can be certified."
+      );
       requireState(Date.now() >= box.closesAt.toMillis(), "Voting is still open.");
       const totals = await tx.getAll(...box.candidates.map((c) => poll.collection("counts").doc(c.id)));
       const rows = box.candidates.map((c, i) => {
@@ -213,6 +217,23 @@ exports.schoolElection = onCall({ enforceAppCheck: shouldEnforceAppCheck }, asyn
       const leaders = total ? rows.filter((r) => r.count === max).map((r) => r.id) : [];
       const outcome = !total ? "no_votes" : leaders.length > 1 ? "tie" : "winner";
       const result = { rows, total, leaders, outcome };
+
+      // Public candidates intentionally omit account identifiers. Resolve the
+      // winner from the private draft before any transaction writes. Older
+      // drafts without a scholar snapshot can be reconciled with the roster.
+      let winnerScholar = "";
+      if (outcome === "winner") {
+        const nominee = current.candidates.find((c) => c.id === leaders[0]);
+        requireState(Boolean(nominee), "Winner is missing from the private draft.");
+        if (nominee.scholarNo) {
+          winnerScholar = boundedText(nominee.scholarNo, 64, "winner scholar number");
+        } else {
+          requireState(typeof nominee.uid === "string" && nominee.uid.length > 0,
+            "Winner roster identity is missing. Reconcile the draft before certification.");
+          const roster = (await tx.get(db.collection("school_members").doc(nominee.uid))).data();
+          winnerScholar = boundedText(roster?.scholar_no, 64, "winner scholar number");
+        }
+      }
       tx.update(poll, { status: "certified", result, certifiedAt: FieldValue.serverTimestamp() });
       tx.update(draft, { status: "certified", certifiedBy: uid });
 
@@ -238,7 +259,7 @@ exports.schoolElection = onCall({ enforceAppCheck: shouldEnforceAppCheck }, asyn
           ballot_id: pollId,
           ballot_title: box.title,
           running_position: box.position,
-          winner_scholar_no: winner?.uid || winner?.id || "",
+          winner_scholar_no: winnerScholar,
           winner_name: winner?.name || "Elected Candidate",
           winner_house: winnerHouse,
           total_votes_received: max,
@@ -284,6 +305,7 @@ exports.schoolElection = onCall({ enforceAppCheck: shouldEnforceAppCheck }, asyn
     if (action === "remove") {
       const key = resourceId(data.candidateId);
       tx.update(draft, { candidates: current.candidates.filter((c) => c.id !== key) });
+      logAudit("remove", { candidateId: key });
       return { pollId };
     }
 
@@ -299,10 +321,13 @@ exports.schoolElection = onCall({ enforceAppCheck: shouldEnforceAppCheck }, asyn
       requireState(eligible(candidate, current), "Candidate is not eligible for this ballot.");
       const name = boundedText(candidate.display_name, 120, "roster display name");
       const existing = current.candidates.find((c) => c.uid === doc.id);
-      const next = { id: existing?.id ?? randomUUID(), uid: doc.id, name, statement, house: candidate.house };
+      const next = { id: existing?.id ?? randomUUID(), uid: doc.id,
+        scholarNo: boundedText(candidate.scholar_no, 64, "candidate scholar number"),
+        name, statement, house: candidate.house };
       const list = current.candidates.filter((c) => c.uid !== doc.id);
       requireState(list.length < 20, "This ballot supports up to 20 candidates.");
       tx.update(draft, { candidates: [...list, next] });
+      logAudit("add", { candidateId: next.id });
       return { pollId, candidateId: next.id };
     }
 
@@ -317,6 +342,8 @@ exports.schoolElection = onCall({ enforceAppCheck: shouldEnforceAppCheck }, asyn
         requireState(eligible(registered, current), "Review a candidate whose membership changed.");
         const name = boundedText(registered.display_name, 120, "roster display name");
         requireState(name === c.name, "A candidate changed name. Refresh their draft entry.");
+        requireState(!c.scholarNo || c.scholarNo === registered.scholar_no,
+          "A candidate changed scholar number. Refresh their draft entry.");
         return { id: c.id, name, statement: c.statement, house: registered.house };
       });
       tx.create(poll, {

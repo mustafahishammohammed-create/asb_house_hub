@@ -2,6 +2,10 @@
 
 A comprehensive Flutter application for ASB House Hub, featuring house point tracking, digital campus ID passes, conduct evaluations (merits and demerits), and live interactive leaderboards.
 
+## Audit and backend readiness
+
+The [26 November 2026 deep audit](ASB_HOUSE_HUB_DEEP_AUDIT_2026-11-26.md) records verified fixes, 44 remaining findings, test evidence, and reproduction commands. See [Blaze requirements](election_audit/BLAZE_REQUIRED_FEATURES.md) before deploying backend services. Local fixes have not been deployed; passing builds do not establish production readiness.
+
 ## Features
 
 - **Live House Standings**: Real-time points breakdown for all school houses (Ruby, Sapphire, Emerald, Diamond).

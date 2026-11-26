@@ -494,6 +494,7 @@ service cloud.firestore {
     // escalation path while keeping normal roster self-provisioning working.
     function isValidSelfSchoolMember(data) {
       return hasUserDoc() &&
+        (!('status' in getUserData()) || getUserData().status == 'active') &&
         data.active == true &&
         data.role == 'student' &&
         data.scholar_no is string &&
@@ -519,6 +520,7 @@ service cloud.firestore {
         (!('grade' in getUserData()) || data.grade == getUserData().grade) &&
         (!('capabilities' in data) || (
           data.capabilities is map &&
+          data.capabilities.keys().hasOnly(['manage_elections']) &&
           (!('manage_elections' in data.capabilities) ||
             data.capabilities.manage_elections == false)
         ));
@@ -1384,10 +1386,9 @@ service cloud.firestore {
         allow write: if isAdmin() && isValidAttendance(request.resource.data);
       }
 
-      match /{allSubcollections=**} {
-        allow read: if isSignedIn();
-        allow write: if isAdmin();
-      }
+      // No recursive allow here: Firestore combines matching grants with OR.
+      // A catch-all would bypass report-card/attendance ownership and every
+      // assignment/submission validator above. Unknown paths stay denied.
     }
 
     // 3b. academic_classes/{classId} — canonical class/section registry (M1)
@@ -1742,8 +1743,10 @@ service cloud.firestore {
           request.resource.data.sender_id == request.auth.uid &&
           isValidChatMessage(request.resource.data);
         allow update: if isSignedIn() && (
+          (isChannelParticipant() && (
           (resource.data.sender_id == request.auth.uid && isValidChatMessage(request.resource.data) && request.resource.data.sender_id == resource.data.sender_id) ||
-          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['is_read', 'read_at']) && request.resource.data.is_read is bool) ||
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['is_read', 'read_at']) && request.resource.data.is_read is bool)
+          )) ||
           isAdmin()
         );
         allow delete: if isSignedIn() && (resource.data.sender_id == request.auth.uid || isAdmin());
@@ -1890,10 +1893,13 @@ service cloud.firestore {
     // 19. school_members/{memberId} (Zero-Trust Elections v2 Roster)
     match /school_members/{memberId} {
       allow read: if isSignedIn();
-      allow create: if isAdmin() ||
+      // Roster roles are used by isSuperAdmin and backend capabilities.
+      // Ordinary teaching staff must never be able to grant those privileges.
+      allow create: if isSuperAdmin() ||
         (isOwner(memberId) && isValidSelfSchoolMember(request.resource.data));
-      allow update: if isAdmin() ||
+      allow update: if isSuperAdmin() ||
         (isOwner(memberId) &&
+          resource.data.active == true &&
           isValidSelfSchoolMember(request.resource.data) &&
           request.resource.data.role == resource.data.role &&
           request.resource.data.scholar_no == resource.data.scholar_no &&
@@ -1901,7 +1907,7 @@ service cloud.firestore {
           request.resource.data.grade == resource.data.grade &&
           (!('capabilities' in resource.data) ||
             request.resource.data.capabilities == resource.data.capabilities));
-      allow delete: if isAdmin();
+      allow delete: if isSuperAdmin();
     }
 
     // 20. election_polls_v2/{pollId} (Zero-Trust Elections v2 Published Polls)

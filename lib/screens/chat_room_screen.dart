@@ -402,11 +402,12 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
         ),
       ),
     );
-    if (source == null) return;
+    if (!mounted || source == null) return;
     try {
       final picked = await picker.pickImage(source: source, maxWidth: 1024, imageQuality: 80);
       if (picked != null) {
         final bytes = await picked.readAsBytes();
+        if (!mounted) return;
         setState(() {
           _pendingAttachment = 'data:image/jpeg;base64,${base64Encode(bytes)}';
         });

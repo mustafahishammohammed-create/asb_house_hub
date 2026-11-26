@@ -769,7 +769,7 @@ class _TeacherTimetableEditorScreenState
       ),
     );
 
-    if (selection != null) {
+    if (mounted && selection != null) {
       setState(() {
         slotController.substituteTeacherName = selection.name;
         slotController.substituteTeacherUid = selection.uid;

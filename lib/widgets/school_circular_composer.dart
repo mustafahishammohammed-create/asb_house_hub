@@ -83,7 +83,7 @@ class _SchoolCircularComposerState extends State<SchoolCircularComposer> {
     setState(() => _error = null);
     try {
       final picked = await (widget.pickPdf ?? _defaultPickPdf)();
-      if (picked == null) return;
+      if (!mounted || picked == null) return;
       if (picked.bytes.isEmpty) {
         setState(() => _error = 'The selected PDF is empty.');
         return;
@@ -97,6 +97,7 @@ class _SchoolCircularComposerState extends State<SchoolCircularComposer> {
       }
       setState(() => _pdf = picked);
     } catch (_) {
+      if (!mounted) return;
       setState(() => _error = 'Could not read the selected PDF.');
     }
   }

@@ -137,9 +137,9 @@ class PassDocumentExporter {
 
       if (kIsWeb) {
         return (
-          success: true,
-          filePath: 'browser_download:ASB_Pass_${DateTime.now().millisecondsSinceEpoch}.pdf',
-          error: null,
+          success: false,
+          filePath: '',
+          error: 'PDF download is not available in the web app yet.',
         );
       }
 
