@@ -9619,15 +9619,15 @@ void main() {
     );
   });
 
-  test('Phase 4 Test 1: Gemini candidate models audit (no hallucinated models)', () {
+  test('Phase 4 Test 1: Gemini candidate models audit (no hallucinated or EOL models)', () {
     final models = GeminiAiService.candidateModels;
     expect(models, isNotEmpty);
+    expect(models, contains('gemini-2.5-flash'));
+    expect(models, contains('gemini-2.5-pro'));
     expect(models, contains('gemini-2.0-flash'));
-    expect(models, contains('gemini-1.5-flash'));
-    expect(models, contains('gemini-1.5-pro'));
     expect(models, isNot(contains('gemini-3.8-flash')));
-    expect(models, isNot(contains('gemini-2.5-flash')));
-    expect(models.first, equals('gemini-2.0-flash'));
+    expect(models, isNot(contains('gemini-1.5-flash')));
+    expect(models.first, equals('gemini-2.5-flash'));
   });
 
   test('Phase 4 Test 2: GeminiAiService.validateApiKey validates keys and executes model fallback', () async {
@@ -9640,7 +9640,7 @@ void main() {
     final requestedUrls = <String>[];
     GeminiAiService.httpClientOverride = _Phase4MockHttpClient((req) async {
       requestedUrls.add(req.url.toString());
-      if (req.url.toString().contains('gemini-2.0-flash')) {
+      if (req.url.toString().contains('gemini-2.5-flash')) {
         return http.Response(jsonEncode({'candidates': [{'content': {'parts': [{'text': 'OK'}]}}]}), 200);
       }
       return http.Response('Not found', 404);
@@ -9648,17 +9648,17 @@ void main() {
 
     final validRes = await GeminiAiService.validateApiKey('valid_test_key_123');
     expect(validRes.isValid, isTrue);
-    expect(validRes.message, contains('gemini-2.0-flash'));
+    expect(validRes.message, contains('gemini-2.5-flash'));
     expect(requestedUrls.length, 1);
 
-    // 3. Model fallback when gemini-2.0-flash returns 404
+    // 3. Model fallback when gemini-2.5-flash returns 404
     requestedUrls.clear();
     GeminiAiService.httpClientOverride = _Phase4MockHttpClient((req) async {
       requestedUrls.add(req.url.toString());
-      if (req.url.toString().contains('gemini-2.0-flash')) {
+      if (req.url.toString().contains('gemini-2.5-flash')) {
         return http.Response('Model not found', 404);
       }
-      if (req.url.toString().contains('gemini-1.5-flash')) {
+      if (req.url.toString().contains('gemini-2.5-pro')) {
         return http.Response(jsonEncode({'candidates': [{'content': {'parts': [{'text': 'OK'}]}}]}), 200);
       }
       return http.Response('Not found', 404);
@@ -9666,7 +9666,7 @@ void main() {
 
     final fallbackRes = await GeminiAiService.validateApiKey('valid_test_key_456');
     expect(fallbackRes.isValid, isTrue);
-    expect(fallbackRes.message, contains('gemini-1.5-flash'));
+    expect(fallbackRes.message, contains('gemini-2.5-pro'));
     expect(requestedUrls.length, 2);
 
     // 4. Unauthorized key (400 / 403) terminates immediately with server error message
@@ -9701,7 +9701,7 @@ void main() {
 
     // 1. Primary model returns valid content
     GeminiAiService.httpClientOverride = _Phase4MockHttpClient((req) async {
-      expect(req.url.toString(), contains('gemini-2.0-flash'));
+      expect(req.url.toString(), contains('gemini-2.5-flash'));
       return http.Response.bytes(
         utf8.encode(jsonEncode({
           'candidates': [
@@ -9726,22 +9726,22 @@ void main() {
     );
     expect(liveRes, contains('Ruby house warrior'));
 
-    // 2. Primary model 500 fails, falls back to gemini-1.5-flash
+    // 2. Primary model 500 fails, falls back to gemini-2.5-pro
     final calledModels = <String>[];
     GeminiAiService.httpClientOverride = _Phase4MockHttpClient((req) async {
-      if (req.url.toString().contains('gemini-2.0-flash')) {
-        calledModels.add('gemini-2.0-flash');
+      if (req.url.toString().contains('gemini-2.5-flash')) {
+        calledModels.add('gemini-2.5-flash');
         return http.Response('Server Error', 500);
       }
-      if (req.url.toString().contains('gemini-1.5-flash')) {
-        calledModels.add('gemini-1.5-flash');
+      if (req.url.toString().contains('gemini-2.5-pro')) {
+        calledModels.add('gemini-2.5-pro');
         return http.Response.bytes(
           utf8.encode(jsonEncode({
             'candidates': [
               {
                 'content': {
                   'parts': [
-                    {'text': 'Fallback response from 1.5-flash!'}
+                    {'text': 'Fallback response from 2.5-pro!'}
                   ]
                 }
               }
@@ -9759,8 +9759,8 @@ void main() {
       house: 'ruby',
       studentName: 'Mustafa',
     );
-    expect(fallbackRes, contains('Fallback response from 1.5-flash'));
-    expect(calledModels, contains('gemini-2.0-flash'));
+    expect(fallbackRes, contains('Fallback response from 2.5-pro'));
+    expect(calledModels, contains('gemini-2.5-flash'));
 
     // 3. All models fail (network outage): falls back to contextual local response cleanly
     GeminiAiService.httpClientOverride = _Phase4MockHttpClient((req) async {

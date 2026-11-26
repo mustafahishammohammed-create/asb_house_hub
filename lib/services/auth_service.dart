@@ -7324,53 +7324,24 @@ class AuthService {
             }
           }
         } catch (e) {
-          debugPrint(
-            'Cloud Functions certification unavailable (Spark plan fallback active): $e',
+          debugPrint('Cloud Functions certification unavailable: $e');
+          return (
+            success: false,
+            result: null as CertifiedElectionResult?,
+            error:
+                'Official election certification requires the schoolElection Cloud Function.',
           );
         }
       }
 
-      // Direct client certification path (offline & Spark plan compliant)
+      // Offline / unit test fallback when Firebase App is not initialized
       if (_isFirebaseLive) {
-        try {
-          final ballotRef = _firestore.collection('elections').doc(ballotId);
-          final gazetteRef = _firestore
-              .collection('election_gazettes')
-              .doc(ballotId);
-          final houseRef = _firestore.collection('house_points').doc(hName);
-          final v2PollRef = _firestore
-              .collection('election_polls_v2')
-              .doc(ballotId);
-
-          await ballotRef.set({
-            'id': ballotId,
-            'title': ballotTitle,
-            'status': 'certified',
-            'is_certified': true,
-            'certified_by': commissionerName,
-            'certified_at': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
-
-          await v2PollRef.set({
-            'status': 'certified',
-            'is_certified': true,
-            'certifiedAt': FieldValue.serverTimestamp(),
-            'closesAt': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
-
-          await gazetteRef.set(
-            certifiedResult.toMap(),
-            SetOptions(merge: true),
-          );
-
-          await houseRef.set({
-            'house_name': hName,
-            'total_points': FieldValue.increment(housePoints),
-            'last_updated': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
-        } catch (e) {
-          debugPrint('Direct Firestore certification sync note: $e');
-        }
+        return (
+          success: false,
+          result: null as CertifiedElectionResult?,
+          error:
+              'Official election certification requires an authenticated Cloud Function call.',
+        );
       }
 
       await incrementCachedHousePoints(hName, housePoints);

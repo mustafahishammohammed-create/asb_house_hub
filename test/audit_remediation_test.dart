@@ -5,11 +5,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:asb_house_hub/models/class_timetable.dart';
 import 'package:asb_house_hub/models/sports_tournament.dart';
 import 'package:asb_house_hub/models/sports_trophy.dart';
 import 'package:asb_house_hub/screens/merch_store_tab.dart';
 import 'package:asb_house_hub/services/gamification_security_service.dart';
 import 'package:asb_house_hub/services/gemini_ai_service.dart';
+import 'package:asb_house_hub/services/pass_document_exporter.dart';
 import 'package:asb_house_hub/services/voucher_security_service.dart';
 
 void main() {
@@ -143,6 +145,56 @@ void main() {
       expect(indexes, isNotEmpty);
       final groups = indexes.map((e) => (e as Map<String, dynamic>)['collectionGroup']).toSet();
       expect(groups, containsAll(['events', 'medical_leaves', 'users', 'timetable_versions', 'timetable_audit']));
+    });
+
+    test('PassDocumentExporter embeds vector QR rectangles in PDF 1.4 pass bytes', () {
+      final bytes = PassDocumentExporter.buildPassPdf(
+        title: 'Store Pass #101',
+        subtitle: 'Scholar #12345',
+        details: '1x Ruby Hoodie (M)',
+        totalInfo: 'BHD 12.000',
+        qrData: '{"receipt":"ASB-101","sig":"abc123"}',
+      );
+      final pdfText = utf8.decode(bytes, allowMalformed: true);
+      expect(pdfText, startsWith('%PDF-1.4'));
+      expect(pdfText, contains('re f'));
+      expect(pdfText, contains('Verification Payload:'));
+    });
+
+    test('ClassTimetableVersion.validate enforces 700 KB aggregate inline image cap', () {
+      final hugeImage = 'data:image/jpeg;base64,${'A' * 100000}';
+      final slots = List.generate(
+        8,
+        (i) => TimetableSlot(
+          periodNumber: i + 1,
+          startMinute: 480 + i * 45 + (i >= 4 ? 30 : 0),
+          subject: 'Subject ${i + 1}',
+          imageUrl: hugeImage,
+        ),
+      );
+      final version = ClassTimetableVersion(
+        id: 'tt_10A_Monday_v1',
+        classId: '10A',
+        dayOfWeek: 'Monday',
+        version: 1,
+        status: TimetableStatus.draft,
+        effectiveFrom: DateTime.utc(2026, 11, 26),
+        breakAfterPeriod: 4,
+        breakStartMinute: 680,
+        slots: slots,
+      );
+      final errors = version.validate();
+      expect(errors.any((e) => e.contains('700 KB')), isTrue);
+    });
+
+    test('Mobile release targets satisfy FlutterFire iOS 15+ and keystore wiring', () {
+      final pbxproj = File('ios/Runner.xcodeproj/project.pbxproj').readAsStringSync();
+      expect(pbxproj, contains('IPHONEOS_DEPLOYMENT_TARGET = 15.0;'));
+      expect(pbxproj, isNot(contains('IPHONEOS_DEPLOYMENT_TARGET = 13.0;')));
+
+      final gradle = File('android/app/build.gradle.kts').readAsStringSync();
+      expect(gradle, contains('key.properties'));
+      expect(gradle, contains('signingConfigs.getByName("release")'));
     });
   });
 }

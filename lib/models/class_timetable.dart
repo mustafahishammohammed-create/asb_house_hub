@@ -405,6 +405,16 @@ class ClassTimetableVersion {
         errors.add('The override date must fall on $dayOfWeek.');
       }
     }
+
+    var totalInlineAttachmentBytes = 0;
+    for (final s in ordered) {
+      totalInlineAttachmentBytes += s.imageUrl.length;
+    }
+    if (totalInlineAttachmentBytes > 716800) {
+      errors.add(
+        'Combined slot images exceed the 700 KB document budget; reduce image size.',
+      );
+    }
     return errors.toList();
   }
 

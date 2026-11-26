@@ -11,9 +11,9 @@ class GeminiAiService {
 
   /// Official Google Gemini production models in priority fallback order
   static const List<String> _candidateModels = [
+    'gemini-2.5-flash',
+    'gemini-2.5-pro',
     'gemini-2.0-flash',
-    'gemini-1.5-flash',
-    'gemini-1.5-pro',
   ];
 
   /// Public read-only view of official candidate models in priority fallback order

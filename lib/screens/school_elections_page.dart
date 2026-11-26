@@ -228,14 +228,20 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
       final snap = await db.collection('election_polls_v2').get();
       final pollDocIds = snap.docs.map((d) => d.id).toList();
 
-      // Batch participation lookup via callable (F11 eliminates N+1)
+      // Batch participation lookup via callable (F11 eliminates N+1, chunked to <=50 per backend cap)
       if (activeScholar.isNotEmpty && activeScholar != 'guest' && _isFirebaseLive && pollDocIds.isNotEmpty) {
         try {
-          final res = await call('getMyParticipation', pollDocIds.first, {'pollIds': pollDocIds});
-          final partMap = res['participation'] as Map?;
-          if (partMap != null) {
-            for (final entry in partMap.entries) {
-              receipts['${activeScholar}_${entry.key}'] = entry.value.toString();
+          for (var i = 0; i < pollDocIds.length; i += 50) {
+            final chunk = pollDocIds.sublist(
+              i,
+              (i + 50) > pollDocIds.length ? pollDocIds.length : i + 50,
+            );
+            final res = await call('getMyParticipation', chunk.first, {'pollIds': chunk});
+            final partMap = res['participation'] as Map?;
+            if (partMap != null) {
+              for (final entry in partMap.entries) {
+                receipts['${activeScholar}_${entry.key}'] = entry.value.toString();
+              }
             }
           }
         } catch (_) {}
@@ -483,17 +489,13 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
       }
     }
 
-    // 2. Direct client fallback (Spark free plan compliant).
-    //
-    // Votes and participation receipts are server-authoritative: the rules now
-    // deny client writes to election_polls_v2/{id}/counts and /participation.
-    // If the callable is unavailable in a live environment, fail closed with a
-    // clear message instead of attempting a transaction that cannot succeed
-    // (or, worse, silently reintroducing a tally-write path).
-    if (_isFirebaseLive && (action == 'vote' || action == 'receipt')) {
+    // 2. All live election mutations and votes must execute through the
+    // server-authoritative schoolElection Cloud Function. Only offline/unit-test
+    // sessions (! _isFirebaseLive) use the local/Firestore test handler.
+    if (_isFirebaseLive) {
       throw StateError(
-        'Secure election service is unavailable. Voting requires the deployed '
-        'schoolElection Cloud Function. Please contact the election administrator.',
+        'Secure election service is unavailable. Election operations require '
+        'the deployed schoolElection Cloud Function. Please contact the election administrator.',
       );
     }
 
