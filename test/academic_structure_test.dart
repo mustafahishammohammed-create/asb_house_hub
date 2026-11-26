@@ -135,9 +135,10 @@ void main() {
 
     test('self-signup cannot set class_verified=true', () {
       expect(
-        rules.contains(
-          "(!('class_verified' in request.resource.data) || request.resource.data.class_verified == false || isSuperAdmin())",
-        ),
+        rules.contains("request.resource.data.get('class_verified', false) == false") ||
+            rules.contains(
+              "(!('class_verified' in request.resource.data) || request.resource.data.class_verified == false || isSuperAdmin())",
+            ),
         isTrue,
       );
     });

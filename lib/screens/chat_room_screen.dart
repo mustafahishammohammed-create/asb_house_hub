@@ -433,20 +433,32 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
         _focusNode.requestFocus();
       }
     });
+    var sent = false;
     try {
       await _chatService.sendMessage(
         widget.roomId,
         text.isNotEmpty ? text : '📷 Photo Attachment',
         attachmentUrl: attachment,
       );
-    } catch (_) {} finally {
+      sent = true;
+    } catch (_) {
+      if (mounted) {
+        _msgController.text = text;
+        _pendingAttachment = attachment;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not send message. Please try again.'),
+          ),
+        );
+      }
+    } finally {
       if (mounted) {
         setState(() => _isSending = false);
       } else {
         _isSending = false;
       }
     }
-    if (!mounted) return;
+    if (!sent || !mounted) return;
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
         0.0,

@@ -18,28 +18,76 @@ service firebase.storage {
       return request.resource.size <= maxMegabytes * 1024 * 1024;
     }
 
-    // Cross-service role lookup. Missing user docs or missing roles deny.
-    function userRole() {
+    // Cross-service user lookup. Missing or inactive user docs deny access.
+    function hasUserDoc() {
+      return isSignedIn() && firestore.exists(
+        /databases/(default)/documents/users/$(request.auth.uid)
+      );
+    }
+
+    function userData() {
       return firestore.get(
         /databases/(default)/documents/users/$(request.auth.uid)
-      ).data.role;
+      ).data;
+    }
+
+    function isActiveUser() {
+      return hasUserDoc() && (!('status' in userData()) || userData().status == 'active');
+    }
+
+    function userRole() {
+      return userData().role;
+    }
+
+    function userScholarNo() {
+      return 'scholar_no' in userData() ? userData().scholar_no : '';
+    }
+
+    function userHouse() {
+      return 'house_name' in userData() ? userData().house_name : '';
     }
 
     function isStaffOrAdmin() {
       return isSignedIn() && (
-        userRole() == 'admin' ||
-        userRole() == 'super_admin' ||
-        userRole() == 'teacher' ||
-        userRole() == 'faculty' ||
-        userRole() == 'principal' ||
-        userRole() == 'staff'
+        (
+          request.auth.token != null && (
+            ('admin' in request.auth.token && request.auth.token.admin == true) ||
+            ('email' in request.auth.token && request.auth.token.email in ['admin@asianschool.bh', '11209@asianschool.bh'])
+          ) && (!hasUserDoc() || !('status' in userData()) || userData().status == 'active')
+        ) ||
+        (isActiveUser() && 'role' in userData() && userRole() in [
+          'admin', 'super_admin', 'administrator',
+          'teacher', 'faculty', 'principal', 'staff',
+          'faculty_advisor', 'teacher_lead', 'class_teacher', 'subject_teacher'
+        ])
       );
     }
 
-    // House Point Claim Certificates (Images & PDFs up to 10MB)
+    function isLeader() {
+      return isActiveUser() && 'role' in userData() && userRole() in [
+        'captain', 'vice_captain', 'house_captain', 'house_vice_captain',
+        'council', 'head_boy', 'head_girl', 'deputy_head_boy', 'deputy_head_girl',
+        'head_of_activities', 'cultural_secretary', 'sports_captain',
+        'sports_vice_captain', 'executive_council'
+      ];
+    }
+
+    // House Point Claim Certificates (Images & PDFs up to 10MB, create-only for claimant)
     match /house_claims/{house}/{fileName=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && (isImage() || isPdf()) && isUnderMaxSize(10);
+      allow read: if isStaffOrAdmin() || isLeader() || (
+        isActiveUser() &&
+        userScholarNo().size() > 0 &&
+        fileName.matches('^' + userScholarNo() + '_.*')
+      );
+      allow create: if (isImage() || isPdf()) && isUnderMaxSize(10) && (
+        isStaffOrAdmin() || (
+          isActiveUser() &&
+          userScholarNo().size() > 0 &&
+          fileName.matches('^' + userScholarNo() + '_.*') &&
+          house.lower() == userHouse().lower()
+        )
+      );
+      allow update, delete: if isStaffOrAdmin();
     }
     
     // Legacy Claims path (for backward compatibility during migration)

@@ -252,6 +252,8 @@ class ChatService {
     } catch (_) {}
 
     final timestamp = FieldValue.serverTimestamp();
+    final trimmedText = text.trim();
+    final summaryText = trimmedText.isNotEmpty ? trimmedText : '📷 Photo';
 
     // Add message with read receipt tracking
     await _firestore
@@ -261,7 +263,7 @@ class ChatService {
         .add({
           'sender_id': myUid,
           'sender_name': senderName,
-          'text': text.trim(),
+          'text': trimmedText,
           if (attachmentUrl != null && attachmentUrl.isNotEmpty) 'attachment_url': attachmentUrl,
           'timestamp': timestamp,
           'is_read': false,
@@ -279,7 +281,7 @@ class ChatService {
 
     // Update room summary & unread counter
     final updateMap = <String, dynamic>{
-      'last_message': text.trim(),
+      'last_message': summaryText,
       'last_updated': timestamp,
     };
     if (targetId.isNotEmpty) {
@@ -296,7 +298,7 @@ class ChatService {
             .collection('notifications')
             .add({
               'title': 'New Message from $senderName',
-              'body': text.trim(),
+              'body': summaryText,
               'timestamp': timestamp,
               'is_read': false,
               'type': 'chat_message',

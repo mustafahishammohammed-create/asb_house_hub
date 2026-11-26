@@ -261,10 +261,23 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    // Role-Based Access Control
-    function isSuperAdmin() {
-      return isSignedIn() && (
-        (request.auth.token != null && (
+    function isActiveUser() {
+      return isSignedIn() &&
+        (!exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('status', 'active') == 'active') &&
+        (!exists(/databases/$(database)/documents/school_members/$(request.auth.uid)) ||
+         get(/databases/$(database)/documents/school_members/$(request.auth.uid)).data.get('active', true) == true);
+    }
+
+    function isElectionManager() {
+      return isActiveUser() &&
+        exists(/databases/$(database)/documents/school_members/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/school_members/$(request.auth.uid)).data.get('capabilities', {}).get('manage_elections', false) == true;
+    }
+
+    // Internal role matchers (do not duplicate isActiveUser() when composed in rules)
+    function _hasSuperAdminRole() {
+      return (request.auth.token != null && (
           ('admin' in request.auth.token && request.auth.token.admin == true) ||
           ('role' in request.auth.token && request.auth.token.role in ['super_admin', 'admin']) ||
           ('email' in request.auth.token && (
@@ -276,27 +289,69 @@ service cloud.firestore {
           ))
         )) ||
         exists(/databases/$(database)/documents/admin_roster/$(request.auth.uid)) ||
-        (hasUserDoc() && 'role' in getUserData() && getUserData().role in ['super_admin', 'admin']) ||
+        (hasUserDoc() && getUserData().get('role', '') in ['super_admin', 'admin']) ||
         (exists(/databases/$(database)/documents/school_members/$(request.auth.uid)) &&
-         'role' in get(/databases/$(database)/documents/school_members/$(request.auth.uid)).data &&
-         get(/databases/$(database)/documents/school_members/$(request.auth.uid)).data.role in ['super_admin', 'admin'])
-      );
+         get(/databases/$(database)/documents/school_members/$(request.auth.uid)).data.get('role', '') in ['super_admin', 'admin']);
+    }
+
+    function _hasSeniorAdminRole() {
+      return _hasSuperAdminRole() ||
+        (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in ['principal', 'super_admin', 'admin', 'administrator']) ||
+        (hasUserDoc() && getUserData().get('role', '') in ['principal', 'super_admin', 'admin', 'administrator']);
+    }
+
+    function _hasStaffAdminRole() {
+      return _hasSuperAdminRole() ||
+        (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in ['teacher', 'faculty', 'principal', 'staff', 'faculty_advisor', 'teacher_lead', 'class_teacher', 'subject_teacher']) ||
+        (hasUserDoc() && getUserData().get('role', '') in ['teacher', 'faculty', 'principal', 'staff', 'faculty_advisor', 'teacher_lead', 'class_teacher', 'subject_teacher']);
+    }
+
+    function _hasCaptainRole() {
+      return (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in [
+          'captain', 'vice_captain', 'house_captain', 'house_vice_captain'
+        ]) ||
+        (hasUserDoc() && getUserData().get('role', '') in [
+          'captain', 'vice_captain', 'house_captain', 'house_vice_captain'
+        ]);
+    }
+
+    function _hasCouncilRole() {
+      return (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in [
+          'council', 'head_boy', 'head_girl', 'deputy_head_boy', 'deputy_head_girl',
+          'head_of_activities', 'cultural_secretary', 'sports_captain', 'sports_vice_captain', 'executive_council'
+        ]) ||
+        (hasUserDoc() && getUserData().get('role', '') in [
+          'council', 'head_boy', 'head_girl', 'deputy_head_boy', 'deputy_head_girl',
+          'head_of_activities', 'cultural_secretary', 'sports_captain', 'sports_vice_captain', 'executive_council'
+        ]);
+    }
+
+    function _hasPrefectRole() {
+      return (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in [
+          'prefect', 'student_rep', 'grade_prefect'
+        ]) ||
+        (hasUserDoc() && getUserData().get('role', '') in [
+          'prefect', 'student_rep', 'grade_prefect'
+        ]);
+    }
+
+    function _hasSportsLeadRole() {
+      return _hasStaffAdminRole() ||
+        (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in ['sports_captain', 'sports_vice_captain', 'sports_lead']) ||
+        (hasUserDoc() && getUserData().get('role', '') in ['sports_captain', 'sports_vice_captain', 'sports_lead']);
+    }
+
+    // Role-Based Access Control (all require active user status)
+    function isSuperAdmin() {
+      return isActiveUser() && _hasSuperAdminRole();
     }
 
     function isSeniorAdmin() {
-      return isSignedIn() && (
-        isSuperAdmin() ||
-        (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in ['principal', 'super_admin', 'admin', 'administrator']) ||
-        (hasUserDoc() && 'role' in getUserData() && getUserData().role in ['principal', 'super_admin', 'admin', 'administrator'])
-      );
+      return isActiveUser() && _hasSeniorAdminRole();
     }
 
     function isAdmin() {
-      return isSignedIn() && (
-        isSuperAdmin() ||
-        (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in ['teacher', 'faculty', 'principal', 'staff', 'faculty_advisor', 'teacher_lead', 'class_teacher', 'subject_teacher']) ||
-        (hasUserDoc() && 'role' in getUserData() && getUserData().role in ['teacher', 'faculty', 'principal', 'staff', 'faculty_advisor', 'teacher_lead', 'class_teacher', 'subject_teacher'])
-      );
+      return isActiveUser() && _hasStaffAdminRole();
     }
 
     function getClassData(classId) {
@@ -324,56 +379,33 @@ service cloud.firestore {
     }
 
     function isCaptain() {
-      return isSignedIn() && (
-        (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in [
-          'captain', 'vice_captain', 'house_captain', 'house_vice_captain'
-        ]) ||
-        (hasUserDoc() && 'role' in getUserData() && getUserData().role in [
-          'captain', 'vice_captain', 'house_captain', 'house_vice_captain'
-        ])
-      );
+      return isActiveUser() && _hasCaptainRole();
     }
 
     function isCouncil() {
-      return isSignedIn() && (
-        (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in [
-          'council', 'head_boy', 'head_girl', 'deputy_head_boy', 'deputy_head_girl',
-          'head_of_activities', 'cultural_secretary', 'sports_captain', 'sports_vice_captain', 'executive_council'
-        ]) ||
-        (hasUserDoc() && 'role' in getUserData() && getUserData().role in [
-          'council', 'head_boy', 'head_girl', 'deputy_head_boy', 'deputy_head_girl',
-          'head_of_activities', 'cultural_secretary', 'sports_captain', 'sports_vice_captain', 'executive_council'
-        ])
-      );
+      return isActiveUser() && _hasCouncilRole();
     }
 
     function isPrefect() {
-      return isSignedIn() && (
-        (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in [
-          'prefect', 'student_rep', 'grade_prefect'
-        ]) ||
-        (hasUserDoc() && 'role' in getUserData() && getUserData().role in [
-          'prefect', 'student_rep', 'grade_prefect'
-        ])
-      );
+      return isActiveUser() && _hasPrefectRole();
     }
 
     function isSportsLead() {
-      return isSignedIn() && (
-        isAdmin() ||
-        (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in ['sports_captain', 'sports_vice_captain', 'sports_lead']) ||
-        (hasUserDoc() && 'role' in getUserData() && getUserData().role in ['sports_captain', 'sports_vice_captain', 'sports_lead'])
-      );
+      return isActiveUser() && _hasSportsLeadRole();
     }
 
     // House group membership is derived from the verified profile, never a
     // self-asserted join document. A house transfer therefore revokes the old
     // group and grants the new one atomically at the profile level.
-    function isSameHouse(houseId) {
-      return isSignedIn() && hasUserDoc() &&
+    function _hasSameHouse(houseId) {
+      return hasUserDoc() &&
         'house_name' in getUserData() &&
         getUserData().house_name is string &&
         getUserData().house_name.lower() == houseId.lower();
+    }
+
+    function isSameHouse(houseId) {
+      return isActiveUser() && _hasSameHouse(houseId);
     }
 
     function getCampusEvent(eventId) {
@@ -381,17 +413,20 @@ service cloud.firestore {
     }
 
     // Campus events can target a grade band. The numeric grade is stored on
-    // users/{uid} as 0 for LKG/UKG and 1–12 for Grade 1–12. Missing values are
-    // treated as unrestricted so legacy profiles and documents keep working.
+    // users/{uid} as 0 for LKG/UKG and 1–12 for Grade 1–12. Events without
+    // grade bounds are open to everyone; grade-restricted events fail closed
+    // when the caller lacks a numeric grade on their profile.
     function hasUserGrade() {
-      return isSignedIn() && hasUserDoc() &&
+      return isActiveUser() && hasUserDoc() &&
         'grade' in getUserData() && getUserData().grade is int;
     }
 
     function isGradeEligibleFor(data) {
-      return !hasUserGrade() ||
-        ((!('grade_min' in data) || data.grade_min <= getUserData().grade) &&
-         (!('grade_max' in data) || data.grade_max >= getUserData().grade));
+      return (!('grade_min' in data) && !('grade_max' in data)) || (
+        hasUserGrade() &&
+        (!('grade_min' in data) || data.grade_min <= getUserData().grade) &&
+        (!('grade_max' in data) || data.grade_max >= getUserData().grade)
+      );
     }
 
     // Authorised senders: house captains/vice-captains, council officers
@@ -409,7 +444,7 @@ service cloud.firestore {
     // the profile. Unverified signups and legacy profiles without
     // class_verified == true are not members.
     function isVerifiedClassMember(classId) {
-      return isSignedIn() && hasUserDoc() &&
+      return isActiveUser() && hasUserDoc() &&
         'class_id' in getUserData() &&
         getUserData().class_id is string &&
         getUserData().class_id.upper() == classId.upper() &&
@@ -418,7 +453,7 @@ service cloud.firestore {
     }
 
     function isClassTeacher(classId) {
-      return isSignedIn() &&
+      return isActiveUser() &&
         exists(/databases/$(database)/documents/academic_classes/$(classId)) &&
         'class_teacher_uid' in getClassData(classId) &&
         getClassData(classId).class_teacher_uid == request.auth.uid;
@@ -467,12 +502,23 @@ service cloud.firestore {
         isSeniorAdmin();
     }
 
-    // Resolves student identity against current authenticated user (via email prefix or users profile)
+    // Resolves student identity against current authenticated user (via @asianschool.bh email or verified users profile)
+    function _hasScholarOwner(scholarNo) {
+      return (request.auth.token != null &&
+         'email' in request.auth.token &&
+         request.auth.token.email is string &&
+         request.auth.token.email.lower() == scholarNo.lower() + '@asianschool.bh') ||
+        (hasUserDoc() &&
+         'scholar_no' in getUserData() &&
+         getUserData().scholar_no == scholarNo &&
+         (request.auth.token == null ||
+          !('email' in request.auth.token) ||
+          !(request.auth.token.email is string) ||
+          request.auth.token.email.lower() == scholarNo.lower() + '@asianschool.bh'));
+    }
+
     function isScholarOwner(scholarNo) {
-      return isSignedIn() && (
-        (request.auth.token != null && 'email' in request.auth.token && request.auth.token.email is string && request.auth.token.email.matches('^' + scholarNo + '@.*')) ||
-        (hasUserDoc() && 'scholar_no' in getUserData() && getUserData().scholar_no == scholarNo)
-      );
+      return isActiveUser() && _hasScholarOwner(scholarNo);
     }
 
     // Generic schema validation helpers
@@ -951,11 +997,22 @@ service cloud.firestore {
     }
 
     function isValidChatMessage(data) {
-      return hasOnlyAllowedFields(['sender_id', 'sender_name', 'text', 'timestamp', 'is_read', 'read_at', 'push_alert_triggered']) &&
+      return hasOnlyAllowedFields([
+          'sender_id', 'sender_name', 'text', 'attachment_url',
+          'timestamp', 'is_read', 'read_at', 'push_alert_triggered'
+        ]) &&
         hasRequiredFields(['sender_id', 'text', 'timestamp', 'is_read']) &&
         data.sender_id is string && data.sender_id.size() <= 128 &&
         (!('sender_name' in data) || (data.sender_name is string && data.sender_name.size() <= 100)) &&
-        data.text is string && data.text.size() >= 1 && data.text.size() <= 2000 &&
+        data.text is string && data.text.size() <= 2000 &&
+        (data.text.size() >= 1 || (
+          'attachment_url' in data &&
+          data.attachment_url is string &&
+          data.attachment_url.size() >= 1
+        )) &&
+        (!('attachment_url' in data) ||
+          (data.attachment_url is string && data.attachment_url.size() <= 900000)) &&
+        (!('push_alert_triggered' in data) || data.push_alert_triggered is bool) &&
         data.is_read is bool &&
         data.timestamp is timestamp;
     }
@@ -1112,16 +1169,32 @@ service cloud.firestore {
 
     function isValidSportsTrophy(data) {
       return hasOnlyAllowedFields([
-        'trophy_id', 'trophyId', 'title', 'sport', 'category',
-        'winning_house', 'winningHouse', 'points_value', 'pointsValue',
-        'year', 'awarded_date', 'awardedDate', 'cert_token', 'certToken',
-        'image_url', 'imageUrl', 'created_at'
+        'trophy_id', 'trophyId', 'title', 'tournament_title',
+        'sport', 'sport_type', 'sportType', 'category',
+        'winning_house', 'winningHouse', 'runner_up_house', 'runnerUpHouse',
+        'points_value', 'pointsValue', 'points_awarded', 'pointsAwarded',
+        'runner_up_points', 'runnerUpPoints',
+        'mvp_scholar_no', 'mvpScholarNo', 'mvp_name', 'mvpName',
+        'year', 'awarded_date', 'awardedDate', 'awarded_at', 'awardedAt',
+        'commissioner_name', 'commissionerName', 'trophy_tier', 'trophyTier',
+        'cert_token', 'certToken', 'image_url', 'imageUrl', 'created_at'
       ]) &&
-      hasRequiredFields(['title']) &&
-      data.title is string && data.title.size() >= 1 && data.title.size() <= 150 &&
+      (('title' in data && data.title is string && data.title.size() >= 1 && data.title.size() <= 150) ||
+       ('tournament_title' in data && data.tournament_title is string && data.tournament_title.size() >= 1 && data.tournament_title.size() <= 150)) &&
+      (!('trophy_id' in data) || (data.trophy_id is string && data.trophy_id.size() <= 128)) &&
       (!('sport' in data) || (data.sport is string && data.sport.size() <= 50)) &&
+      (!('sport_type' in data) || (data.sport_type is string && data.sport_type.size() <= 50)) &&
+      (!('winning_house' in data) || (data.winning_house is string && data.winning_house.lower() in ['ruby', 'sapphire', 'emerald', 'topaz'])) &&
+      (!('runner_up_house' in data) || (data.runner_up_house is string && data.runner_up_house.lower() in ['ruby', 'sapphire', 'emerald', 'topaz'])) &&
       (!('points_value' in data) || (data.points_value is int && data.points_value >= 0 && data.points_value <= 5000)) &&
-      (!('pointsValue' in data) || (data.pointsValue is int && data.pointsValue >= 0 && data.pointsValue <= 5000));
+      (!('pointsValue' in data) || (data.pointsValue is int && data.pointsValue >= 0 && data.pointsValue <= 5000)) &&
+      (!('points_awarded' in data) || (data.points_awarded is int && data.points_awarded >= 0 && data.points_awarded <= 5000)) &&
+      (!('runner_up_points' in data) || (data.runner_up_points is int && data.runner_up_points >= 0 && data.runner_up_points <= 5000)) &&
+      (!('mvp_scholar_no' in data) || data.mvp_scholar_no == null || (data.mvp_scholar_no is string && data.mvp_scholar_no.size() <= 50)) &&
+      (!('mvp_name' in data) || data.mvp_name == null || (data.mvp_name is string && data.mvp_name.size() <= 100)) &&
+      (!('commissioner_name' in data) || (data.commissioner_name is string && data.commissioner_name.size() <= 120)) &&
+      (!('trophy_tier' in data) || (data.trophy_tier is string && data.trophy_tier.size() <= 50)) &&
+      (!('awarded_at' in data) || data.awarded_at is timestamp || (data.awarded_at is string && data.awarded_at.size() <= 50));
     }
 
     function isValidHousePoints(houseId, data) {
@@ -1149,7 +1222,7 @@ service cloud.firestore {
       (!('student_name' in data) || (data.student_name is string && data.student_name.size() <= 100)) &&
       (!('class_level' in data) || (data.class_level is string && data.class_level.size() <= 50)) &&
       data.total_contributed is int &&
-      data.total_contributed >= 0 &&
+      data.total_contributed >= -100000 &&
       data.total_contributed <= 1000000 &&
       (!('total_points' in data) || (data.total_points is int && data.total_points >= 0 && data.total_points <= 1000000)) &&
       (!('merits_count' in data) || (data.merits_count is int && data.merits_count >= 0 && data.merits_count <= 10000)) &&
@@ -1244,33 +1317,39 @@ service cloud.firestore {
       allow read: if isSignedIn();
 
       // Create: user creating their own document; role MUST be 'student' on self-registration
-      // unless authenticated as bootstrap super admin (admin@asianschool.bh, 11209@asianschool.bh) or existing super admin
+      // and token email must bind to scholar_no@asianschool.bh unless authenticated as bootstrap
+      // super admin (admin@asianschool.bh, 11209@asianschool.bh) or existing super admin.
       allow create: if isOwner(userId) &&
         isValidUser(request.resource.data) &&
-        (
-          request.resource.data.role == 'student' ||
+        (!('uid' in request.resource.data) || request.resource.data.uid == userId) && (
           isSuperAdmin() ||
-          (request.auth.token != null && 'email' in request.auth.token && request.auth.token.email in ['admin@asianschool.bh', '11209@asianschool.bh'])
-        ) &&
-        (!('points' in request.resource.data) || request.resource.data.points == 0 || isSuperAdmin()) &&
-        (!('points_contributed' in request.resource.data) || request.resource.data.points_contributed == 0 || isSuperAdmin()) &&
-        (!('class_verified' in request.resource.data) || request.resource.data.class_verified == false || isSuperAdmin()) &&
-        (!('uid' in request.resource.data) || request.resource.data.uid == userId);
+          (
+            request.resource.data.role == 'student' &&
+            request.auth.token != null &&
+            'email' in request.auth.token &&
+            request.auth.token.email is string &&
+            request.auth.token.email.lower() == request.resource.data.scholar_no.lower() + '@asianschool.bh' &&
+            request.resource.data.get('points', 0) == 0 &&
+            request.resource.data.get('points_contributed', 0) == 0 &&
+            request.resource.data.get('class_verified', false) == false &&
+            request.resource.data.get('status', 'active') == 'active'
+          )
+        );
 
       // Update:
       // - super_admin can update any field including role and points
       // - faculty/teacher/admin can update points (e.g. claim approval or conduct marks)
       // - council/captain can update student points_contributed (bounded 0..+500 delta) on claim approvals
       // - self-update: owner can update basic profile fields, but CANNOT modify role, points, or scholar_no
-      allow update: if isValidUser(request.resource.data) && (
-        isSuperAdmin() ||
+      allow update: if isActiveUser() && isValidUser(request.resource.data) && (
+        _hasSuperAdminRole() ||
         (
-          isAdmin() &&
+          _hasStaffAdminRole() &&
           request.resource.data.role == resource.data.role &&
           areImmutableFieldsUnchanged(['scholar_no', 'created_at', 'uid'])
         ) ||
         (
-          (isCouncil() || isCaptain()) &&
+          (_hasCouncilRole() || _hasCaptainRole()) &&
           request.resource.data.role == resource.data.role &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['points_contributed']) &&
           (!('points_contributed' in resource.data) ?
@@ -1299,16 +1378,29 @@ service cloud.firestore {
       // Subcollection: users/{userId}/notifications/{notificationId}
       match /notifications/{notificationId} {
         allow read: if isOwner(userId) || isAdmin();
-        allow create: if isSignedIn() && isValidNotification(request.resource.data);
-        // The owner may toggle read state. The M6 fan-out may refresh an
-        // existing deduplicated event notification (same dedupe/source) without
+        allow create: if isActiveUser() && isValidNotification(request.resource.data) && (
+          _hasStaffAdminRole() ||
+          _hasCouncilRole() ||
+          _hasCaptainRole() ||
+          isOwner(userId) ||
+          (
+            request.resource.data.get('type', '') == 'chat_message' &&
+            'room_id' in request.resource.data && request.resource.data.room_id is string &&
+            exists(/databases/$(database)/documents/chats/$(request.resource.data.room_id)) &&
+            request.auth.uid in get(/databases/$(database)/documents/chats/$(request.resource.data.room_id)).data.get('participants', []) &&
+            userId in get(/databases/$(database)/documents/chats/$(request.resource.data.room_id)).data.get('participants', [])
+          )
+        );
+        // The owner may toggle read state. Authorised staff/leaders may refresh
+        // an existing deduplicated event notification (same dedupe/source) without
         // ever touching is_read, so a retry cannot make a read item unread.
         allow update: if (
           isOwner(userId) &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['is_read']) &&
           request.resource.data.is_read is bool
         ) || (
-          isSignedIn() &&
+          isActiveUser() &&
+          (_hasStaffAdminRole() || _hasCouncilRole() || _hasCaptainRole()) &&
           'dedupe_key' in resource.data &&
           'source_id' in resource.data &&
           request.resource.data.dedupe_key == resource.data.dedupe_key &&
@@ -1378,7 +1470,15 @@ service cloud.firestore {
       match /report_cards/{reportCardId} {
         allow read: if isAdmin() ||
           ('scholar_no' in resource.data && isScholarOwner(resource.data.scholar_no));
-        allow write: if isAdmin();
+        allow create, delete: if isAdmin();
+        allow update: if isAdmin() || (
+          isActiveUser() &&
+          _hasScholarOwner(resource.data.get('scholar_no', resource.data.get('scholarNo', ''))) &&
+          !resource.data.get('is_merit_claimed', resource.data.get('isMeritClaimed', false)) &&
+          request.resource.data.is_merit_claimed == true &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['is_merit_claimed']) &&
+          resource.data.get('overall_gpa', resource.data.get('overallGpa', 0)) >= 3.80
+        );
       }
 
       match /attendance/{scholarNo}/records/{recordId} {
@@ -1497,20 +1597,40 @@ service cloud.firestore {
       // Read: owner of the claim OR admin OR council OR house captains
       allow read: if isScholarOwner(resource.data.scholar_no) || isAdmin() || isCouncil() || isCaptain();
 
-      // Create: authenticated user with initial status == 'pending'
-      allow create: if isSignedIn() &&
+      // Create: authenticated user with initial status == 'pending'; AI/moderation metadata is server/staff controlled
+      allow create: if isActiveUser() &&
         isValidHouseClaim(request.resource.data) &&
         request.resource.data.status == 'pending' &&
-        (isScholarOwner(request.resource.data.scholar_no) || isAdmin());
+        (_hasStaffAdminRole() || (
+          _hasScholarOwner(request.resource.data.scholar_no) &&
+          _hasSameHouse(request.resource.data.house_name) &&
+          !request.resource.data.keys().hasAny([
+            'auto_validated', 'ai_confidence', 'ai_markers', 'ai_summary',
+            'ai_processed_at', 'verified_at', 'verifiedAt', 'reviewer_id',
+            'reviewer_name', 'rejection_reason', 'verificationLogs'
+          ]) &&
+          request.resource.data.get('ai_status', 'pending_scan') == 'pending_scan'
+        ));
 
-      // Update: staff admin, executive council, or captain of the same house (approving/rejecting claim and awarding points)
-      allow update: if (
-        isAdmin() ||
-        isCouncil() ||
-        (isCaptain() && hasUserDoc() && 'house_name' in getUserData() && getUserData().house_name.lower() == resource.data.house_name.lower())
-      ) &&
-        isValidHouseClaim(request.resource.data) &&
-        areImmutableFieldsUnchanged(['scholar_no', 'activity_title', 'cert_url', 'points', 'house_name']);
+      // Update: staff admin, executive council, or captain of the same house (approving/rejecting claim and awarding points),
+      // OR the owning student finalizing cert_url immediately after pre-registered Storage upload.
+      allow update: if isActiveUser() &&
+        isValidHouseClaim(request.resource.data) && (
+        (
+          _hasScholarOwner(resource.data.scholar_no) &&
+          resource.data.status == 'pending' &&
+          resource.data.cert_url.matches('^uploading://.*') &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cert_url']) &&
+          !request.resource.data.cert_url.matches('^uploading://.*')
+        ) || (
+          (
+            _hasStaffAdminRole() ||
+            _hasCouncilRole() ||
+            (_hasCaptainRole() && _hasSameHouse(resource.data.house_name))
+          ) &&
+          areImmutableFieldsUnchanged(['scholar_no', 'activity_title', 'cert_url', 'points', 'house_name'])
+        )
+      );
 
       allow delete: if isSuperAdmin();
     }
@@ -1522,14 +1642,18 @@ service cloud.firestore {
         ('scholar_no' in resource.data && isScholarOwner(resource.data.scholar_no)) ||
         isAdmin());
 
-      // Create: authenticated user
-      allow create: if isSignedIn() &&
+      // Create: active authenticated user with non-zero priced unverified order
+      allow create: if isActiveUser() &&
         isValidOrder(request.resource.data) &&
         (isAdmin() || (
-          request.resource.data.status in ['placed', 'pending', 'verified', 'ready'] &&
+          request.resource.data.status in ['placed', 'pending', 'ready'] &&
           !('claimed_at' in request.resource.data) &&
           !('claimed_by' in request.resource.data) &&
-          (!('user_id' in request.resource.data) || request.resource.data.user_id == request.auth.uid || request.resource.data.user_id == 'anonymous')
+          ('user_id' in request.resource.data && request.resource.data.user_id == request.auth.uid) &&
+          (!('scholar_no' in request.resource.data) || isScholarOwner(request.resource.data.scholar_no)) &&
+          (('total_pts' in request.resource.data && request.resource.data.total_pts > 0) ||
+           ('total_bhd' in request.resource.data && request.resource.data.total_bhd > 0) ||
+           ('total_price' in request.resource.data && request.resource.data.total_price > 0))
         ));
 
       // Update: admin evaluators marking order as claimed
@@ -1716,13 +1840,25 @@ service cloud.firestore {
     // Queries must include where('participants', arrayContains: uid), which
     // chat_service.dart already does for the channel list.
     match /chats/{channelId} {
-      allow read: if isSignedIn() &&
+      allow list: if isActiveUser() &&
         'participants' in resource.data &&
         request.auth.uid in resource.data.participants;
-      allow create: if isSignedIn() &&
+      allow get: if isActiveUser() && (
+        (resource == null &&
+          channelId.size() > request.auth.uid.size() + 1 &&
+          (channelId[0:request.auth.uid.size() + 1] == request.auth.uid + '_' ||
+           channelId[channelId.size() - request.auth.uid.size() - 1:channelId.size()] == '_' + request.auth.uid)) ||
+        (resource != null &&
+          'participants' in resource.data &&
+          request.auth.uid in resource.data.participants)
+      );
+      allow create: if isActiveUser() &&
         ('participants' in request.resource.data) &&
+        request.resource.data.participants is list &&
+        request.resource.data.participants.size() >= 2 &&
+        request.resource.data.participants.size() <= 50 &&
         request.auth.uid in request.resource.data.participants;
-      allow update: if isSignedIn() && (
+      allow update: if isActiveUser() && (
         (
           resource.data != null &&
           'participants' in resource.data &&
@@ -1735,21 +1871,21 @@ service cloud.firestore {
 
       match /messages/{messageId} {
         function isChannelParticipant() {
-          return isSignedIn() &&
+          return isActiveUser() &&
             request.auth.uid in get(/databases/$(database)/documents/chats/$(channelId)).data.participants;
         }
         allow read: if isChannelParticipant();
         allow create: if isChannelParticipant() &&
           request.resource.data.sender_id == request.auth.uid &&
           isValidChatMessage(request.resource.data);
-        allow update: if isSignedIn() && (
+        allow update: if isActiveUser() && (
           (isChannelParticipant() && (
           (resource.data.sender_id == request.auth.uid && isValidChatMessage(request.resource.data) && request.resource.data.sender_id == resource.data.sender_id) ||
           (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['is_read', 'read_at']) && request.resource.data.is_read is bool)
           )) ||
           isAdmin()
         );
-        allow delete: if isSignedIn() && (resource.data.sender_id == request.auth.uid || isAdmin());
+        allow delete: if isActiveUser() && (resource.data.sender_id == request.auth.uid || isAdmin());
       }
     }
 
@@ -1926,12 +2062,37 @@ service cloud.firestore {
         allow read: if false;
         allow create, update, delete: if false;
       }
+
+      match /audit/{auditId} {
+        allow read: if isAdmin() || isElectionManager();
+        allow write: if false;
+      }
     }
 
     // 21. election_drafts_v2/{draftId} (Zero-Trust Elections v2 Drafts)
     match /election_drafts_v2/{draftId} {
       allow read: if isSignedIn();
       allow write: if isAdmin();
+    }
+
+    // 22. election_audits/{ballotId} (Legacy & Live Election Audit Feed)
+    match /election_audits/{ballotId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() || isElectionManager();
+    }
+
+    // 23. library_copies_v2/{copyId} and library_loans_v2/{loanId} (Server-Authoritative Library)
+    match /library_copies_v2/{copyId} {
+      allow read: if isActiveUser();
+      allow write: if isAdmin();
+    }
+
+    match /library_loans_v2/{loanId} {
+      allow read: if isActiveUser() && (
+        isAdmin() ||
+        ('borrower' in resource.data && resource.data.borrower == request.auth.uid)
+      );
+      allow write: if false;
     }
   }
 }

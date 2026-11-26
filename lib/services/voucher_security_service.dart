@@ -445,9 +445,13 @@ class VoucherSecurityService {
     try {
       final db = firestore ?? FirebaseFirestore.instance;
       final docRef = db.collection('orders').doc(cleanBill);
-      final snapshot = await docRef.get();
 
-      if (snapshot.exists) {
+      final txResult = await db.runTransaction((tx) async {
+        final snapshot = await tx.get(docRef);
+        if (!snapshot.exists) {
+          return (exists: false, claimedBy: null as String?, claimedAt: null as DateTime?);
+        }
+
         final data = snapshot.data();
         final currentStatus = data?['status']?.toString().toLowerCase();
         if (currentStatus == 'claimed') {
@@ -459,23 +463,29 @@ class VoucherSecurityService {
           } else if (rawTs is String) {
             claimedAt = DateTime.tryParse(rawTs);
           }
-          return (
-            success: false,
-            alreadyClaimed: true,
-            claimedBy: claimedBy,
-            claimedAt: claimedAt,
-            message: 'Voucher #$cleanBill has already been claimed by $claimedBy.',
-          );
+          return (exists: true, claimedBy: claimedBy, claimedAt: claimedAt);
         }
 
-        // Atomically claim the order in Cloud Firestore
-        await docRef.update({
+        tx.update(docRef, {
           'status': 'claimed',
           'claimed_by': evaluatorName,
           'claimed_at': FieldValue.serverTimestamp(),
         });
+        return (exists: true, claimedBy: null as String?, claimedAt: null as DateTime?);
+      });
 
-        // Also update local wallet store if present (local cache update only, avoid redundant remote write)
+      if (txResult.exists && txResult.claimedBy != null) {
+        return (
+          success: false,
+          alreadyClaimed: true,
+          claimedBy: txResult.claimedBy,
+          claimedAt: txResult.claimedAt,
+          message: 'Voucher #$cleanBill has already been claimed by ${txResult.claimedBy}.',
+        );
+      }
+
+      if (txResult.exists) {
+        // Update local wallet store cache if present
         try {
           await GlobalWalletStore.markOrderClaimed(
             cleanBill,
@@ -493,7 +503,7 @@ class VoucherSecurityService {
         );
       } else {
         // Document NOT found in remote database.
-        // Check local wallet cache to verify whether this is a genuine locally cached voucher
+        // Check local wallet cache only in offline fallback scenarios
         final localMatch = GlobalWalletStore.orders.where((o) => o.receiptId == cleanBill);
         if (localMatch.isNotEmpty) {
           await GlobalWalletStore.markOrderClaimed(
@@ -512,8 +522,6 @@ class VoucherSecurityService {
           );
         }
 
-        // Voucher NOT in Firestore and NOT found in local wallet:
-        // ELIMINATE FALSE-POSITIVE: Return success: false!
         return (
           success: false,
           alreadyClaimed: false,
@@ -522,7 +530,17 @@ class VoucherSecurityService {
           message: 'Voucher #$cleanBill not found in school records. Claim rejected.',
         );
       }
-    } catch (_) {
+    } catch (e) {
+      final isOfflineOrUninit = firestore == null && e.toString().contains('no-app');
+      if (!isOfflineOrUninit) {
+        return (
+          success: false,
+          alreadyClaimed: false,
+          claimedBy: null,
+          claimedAt: null,
+          message: 'Voucher #$cleanBill verification failed on server.',
+        );
+      }
       // Offline / uninitialized Firestore fallback:
       // Verify against local wallet store before claiming
       final localMatch = GlobalWalletStore.orders.where((o) => o.receiptId == cleanBill);
@@ -542,8 +560,6 @@ class VoucherSecurityService {
         );
       }
 
-      // Offline and voucher NOT found in local store:
-      // ELIMINATE FALSE-POSITIVE: Return success: false!
       return (
         success: false,
         alreadyClaimed: false,

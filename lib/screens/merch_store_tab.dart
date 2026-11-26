@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../services/pass_document_exporter.dart';
 import '../theme/app_theme.dart';
@@ -493,6 +494,7 @@ class GlobalWalletStore {
     await saveOrders(scholarNo: cleanScholar);
 
     // 2. Persist to Cloud Firestore orders collection
+    final isLiveFirebase = Firebase.apps.isNotEmpty || firestore != null;
     try {
       final db = firestore ?? FirebaseFirestore.instance;
       final currentUid = FirebaseAuth.instance.currentUser?.uid;
@@ -537,9 +539,14 @@ class GlobalWalletStore {
           .collection('orders')
           .doc(order.receiptId)
           .set(orderData, SetOptions(merge: true))
-          .timeout(const Duration(seconds: 4));
-    } catch (_) {
-      // Offline fallback: order safely retained in SharedPreferences
+          .timeout(const Duration(seconds: 6));
+    } catch (e) {
+      if (isLiveFirebase && !e.toString().contains('no-app')) {
+        orders.removeWhere((o) => o.receiptId == order.receiptId);
+        await saveOrders(scholarNo: cleanScholar);
+        rethrow;
+      }
+      // Offline / unit-test fallback: order safely retained in SharedPreferences
     }
   }
 
@@ -763,14 +770,19 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
 
   bool _isProcessingOrder = false;
 
+  String get _houseDisplayLabel {
+    final trimmed = widget.userHouse.trim();
+    if (trimmed.isEmpty) return 'House';
+    return '${trimmed[0].toUpperCase()}${trimmed.substring(1)}';
+  }
+
   @override
   void initState() {
     super.initState();
     GlobalWalletStore.init(scholarNo: widget.scholarNo).then((_) {
       if (mounted) setState(() {});
     });
-    _selectedCategory =
-        'For You (${widget.userHouse[0].toUpperCase()}${widget.userHouse.substring(1)})';
+    _selectedCategory = 'For You ($_houseDisplayLabel)';
   }
 
   @override
@@ -2226,6 +2238,25 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                                 date: DateTime.now(),
                                 qrData: qrData,
                               );
+                              try {
+                                await GlobalWalletStore.addAndPersistOrder(
+                                  newOrder,
+                                  scholarNo: widget.scholarNo,
+                                  studentName: widget.studentName,
+                                  house: widget.userHouse,
+                                  totalBhd: totalBhd,
+                                );
+                              } catch (e) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Order could not be confirmed: $e'),
+                                    ),
+                                  );
+                                }
+                                return;
+                              }
+
                               setState(() {
                                 final existingIdx = GlobalWalletStore.orders.indexWhere((o) => o.receiptId == receiptId);
                                 if (existingIdx != -1) {
@@ -2236,13 +2267,6 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                                 GlobalWalletStore.cart.clear();
                               });
                               await GlobalWalletStore.clearCart(scholarNo: widget.scholarNo);
-                              await GlobalWalletStore.addAndPersistOrder(
-                                newOrder,
-                                scholarNo: widget.scholarNo,
-                                studentName: widget.studentName,
-                                house: widget.userHouse,
-                                totalBhd: totalBhd,
-                              );
 
                               if (!context.mounted) return;
                               Navigator.pop(context);
@@ -2292,8 +2316,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
 
   @override
   Widget build(BuildContext context) {
-    final userHouseLabel =
-        '${widget.userHouse[0].toUpperCase()}${widget.userHouse.substring(1)}';
+    final userHouseLabel = _houseDisplayLabel;
     final categories = [
       'For You ($userHouseLabel)',
       '💳 Digital Wallet (${GlobalWalletStore.orders.length})',

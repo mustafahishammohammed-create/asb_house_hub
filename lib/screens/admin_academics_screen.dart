@@ -1434,7 +1434,13 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                     padding: const EdgeInsets.only(right: 8),
                     child: FilterChip(
                       selected: _auditActionFilter == action,
-                      label: Text(action == 'all' ? 'All Actions' : action[0].toUpperCase() + action.substring(1)),
+                      label: Text(
+                        action == 'all'
+                            ? 'All Actions'
+                            : action.isEmpty
+                            ? 'Action'
+                            : action[0].toUpperCase() + action.substring(1),
+                      ),
                       onSelected: (selected) {
                         if (selected) setState(() => _auditActionFilter = action);
                       },

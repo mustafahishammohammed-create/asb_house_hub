@@ -3158,7 +3158,9 @@ class _HomeScreenState extends State<HomeScreen>
                     ),
                   ),
                   child: Text(
-                    '${house[0].toUpperCase()}${house.substring(1)} House',
+                    house.trim().isNotEmpty
+                        ? '${house.trim()[0].toUpperCase()}${house.trim().substring(1)} House'
+                        : 'House',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -3925,10 +3927,12 @@ class _HomeScreenState extends State<HomeScreen>
                 ? sortedHouses[0].key
                 : null;
         if (currentLeader != null &&
+            currentLeader.trim().isNotEmpty &&
             _previousLeader != null &&
             currentLeader != _previousLeader) {
+          final cleanLeader = currentLeader.trim();
           final leaderNameDisplay =
-              '${currentLeader[0].toUpperCase()}${currentLeader.substring(1)}';
+              '${cleanLeader[0].toUpperCase()}${cleanLeader.substring(1)}';
           final leaderPts = sortedHouses[0].value;
           try {
             SemanticsService.sendAnnouncement(
@@ -3999,8 +4003,10 @@ class _HomeScreenState extends State<HomeScreen>
               final house = entry.value.key;
               final pts = entry.value.value;
               final color = HouseColors.getHouseColor(house);
-              final houseNameDisplay =
-                  '${house[0].toUpperCase()}${house.substring(1)}';
+              final cleanHouse = house.trim();
+              final houseNameDisplay = cleanHouse.isNotEmpty
+                  ? '${cleanHouse[0].toUpperCase()}${cleanHouse.substring(1)}'
+                  : 'House';
               // Medal emojis for top 3 positions
               const medals = {1: '🥇', 2: '🥈', 3: '🥉'};
               final medal = medals[rank];

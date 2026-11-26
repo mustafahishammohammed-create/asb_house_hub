@@ -553,10 +553,13 @@ void main() {
 
     test('house_claims update grants council unscoped; only captains are house-scoped', () {
       final block = matchBlock(r'/house_claims/\{claimId\}');
-      expect(block, matches(RegExp(r'isAdmin\(\)\s*\|\|\s*isCouncil\(\)\s*\|\|')));
       expect(
         block,
-        contains("isCaptain() && hasUserDoc() && 'house_name' in getUserData() && getUserData().house_name.lower() == resource.data.house_name.lower()"),
+        matches(RegExp(r'(_hasStaffAdminRole|isAdmin)\(\)\s*\|\|\s*(_hasCouncilRole|isCouncil)\(\)\s*\|\|')),
+      );
+      expect(
+        block,
+        contains("_hasCaptainRole() && _hasSameHouse(resource.data.house_name)"),
       );
     });
 
@@ -616,7 +619,11 @@ void main() {
 
     test('users points_contributed increment branch is house-agnostic and bounded', () {
       final block = matchBlock(r'/users/\{userId\}');
-      expect(block, contains('(isCouncil() || isCaptain())'));
+      expect(
+        block.contains('(isCouncil() || isCaptain())') ||
+            block.contains('(_hasCouncilRole() || _hasCaptainRole())'),
+        isTrue,
+      );
       expect(block, contains("hasOnly(['points_contributed'])"));
       expect(block, contains('<= 500'));
     });

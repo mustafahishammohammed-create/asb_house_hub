@@ -778,14 +778,18 @@ void main() {
       expect(block, isNot(contains("'is_read', 'title'")));
     });
 
-    test('notification create requires a signed-in validated writer', () {
+    test('notification create requires an active authorised writer or chat participant', () {
       final source = rules();
-      expect(
-        source,
-        contains(
-          'allow create: if isSignedIn() && isValidNotification(request.resource.data);',
-        ),
-      );
+      final start = source.indexOf('match /notifications/{notificationId}');
+      expect(start, greaterThanOrEqualTo(0));
+      final end = source.indexOf('allow delete:', start);
+      final block = source.substring(start, end);
+      expect(block, contains('allow create: if isActiveUser() && isValidNotification(request.resource.data)'));
+      expect(block, contains('_hasStaffAdminRole()'));
+      expect(block, contains('_hasCouncilRole()'));
+      expect(block, contains('_hasCaptainRole()'));
+      expect(block, contains('isOwner(userId)'));
+      expect(block, contains("request.resource.data.get('type', '') == 'chat_message'"));
     });
   });
 

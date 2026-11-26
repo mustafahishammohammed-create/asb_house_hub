@@ -303,11 +303,14 @@ class _EventsScreenState extends State<EventsScreen> {
           ),
           ...houses.map((scope) {
             final selected = _selectedHouse == scope;
-            final label = scope == 'any'
+            final cleanScope = scope.trim();
+            final label = cleanScope == 'any'
                 ? 'All'
-                : scope == 'all'
+                : cleanScope == 'all'
                 ? 'School-wide'
-                : '${scope[0].toUpperCase()}${scope.substring(1)}';
+                : cleanScope.isEmpty
+                ? 'House'
+                : '${cleanScope[0].toUpperCase()}${cleanScope.substring(1)}';
             final color = scope == 'any' || scope == 'all'
                 ? houseColor
                 : HouseColors.getHouseColor(scope);
@@ -1703,8 +1706,10 @@ class _EventsScreenState extends State<EventsScreen> {
     var saving = false;
 
     String scopeLabel(String scope) {
-      if (scope == 'all') return 'School-wide';
-      return '${scope[0].toUpperCase()}${scope.substring(1)} House';
+      final clean = scope.trim();
+      if (clean == 'all') return 'School-wide';
+      if (clean.isEmpty) return 'House';
+      return '${clean[0].toUpperCase()}${clean.substring(1)} House';
     }
 
     String gradeLabel(int grade) => grade <= 0 ? 'LKG/UKG' : 'Grade $grade';

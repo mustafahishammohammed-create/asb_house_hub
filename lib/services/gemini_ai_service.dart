@@ -64,11 +64,14 @@ class GeminiAiService {
     for (final model in _candidateModels) {
       try {
         final url = Uri.parse(
-          'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$trimmed',
+          'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent',
         );
         final res = await _post(
           url: url,
-          headers: {'Content-Type': 'application/json'},
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': trimmed,
+          },
           body: jsonEncode({
             'contents': [
               {
@@ -308,7 +311,7 @@ ${liveContext ?? ''}
     for (final modelName in _candidateModels) {
       try {
         final restUrl = Uri.parse(
-          'https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$userKey',
+          'https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent',
         );
 
         final contents = [
@@ -347,7 +350,10 @@ ${liveContext ?? ''}
 
         final res = await _post(
           url: restUrl,
-          headers: {'Content-Type': 'application/json'},
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': userKey,
+          },
           body: jsonEncode(payload),
           timeout: const Duration(seconds: 15),
         );

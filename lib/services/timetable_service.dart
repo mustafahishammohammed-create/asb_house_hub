@@ -270,7 +270,19 @@ class TimetableService {
         data['created_at'] = Timestamp.fromDate(published.createdAt!);
         data['published_at'] = Timestamp.fromDate(now);
         data['updated_at'] = FieldValue.serverTimestamp();
-        await docRef.set(data, SetOptions(merge: true));
+        final committed = await _firestore.runTransaction((tx) async {
+          final existingSnap = await tx.get(docRef);
+          if (existingSnap.exists &&
+              existingSnap.data()?['status'] == TimetableStatus.published) {
+            return false;
+          }
+          tx.set(docRef, data, SetOptions(merge: true));
+          return true;
+        });
+        if (!committed) {
+          debugPrint('Timetable publish blocked: version $id is already published.');
+          return false;
+        }
       } catch (e) {
         if (!_isNoAppException(e)) {
           debugPrint('Firestore publishTimetable failure: $e');

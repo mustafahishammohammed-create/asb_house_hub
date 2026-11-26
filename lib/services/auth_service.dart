@@ -2331,6 +2331,28 @@ class AuthService {
       final success = result.success;
 
       if (success) {
+        if (_isFirebaseLive) {
+          try {
+            final cardRef = _firestore
+                .collection('classes')
+                .doc(cLevel)
+                .collection('report_cards')
+                .doc(reportCardId);
+            await _firestore.runTransaction((tx) async {
+              final snap = await tx.get(cardRef);
+              if (!snap.exists) return;
+              final d = snap.data() ?? const <String, dynamic>{};
+              if ((d['is_merit_claimed'] ?? d['isMeritClaimed']) == true) {
+                throw StateError('already_claimed');
+              }
+              tx.update(cardRef, {'is_merit_claimed': true});
+            });
+          } catch (e) {
+            if (!_isNoAppException(e)) {
+              debugPrint('Honours claim server flag update note: $e');
+            }
+          }
+        }
         // Update local cache
         final cached = getCachedReportCards(classLevel: cLevel, scholarNo: sNo);
         final updated = cached.map((c) {
@@ -4006,15 +4028,15 @@ class AuthService {
               'Enter the password for scholar #$cleanScholar to switch accounts.',
         );
       }
-      if (cleanScholar.toLowerCase() == 'admin') {
+      if (cleanScholar.toLowerCase() == 'admin' || cleanScholar == '11209') {
         liveCred = await signInAdmin(
           password: pwd,
-        ).timeout(const Duration(seconds: 15));
+        ).timeout(const Duration(seconds: 25));
       } else {
         liveCred = await signIn(
           scholarNo: cleanScholar,
           password: pwd,
-        ).timeout(const Duration(seconds: 15));
+        ).timeout(const Duration(seconds: 25));
       }
       if (liveCred == null) {
         throw FirebaseAuthException(
@@ -4022,30 +4044,71 @@ class AuthService {
           message: 'Incorrect scholar number or password.',
         );
       }
+    } else {
+      _prefs ??= await SharedPreferences.getInstance();
+      for (final key in const [
+        'cached_profile',
+        'cached_scholar_no',
+        'cached_uid',
+        'cached_house',
+        'cached_class_placements',
+        'cached_notifications',
+        'cached_student_conduct',
+        'cached_pending_claims',
+        'cached_attendance',
+        'cached_report_cards',
+      ]) {
+        await _prefs?.remove(key);
+      }
     }
 
-    // Step 2: Swap local storage session cache atomically
+    // Step 2: Swap local storage session cache atomically, preferring any
+    // authoritative profile just fetched during live re-authentication.
     GlobalWalletStore.resetSession();
     _prefs ??= await SharedPreferences.getInstance();
-    await _prefs?.setString('cached_scholar_no', cleanScholar);
-    await _prefs?.setString('cached_uid', account.uid.trim());
-    await cacheHouse(account.houseName);
+    final freshLiveProf = liveCred != null ? getCachedProfile() : null;
+    final resolvedScholar =
+        freshLiveProf?['scholar_no']?.toString().trim().isNotEmpty == true
+        ? freshLiveProf!['scholar_no'].toString().trim()
+        : cleanScholar;
+    final resolvedUid =
+        liveCred?.user?.uid ??
+        freshLiveProf?['uid']?.toString().trim() ??
+        account.uid.trim();
+    final resolvedHouse =
+        freshLiveProf?['house_name']?.toString().trim().isNotEmpty == true
+        ? freshLiveProf!['house_name'].toString().trim()
+        : account.houseName;
+
+    await _prefs?.setString('cached_scholar_no', resolvedScholar);
+    await _prefs?.setString('cached_uid', resolvedUid);
+    if (resolvedHouse.isNotEmpty) {
+      await cacheHouse(resolvedHouse);
+    }
+
     final prof = Map<String, dynamic>.from(account.cachedProfile);
-    prof['scholar_no'] = cleanScholar;
-    if (account.role != null && account.role!.isNotEmpty) {
-      prof['role'] = account.role;
+    if (freshLiveProf != null) {
+      prof.addAll(freshLiveProf);
+    }
+    prof['scholar_no'] = resolvedScholar;
+    if (prof['role'] == null || prof['role'].toString().isEmpty) {
+      if (account.role != null && account.role!.isNotEmpty) {
+        prof['role'] = account.role;
+      }
     }
     final isSuper = HierarchyService.isSuperAdmin(
-      scholarNo: cleanScholar,
-      role: account.role ?? prof['role']?.toString(),
+      scholarNo: resolvedScholar,
+      role: prof['role']?.toString() ?? account.role,
     );
     if (isSuper) {
       prof['role'] = 'super_admin';
       prof['full_name'] =
           account.fullName.isNotEmpty && account.fullName != 'Student'
           ? account.fullName
-          : 'Administrator';
-      prof['house_name'] = 'ruby';
+          : (prof['full_name']?.toString().isNotEmpty == true
+                ? prof['full_name']
+                : 'Administrator');
+      prof['house_name'] = resolvedHouse.isNotEmpty ? resolvedHouse : 'ruby';
       prof['class_level'] = 'Staff';
     }
     await cacheProfile(prof);
@@ -5042,26 +5105,44 @@ class AuthService {
 
       String finalCertUrl = certUrl ?? '';
       if (fileBytes != null && fileBytes.isNotEmpty) {
+        // Create the verified pending claim record BEFORE uploading to Storage
+        // so the verifyCertificateSignature Cloud Function always finds the
+        // authoritative claim owner & house and never writes an orphan doc.
+        await docRef.set({
+          'claim_id': effectiveClaimId,
+          'scholar_no': cleanScholar,
+          'student_name': studentName,
+          'house_name': cleanHouse,
+          'activity_title': activityTitle,
+          'points': points,
+          'cert_url': 'uploading://$effectiveClaimId',
+          'status': 'pending',
+          'ai_status': 'pending_scan',
+          'created_at': FieldValue.serverTimestamp(),
+        });
+
         finalCertUrl = await uploadCertificateImage(
           fileBytes: fileBytes,
           scholarNo: cleanScholar,
           house: cleanHouse,
           claimId: effectiveClaimId,
         );
-      }
 
-      await docRef.set({
-        'claim_id': effectiveClaimId,
-        'scholar_no': cleanScholar,
-        'student_name': studentName,
-        'house_name': cleanHouse,
-        'activity_title': activityTitle,
-        'points': points,
-        'cert_url': finalCertUrl,
-        'status': 'pending',
-        'ai_status': 'pending_scan',
-        'created_at': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+        await docRef.update({'cert_url': finalCertUrl});
+      } else {
+        await docRef.set({
+          'claim_id': effectiveClaimId,
+          'scholar_no': cleanScholar,
+          'student_name': studentName,
+          'house_name': cleanHouse,
+          'activity_title': activityTitle,
+          'points': points,
+          'cert_url': finalCertUrl,
+          'status': 'pending',
+          'ai_status': 'pending_scan',
+          'created_at': FieldValue.serverTimestamp(),
+        });
+      }
     } catch (e) {
       debugPrint('Firestore submitHouseClaim fallback or error: $e');
       if (_isFirebaseLive) {
@@ -5693,13 +5774,11 @@ class AuthService {
       );
     }
 
-    // Anti-replay: Consume the nonce immediately upon verification
-    if (verification.nonce != null && verification.nonce!.isNotEmpty) {
-      await GamificationSecurityService.consumeNonce(verification.nonce!);
-    }
-
     final points = verification.points;
     if (points <= 0) {
+      if (verification.nonce != null && verification.nonce!.isNotEmpty) {
+        await GamificationSecurityService.consumeNonce(verification.nonce!);
+      }
       return (
         success: true,
         pointsAwarded: 0,
@@ -5707,10 +5786,6 @@ class AuthService {
         isDemo: !_isFirebaseLive,
       );
     }
-
-    // 4. Record Throttle & Cooldown completion
-    await GamificationSecurityService.recordSubmissionAttempt(sNo);
-    await GamificationSecurityService.recordActivityCompletion(sNo, aId);
 
     // Resolve real student name and class level
     final cachedProf = getCachedProfile() ?? {};
@@ -5728,27 +5803,36 @@ class AuthService {
               ? cachedProf['class_level'].toString().trim()
               : 'Senior Tier');
 
-    // 5. Firestore atomic transaction (with strict error propagation in live mode)
+    // 4. Firestore atomic transaction (all reads BEFORE any writes, with strict error propagation)
     if (_isFirebaseLive) {
       try {
         final houseRef = _firestore.collection('house_points').doc(hName);
         final contributorRef = _firestore
             .collection('house_contributors')
             .doc(sNo);
+        final userRef = currentUser != null
+            ? _firestore.collection('users').doc(currentUser!.uid)
+            : null;
 
         await _firestore.runTransaction((transaction) async {
+          // Reads first (required by Cloud Firestore transaction semantics)
           final houseSnap = await transaction.get(houseRef);
+          final contSnap = await transaction.get(contributorRef);
+          final userSnap = userRef != null
+              ? await transaction.get(userRef)
+              : null;
+
           final currentPts = houseSnap.exists
               ? ((houseSnap.data()?['total_points'] as num?)?.toInt() ?? 0)
               : 0;
 
+          // Writes second
           transaction.set(houseRef, {
             'house_name': hName,
             'total_points': (currentPts + points).clamp(0, 1000000),
             'last_updated': FieldValue.serverTimestamp(),
           }, SetOptions(merge: true));
 
-          final contSnap = await transaction.get(contributorRef);
           if (!contSnap.exists) {
             transaction.set(contributorRef, {
               'scholar_no': sNo,
@@ -5776,20 +5860,12 @@ class AuthService {
             });
           }
 
-          // In live transaction: update users.points_contributed if authenticated
-          if (currentUser != null) {
-            final userRef = _firestore
-                .collection('users')
-                .doc(currentUser!.uid);
-            final userSnap = await transaction.get(userRef);
-            if (userSnap.exists) {
-              final curUserPts =
-                  (userSnap.data()?['points_contributed'] as num?)?.toInt() ??
-                  0;
-              transaction.update(userRef, {
-                'points_contributed': curUserPts + points,
-              });
-            }
+          if (userRef != null && userSnap != null && userSnap.exists) {
+            final curUserPts =
+                (userSnap.data()?['points_contributed'] as num?)?.toInt() ?? 0;
+            transaction.update(userRef, {
+              'points_contributed': curUserPts + points,
+            });
           }
         });
       } catch (e) {
@@ -5804,6 +5880,13 @@ class AuthService {
         );
       }
     }
+
+    // 5. Anti-replay & cooldown consumption ONLY after server commit succeeds
+    if (verification.nonce != null && verification.nonce!.isNotEmpty) {
+      await GamificationSecurityService.consumeNonce(verification.nonce!);
+    }
+    await GamificationSecurityService.recordSubmissionAttempt(sNo);
+    await GamificationSecurityService.recordActivityCompletion(sNo, aId);
 
     // 6. Write-through update local disk standings cache ONLY after server confirmation
     await incrementCachedHousePoints(hName, points);
@@ -5970,26 +6053,99 @@ class AuthService {
     }
   }
 
-  /// Revokes / deletes a mistakenly assigned conduct record and reverses the points delta.
+  /// Revokes / deletes a mistakenly assigned conduct record and atomically
+  /// reverses the points delta across house_points, house_contributors, and users.
   Future<bool> revokeConductRecord({
     required String recordId,
     required String scholarNo,
     required int points,
     required bool isMerit,
+    String? houseName,
   }) async {
+    final cleanRecordId = recordId.trim();
+    final cleanScholar = scholarNo.trim();
+    if (cleanRecordId.isEmpty) return false;
+
     try {
-      await _firestore.collection('student_conduct').doc(recordId).delete();
-      final pointsDelta = isMerit ? -points : points.abs();
-      final userQuery = await _firestore
-          .collection('users')
-          .where('scholar_no', isEqualTo: scholarNo)
-          .limit(1)
-          .get();
-      if (userQuery.docs.isNotEmpty) {
-        await userQuery.docs.first.reference.update({
-          'points': FieldValue.increment(pointsDelta),
-          'merit_points': FieldValue.increment(pointsDelta),
-        });
+      final conductRef = _firestore.collection('student_conduct').doc(cleanRecordId);
+      DocumentReference<Map<String, dynamic>>? userRef;
+      if (cleanScholar.isNotEmpty) {
+        final userQuery = await _firestore
+            .collection('users')
+            .where('scholar_no', isEqualTo: cleanScholar)
+            .limit(1)
+            .get();
+        if (userQuery.docs.isNotEmpty) {
+          userRef = userQuery.docs.first.reference;
+        }
+      }
+
+      String? reversedHouse;
+      int reversedDelta = 0;
+
+      await _firestore.runTransaction((tx) async {
+        final conductSnap = await tx.get(conductRef);
+        if (!conductSnap.exists) {
+          return;
+        }
+        final conductData = conductSnap.data() ?? const <String, dynamic>{};
+        final storedPts = (conductData['points'] as num?)?.toInt();
+        final resolvedHouse =
+            (conductData['house_name'] ?? houseName ?? '').toString().toLowerCase().trim();
+        final resolvedScholar =
+            (conductData['scholar_no'] ?? cleanScholar).toString().trim();
+        final resolvedType = conductData['type']?.toString().toLowerCase();
+        final effectiveIsMerit =
+            resolvedType != null ? resolvedType == 'merit' : isMerit;
+        final delta = storedPts != null
+            ? -storedPts
+            : (effectiveIsMerit ? -points.abs() : points.abs());
+
+        final houseRef = const ['ruby', 'sapphire', 'emerald', 'topaz'].contains(resolvedHouse)
+            ? _firestore.collection('house_points').doc(resolvedHouse)
+            : null;
+        final contributorRef = resolvedScholar.isNotEmpty
+            ? _firestore.collection('house_contributors').doc(resolvedScholar)
+            : null;
+
+        final houseSnap = houseRef != null ? await tx.get(houseRef) : null;
+        final contSnap = contributorRef != null ? await tx.get(contributorRef) : null;
+        final userSnap = userRef != null ? await tx.get(userRef) : null;
+
+        if (houseRef != null && houseSnap != null && houseSnap.exists) {
+          final currentPts = (houseSnap.data()?['total_points'] as num?)?.toInt() ?? 0;
+          tx.update(houseRef, {
+            'total_points': (currentPts + delta).clamp(0, 1000000),
+            'last_updated': FieldValue.serverTimestamp(),
+          });
+        }
+
+        if (contributorRef != null && contSnap != null && contSnap.exists) {
+          final curCont = (contSnap.data()?['total_contributed'] as num?)?.toInt() ?? 0;
+          final merits = (contSnap.data()?['merits_count'] as num?)?.toInt() ?? 0;
+          final demerits = (contSnap.data()?['demerits_count'] as num?)?.toInt() ?? 0;
+          tx.update(contributorRef, {
+            'total_contributed': (curCont + delta).clamp(-100000, 1000000),
+            if (effectiveIsMerit) 'merits_count': (merits - 1).clamp(0, 10000),
+            if (!effectiveIsMerit) 'demerits_count': (demerits - 1).clamp(0, 10000),
+            'last_updated': FieldValue.serverTimestamp(),
+          });
+        }
+
+        if (userRef != null && userSnap != null && userSnap.exists) {
+          final curUserPts = (userSnap.data()?['points_contributed'] as num?)?.toInt() ?? 0;
+          tx.update(userRef, {
+            'points_contributed': (curUserPts + delta).clamp(-100000, 1000000),
+          });
+        }
+
+        tx.delete(conductRef);
+        reversedHouse = resolvedHouse;
+        reversedDelta = delta;
+      });
+
+      if (reversedHouse != null && reversedHouse!.isNotEmpty && reversedDelta != 0) {
+        await incrementCachedHousePoints(reversedHouse!, reversedDelta);
       }
       return true;
     } catch (e) {
@@ -7004,6 +7160,25 @@ class AuthService {
     return [];
   }
 
+  static List<T> _safeDecodeDocs<T>(
+    Iterable<QueryDocumentSnapshot<Object?>> docs,
+    T Function(Map<String, dynamic> data, String id) decoder,
+  ) {
+    final results = <T>[];
+    for (final doc in docs) {
+      try {
+        final raw = doc.data();
+        final data = raw is Map
+            ? Map<String, dynamic>.from(raw)
+            : <String, dynamic>{};
+        results.add(decoder(data, doc.id));
+      } catch (e) {
+        debugPrint('Skipping malformed Firestore doc ${doc.id}: $e');
+      }
+    }
+    return results;
+  }
+
   /// Stream certified election proclamations from Firestore with write-through local caching.
   Stream<List<CertifiedElectionResult>> getCertifiedGazetteStream() {
     if (!_isFirebaseLive) {
@@ -7015,10 +7190,10 @@ class AuthService {
           .orderBy('certified_at', descending: true)
           .snapshots()
           .map((snap) {
-            final list = snap.docs.map((d) {
-              final data = d.data();
-              return CertifiedElectionResult.fromMap(data);
-            }).toList();
+            final list = _safeDecodeDocs(
+              snap.docs,
+              (data, _) => CertifiedElectionResult.fromMap(data),
+            );
             cacheCertifiedGazette(list);
             return list;
           });
@@ -7332,10 +7507,10 @@ class AuthService {
         query = query.where('sport_type', isEqualTo: filterSport.name);
       }
       return query.snapshots().map((snap) {
-        final list = snap.docs.map((doc) {
-          final data = doc.data() as Map<String, dynamic>? ?? {};
-          return SportsMatchFixture.fromMap({...data, 'fixture_id': doc.id});
-        }).toList();
+        final list = _safeDecodeDocs(
+          snap.docs,
+          (data, id) => SportsMatchFixture.fromMap({...data, 'fixture_id': id}),
+        );
         list.sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
         cacheSportsFixtures(list);
         return list;
@@ -7399,10 +7574,10 @@ class AuthService {
           .orderBy('timestamp', descending: true)
           .snapshots()
           .map((snap) {
-            final list = snap.docs.map((doc) {
-              final data = doc.data();
-              return LiveMatchEvent.fromMap({...data, 'event_id': doc.id});
-            }).toList();
+            final list = _safeDecodeDocs(
+              snap.docs,
+              (data, id) => LiveMatchEvent.fromMap({...data, 'event_id': id}),
+            );
             cacheLiveMatchEvents(fixtureId, list);
             return list;
           });
@@ -7420,81 +7595,82 @@ class AuthService {
     String? playerName,
     String? periodDescription,
   }) async {
+    final isHouseA = scoringHouse.toLowerCase() == fixture.houseA.toLowerCase();
+    final now = DateTime.now();
+    final eventId = 'ev_${now.millisecondsSinceEpoch}';
+    final period = periodDescription ?? 'Live Play';
+
     try {
-      final isHouseA =
-          scoringHouse.toLowerCase() == fixture.houseA.toLowerCase();
-      final newScoreA = isHouseA
-          ? fixture.scoreA + pointsToAdd
-          : fixture.scoreA;
-      final newScoreB = !isHouseA
-          ? fixture.scoreB + pointsToAdd
-          : fixture.scoreB;
+      if (_isFirebaseLive) {
+        if (firestoreFailureSimulated != null) {
+          throw firestoreFailureSimulated!;
+        }
+        final fixtureRef = _firestore
+            .collection('sports_fixtures')
+            .doc(fixture.fixtureId);
+        final eventRef = fixtureRef.collection('events').doc(eventId);
 
-      final now = DateTime.now();
-      final eventId = 'ev_${now.millisecondsSinceEpoch}';
-      final period = periodDescription ?? 'Live Play';
+        final committedEvent = await _firestore.runTransaction((tx) async {
+          final snap = await tx.get(fixtureRef);
+          final data = snap.data() ?? const <String, dynamic>{};
+          final curA = (data['score_a'] as num?)?.toInt() ?? fixture.scoreA;
+          final curB = (data['score_b'] as num?)?.toInt() ?? fixture.scoreB;
+          final newScoreA = (curA + (isHouseA ? pointsToAdd : 0)).clamp(0, 999);
+          final newScoreB = (curB + (!isHouseA ? pointsToAdd : 0)).clamp(0, 999);
 
-      final event = LiveMatchEvent(
-        eventId: eventId,
-        fixtureId: fixture.fixtureId,
-        eventType: eventType,
-        houseName: scoringHouse.toLowerCase(),
-        playerName: playerName,
-        periodDescription: period,
-        scoreAAfter: newScoreA,
-        scoreBAfter: newScoreB,
-        timestamp: now,
-      );
+          final event = LiveMatchEvent(
+            eventId: eventId,
+            fixtureId: fixture.fixtureId,
+            eventType: eventType,
+            houseName: scoringHouse.toLowerCase(),
+            playerName: playerName,
+            periodDescription: period,
+            scoreAAfter: newScoreA,
+            scoreBAfter: newScoreB,
+            timestamp: now,
+          );
 
-      final fixtureRef = _firestore
-          .collection('sports_fixtures')
-          .doc(fixture.fixtureId);
-      final eventRef = fixtureRef.collection('events').doc(eventId);
+          tx.update(fixtureRef, {
+            'score_a': newScoreA,
+            'score_b': newScoreB,
+            'status': 'live',
+            'last_updated': FieldValue.serverTimestamp(),
+          });
+          tx.set(eventRef, event.toMap());
+          return event;
+        });
 
-      final batch = _firestore.batch();
-      batch.update(fixtureRef, {
-        'score_a': newScoreA,
-        'score_b': newScoreB,
-        'status': 'live',
-        'updated_at': FieldValue.serverTimestamp(),
-      });
-      batch.set(eventRef, event.toMap());
-      await batch.commit();
-
-      // Update local cache
-      final cachedEvents = getCachedLiveMatchEvents(fixture.fixtureId);
-      await cacheLiveMatchEvents(fixture.fixtureId, [event, ...cachedEvents]);
-
-      return true;
-    } catch (_) {
-      // In offline / test environment without live Firebase App
-      final isHouseA =
-          scoringHouse.toLowerCase() == fixture.houseA.toLowerCase();
-      final newScoreA = isHouseA
-          ? fixture.scoreA + pointsToAdd
-          : fixture.scoreA;
-      final newScoreB = !isHouseA
-          ? fixture.scoreB + pointsToAdd
-          : fixture.scoreB;
-      final now = DateTime.now();
-      final eventId = 'ev_${now.millisecondsSinceEpoch}';
-      final period = periodDescription ?? 'Live Play';
-
-      final event = LiveMatchEvent(
-        eventId: eventId,
-        fixtureId: fixture.fixtureId,
-        eventType: eventType,
-        houseName: scoringHouse.toLowerCase(),
-        playerName: playerName,
-        periodDescription: period,
-        scoreAAfter: newScoreA,
-        scoreBAfter: newScoreB,
-        timestamp: now,
-      );
-      final cachedEvents = getCachedLiveMatchEvents(fixture.fixtureId);
-      await cacheLiveMatchEvents(fixture.fixtureId, [event, ...cachedEvents]);
-      return true;
+        final cachedEvents = getCachedLiveMatchEvents(fixture.fixtureId);
+        await cacheLiveMatchEvents(
+          fixture.fixtureId,
+          [committedEvent, ...cachedEvents],
+        );
+        return true;
+      }
+    } catch (e) {
+      if (_isFirebaseLive && !_isNoAppException(e)) {
+        debugPrint('Firestore recordMatchScoreEvent failed: $e');
+        return false;
+      }
     }
+
+    // Offline / unit test fallback when Firebase App is not initialized
+    final newScoreA = isHouseA ? fixture.scoreA + pointsToAdd : fixture.scoreA;
+    final newScoreB = !isHouseA ? fixture.scoreB + pointsToAdd : fixture.scoreB;
+    final event = LiveMatchEvent(
+      eventId: eventId,
+      fixtureId: fixture.fixtureId,
+      eventType: eventType,
+      houseName: scoringHouse.toLowerCase(),
+      playerName: playerName,
+      periodDescription: period,
+      scoreAAfter: newScoreA,
+      scoreBAfter: newScoreB,
+      timestamp: now,
+    );
+    final cachedEvents = getCachedLiveMatchEvents(fixture.fixtureId);
+    await cacheLiveMatchEvents(fixture.fixtureId, [event, ...cachedEvents]);
+    return true;
   }
 
   /// Statutorily certifies a match result with cryptographic HMAC sign-off.
@@ -7708,10 +7884,10 @@ class AuthService {
         query = query.where('sport_type', isEqualTo: sport.name);
       }
       return query.snapshots().map((snap) {
-        final list = snap.docs.map((doc) {
-          final data = doc.data() as Map<String, dynamic>? ?? {};
-          return PlayerSportsStats.fromMap(data);
-        }).toList();
+        final list = _safeDecodeDocs(
+          snap.docs,
+          (data, _) => PlayerSportsStats.fromMap(data),
+        );
         cachePlayerSportsStats(list);
         return list;
       });
@@ -7867,10 +8043,10 @@ class AuthService {
           .orderBy('awarded_at', descending: true)
           .snapshots()
           .map((snap) {
-            final list = snap.docs.map((doc) {
-              final data = doc.data();
-              return SportsTrophyRecord.fromMap({...data, 'trophy_id': doc.id});
-            }).toList();
+            final list = _safeDecodeDocs(
+              snap.docs,
+              (data, id) => SportsTrophyRecord.fromMap({...data, 'trophy_id': id}),
+            );
             cacheSportsTrophies(list);
             return list;
           });
@@ -8540,10 +8716,10 @@ class AuthService {
       return query
           .snapshots()
           .map((snap) {
-            final list = snap.docs.map((doc) {
-              final data = doc.data() as Map<String, dynamic>? ?? {};
-              return MedicalLeaveRequest.fromMap(data, docId: doc.id);
-            }).toList();
+            final list = _safeDecodeDocs(
+              snap.docs,
+              (data, id) => MedicalLeaveRequest.fromMap(data, docId: id),
+            );
             cacheMedicalLeaves(list);
             return list;
           })
@@ -9422,27 +9598,109 @@ class AuthService {
     var failed = 0;
     final failedScholars = <String>[];
 
-    for (final student in students) {
-      final sNo = (student['scholar_no'] ?? '').toString().trim();
-      if (sNo.isEmpty) {
-        // A roster entry without a scholar number cannot be promoted. Count it
-        // as a failure so promoted + failed always reconciles with total.
-        failed++;
-        failedScholars.add(
-          (student['uid'] ?? student['full_name'] ?? 'unknown').toString(),
-        );
-        continue;
+    if (_isFirebaseLive) {
+      final parsed = AcademicStructure.parseClassId(tgt)!;
+      final (grade, section) = parsed;
+      final eligible = <Map<String, dynamic>>[];
+
+      for (final student in students) {
+        final sNo = (student['scholar_no'] ?? '').toString().trim();
+        final docId = (student['uid'] ?? '').toString().trim();
+        if (sNo.isEmpty || docId.isEmpty) {
+          failed++;
+          failedScholars.add(
+            (student['uid'] ?? student['full_name'] ?? 'unknown').toString(),
+          );
+          continue;
+        }
+        eligible.add(student);
       }
-      final ok = await promoteScholar(
-        scholarNo: sNo,
-        targetClassId: tgt,
-        academicYear: academicYear,
-      );
-      if (ok) {
-        promoted++;
-      } else {
-        failed++;
-        failedScholars.add(sNo);
+
+      // Commit promotions in atomic WriteBatch chunks (max 200 students = 400 writes per batch)
+      for (var i = 0; i < eligible.length; i += 200) {
+        final chunk = eligible.sublist(
+          i,
+          (i + 200) > eligible.length ? eligible.length : i + 200,
+        );
+        final batch = _firestore.batch();
+        final updates = <String, dynamic>{
+          'class_id': tgt,
+          'class_level': grade,
+          'division': section,
+          'class_verified': true,
+          if (academicYear != null && academicYear.isNotEmpty)
+            'academic_year': academicYear,
+          'updated_at': FieldValue.serverTimestamp(),
+        };
+        for (final student in chunk) {
+          final userRef = _firestore
+              .collection('users')
+              .doc(student['uid'].toString().trim());
+          batch.update(userRef, updates);
+          final notifRef = userRef.collection('notifications').doc();
+          batch.set(notifRef, {
+            'title': 'Academic Year Promotion',
+            'body':
+                'Congratulations! You have been promoted to $tgt (${AcademicStructure.displayClass(grade, section)}) for the new academic year.',
+            'timestamp': FieldValue.serverTimestamp(),
+            'is_read': false,
+            'type': 'academic_promotion',
+          });
+        }
+        try {
+          await batch.commit();
+          for (final student in chunk) {
+            final sNo = (student['scholar_no'] ?? '').toString().trim();
+            final docUid = (student['uid'] ?? '').toString().trim();
+            final placementData = <String, dynamic>{
+              ...student,
+              'class_id': tgt,
+              'class_level': grade,
+              'division': section,
+              'class_verified': true,
+              if (academicYear != null && academicYear.isNotEmpty)
+                'academic_year': academicYear,
+              'scholar_no': sNo,
+            };
+            await saveVerifiedClassPlacement(sNo, placementData);
+            if (docUid.isNotEmpty) {
+              await saveVerifiedClassPlacement(docUid, placementData);
+            }
+          }
+          promoted += chunk.length;
+        } catch (e) {
+          debugPrint('promoteClassSection atomic batch failure: $e');
+          failed += chunk.length;
+          for (final student in chunk) {
+            failedScholars.add(
+              (student['scholar_no'] ?? student['uid'] ?? 'unknown').toString(),
+            );
+          }
+        }
+      }
+    } else {
+      for (final student in students) {
+        final sNo = (student['scholar_no'] ?? '').toString().trim();
+        if (sNo.isEmpty) {
+          // A roster entry without a scholar number cannot be promoted. Count it
+          // as a failure so promoted + failed always reconciles with total.
+          failed++;
+          failedScholars.add(
+            (student['uid'] ?? student['full_name'] ?? 'unknown').toString(),
+          );
+          continue;
+        }
+        final ok = await promoteScholar(
+          scholarNo: sNo,
+          targetClassId: tgt,
+          academicYear: academicYear,
+        );
+        if (ok) {
+          promoted++;
+        } else {
+          failed++;
+          failedScholars.add(sNo);
+        }
       }
     }
 
@@ -9545,9 +9803,19 @@ class AuthService {
         }
       }
 
-      // The primary update above is authoritative. A failed best-effort
-      // notification must not turn a successful class/house/status change into
-      // a reported failure.
+      // The primary update above is authoritative. Synchronize school_members
+      // active state when account status changes so election/library checks match.
+      if (updatedUser != null && updates.containsKey('status')) {
+        try {
+          await _firestore
+              .collection('school_members')
+              .doc(updatedUser.id)
+              .update({'active': updates['status'] == 'active'});
+        } catch (_) {}
+      }
+
+      // A failed best-effort notification must not turn a successful
+      // class/house/status change into a reported failure.
       if (updatedUser != null) {
         try {
           await updatedUser.collection('notifications').add({

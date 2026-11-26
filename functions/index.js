@@ -64,6 +64,28 @@ exports.verifyCertificateSignature = onObjectFinalized(async (event) => {
   const scholarNo = nameParts[0];
   const claimId = nameParts.slice(1).join("_"); // Support claimIds that may contain underscores
   const claimRef = db.collection("house_claims").doc(claimId);
+  const generation = String(event.data.generation || "");
+
+  // Bind Storage object strictly to an existing pending claim with matching identity
+  // and guard against duplicate CloudEvent retries for the same object generation.
+  const existingSnap = await claimRef.get();
+  if (!existingSnap.exists) {
+    console.warn(`[Skip] Claim "${claimId}" does not exist in Firestore yet; refusing orphan write for ${filePath}`);
+    return null;
+  }
+  const existing = existingSnap.data() || {};
+  if (String(existing.scholar_no || "").trim() !== scholarNo) {
+    console.warn(`[Skip] Scholar mismatch on claim "${claimId}" (object=${scholarNo}, doc=${existing.scholar_no || ""})`);
+    return null;
+  }
+  if (String(existing.house_name || "").toLowerCase().trim() !== houseName) {
+    console.warn(`[Skip] House mismatch on claim "${claimId}" (object=${houseName}, doc=${existing.house_name || ""})`);
+    return null;
+  }
+  if (generation && existing.ai_generation === generation) {
+    console.log(`[Skip] Already scanned generation ${generation} for claim "${claimId}"`);
+    return null;
+  }
 
   console.log(`[Processing] Verifying claim "${claimId}" for Scholar #${scholarNo} (${houseName} House)...`);
 
@@ -139,12 +161,9 @@ exports.verifyCertificateSignature = onObjectFinalized(async (event) => {
         }
       }
 
-      // 5. Firestore Synchronization: Record AI metadata while preserving human-in-the-loop 'pending' status
-      await claimRef.set({
-        scholar_no: scholarNo,
-        house_name: houseName,
+      // 5. Firestore Synchronization: Record AI metadata without overwriting ownership or human moderation status
+      const updatePayload = {
         file_path: filePath,
-        status: "pending", // Preserved in staff moderation queue for final human approval
         ai_status: aiStatus,
         ai_confidence: aiConfidence,
         ai_markers: aiMarkers,
@@ -155,7 +174,14 @@ exports.verifyCertificateSignature = onObjectFinalized(async (event) => {
         verified_at: admin.firestore.FieldValue.serverTimestamp(),
         updated_at: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
-      }, { merge: true });
+      };
+      if (generation) {
+        updatePayload.ai_generation = generation;
+      }
+      if (!existing.status) {
+        updatePayload.status = "pending";
+      }
+      await claimRef.update(updatePayload);
 
       console.log(`[Success] Claim "${claimId}" AI scanned. AI Status: ${aiStatus} (${aiConfidence}%) | Summary: "${logMsg}"`);
       return null;
@@ -166,11 +192,8 @@ exports.verifyCertificateSignature = onObjectFinalized(async (event) => {
 
       const errorLogMsg = `Error during Vision API processing: ${error.message || "Timeout / API Failure"}`;
 
-      await claimRef.set({
-        scholar_no: scholarNo,
-        house_name: houseName,
+      const errorPayload = {
         file_path: filePath,
-        status: "pending", // Kept in pending queue so staff can review manually
         ai_status: "error",
         ai_confidence: 0.0,
         ai_summary: errorLogMsg,
@@ -178,7 +201,11 @@ exports.verifyCertificateSignature = onObjectFinalized(async (event) => {
         verificationLogs: admin.firestore.FieldValue.arrayUnion(errorLogMsg),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         updated_at: admin.firestore.FieldValue.serverTimestamp()
-      }, { merge: true });
+      };
+      if (generation) {
+        errorPayload.ai_generation = generation;
+      }
+      await claimRef.update(errorPayload);
 
       return null;
     }

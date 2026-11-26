@@ -4,12 +4,14 @@
     {
       "id": "O02a",
       "description": "New account can claim a different scholar identity",
-      "result": "ALLOWED"
+      "result": "DENIED",
+      "code": "permission-denied"
     },
     {
       "id": "O02b",
       "description": "Forged scholar profile can read victim report card",
-      "result": "ALLOWED"
+      "result": "DENIED",
+      "code": "permission-denied"
     },
     {
       "id": "O01",
@@ -19,17 +21,20 @@
     {
       "id": "O07",
       "description": "Any signed-in user can send official-looking notifications to another user",
-      "result": "ALLOWED"
+      "result": "DENIED",
+      "code": "permission-denied"
     },
     {
       "id": "O21",
       "description": "Student can create a zero-price verified merchandise order",
-      "result": "ALLOWED"
+      "result": "DENIED",
+      "code": "permission-denied"
     },
     {
       "id": "O08",
       "description": "Student can self-assert AI verified metadata on a pending claim",
-      "result": "ALLOWED"
+      "result": "DENIED",
+      "code": "permission-denied"
     },
     {
       "id": "O27",
@@ -40,24 +45,24 @@
     {
       "id": "O28",
       "description": "Client photo message payload rejected by schema",
-      "result": "DENIED",
-      "code": "permission-denied"
+      "result": "ALLOWED"
     },
     {
       "id": "O19",
       "description": "Current trophy model payload rejected for admin",
-      "result": "DENIED",
-      "code": "permission-denied"
+      "result": "ALLOWED"
     },
     {
       "id": "O04",
       "description": "Suspended teacher still has staff access to medical records",
-      "result": "ALLOWED"
+      "result": "DENIED",
+      "code": "permission-denied"
     },
     {
       "id": "O33",
       "description": "Account without grade/profile can register for senior-only event",
-      "result": "ALLOWED"
+      "result": "DENIED",
+      "code": "permission-denied"
     }
   ]
 }

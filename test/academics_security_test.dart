@@ -618,8 +618,10 @@ void main() {
   group('P1-3 (A6): Faculty Role Lists Alignment Contract', () {
     test('firestore.rules isAdmin role list exactly matches HierarchyService.isTeacherOrFaculty roles', () {
       final rules = File('firestore.rules').readAsStringSync();
-      final match = RegExp(r"function isAdmin\(\) \{([\s\S]*?)\}").firstMatch(rules);
-      expect(match, isNotNull, reason: 'isAdmin function not found in firestore.rules');
+      final match =
+          RegExp(r"function _hasStaffAdminRole\(\) \{([\s\S]*?)\}").firstMatch(rules) ??
+              RegExp(r"function isAdmin\(\) \{([\s\S]*?)\}").firstMatch(rules);
+      expect(match, isNotNull, reason: 'isAdmin/_hasStaffAdminRole function not found in firestore.rules');
       final body = match!.group(1)!;
 
       // Extract roles from request.auth.token.role in [...]
