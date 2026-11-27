@@ -9,6 +9,7 @@ import '../widgets/student_profile_modal.dart';
 import 'chat_list_screen.dart';
 import 'approved_claims_screen.dart';
 import 'admin_academics_screen.dart';
+import 'class_group_screen.dart';
 
 class AdminClaimsScreen extends StatefulWidget {
   final bool isSuperAdmin;
@@ -35,7 +36,8 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
     final role = profile?['role']?.toString();
     final scholarNo = profile?['scholar_no']?.toString() ?? AuthService.getCachedScholarNo();
     _canReviewMedical = HierarchyService.isTeacherOrFaculty(role: role, scholarNo: scholarNo) ||
-        HierarchyService.isSuperAdmin(role: role, scholarNo: scholarNo);
+        HierarchyService.isSuperAdmin(role: role, scholarNo: scholarNo) ||
+        HierarchyService.isSeniorAdmin(role: role, scholarNo: scholarNo);
     _tabController = TabController(length: _canReviewMedical ? 2 : 1, vsync: this);
   }
 
@@ -519,6 +521,28 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
             tooltip: '1-on-1 Chats',
           ),
           const SizedBox(width: 8),
+          if (widget.isSuperAdmin || _canReviewMedical) ...[
+            IconButton(
+              key: const Key('admin_portal_class_groups_button'),
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.indigo.withValues(alpha: 0.15),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ClassGroupScreen()),
+              ),
+              icon: const Icon(
+                Icons.school_rounded,
+                color: Colors.indigoAccent,
+                size: 20,
+              ),
+              tooltip: 'Class Groups & Messaging',
+            ),
+            const SizedBox(width: 8),
+          ],
           if (widget.isSuperAdmin) ...[
             IconButton(
               style: IconButton.styleFrom(
@@ -542,6 +566,15 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             icon: const Icon(Icons.more_vert_rounded),
             onSelected: (value) async {
+              if (value == 'class_groups') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const ClassGroupScreen(),
+                  ),
+                );
+                return;
+              }
               if (value == 'academic_management') {
                 Navigator.push(
                   context,
@@ -567,6 +600,17 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
               }
             },
             itemBuilder: (context) => [
+              if (widget.isSuperAdmin || _canReviewMedical)
+                const PopupMenuItem(
+                  value: 'class_groups',
+                  child: Row(
+                    children: [
+                      Icon(Icons.forum_rounded, size: 20, color: Colors.indigoAccent),
+                      SizedBox(width: 10),
+                      Text('Class Groups & Messaging', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
               if (_canReviewMedical)
                 const PopupMenuItem(
                   value: 'academic_management',

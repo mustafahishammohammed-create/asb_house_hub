@@ -83,10 +83,16 @@ void main() {
       expect(updated.timetableRequiresApproval, isTrue);
     });
 
-    test('HierarchyService.isSeniorAdmin recognises super admin, admin, and principal', () {
+    test('HierarchyService.isSeniorAdmin recognises super admin, admin, head, and management', () {
       expect(HierarchyService.isSeniorAdmin(role: 'super_admin'), isTrue);
       expect(HierarchyService.isSeniorAdmin(role: 'admin'), isTrue);
       expect(HierarchyService.isSeniorAdmin(role: 'principal'), isTrue);
+      expect(HierarchyService.isSeniorAdmin(role: 'vice_principal'), isTrue);
+      expect(HierarchyService.isSeniorAdmin(role: 'head'), isTrue);
+      expect(HierarchyService.isSeniorAdmin(role: 'school_head'), isTrue);
+      expect(HierarchyService.isSeniorAdmin(role: 'management'), isTrue);
+      expect(HierarchyService.isSeniorAdmin(role: 'school_management'), isTrue);
+      expect(HierarchyService.isSeniorAdmin(role: 'director'), isTrue);
       expect(HierarchyService.isSeniorAdmin(scholarNo: '11209'), isTrue);
       expect(HierarchyService.isSeniorAdmin(scholarNo: 'admin'), isTrue);
       expect(HierarchyService.isSeniorAdmin(role: 'teacher'), isFalse);

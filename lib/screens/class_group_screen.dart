@@ -129,6 +129,17 @@ class _ClassGroupScreenState extends State<ClassGroupScreen> {
         .listen(_onAcademicClassUpdate, onError: (_) {});
   }
 
+  void _openClassPicker() {
+    _classSubscription?.cancel();
+    setState(() {
+      _classId = '';
+      _academicClass = null;
+      _group = ClassGroup.defaultsFor('');
+      _pendingAttachment = '';
+      _recomputeAccess();
+    });
+  }
+
   String get _roleTitle => HierarchyService.getRoleDisplayTitle(
         scholarNo: ClassGroupAccess.scholarOf(_profile),
         role: ClassGroupAccess.roleOf(_profile),
@@ -315,6 +326,24 @@ class _ClassGroupScreenState extends State<ClassGroupScreen> {
             ),
           ],
         ),
+        actions: [
+          if (_classId.isNotEmpty && _isStaff)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: TextButton.icon(
+                key: const Key('class_group_switch_class_button'),
+                onPressed: _openClassPicker,
+                icon: Icon(Icons.swap_horiz_rounded, color: accent, size: 18),
+                label: Text(
+                  'Classes',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: accent,
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
       body: _classId.isEmpty
           ? _buildNoClass(accent, isDark)
@@ -373,8 +402,12 @@ class _ClassGroupScreenState extends State<ClassGroupScreen> {
   }
 
   Widget _buildClassPicker(Color accent, bool isDark) {
+    final initialClasses = AuthService.getCachedAcademicClasses()
+        .where((c) => c.active)
+        .toList();
     return StreamBuilder<List<AcademicClass>>(
       stream: _authService.getAcademicClassesStream(activeOnly: true),
+      initialData: initialClasses,
       builder: (context, snapshot) {
         final classes = snapshot.data ?? const <AcademicClass>[];
         if (classes.isEmpty) {
@@ -398,7 +431,9 @@ class _ClassGroupScreenState extends State<ClassGroupScreen> {
           padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
           children: [
             Text(
-              'Choose a class to manage',
+              ClassGroupAccess.isSeniorAdmin(_profile)
+                  ? 'Choose a class group to message & manage'
+                  : 'Choose a class to manage',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w900,
@@ -482,6 +517,7 @@ class _ClassGroupScreenState extends State<ClassGroupScreen> {
   Widget _buildMembershipBanner(Color accent, bool isDark) {
     final verifiedMember =
         ClassGroupAccess.isVerifiedMember(_profile, _classId);
+    final isLeadership = ClassGroupAccess.isSeniorAdmin(_profile);
     return Container(
       key: const Key('class_group_membership_banner'),
       margin: const EdgeInsets.fromLTRB(16, 4, 16, 10),
@@ -521,7 +557,9 @@ class _ClassGroupScreenState extends State<ClassGroupScreen> {
                 Text(
                   verifiedMember
                       ? 'Auto-joined via verified class · $_classId'
-                      : 'Staff access via class assignment · $_classId',
+                      : isLeadership
+                          ? 'Admin, Head & Management access · $_classId'
+                          : 'Staff access via class assignment · $_classId',
                   style: const TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w900,

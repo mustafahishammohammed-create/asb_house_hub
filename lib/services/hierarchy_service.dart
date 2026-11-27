@@ -148,7 +148,8 @@ class HierarchyService {
     String? role,
     String? fullName,
   }) {
-    return isSuperAdmin(scholarNo: scholarNo, role: role, fullName: fullName) ||
+    return isSeniorAdmin(scholarNo: scholarNo, role: role, fullName: fullName) ||
+        isSuperAdmin(scholarNo: scholarNo, role: role, fullName: fullName) ||
         isTeacherOrFaculty(scholarNo: scholarNo, role: role, fullName: fullName) ||
         isCaptain(scholarNo: scholarNo, role: role, fullName: fullName) ||
         isCouncil(scholarNo: scholarNo, role: role, fullName: fullName) ||
@@ -156,21 +157,22 @@ class HierarchyService {
   }
 
   /// Canonical check whether an account is authorized to grade assignments and award academic merit points.
-  /// Requirement R1 & Audit G4: Staff, Teachers, Principal, and Council officers have grading authority.
+  /// Requirement R1 & Audit G4: Staff, Teachers, Principal, Head, Management, and Council officers have grading authority.
   /// Strictly Prohibited: Regular Students and non-council student accounts.
   static bool canGradeAcademics({
     String? scholarNo,
     String? role,
     String? fullName,
   }) {
-    return isSuperAdmin(scholarNo: scholarNo, role: role, fullName: fullName) ||
+    return isSeniorAdmin(scholarNo: scholarNo, role: role, fullName: fullName) ||
+        isSuperAdmin(scholarNo: scholarNo, role: role, fullName: fullName) ||
         isTeacherOrFaculty(scholarNo: scholarNo, role: role, fullName: fullName) ||
         isCouncil(scholarNo: scholarNo, role: role, fullName: fullName);
   }
 
   /// Canonical check whether an account is authorized to manage elections
   /// (create drafts, configure candidate slates, publish ballots, certify outcomes).
-  /// Authorized: Super Admin, Administrators, Principal, Faculty/Teachers, Staff, Council, House Captains.
+  /// Authorized: Super Admin, Administrators, Principal, Head, Management, Faculty/Teachers, Staff, Council, House Captains.
   /// Strictly Prohibited: Regular Students.
   static bool canManageElections({
     String? scholarNo,
@@ -183,7 +185,7 @@ class HierarchyService {
     final em = (email ?? '').trim().toLowerCase();
 
     if (sNo == 'admin' || sNo == '11209') return true;
-    if (rStr == 'admin' || rStr == 'super_admin' || rStr == 'principal' || rStr == 'administrator') return true;
+    if (isSeniorAdmin(scholarNo: sNo, role: rStr)) return true;
     if (em.contains('admin@asianschool.bh') ||
         em.contains('superadmin@asianschool.bh') ||
         em.contains('principal@asianschool.bh')) {
@@ -201,7 +203,7 @@ class HierarchyService {
     return false;
   }
 
-  /// Check if user is a Senior Admin (Super Admin, Principal, or Administrator).
+  /// Check if user is a Senior Admin (Super Admin, Administrator, School Head, or Management).
   static bool isSeniorAdmin({
     String? scholarNo,
     String? role,
@@ -210,7 +212,17 @@ class HierarchyService {
     final sNo = (scholarNo ?? '').trim().toLowerCase();
     final rStr = (role ?? '').trim().toLowerCase();
     if (sNo == 'admin' || sNo == '11209') return true;
-    if (rStr == 'super_admin' || rStr == 'admin' || rStr == 'administrator' || rStr == 'principal') {
+    if (rStr == 'super_admin' ||
+        rStr == 'admin' ||
+        rStr == 'administrator' ||
+        rStr == 'principal' ||
+        rStr == 'vice_principal' ||
+        rStr == 'head' ||
+        rStr == 'school_head' ||
+        rStr == 'head_of_school' ||
+        rStr == 'management' ||
+        rStr == 'school_management' ||
+        rStr == 'director') {
       return true;
     }
     return false;
@@ -287,10 +299,23 @@ class HierarchyService {
     String? fullName,
   }) {
     final sNo = (scholarNo ?? '').trim().toLowerCase();
+    final rStr = (role ?? '').trim().toLowerCase();
     if (isSuperAdmin(scholarNo: scholarNo, role: role, fullName: fullName) ||
         sNo == '11209' ||
         sNo == 'admin') {
       return 'Super Admin';
+    }
+    if (rStr == 'principal' ||
+        rStr == 'vice_principal' ||
+        rStr == 'head' ||
+        rStr == 'school_head' ||
+        rStr == 'head_of_school') {
+      return 'School Head';
+    }
+    if (rStr == 'management' ||
+        rStr == 'school_management' ||
+        rStr == 'director') {
+      return 'School Management';
     }
     if (isTeacherOrFaculty(scholarNo: scholarNo, role: role, fullName: fullName)) {
       return 'Faculty Lead';

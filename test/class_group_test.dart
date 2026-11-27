@@ -328,17 +328,31 @@ void main() {
       );
     });
 
-    test('senior admins may view/moderate across classes but not send', () {
-      final admin = profile(
-        uid: 'uid_admin_1',
-        role: 'principal',
-        classId: '',
-        classVerified: false,
-      );
+    test('admin, head, and management can view, message, and moderate across all classes', () {
       final other = academicClass(classId: '11C');
-      expect(ClassGroupAccess.canView(admin, '11C', other), isTrue);
-      expect(ClassGroupAccess.canModerate(admin, '11C', other), isTrue);
-      expect(ClassGroupAccess.canSend(admin, '11C', other), isFalse);
+      for (final role in [
+        'admin',
+        'super_admin',
+        'administrator',
+        'principal',
+        'vice_principal',
+        'head',
+        'school_head',
+        'management',
+        'school_management',
+        'director',
+      ]) {
+        final leader = profile(
+          uid: 'uid_$role',
+          role: role,
+          classId: '',
+          classVerified: false,
+        );
+        expect(ClassGroupAccess.canView(leader, '11C', other), isTrue, reason: role);
+        expect(ClassGroupAccess.canSend(leader, '11C', other), isTrue, reason: role);
+        expect(ClassGroupAccess.canAttach(leader, '11C', other), isTrue, reason: role);
+        expect(ClassGroupAccess.canModerate(leader, '11C', other), isTrue, reason: role);
+      }
       expect(ClassGroupAccess.canView(profile(classId: '11D'), '11C', other), isFalse);
     });
   });
@@ -590,8 +604,9 @@ void main() {
       expect(source, isNot(contains('class_group_members')));
     });
 
-    test('sender helper includes teacher, subject teacher, rep, and student flag', () {
+    test('sender helper includes senior admins/head/management, teachers, rep, and student flag', () {
       final helper = helperBlock('isClassSender');
+      expect(helper, contains('isSeniorAdmin()'));
       expect(helper, contains('isClassTeacher(classId)'));
       expect(helper, contains('isClassSubjectTeacher(classId)'));
       expect(helper, contains('isClassRepresentative(classId)'));
@@ -659,13 +674,16 @@ void main() {
       final source = rules();
       final start = source.indexOf('data.role is string && data.role in [');
       expect(start, greaterThanOrEqualTo(0));
-      final rolesBlock = source.substring(start, start + 900);
+      final rolesBlock = source.substring(start, start + 1000);
       for (final role in [
         'class_teacher',
         'subject_teacher',
         'class_representative',
         'vice_class_representative',
         'parent',
+        'head',
+        'management',
+        'vice_principal',
       ]) {
         expect(
           rolesBlock,
@@ -784,6 +802,47 @@ void main() {
 
       expect(find.byKey(const Key('class_group_composer')), findsOneWidget);
       expect(find.text('11D Class Group'), findsOneWidget);
+    });
+
+    testWidgets('admin, head, and management can pick any class, message, and switch classes', (tester) async {
+      final cls11D = academicClass(classId: '11D', teacherUid: 'uid_teacher_1');
+      final cls11C = academicClass(classId: '11C', teacherUid: 'uid_teacher_2');
+      await AuthService.cacheProfile(
+        profile(
+          uid: 'uid_mgmt_1',
+          role: 'management',
+          classId: '',
+          classVerified: false,
+        ),
+      );
+      await AuthService.cacheAcademicClasses([cls11D, cls11C]);
+
+      await pumpGroup(
+        tester,
+        messages: Stream.value(const <ClassGroupMessage>[]).asBroadcastStream(),
+      );
+
+      expect(find.byKey(const Key('class_group_picker_11D')), findsOneWidget);
+      expect(find.byKey(const Key('class_group_picker_11C')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('class_group_picker_11D')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('11D Class Group'), findsOneWidget);
+      expect(find.textContaining('Admin, Head & Management access · 11D'), findsOneWidget);
+      expect(find.byKey(const Key('class_group_composer')), findsOneWidget);
+      expect(find.byKey(const Key('class_group_send_button')), findsOneWidget);
+      expect(find.byKey(const Key('class_group_switch_class_button')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('class_group_switch_class_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('class_group_picker_11C')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('class_group_picker_11C')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('11C Class Group'), findsOneWidget);
+      expect(find.byKey(const Key('class_group_composer')), findsOneWidget);
     });
 
     testWidgets('messages render category, pin, and hidden moderation', (tester) async {

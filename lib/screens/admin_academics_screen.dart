@@ -5,6 +5,7 @@ import '../models/class_timetable.dart';
 import '../services/auth_service.dart';
 import '../services/hierarchy_service.dart';
 import '../services/timetable_service.dart';
+import 'class_group_screen.dart';
 
 /// Admin command center for academic management (M1, M7).
 /// Staff manage sections, verify and transfer scholars, assign houses,
@@ -51,8 +52,21 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
           role: role,
           scholarNo: scholarNo,
         ) ||
-        HierarchyService.isSuperAdmin(role: role, scholarNo: scholarNo);
+        HierarchyService.isSuperAdmin(role: role, scholarNo: scholarNo) ||
+        HierarchyService.isSeniorAdmin(role: role, scholarNo: scholarNo);
     _tabController = TabController(length: 6, vsync: this);
+  }
+
+  void _openClassGroup(AcademicClass cls) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ClassGroupScreen(
+          initialClassId: cls.classId,
+          initialAcademicClass: cls,
+        ),
+      ),
+    );
   }
 
   @override
@@ -730,6 +744,16 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     IconButton(
+                      key: Key('admin_open_class_group_${cls.classId}'),
+                      tooltip: 'Message class group',
+                      icon: Icon(
+                        Icons.chat_rounded,
+                        size: 20,
+                        color: scheme.primary,
+                      ),
+                      onPressed: () => _openClassGroup(cls),
+                    ),
+                    IconButton(
                       tooltip: 'Edit class teacher',
                       icon: const Icon(Icons.edit_outlined, size: 20),
                       onPressed: () => _editClassTeacher(cls),
@@ -781,26 +805,41 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                 classes.any((c) => c.classId == _rosterClassId)
             ? _rosterClassId!
             : classes.first.classId;
+        final selectedClass =
+            classes.firstWhere((c) => c.classId == selected);
         return Column(
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: DropdownButtonFormField<String>(
-                key: ValueKey('roster_${classes.map((c) => c.classId).join("_")}_$selected'),
-                initialValue: selected,
-                decoration: const InputDecoration(
-                  labelText: 'Select class',
-                  border: OutlineInputBorder(),
-                ),
-                items: classes
-                    .map(
-                      (c) => DropdownMenuItem(
-                        value: c.classId,
-                        child: Text('${c.classId} — ${c.displayLabel}'),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      key: ValueKey('roster_${classes.map((c) => c.classId).join("_")}_$selected'),
+                      initialValue: selected,
+                      decoration: const InputDecoration(
+                        labelText: 'Select class',
+                        border: OutlineInputBorder(),
                       ),
-                    )
-                    .toList(),
-                onChanged: (v) => setState(() => _rosterClassId = v),
+                      items: classes
+                          .map(
+                            (c) => DropdownMenuItem(
+                              value: c.classId,
+                              child: Text('${c.classId} — ${c.displayLabel}'),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) => setState(() => _rosterClassId = v),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  FilledButton.tonalIcon(
+                    key: const Key('admin_roster_message_class'),
+                    onPressed: () => _openClassGroup(selectedClass),
+                    icon: const Icon(Icons.chat_rounded, size: 18),
+                    label: const Text('Message'),
+                  ),
+                ],
               ),
             ),
             Expanded(

@@ -232,6 +232,7 @@ class ClassGroupMessage {
 /// every authorised role without a Firebase emulator.
 ///
 /// Authorised senders:
+/// - senior school leadership (admins, head of school / principal, and management) across any class
 /// - the class teacher assigned in `academic_classes/{classId}`
 /// - a subject teacher whose UID is listed in `subject_teacher_uids`
 /// - the class representative / vice representative of the verified class
@@ -356,7 +357,8 @@ class ClassGroupAccess {
     AcademicClass? academicClass,
   ]) {
     if (profile == null) return false;
-    if (isClassTeacher(profile, classId, academicClass) ||
+    if (isSeniorAdmin(profile) ||
+        isClassTeacher(profile, classId, academicClass) ||
         isSubjectTeacher(profile, classId, academicClass) ||
         isClassRepresentative(profile, classId)) {
       return true;

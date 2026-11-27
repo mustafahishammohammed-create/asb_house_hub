@@ -625,6 +625,45 @@ void main() {
       expect(find.text('Audit Logs'), findsOneWidget);
     });
 
+    testWidgets('admin, head, and management can open and message any class from Classes & Rosters tabs', (tester) async {
+      await AuthService.cacheProfile({
+        'uid': 'uid_head_1',
+        'scholar_no': 'HEAD01',
+        'full_name': 'School Head',
+        'role': 'head',
+        'house_name': 'ruby',
+      });
+      await AuthService.cacheAcademicClasses([
+        const AcademicClass(
+          classId: '11D',
+          grade: 'Grade 11',
+          section: 'D',
+          active: true,
+          classTeacher: 'Ms. Fatima',
+          classTeacherUid: 'uid_teacher_1',
+        ),
+      ]);
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: AdminAcademicsScreen(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Classes'));
+      await tester.pumpAndSettle();
+
+      final openChatBtn = find.byKey(const Key('admin_open_class_group_11D'));
+      expect(openChatBtn, findsOneWidget);
+      await tester.tap(openChatBtn);
+      await tester.pumpAndSettle();
+
+      expect(find.text('11D Class Group'), findsOneWidget);
+      expect(find.byKey(const Key('class_group_composer')), findsOneWidget);
+      expect(find.byKey(const Key('class_group_send_button')), findsOneWidget);
+    });
+
     test('firestore.rules restricts academic_classes writes to admin only', () {
       final rules = File('firestore.rules').readAsStringSync();
       final match = RegExp(

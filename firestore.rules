@@ -309,12 +309,20 @@ service cloud.firestore {
 
     function _hasSeniorAdminRole() {
       return _hasSuperAdminRole() ||
-        (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in ['principal', 'super_admin', 'admin', 'administrator']) ||
-        (hasUserDoc() && getUserData().get('role', '') in ['principal', 'super_admin', 'admin', 'administrator']);
+        (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in [
+          'principal', 'vice_principal', 'head', 'school_head', 'head_of_school',
+          'management', 'school_management', 'director',
+          'super_admin', 'admin', 'administrator'
+        ]) ||
+        (hasUserDoc() && getUserData().get('role', '') in [
+          'principal', 'vice_principal', 'head', 'school_head', 'head_of_school',
+          'management', 'school_management', 'director',
+          'super_admin', 'admin', 'administrator'
+        ]);
     }
 
     function _hasStaffAdminRole() {
-      return _hasSuperAdminRole() ||
+      return _hasSeniorAdminRole() ||
         (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in ['teacher', 'faculty', 'principal', 'staff', 'faculty_advisor', 'teacher_lead', 'class_teacher', 'subject_teacher']) ||
         (hasUserDoc() && getUserData().get('role', '') in ['teacher', 'faculty', 'principal', 'staff', 'faculty_advisor', 'teacher_lead', 'class_teacher', 'subject_teacher']);
     }
@@ -497,7 +505,8 @@ service cloud.firestore {
     }
 
     function isClassSender(classId) {
-      return isClassTeacher(classId) ||
+      return isSeniorAdmin() ||
+        isClassTeacher(classId) ||
         isClassSubjectTeacher(classId) ||
         isClassRepresentative(classId) ||
         isClassStudentSender(classId);
@@ -611,7 +620,9 @@ service cloud.firestore {
         'class_representative', 'vice_class_representative', 'parent',
         'teacher', 'faculty', 'faculty_advisor', 'teacher_lead',
         'class_teacher', 'subject_teacher',
-        'principal', 'staff', 'administrator', 'admin', 'super_admin'
+        'principal', 'staff', 'administrator', 'admin', 'super_admin',
+        'vice_principal', 'head', 'school_head', 'head_of_school',
+        'management', 'school_management', 'director'
       ] &&
       data.house_name is string && data.house_name.lower() in ['ruby', 'sapphire', 'emerald', 'topaz'] &&
       (!('class_level' in data) || (data.class_level is string && data.class_level.size() <= 50)) &&
