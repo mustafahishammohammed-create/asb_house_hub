@@ -1,8 +1,41 @@
 #include "flutter_window.h"
 
+#include <commctrl.h>
 #include <optional>
 
 #include "flutter/generated_plugin_registrant.h"
+
+namespace {
+
+// Firebase Windows plugins (such as firebase_auth and firebase_storage) post
+// WM_APP+ dispatch messages to the child FlutterView HWND while listening via
+// RegisterTopLevelWindowProcDelegate (which is only pumped for the parent
+// top-level HWND). Forward WM_APP plugin messages so async Futures always resolve.
+LRESULT CALLBACK ViewPluginMessageSubclassProc(HWND hwnd,
+                                               UINT message,
+                                               WPARAM wparam,
+                                               LPARAM lparam,
+                                               UINT_PTR subclass_id,
+                                               DWORD_PTR ref_data) {
+  if (message >= WM_APP && message <= 0xBFFF) {
+    auto* controller =
+        reinterpret_cast<flutter::FlutterViewController*>(ref_data);
+    HWND parent = GetParent(hwnd);
+    if (controller != nullptr && parent != nullptr) {
+      std::optional<LRESULT> result =
+          controller->HandleTopLevelWindowProc(parent, message, wparam, lparam);
+      if (result) {
+        return *result;
+      }
+    }
+  }
+  if (message == WM_NCDESTROY) {
+    RemoveWindowSubclass(hwnd, ViewPluginMessageSubclassProc, subclass_id);
+  }
+  return DefSubclassProc(hwnd, message, wparam, lparam);
+}
+
+}  // namespace
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -24,8 +57,13 @@ bool FlutterWindow::OnCreate() {
   if (!flutter_controller_->engine() || !flutter_controller_->view()) {
     return false;
   }
+  HWND view_hwnd = flutter_controller_->view()->GetNativeWindow();
+  SetChildContent(view_hwnd);
+  if (view_hwnd != nullptr) {
+    SetWindowSubclass(view_hwnd, ViewPluginMessageSubclassProc, 1,
+                      reinterpret_cast<DWORD_PTR>(flutter_controller_.get()));
+  }
   RegisterPlugins(flutter_controller_->engine());
-  SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
@@ -42,6 +80,12 @@ bool FlutterWindow::OnCreate() {
 
 void FlutterWindow::OnDestroy() {
   if (flutter_controller_) {
+    if (flutter_controller_->view()) {
+      HWND view_hwnd = flutter_controller_->view()->GetNativeWindow();
+      if (view_hwnd != nullptr) {
+        RemoveWindowSubclass(view_hwnd, ViewPluginMessageSubclassProc, 1);
+      }
+    }
     flutter_controller_ = nullptr;
   }
 

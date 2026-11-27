@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:asb_house_hub/models/class_timetable.dart';
+import 'package:asb_house_hub/models/election_ballot.dart';
 import 'package:asb_house_hub/models/sports_tournament.dart';
 import 'package:asb_house_hub/models/sports_trophy.dart';
 import 'package:asb_house_hub/screens/home_screen.dart';
@@ -301,6 +302,64 @@ void main() {
       );
       expect(payload['source_id'], equals('class_10A_hw_1'));
       expect(payload['sender_name'], equals('Class Rep'));
+    });
+
+    test('Election vote accepts candidate whose id equals scholarNo without false not-on-ballot rejection', () async {
+      SharedPreferences.setMockInitialValues({});
+      await AuthService.initPreferences();
+      final candidate = ElectionCandidate(
+        id: '2310910',
+        scholarNo: '2310910',
+        fullName: 'Aarav Sharma',
+        houseName: 'ruby',
+        runningPosition: 'House Captain',
+        manifesto: 'Unity and effort',
+      );
+      final res = await AuthService().castDigitalVote(
+        ballotId: 'poll_same_id_test',
+        ballotTitle: 'House Captain Election',
+        candidate: candidate,
+        scholarNo: '99887',
+      );
+      expect(res.success, isTrue);
+      expect(res.error, isNull);
+    });
+
+    testWidgets('Upgraded House Standings tab renders hero card, podium, and standings cleanly', (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      await AuthService.initPreferences();
+      await AuthService.cacheHouseStandings({
+        'ruby': 320,
+        'emerald': 290,
+        'sapphire': 210,
+        'topaz': 180,
+      });
+      await AuthService.cacheProfile({
+        'uid': 'stud_1',
+        'scholar_no': '45120',
+        'full_name': 'Nadia Ali',
+        'house_name': 'emerald',
+        'role': 'student',
+        'status': 'active',
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.lightTheme,
+          home: HomeScreen(mockNow: DateTime(2026, 11, 27, 9, 0)),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 2));
+      await tester.tap(find.byIcon(Icons.emoji_events_rounded).last);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('🏆 Live House Standings'), findsOneWidget);
+      expect(find.text('School Total'), findsOneWidget);
+      expect(find.text('House Leaderboard'), findsOneWidget);
+      expect(find.text('House Arena'), findsOneWidget);
+      expect(find.text('YOUR HOUSE'), findsOneWidget);
     });
   });
 }

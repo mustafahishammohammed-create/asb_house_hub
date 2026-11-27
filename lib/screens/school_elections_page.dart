@@ -641,11 +641,11 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
           final candidates = (box['candidates'] as List? ?? []).cast<Map>();
           final match = candidates.firstWhere(
             (c) {
-              final cId = (c['id'] ?? '').toString().trim();
+              final cId = (c['id'] ?? '').toString().trim().toLowerCase();
               final cSNo = (c['scholar_no'] ?? '').toString().trim();
               final cN = (c['name'] ?? c['full_name'] ?? '').toString().trim().toLowerCase();
               final target = candidateId.trim().toLowerCase();
-              return cId == candidateId ||
+              return (cId.isNotEmpty && cId == target) ||
                   (cSNo.isNotEmpty && cSNo.toLowerCase() == target) ||
                   (cN.isNotEmpty && cN == target) ||
                   (candScholar.isNotEmpty && cSNo.toLowerCase() == candScholar.toLowerCase()) ||

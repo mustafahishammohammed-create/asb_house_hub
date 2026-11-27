@@ -4411,13 +4411,16 @@ class AuthService {
     }
 
     final email = _scholarToEmail(cleanScholar);
+    final isWindows = !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+    final authTimeout =
+        isWindows ? const Duration(seconds: 45) : const Duration(seconds: 25);
     UserCredential cred;
 
     try {
       cred = await _auth
           .signInWithEmailAndPassword(email: email, password: password)
           .timeout(
-            const Duration(seconds: 25),
+            authTimeout,
             onTimeout: () => throw FirebaseAuthException(
               code: 'network-request-failed',
               message:
@@ -4425,6 +4428,26 @@ class AuthService {
             ),
           );
     } on FirebaseAuthException catch (e) {
+      if (isWindows && e.code == 'network-request-failed') {
+        try {
+          await verifyCredentialsViaRest(
+            scholarNo: cleanScholar,
+            password: password,
+          ).timeout(const Duration(seconds: 6));
+          throw FirebaseAuthException(
+            code: 'network-request-failed',
+            message:
+                'Windows Firebase Auth could not reach Google Auth cleanly (possible IPv6 timeout). Try retrying or disabling IPv6 if the issue persists.',
+          );
+        } on FirebaseAuthException catch (restErr) {
+          if (restErr.code == 'invalid-credential') {
+            throw FirebaseAuthException(
+              code: 'invalid-credential',
+              message: 'Incorrect scholar number or password.',
+            );
+          }
+        } catch (_) {}
+      }
       // Protected 11209/admin administrator identity: if 11209@asianschool.bh is
       // not provisioned separately in Firebase Auth, verify against the
       // protected admin@asianschool.bh account using the supplied password.
@@ -4531,16 +4554,44 @@ class AuthService {
   /// Verifies credentials securely against Firebase Auth.
   Future<UserCredential?> signInAdmin({required String password}) async {
     const adminEmail = 'admin@asianschool.bh';
-    final cred = await _auth
-        .signInWithEmailAndPassword(email: adminEmail, password: password)
-        .timeout(
-          const Duration(seconds: 25),
-          onTimeout: () => throw FirebaseAuthException(
+    final isWindows = !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+    final authTimeout =
+        isWindows ? const Duration(seconds: 45) : const Duration(seconds: 25);
+    final UserCredential cred;
+    try {
+      cred = await _auth
+          .signInWithEmailAndPassword(email: adminEmail, password: password)
+          .timeout(
+            authTimeout,
+            onTimeout: () => throw FirebaseAuthException(
+              code: 'network-request-failed',
+              message:
+                  'Authentication connection timed out. Please check your internet connection.',
+            ),
+          );
+    } on FirebaseAuthException catch (e) {
+      if (isWindows && e.code == 'network-request-failed') {
+        try {
+          await verifyCredentialsViaRest(
+            scholarNo: 'admin',
+            password: password,
+          ).timeout(const Duration(seconds: 6));
+          throw FirebaseAuthException(
             code: 'network-request-failed',
             message:
-                'Authentication connection timed out. Please check your internet connection.',
-          ),
-        );
+                'Windows Firebase Auth could not reach Google Auth cleanly (possible IPv6 timeout). Try retrying or disabling IPv6 if the issue persists.',
+          );
+        } on FirebaseAuthException catch (restErr) {
+          if (restErr.code == 'invalid-credential') {
+            throw FirebaseAuthException(
+              code: 'invalid-credential',
+              message: 'Incorrect scholar number or password.',
+            );
+          }
+        } catch (_) {}
+      }
+      rethrow;
+    }
 
     final u = cred.user;
     if (u != null) {
@@ -6839,19 +6890,23 @@ class AuthService {
               'us-central1-$project.cloudfunctions.net',
               '/schoolElection',
             );
-            String candId = candidate.id.isNotEmpty
-                ? candidate.id
-                : candidate.scholarNo;
-            if (candId.isEmpty || candId == candidate.scholarNo) {
-              try {
-                final pollDoc = await _firestore
-                    .collection('election_polls_v2')
-                    .doc(bId)
-                    .get();
-                if (pollDoc.exists) {
-                  final pData = pollDoc.data();
-                  final cList = (pData?['candidates'] as List? ?? [])
-                      .cast<Map>();
+            String candId = candidate.id.trim().isNotEmpty
+                ? candidate.id.trim()
+                : candidate.scholarNo.trim();
+            final targetScholar = candidate.scholarNo.trim().toLowerCase();
+            final targetId = candidate.id.trim().toLowerCase();
+            final targetName = candidate.fullName.trim().toLowerCase();
+            try {
+              final pollDoc = await _firestore
+                  .collection('election_polls_v2')
+                  .doc(bId)
+                  .get();
+              if (pollDoc.exists) {
+                final pData = pollDoc.data();
+                final cList = (pData?['candidates'] as List? ?? [])
+                    .whereType<Map>();
+                if (cList.isNotEmpty) {
+                  Map? matchedCandidate;
                   for (final c in cList) {
                     final cSNo = (c['scholar_no'] ?? c['scholarNo'] ?? '')
                         .toString()
@@ -6861,21 +6916,41 @@ class AuthService {
                         .toString()
                         .trim()
                         .toLowerCase();
-                    if ((cSNo.isNotEmpty &&
-                            cSNo == candidate.scholarNo.trim().toLowerCase()) ||
-                        (candidate.id.isNotEmpty &&
-                            cIdMatch == candidate.id.trim().toLowerCase())) {
-                      final foundId = (c['id'] ?? '').toString().trim();
-                      if (foundId.isNotEmpty) {
-                        candId = foundId;
-                        break;
-                      }
+                    final cName = (c['name'] ?? c['full_name'] ?? '')
+                        .toString()
+                        .trim()
+                        .toLowerCase();
+                    final matches = (targetId.isNotEmpty &&
+                            (cIdMatch == targetId || cSNo == targetId)) ||
+                        (targetScholar.isNotEmpty &&
+                            (cSNo == targetScholar ||
+                                cIdMatch == targetScholar)) ||
+                        (targetName.isNotEmpty && cName == targetName);
+                    if (matches) {
+                      matchedCandidate = c;
+                      break;
                     }
                   }
+                  if (matchedCandidate == null) {
+                    return (
+                      success: false,
+                      receipt: null,
+                      error: 'Candidate is not on this ballot.',
+                    );
+                  }
+                  final resolvedId = (matchedCandidate['id'] ??
+                          matchedCandidate['scholar_no'] ??
+                          matchedCandidate['scholarNo'] ??
+                          candId)
+                      .toString()
+                      .trim();
+                  if (resolvedId.isNotEmpty) {
+                    candId = resolvedId;
+                  }
                 }
-              } catch (_) {}
-            }
-            if (candId.isEmpty || candId == candidate.scholarNo) {
+              }
+            } catch (_) {}
+            if (candId.isEmpty) {
               return (
                 success: false,
                 receipt: null,
@@ -6899,7 +6974,10 @@ class AuthService {
                 )
                 .timeout(const Duration(seconds: 15));
 
-            final envelope = jsonDecode(reply.body);
+            dynamic envelope;
+            try {
+              envelope = jsonDecode(reply.body);
+            } catch (_) {}
             if (envelope is Map) {
               if (envelope['error'] != null) {
                 final err = envelope['error'];
@@ -6935,6 +7013,14 @@ class AuthService {
                 await cacheVoteReceipt(officialReceipt);
                 return (success: true, receipt: officialReceipt, error: null);
               }
+            }
+            if (reply.statusCode == 404 || reply.statusCode == 501) {
+              return (
+                success: false,
+                receipt: null,
+                error:
+                    'Live election voting requires the schoolElection Cloud Function to be deployed (Firebase Blaze plan).',
+              );
             }
             if (reply.statusCode != 200) {
               return (

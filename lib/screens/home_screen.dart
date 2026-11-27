@@ -1697,91 +1697,13 @@ class _HomeScreenState extends State<HomeScreen>
         studentName: fullName,
       );
     } else if (_selectedIndex == 2) {
-      currentTabBody = RefreshIndicator(
-        onRefresh: _loadProfile,
-        color: houseColor,
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                '🏆 Live House Standings',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -0.5,
-                ),
-              ),
-              ValueListenableBuilder<bool>(
-                valueListenable: _isMyHouseFirstPlaceNotifier,
-                builder: (context, isFirst, _) {
-                  if (!isFirst) return const SizedBox.shrink();
-                  return Semantics(
-                    container: true,
-                    liveRegion: true,
-                    label:
-                        'Celebration: Your house is in 1st place! Confetti celebrations active! Keep participating to maintain the lead.',
-                    child: Column(
-                      children: [
-                        const SizedBox(height: 16),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFFF59E0B), Color(0xFFD97706)],
-                            ),
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.amber.withValues(alpha: 0.4),
-                                blurRadius: 16,
-                                offset: const Offset(0, 6),
-                              ),
-                            ],
-                          ),
-                          child: const Row(
-                            children: [
-                              Text('🎉', style: TextStyle(fontSize: 32)),
-                              SizedBox(width: 14),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'YOUR HOUSE IS IN 1ST PLACE!',
-                                      style: TextStyle(
-                                        fontSize: 17,
-                                        fontWeight: FontWeight.w900,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                    Text(
-                                      'Confetti celebrations active! Keep participating to maintain the lead.',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.white70,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 20),
-              _buildLiveStandingsSection(),
-              const SizedBox(height: 100),
-            ],
-          ),
-        ),
+      currentTabBody = _buildStandingsTab(
+        houseName: houseName,
+        houseColor: houseColor,
+        houseDark: houseDark,
+        scholarNo: scholarNo,
+        fullName: fullName,
+        isAdmin: isAdmin,
       );
     } else if (_selectedIndex == 3) {
       currentTabBody = RefreshIndicator(
@@ -3933,6 +3855,628 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  String _formatHouseLabel(String rawHouse) {
+    final clean = rawHouse.trim();
+    if (clean.isEmpty) return 'House';
+    return '${clean[0].toUpperCase()}${clean.substring(1).toLowerCase()}';
+  }
+
+  List<MapEntry<String, int>> _sortedStandingsFromSnapshot(
+    AsyncSnapshot<QuerySnapshot> snapshot,
+  ) {
+    final pointsMap = Map<String, int>.from(
+      AuthService.getCachedHouseStandings(),
+    );
+    if (snapshot.hasData && snapshot.data!.docs.isNotEmpty) {
+      for (final doc in snapshot.data!.docs) {
+        final raw = doc.data();
+        final data =
+            raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+        final h = (data['house_name'] ?? doc.id).toString().toLowerCase();
+        final pts = (data['total_points'] as num?)?.toInt() ?? 0;
+        pointsMap[h] = pts;
+      }
+      AuthService.cacheHouseStandings(pointsMap, syncedAt: DateTime.now());
+    }
+    final sorted = pointsMap.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return sorted;
+  }
+
+  Widget _buildStandingsTab({
+    required String houseName,
+    required Color houseColor,
+    required Color houseDark,
+    required String scholarNo,
+    required String fullName,
+    required bool isAdmin,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return RefreshIndicator(
+      onRefresh: _loadProfile,
+      color: houseColor,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 880),
+            child: StreamBuilder<QuerySnapshot>(
+              stream: _authService.getHouseStandingsStream(),
+              builder: (context, snapshot) {
+                final isConnecting =
+                    !snapshot.hasData ||
+                    (snapshot.hasData && snapshot.data!.docs.isEmpty);
+                final sortedHouses = _sortedStandingsFromSnapshot(snapshot);
+                final totalSchoolPoints = sortedHouses.fold<int>(
+                  0,
+                  (acc, e) => acc + e.value,
+                );
+                final topHouse =
+                    sortedHouses.isNotEmpty ? sortedHouses.first : null;
+                final secondPts =
+                    sortedHouses.length > 1 ? sortedHouses[1].value : 0;
+                final leadMargin = topHouse != null
+                    ? (topHouse.value - secondPts).clamp(0, 10000000)
+                    : 0;
+
+                final myHouseKey = (AuthService.extractHouse(_profile) ??
+                        _cachedHouse ??
+                        AuthService.getCachedHouse() ??
+                        houseName)
+                    .trim()
+                    .toLowerCase();
+                final myRankIndex = sortedHouses.indexWhere(
+                  (e) => e.key.toLowerCase() == myHouseKey,
+                );
+                final myRank = myRankIndex >= 0 ? myRankIndex + 1 : 0;
+                final myPts =
+                    myRankIndex >= 0 ? sortedHouses[myRankIndex].value : 0;
+                final ptsBehindLeader = topHouse != null
+                    ? (topHouse.value - myPts).clamp(0, 10000000)
+                    : 0;
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '🏆 Live House Standings',
+                                style: TextStyle(
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: -0.6,
+                                ),
+                              ),
+                              SizedBox(height: 2),
+                              Text(
+                                'ASB Inter-House Championship Race & Leaderboard',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: (isConnecting ? Colors.amber : Colors.green)
+                                .withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: (isConnecting ? Colors.amber : Colors.green)
+                                  .withValues(alpha: 0.35),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 7,
+                                height: 7,
+                                decoration: BoxDecoration(
+                                  color: isConnecting
+                                      ? Colors.amber.shade700
+                                      : Colors.green,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                isConnecting ? 'Saved Cache' : 'Live Sync',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  color: isConnecting
+                                      ? Colors.amber.shade800
+                                      : Colors.green.shade700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Hero Championship Summary Card
+                    _buildStandingsHeroCard(
+                      isDark: isDark,
+                      houseName: houseName,
+                      houseColor: houseColor,
+                      houseDark: houseDark,
+                      scholarNo: scholarNo,
+                      fullName: fullName,
+                      isAdmin: isAdmin,
+                      topHouse: topHouse,
+                      leadMargin: leadMargin,
+                      totalSchoolPoints: totalSchoolPoints,
+                      myRank: myRank,
+                      ptsBehindLeader: ptsBehindLeader,
+                    ),
+
+                    ValueListenableBuilder<bool>(
+                      valueListenable: _isMyHouseFirstPlaceNotifier,
+                      builder: (context, isFirst, _) {
+                        if (!isFirst) return const SizedBox.shrink();
+                        return Semantics(
+                          container: true,
+                          liveRegion: true,
+                          label:
+                              'Celebration: Your house is in 1st place! Confetti celebrations active! Keep participating to maintain the lead.',
+                          child: Column(
+                            children: [
+                              const SizedBox(height: 16),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(18),
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    colors: [
+                                      Color(0xFFF59E0B),
+                                      Color(0xFFD97706),
+                                    ],
+                                  ),
+                                  borderRadius: BorderRadius.circular(22),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.amber.withValues(alpha: 0.35),
+                                      blurRadius: 16,
+                                      offset: const Offset(0, 6),
+                                    ),
+                                  ],
+                                ),
+                                child: const Row(
+                                  children: [
+                                    Text('🎉', style: TextStyle(fontSize: 30)),
+                                    SizedBox(width: 14),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'YOUR HOUSE IS IN 1ST PLACE!',
+                                            style: TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w900,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                          Text(
+                                            'Confetti celebrations active! Keep participating to maintain the lead.',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.white70,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+
+                    if (sortedHouses.length >= 3) ...[
+                      const SizedBox(height: 20),
+                      _buildStandingsPodium(
+                        sortedHouses: sortedHouses,
+                        totalSchoolPoints: totalSchoolPoints,
+                        isDark: isDark,
+                      ),
+                    ],
+
+                    const SizedBox(height: 20),
+                    _buildLiveStandingsSection(),
+                    const SizedBox(height: 100),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStandingsHeroCard({
+    required bool isDark,
+    required String houseName,
+    required Color houseColor,
+    required Color houseDark,
+    required String scholarNo,
+    required String fullName,
+    required bool isAdmin,
+    required MapEntry<String, int>? topHouse,
+    required int leadMargin,
+    required int totalSchoolPoints,
+    required int myRank,
+    required int ptsBehindLeader,
+  }) {
+    final leaderKey = topHouse?.key ?? houseName;
+    final leaderDisplay = _formatHouseLabel(leaderKey);
+    final leaderEmoji = HouseColors.getHouseEmoji(leaderKey);
+    final leaderPts = topHouse?.value ?? 0;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isDark
+              ? [const Color(0xFF172033), const Color(0xFF0F172A)]
+              : [houseColor.withValues(alpha: 0.92), houseDark],
+        ),
+        borderRadius: BorderRadius.circular(26),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: isDark ? 0.12 : 0.2),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: (isDark ? Colors.black : houseColor).withValues(alpha: 0.28),
+            blurRadius: 22,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Center(
+                      child: Text(
+                        leaderEmoji,
+                        style: const TextStyle(fontSize: 28),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Flexible(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          leaderPts > 0
+                              ? '$leaderDisplay Leads the Cup'
+                              : 'Championship Season Ready',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          leaderPts > 0
+                              ? '$leaderPts pts • +$leadMargin pt lead over #2'
+                              : 'Award points to launch live standings',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.8),
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      '$totalSchoolPoints Pts',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    Text(
+                      'School Total',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.72),
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.shield_rounded, color: Colors.amberAccent, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    myRank > 0
+                        ? 'Your House (${_formatHouseLabel(houseName)}): Rank #$myRank${myRank == 1 && leaderPts > 0 ? " • In the lead!" : ptsBehindLeader > 0 ? " • $ptsBehindLeader pts behind #1" : ""}'
+                        : 'Your House: ${_formatHouseLabel(houseName)}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: isDark ? const Color(0xFF0F172A) : houseDark,
+                  minimumSize: const Size(0, 48),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                onPressed: () {
+                  HapticFeedback.lightImpact();
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => HouseLeaderboardScreen(
+                        initialHouse: _formatHouseLabel(houseName),
+                        initialPoints: 0,
+                      ),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.leaderboard_rounded, size: 18),
+                label: const Text(
+                  'House Leaderboard',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: BorderSide(color: Colors.white.withValues(alpha: 0.45)),
+                  minimumSize: const Size(0, 48),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                onPressed: () {
+                  HapticFeedback.lightImpact();
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => HouseArenaScreen(
+                        userHouse: houseName,
+                        scholarNo: scholarNo,
+                        userName: fullName,
+                        isAdmin: isAdmin,
+                      ),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+                label: const Text(
+                  'House Arena',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStandingsPodium({
+    required List<MapEntry<String, int>> sortedHouses,
+    required int totalSchoolPoints,
+    required bool isDark,
+  }) {
+    final second = sortedHouses[1];
+    final first = sortedHouses[0];
+    final third = sortedHouses[2];
+
+    Widget podiumStep({
+      required MapEntry<String, int> entry,
+      required int rank,
+      required double height,
+    }) {
+      final color = HouseColors.getHouseColor(entry.key);
+      final emoji = HouseColors.getHouseEmoji(entry.key);
+      final label = _formatHouseLabel(entry.key);
+      final share = totalSchoolPoints > 0
+          ? ((entry.value / totalSchoolPoints) * 100).round()
+          : 0;
+      const medals = {1: '🥇', 2: '🥈', 3: '🥉'};
+
+      return Expanded(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () {
+            HapticFeedback.lightImpact();
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => HouseLeaderboardScreen(
+                  initialHouse: label,
+                  initialPoints: entry.value,
+                ),
+              ),
+            );
+          },
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(10, 14, 10, 12),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? color.withValues(alpha: rank == 1 ? 0.16 : 0.1)
+                  : color.withValues(alpha: rank == 1 ? 0.12 : 0.06),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: rank == 1
+                    ? Colors.amber.withValues(alpha: 0.7)
+                    : color.withValues(alpha: 0.28),
+                width: rank == 1 ? 1.8 : 1,
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  medals[rank] ?? '#$rank',
+                  style: TextStyle(fontSize: rank == 1 ? 24 : 20),
+                ),
+                const SizedBox(height: 6),
+                CircleAvatar(
+                  radius: rank == 1 ? 24 : 20,
+                  backgroundColor: color.withValues(alpha: 0.2),
+                  child: Text(
+                    emoji,
+                    style: TextStyle(fontSize: rank == 1 ? 24 : 20),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: rank == 1 ? 15 : 13.5,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    '${entry.value} pts',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12.5,
+                      color: color,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  height: height,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        color.withValues(alpha: 0.85),
+                        color.withValues(alpha: 0.45),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Center(
+                    child: Text(
+                      '$share%',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        podiumStep(entry: second, rank: 2, height: 42),
+        const SizedBox(width: 10),
+        podiumStep(entry: first, rank: 1, height: 64),
+        const SizedBox(width: 10),
+        podiumStep(entry: third, rank: 3, height: 32),
+      ],
+    );
+  }
+
   Widget _buildLiveStandingsSection() {
     return StreamBuilder<QuerySnapshot>(
       stream: _authService.getHouseStandingsStream(),
@@ -3941,7 +4485,7 @@ class _HomeScreenState extends State<HomeScreen>
             !snapshot.hasData || (snapshot.hasData && snapshot.data!.docs.isEmpty);
 
         // Pre-hydrate from local cache so the dashboard never renders blank or 0-points
-        Map<String, int> pointsMap = Map<String, int>.from(
+        final pointsMap = Map<String, int>.from(
           AuthService.getCachedHouseStandings(),
         );
 
@@ -3964,7 +4508,10 @@ class _HomeScreenState extends State<HomeScreen>
           0,
           (acc, val) => acc + val,
         );
-        final maxPts = totalSchoolPoints > 0 ? totalSchoolPoints : 1;
+        final topHousePts =
+            sortedHouses.isNotEmpty && sortedHouses.first.value > 0
+                ? sortedHouses.first.value
+                : 1;
 
         final myHouse = (AuthService.extractHouse(_profile) ??
                 _cachedHouse ??
@@ -4006,18 +4553,18 @@ class _HomeScreenState extends State<HomeScreen>
         _previousLeader = currentLeader;
 
         final standingsWidget = Container(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surface,
             borderRadius: BorderRadius.circular(28),
             border: Border.all(
               color: Theme.of(
                 context,
-              ).colorScheme.outline.withValues(alpha: 0.5),
+              ).colorScheme.outline.withValues(alpha: 0.45),
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.03),
+                color: Colors.black.withValues(alpha: 0.04),
                 blurRadius: 18,
                 offset: const Offset(0, 6),
               ),
@@ -4064,16 +4611,18 @@ class _HomeScreenState extends State<HomeScreen>
               final house = entry.value.key;
               final pts = entry.value.value;
               final color = HouseColors.getHouseColor(house);
-              final cleanHouse = house.trim();
-              final houseNameDisplay = cleanHouse.isNotEmpty
-                  ? '${cleanHouse[0].toUpperCase()}${cleanHouse.substring(1)}'
-                  : 'House';
+              final houseEmoji = HouseColors.getHouseEmoji(house);
+              final houseNameDisplay = _formatHouseLabel(house);
+              final isMine = house.trim().toLowerCase() == myHouse;
+              final sharePct = totalSchoolPoints > 0
+                  ? ((pts / totalSchoolPoints) * 100).round()
+                  : 0;
               // Medal emojis for top 3 positions
               const medals = {1: '🥇', 2: '🥈', 3: '🥉'};
               final medal = medals[rank];
 
               return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
+                padding: const EdgeInsets.symmetric(vertical: 5),
                 child: MergeSemantics(
                   child: Semantics(
                     container: true,
@@ -4100,10 +4649,11 @@ class _HomeScreenState extends State<HomeScreen>
                       vertical: 10,
                     ),
                     decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.04),
+                      color: color.withValues(alpha: isMine ? 0.09 : 0.04),
                       borderRadius: BorderRadius.circular(18),
                       border: Border.all(
-                        color: color.withValues(alpha: 0.15),
+                        color: color.withValues(alpha: isMine ? 0.55 : 0.16),
+                        width: isMine ? 1.5 : 1,
                       ),
                     ),
                     child: Column(
@@ -4121,15 +4671,15 @@ class _HomeScreenState extends State<HomeScreen>
                                         height: 36,
                                         decoration: BoxDecoration(
                                           color: rank == 1
-                                              ? Colors.amber.withValues(alpha: 0.2)
+                                              ? Colors.amber.withValues(alpha: 0.22)
                                               : rank == 2
                                               ? const Color(
                                                   0xFFC0C0C0,
-                                                ).withValues(alpha: 0.2)
+                                                ).withValues(alpha: 0.22)
                                               : rank == 3
                                               ? const Color(
                                                   0xFFCD7F32,
-                                                ).withValues(alpha: 0.2)
+                                                ).withValues(alpha: 0.22)
                                               : color.withValues(alpha: 0.12),
                                           shape: BoxShape.circle,
                                         ),
@@ -4149,35 +4699,58 @@ class _HomeScreenState extends State<HomeScreen>
                                                 ),
                                         ),
                                       ),
-                                      const SizedBox(width: 12),
+                                      const SizedBox(width: 10),
                                       Expanded(
                                         child: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            Row(
+                                            Wrap(
+                                              crossAxisAlignment:
+                                                  WrapCrossAlignment.center,
+                                              spacing: 6,
+                                              runSpacing: 3,
                                               children: [
-                                                Flexible(
-                                                  child: Text(
-                                                    houseNameDisplay,
-                                                    overflow: TextOverflow.ellipsis,
-                                                    style: const TextStyle(
-                                                      fontSize: 16,
-                                                      fontWeight: FontWeight.w700,
-                                                    ),
+                                                Text(
+                                                  houseEmoji,
+                                                  style: const TextStyle(fontSize: 14),
+                                                ),
+                                                Text(
+                                                  houseNameDisplay,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: const TextStyle(
+                                                    fontSize: 15.5,
+                                                    fontWeight: FontWeight.w800,
                                                   ),
                                                 ),
-                                                const SizedBox(width: 6),
-                                                Icon(
-                                                  Icons.leaderboard_outlined,
-                                                  size: 14,
-                                                  color: color.withValues(alpha: 0.8),
-                                                ),
+                                                if (isMine)
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(
+                                                      horizontal: 6,
+                                                      vertical: 2,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color: color.withValues(alpha: 0.16),
+                                                      borderRadius:
+                                                          BorderRadius.circular(999),
+                                                    ),
+                                                    child: Text(
+                                                      'YOUR HOUSE',
+                                                      style: TextStyle(
+                                                        fontSize: 9,
+                                                        fontWeight: FontWeight.w900,
+                                                        color: color,
+                                                      ),
+                                                    ),
+                                                  ),
                                               ],
                                             ),
+                                            const SizedBox(height: 2),
                                             Text(
-                                              rank == 1
-                                                  ? 'Leading • Tap for Leaderboard'
+                                              rank == 1 && pts > 0
+                                                  ? '$sharePct% share • Leading • Tap for roster'
+                                                  : totalSchoolPoints > 0
+                                                  ? '$sharePct% of school total • Tap for roster'
                                                   : 'Tap to view contributor roster',
                                               overflow: TextOverflow.ellipsis,
                                               style: TextStyle(
@@ -4210,17 +4783,17 @@ class _HomeScreenState extends State<HomeScreen>
                                           child: Container(
                                             padding: const EdgeInsets.symmetric(
                                               horizontal: 10,
-                                              vertical: 4,
+                                              vertical: 5,
                                             ),
                                             decoration: BoxDecoration(
-                                              color: color.withValues(alpha: 0.1),
+                                              color: color.withValues(alpha: 0.12),
                                               borderRadius: BorderRadius.circular(10),
                                             ),
                                             child: Text(
                                               '$pts Pts',
                                               style: TextStyle(
                                                 fontSize: 14,
-                                                fontWeight: FontWeight.w800,
+                                                fontWeight: FontWeight.w900,
                                                 color: color,
                                               ),
                                             ),
@@ -4231,7 +4804,7 @@ class _HomeScreenState extends State<HomeScreen>
                                       Icon(
                                         Icons.chevron_right_rounded,
                                         size: 18,
-                                        color: color.withValues(alpha: 0.6),
+                                        color: color.withValues(alpha: 0.65),
                                       ),
                                     ],
                                   ),
@@ -4244,7 +4817,9 @@ class _HomeScreenState extends State<HomeScreen>
                         ClipRRect(
                           borderRadius: BorderRadius.circular(999),
                           child: LinearProgressIndicator(
-                            value: pts == 0 ? 0.05 : pts / maxPts,
+                            value: pts <= 0
+                                ? 0.04
+                                : (pts / topHousePts).clamp(0.06, 1.0),
                             backgroundColor: color.withValues(alpha: 0.12),
                             valueColor: AlwaysStoppedAnimation<Color>(color),
                             minHeight: rank == 1 ? 10 : 8,
