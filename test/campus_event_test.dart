@@ -674,5 +674,72 @@ void main() {
       expect(find.text('Grade 12'), findsWidgets);
       expect(tester.takeException(), isNull);
     });
+
+    testWidgets('orders live before upcoming before concluded, supports filter reset and reload', (tester) async {
+      final now = DateTime(2026, 11, 10, 10);
+      await AuthService.cacheEvents([
+        CampusEvent(
+          id: 'ev_concluded',
+          title: 'Past Marathon',
+          description: 'Finished run.',
+          category: EventCategory.sports,
+          startTime: now.subtract(const Duration(hours: 6)),
+          endTime: now.subtract(const Duration(hours: 4)),
+          venue: 'Track',
+        ),
+        CampusEvent(
+          id: 'ev_upcoming',
+          title: 'Future Hackathon',
+          description: 'Coding sprint.',
+          category: EventCategory.tech,
+          startTime: now.add(const Duration(hours: 5)),
+          endTime: now.add(const Duration(hours: 8)),
+          venue: 'CS Lab',
+          pointsAwarded: 40,
+        ),
+        CampusEvent(
+          id: 'ev_live',
+          title: 'Live Science Expo',
+          description: 'Robotics showcase.',
+          category: EventCategory.academic,
+          startTime: now.subtract(const Duration(minutes: 30)),
+          endTime: now.add(const Duration(hours: 2)),
+          venue: 'Main Atrium',
+        ),
+      ]);
+
+      tester.view.physicalSize = const Size(1200, 1000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: EventsScreen(userHouse: 'emerald', mockNow: now),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Overview strip + Live HUD visible
+      expect(find.text('Emerald Events Pulse'), findsOneWidget);
+      expect(find.text('3 scheduled • 1 upcoming • 1 live'), findsOneWidget);
+
+      // Search filters to zero matches then Clear Filters restores list
+      await tester.enterText(find.byType(TextField), 'NonexistentQueryXYZ');
+      await tester.pumpAndSettle();
+      expect(find.text('No Events Scheduled'), findsOneWidget);
+      expect(find.text('Clear Filters'), findsOneWidget);
+
+      await tester.tap(find.text('Clear Filters'));
+      await tester.pumpAndSettle();
+      expect(find.text('Live Science Expo'), findsWidgets);
+      expect(find.text('Future Hackathon'), findsOneWidget);
+      expect(find.text('Past Marathon'), findsOneWidget);
+
+      // Reload button does not throw LateInitializationError on _eventsStream
+      await tester.tap(find.byTooltip('Reload Campus Events'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
   });
 }

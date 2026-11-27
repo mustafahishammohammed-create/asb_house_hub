@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/campus_event.dart';
@@ -19,12 +20,14 @@ class EventsScreen extends StatefulWidget {
 
 class _EventsScreenState extends State<EventsScreen> {
   final _authService = AuthService();
+  final _searchController = TextEditingController();
   late final bool _isStaff;
   late final String _uid;
   late final String _studentName;
   late final String _scholarNo;
   late final int? _viewerGrade;
-  late final Stream<List<CampusEvent>> _eventsStream;
+  late Stream<List<CampusEvent>> _eventsStream;
+  Timer? _tickerTimer;
   EventCategory _selectedCategory = EventCategory.all;
   String _searchQuery = '';
   String _selectedHouse = 'any';
@@ -49,6 +52,18 @@ class _EventsScreenState extends State<EventsScreen> {
       includeDrafts: _isStaff,
       gradeIndex: _viewerGrade,
     );
+    if (widget.mockNow == null) {
+      _tickerTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+        if (mounted) setState(() {});
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _tickerTimer?.cancel();
+    _searchController.dispose();
+    super.dispose();
   }
 
   DateTime get _now => widget.mockNow ?? DateTime.now();
@@ -159,102 +174,371 @@ class _EventsScreenState extends State<EventsScreen> {
                   _searchQuery.toLowerCase(),
                 );
             return matchesCat && matchesHouse && matchesSearch;
-          }).toList();
+          }).toList()
+            ..sort((a, b) {
+              int rank(CampusEvent ev) {
+                if (ev.isLiveAt(now) || ev.isOngoingAt(now)) return 0;
+                if (ev.isDraft) return 2;
+                if (ev.isCancelled) return 3;
+                if (ev.isConcludedAt(now)) return 4;
+                return 1; // Upcoming
+              }
+
+              final rA = rank(a);
+              final rB = rank(b);
+              if (rA != rB) return rA.compareTo(rB);
+              if (rA == 4) return b.startTime.compareTo(a.startTime);
+              return a.startTime.compareTo(b.startTime);
+            });
 
           final liveEvents = events
               .where((e) => e.isLiveAt(now) || e.isOngoingAt(now))
               .toList();
+          final upcomingCount = events
+              .where(
+                (e) =>
+                    !e.isCancelled &&
+                    !e.isDraft &&
+                    !e.isConcludedAt(now) &&
+                    !e.isLiveAt(now) &&
+                    !e.isOngoingAt(now),
+              )
+              .length;
+          final hasActiveFilters =
+              _selectedCategory != EventCategory.all ||
+              _selectedHouse != 'any' ||
+              _searchQuery.isNotEmpty;
 
           return FocusTraversalGroup(
             policy: OrderedTraversalPolicy(),
-            child: CustomScrollView(
-              slivers: [
-                // Live event HUD. This is a schedule indicator, not a media
-                // stream: tapping it opens the normal event details.
-                if (liveEvents.isNotEmpty)
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
-                      ),
-                      child: _buildLiveStageHUD(
-                        liveEvents,
-                        houseColor,
-                        isDark,
-                        now,
-                      ),
-                    ),
-                  ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final horizontalPad = constraints.maxWidth > 1020
+                    ? (constraints.maxWidth - 980) / 2
+                    : 0.0;
+                final isWide = constraints.maxWidth - (horizontalPad * 2) >= 720;
 
-                if (snapshot.hasError)
-                  SliverToBoxAdapter(child: _buildStreamError(isDark)),
-
-                // Category Filter Bar
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: _buildCategoryFilterBar(events, houseColor, isDark),
-                  ),
-                ),
-
-                // House Scope Filter Bar
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: _buildHouseFilterBar(houseColor, isDark),
-                  ),
-                ),
-
-                // Search Bar
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    child: TextField(
-                      decoration: InputDecoration(
-                        hintText: 'Search events, stages, venues...',
-                        prefixIcon: const Icon(Icons.search_rounded),
-                        filled: true,
-                        fillColor: isDark
-                            ? const Color(0xFF1E293B)
-                            : Colors.white,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: BorderSide.none,
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 14,
+                return CustomScrollView(
+                  slivers: [
+                    // Campus Events Overview Strip
+                    if (events.isNotEmpty)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            16 + horizontalPad,
+                            6,
+                            16 + horizontalPad,
+                            6,
+                          ),
+                          child: _buildOverviewBanner(
+                            houseColor: houseColor,
+                            isDark: isDark,
+                            totalCount: events.length,
+                            liveCount: liveEvents.length,
+                            upcomingCount: upcomingCount,
+                            hasActiveFilters: hasActiveFilters,
+                          ),
                         ),
                       ),
-                      onChanged: (v) => setState(() => _searchQuery = v.trim()),
-                    ),
-                  ),
-                ),
 
-                // Events List / Empty State
-                if (filtered.isEmpty)
-                  SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: _buildEmptyState(isDark),
-                  )
-                else
-                  SliverPadding(
-                    padding: const EdgeInsets.all(16),
-                    sliver: SliverList(
-                      delegate: SliverChildBuilderDelegate((context, index) {
-                        final event = filtered[index];
-                        return _buildEventCard(event, houseColor, isDark, now);
-                      }, childCount: filtered.length),
+                    // Live event HUD. This is a schedule indicator, not a media
+                    // stream: tapping it opens the normal event details.
+                    if (liveEvents.isNotEmpty)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 16 + horizontalPad,
+                            vertical: 8,
+                          ),
+                          child: _buildLiveStageHUD(
+                            liveEvents,
+                            houseColor,
+                            isDark,
+                            now,
+                          ),
+                        ),
+                      ),
+
+                    if (snapshot.hasError)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: horizontalPad,
+                          ),
+                          child: _buildStreamError(isDark),
+                        ),
+                      ),
+
+                    // Category Filter Bar
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          horizontalPad,
+                          8,
+                          horizontalPad,
+                          8,
+                        ),
+                        child: _buildCategoryFilterBar(
+                          events,
+                          houseColor,
+                          isDark,
+                        ),
+                      ),
                     ),
-                  ),
-              ],
+
+                    // House Scope Filter Bar
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          horizontalPad,
+                          0,
+                          horizontalPad,
+                          4,
+                        ),
+                        child: _buildHouseFilterBar(houseColor, isDark),
+                      ),
+                    ),
+
+                    // Search Bar
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 16 + horizontalPad,
+                          vertical: 8,
+                        ),
+                        child: TextField(
+                          controller: _searchController,
+                          decoration: InputDecoration(
+                            hintText: 'Search events, stages, venues...',
+                            prefixIcon: const Icon(Icons.search_rounded),
+                            suffixIcon: _searchQuery.isNotEmpty
+                                ? IconButton(
+                                    tooltip: 'Clear search',
+                                    icon: const Icon(Icons.close_rounded),
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      setState(() => _searchQuery = '');
+                                    },
+                                  )
+                                : null,
+                            filled: true,
+                            fillColor: isDark
+                                ? const Color(0xFF1E293B)
+                                : Colors.white,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide(
+                                color: isDark
+                                    ? const Color(0xFF334155)
+                                    : const Color(0xFFE2E8F0),
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide(
+                                color: isDark
+                                    ? const Color(0xFF334155)
+                                    : const Color(0xFFE2E8F0),
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide(
+                                color: houseColor,
+                                width: 1.5,
+                              ),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 14,
+                            ),
+                          ),
+                          onChanged: (v) =>
+                              setState(() => _searchQuery = v.trim()),
+                        ),
+                      ),
+                    ),
+
+                    // Events List / Responsive Desktop 2-Column Rows / Empty State
+                    if (filtered.isEmpty)
+                      SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: horizontalPad,
+                          ),
+                          child: _buildEmptyState(
+                            isDark,
+                            hasActiveFilters:
+                                hasActiveFilters && events.isNotEmpty,
+                          ),
+                        ),
+                      )
+                    else if (isWide)
+                      SliverPadding(
+                        padding: EdgeInsets.fromLTRB(
+                          16 + horizontalPad,
+                          10,
+                          16 + horizontalPad,
+                          24,
+                        ),
+                        sliver: SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, rowIndex) {
+                              final firstIdx = rowIndex * 2;
+                              final secondIdx = firstIdx + 1;
+                              return Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: _buildEventCard(
+                                      filtered[firstIdx],
+                                      houseColor,
+                                      isDark,
+                                      now,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: secondIdx < filtered.length
+                                        ? _buildEventCard(
+                                            filtered[secondIdx],
+                                            houseColor,
+                                            isDark,
+                                            now,
+                                          )
+                                        : const SizedBox.shrink(),
+                                  ),
+                                ],
+                              );
+                            },
+                            childCount: (filtered.length + 1) ~/ 2,
+                          ),
+                        ),
+                      )
+                    else
+                      SliverPadding(
+                        padding: EdgeInsets.fromLTRB(
+                          16 + horizontalPad,
+                          10,
+                          16 + horizontalPad,
+                          24,
+                        ),
+                        sliver: SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) {
+                              final event = filtered[index];
+                              return _buildEventCard(
+                                event,
+                                houseColor,
+                                isDark,
+                                now,
+                              );
+                            },
+                            childCount: filtered.length,
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildOverviewBanner({
+    required Color houseColor,
+    required bool isDark,
+    required int totalCount,
+    required int liveCount,
+    required int upcomingCount,
+    required bool hasActiveFilters,
+  }) {
+    final houseLabel = widget.userHouse.trim().isEmpty
+        ? 'Campus'
+        : '${widget.userHouse[0].toUpperCase()}${widget.userHouse.substring(1).toLowerCase()}';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: isDark
+              ? [const Color(0xFF1E293B), houseColor.withValues(alpha: 0.22)]
+              : [Colors.white, houseColor.withValues(alpha: 0.1)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: houseColor.withValues(alpha: isDark ? 0.35 : 0.22),
+        ),
+      ),
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 12,
+        runSpacing: 8,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(9),
+                decoration: BoxDecoration(
+                  color: houseColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(Icons.campaign_rounded, color: houseColor, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$houseLabel Events Pulse',
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w900,
+                        color: isDark ? Colors.white : const Color(0xFF0F172A),
+                      ),
+                    ),
+                    Text(
+                      '$totalCount scheduled • $upcomingCount upcoming${liveCount > 0 ? ' • $liveCount live' : ''}',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.white70 : const Color(0xFF475569),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (hasActiveFilters)
+            TextButton.icon(
+              style: TextButton.styleFrom(
+                minimumSize: const Size(48, 44),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              ),
+              onPressed: () {
+                _searchController.clear();
+                setState(() {
+                  _searchQuery = '';
+                  _selectedCategory = EventCategory.all;
+                  _selectedHouse = 'any';
+                });
+              },
+              icon: const Icon(Icons.filter_alt_off_rounded, size: 16),
+              label: const Text(
+                'Reset filters',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -472,7 +756,7 @@ class _EventsScreenState extends State<EventsScreen> {
                     fontSize: 18,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 6),
                 Row(
                   children: [
                     const Icon(
@@ -491,6 +775,27 @@ class _EventsScreenState extends State<EventsScreen> {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
+                    if (liveEvents.length > 1) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '+${liveEvents.length - 1} more live',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 10.5,
+                          ),
+                        ),
+                      ),
+                    ],
                     if (firstLive.pointsMultiplier > 1.0) ...[
                       const SizedBox(width: 8),
                       Container(
@@ -693,39 +998,78 @@ class _EventsScreenState extends State<EventsScreen> {
     bool isDark,
     DateTime now,
   ) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => _showEventDetailsModal(context, event, houseColor, now),
+    final normalizedScope = AuthService.normalizeCampusHouse(event.houseScope);
+    final accentColor = normalizedScope != 'all'
+        ? HouseColors.getHouseColor(event.houseScope)
+        : houseColor;
+    final startLocal = event.startTime.toLocal();
+    const months = <String>[
+      'JAN',
+      'FEB',
+      'MAR',
+      'APR',
+      'MAY',
+      'JUN',
+      'JUL',
+      'AUG',
+      'SEP',
+      'OCT',
+      'NOV',
+      'DEC',
+    ];
+    final monthShort = months[startLocal.month - 1];
+    final dayNumber = startLocal.day.toString().padLeft(2, '0');
+    final isLive = event.isLiveAt(now) || event.isOngoingAt(now);
+    final isConcluded = event.isConcludedAt(now);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
         borderRadius: BorderRadius.circular(20),
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 16),
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1E293B) : Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 8,
-                offset: const Offset(0, 3),
-              ),
-            ],
-            border: Border.all(
-              color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+        boxShadow: [
+          BoxShadow(
+            color: (isLive ? Colors.redAccent : Colors.black).withValues(
+              alpha: isLive ? 0.14 : (isDark ? 0.25 : 0.05),
             ),
+            blurRadius: isLive ? 14 : 10,
+            offset: const Offset(0, 4),
           ),
+        ],
+        border: Border.all(
+          color: isLive
+              ? Colors.redAccent.withValues(alpha: 0.55)
+              : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+          width: isLive ? 1.5 : 1,
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(20),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => _showEventDetailsModal(context, event, houseColor, now),
+          borderRadius: BorderRadius.circular(20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Banner Image (using Resilient Photo Engine)
+              // Banner Image (using Resilient Photo Engine) or clean accent strip
               if (event.bannerUrl.isNotEmpty)
-                ClipRRect(
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(20),
-                  ),
-                  child: HomeScreen.buildResilientImage(
-                    event.bannerUrl,
-                    height: 160,
+                HomeScreen.buildResilientImage(
+                  event.bannerUrl,
+                  height: 164,
+                )
+              else
+                Container(
+                  height: 4,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        accentColor,
+                        accentColor.withValues(alpha: 0.35),
+                      ],
+                    ),
                   ),
                 ),
 
@@ -745,40 +1089,35 @@ class _EventsScreenState extends State<EventsScreen> {
                             vertical: 4,
                           ),
                           decoration: BoxDecoration(
-                            color: houseColor.withValues(alpha: 0.15),
+                            color: accentColor.withValues(alpha: 0.14),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
                             event.category.displayName.toUpperCase(),
                             style: TextStyle(
-                              color: houseColor,
+                              color: isDark
+                                  ? Colors.white
+                                  : accentColor,
                               fontWeight: FontWeight.w900,
                               fontSize: 10,
                               letterSpacing: 0.5,
                             ),
                           ),
                         ),
-                        if (AuthService.normalizeCampusHouse(
-                              event.houseScope,
-                            ) !=
-                            'all')
+                        if (normalizedScope != 'all')
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 8,
                               vertical: 4,
                             ),
                             decoration: BoxDecoration(
-                              color: HouseColors.getHouseColor(
-                                event.houseScope,
-                              ).withValues(alpha: 0.15),
+                              color: accentColor.withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
                               '${event.houseScope.toUpperCase()} EXCLUSIVE',
                               style: TextStyle(
-                                color: HouseColors.getHouseColor(
-                                  event.houseScope,
-                                ),
+                                color: accentColor,
                                 fontWeight: FontWeight.w900,
                                 fontSize: 10,
                               ),
@@ -791,13 +1130,15 @@ class _EventsScreenState extends State<EventsScreen> {
                               vertical: 4,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.teal.withValues(alpha: 0.15),
+                              color: Colors.teal.withValues(alpha: 0.14),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
                               event.gradeRangeLabel.toUpperCase(),
-                              style: const TextStyle(
-                                color: Colors.teal,
+                              style: TextStyle(
+                                color: isDark
+                                    ? const Color(0xFF2DD4BF)
+                                    : const Color(0xFF0F766E),
                                 fontWeight: FontWeight.w900,
                                 fontSize: 10,
                               ),
@@ -811,14 +1152,18 @@ class _EventsScreenState extends State<EventsScreen> {
                               vertical: 4,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.amber.withValues(alpha: 0.2),
+                              color: Colors.amber.withValues(
+                                alpha: isDark ? 0.2 : 0.18,
+                              ),
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(color: Colors.amber),
                             ),
                             child: Text(
                               '${event.pointsMultiplier}x Points',
-                              style: const TextStyle(
-                                color: Colors.amber,
+                              style: TextStyle(
+                                color: isDark
+                                    ? Colors.amber
+                                    : const Color(0xFF92400E),
                                 fontWeight: FontWeight.w900,
                                 fontSize: 11,
                               ),
@@ -826,22 +1171,111 @@ class _EventsScreenState extends State<EventsScreen> {
                           ),
                       ],
                     ),
-                    const SizedBox(height: 10),
-                    Text(
-                      event.title,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 17,
-                      ),
+                    const SizedBox(height: 12),
+
+                    // Calendar Date Tile + Event Title & Schedule
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          constraints: const BoxConstraints(minWidth: 50),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isConcluded
+                                ? (isDark
+                                      ? const Color(0xFF0F172A)
+                                      : const Color(0xFFF1F5F9))
+                                : accentColor.withValues(
+                                    alpha: isDark ? 0.16 : 0.09,
+                                  ),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isConcluded
+                                  ? (isDark
+                                        ? const Color(0xFF334155)
+                                        : const Color(0xFFCBD5E1))
+                                  : accentColor.withValues(alpha: 0.35),
+                            ),
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                monthShort,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0.5,
+                                  color: isConcluded
+                                      ? (isDark
+                                            ? Colors.white54
+                                            : const Color(0xFF64748B))
+                                      : accentColor,
+                                ),
+                              ),
+                              Text(
+                                dayNumber,
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w900,
+                                  height: 1.1,
+                                  color: isConcluded
+                                      ? (isDark
+                                            ? Colors.white60
+                                            : const Color(0xFF475569))
+                                      : (isDark
+                                            ? Colors.white
+                                            : const Color(0xFF0F172A)),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                event.title,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 16.5,
+                                  color: isDark
+                                      ? Colors.white
+                                      : const Color(0xFF0F172A),
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                _formatDateTime(event.startTime),
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark
+                                      ? Colors.white60
+                                      : const Color(0xFF64748B),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
+
                     if (event.description.isNotEmpty) ...[
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 10),
                       Text(
                         event.description,
                         style: TextStyle(
                           color: isDark
-                              ? Colors.grey.shade400
-                              : Colors.grey.shade700,
+                              ? Colors.grey.shade300
+                              : const Color(0xFF475569),
                           fontSize: 13,
                           height: 1.4,
                         ),
@@ -850,39 +1284,89 @@ class _EventsScreenState extends State<EventsScreen> {
                       ),
                     ],
                     const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.location_on_outlined,
-                          size: 16,
-                          color: Colors.grey,
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? const Color(0xFF0F172A)
+                            : const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isDark
+                              ? const Color(0xFF334155)
+                              : const Color(0xFFE2E8F0),
                         ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            event.venue,
-                            style: const TextStyle(
-                              color: Colors.grey,
-                              fontSize: 12,
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.location_on_outlined,
+                            size: 15,
+                            color: isDark
+                                ? Colors.white60
+                                : const Color(0xFF64748B),
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              event.venue,
+                              style: TextStyle(
+                                color: isDark
+                                    ? Colors.white70
+                                    : const Color(0xFF334155),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            overflow: TextOverflow.ellipsis,
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        const Icon(
-                          Icons.access_time_rounded,
-                          size: 16,
-                          color: Colors.grey,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          _remainingLabel(event, now),
-                          style: const TextStyle(
-                            color: Colors.grey,
-                            fontSize: 12,
+                          const SizedBox(width: 8),
+                          Icon(
+                            Icons.access_time_rounded,
+                            size: 15,
+                            color: isDark
+                                ? Colors.white60
+                                : const Color(0xFF64748B),
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 4),
+                          Text(
+                            _remainingLabel(event, now),
+                            style: TextStyle(
+                              color: isDark
+                                  ? Colors.white70
+                                  : const Color(0xFF334155),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          if (event.pointsAwarded > 0) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.green.withValues(alpha: 0.14),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                '+${event.pointsAwarded} PTS',
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w900,
+                                  color: isDark
+                                      ? Colors.greenAccent
+                                      : const Color(0xFF047857),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -908,133 +1392,149 @@ class _EventsScreenState extends State<EventsScreen> {
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setModalState) {
-          return Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF0F172A) : Colors.white,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(24),
-              ),
-            ),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: Colors.grey.withValues(alpha: 0.3),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
+          return Center(
+            heightFactor: 1.0,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 680),
+              child: SafeArea(
+                top: false,
+                child: Container(
+                  padding: EdgeInsets.fromLTRB(
+                    20,
+                    20,
+                    20,
+                    MediaQuery.of(ctx).viewInsets.bottom + 20,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF0F172A) : Colors.white,
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(24),
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  if (event.bannerUrl.isNotEmpty) ...[
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: HomeScreen.buildResilientImage(
-                        event.bannerUrl,
-                        height: 160,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                  ],
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: houseColor.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          event.category.displayName.toUpperCase(),
-                          style: TextStyle(
-                            color: houseColor,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 11,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Center(
+                          child: Container(
+                            width: 40,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: Colors.grey.withValues(alpha: 0.3),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
                           ),
                         ),
-                      ),
-                      if (AuthService.normalizeCampusHouse(event.houseScope) !=
-                          'all') ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
+                        const SizedBox(height: 16),
+                        if (event.bannerUrl.isNotEmpty) ...[
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: HomeScreen.buildResilientImage(
+                              event.bannerUrl,
+                              height: 160,
+                            ),
                           ),
-                          decoration: BoxDecoration(
-                            color: HouseColors.getHouseColor(
-                              event.houseScope,
-                            ).withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            '${event.houseScope.toUpperCase()} EXCLUSIVE',
-                            style: TextStyle(
-                              color: HouseColors.getHouseColor(
-                                event.houseScope,
+                          const SizedBox(height: 14),
+                        ],
+                        SizedBox(
+                          width: double.infinity,
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 6,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: houseColor.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  event.category.displayName.toUpperCase(),
+                                  style: TextStyle(
+                                    color: houseColor,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 11,
+                                  ),
+                                ),
                               ),
-                              fontWeight: FontWeight.w900,
-                              fontSize: 10,
-                            ),
+                              if (AuthService.normalizeCampusHouse(
+                                    event.houseScope,
+                                  ) !=
+                                  'all')
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: HouseColors.getHouseColor(
+                                      event.houseScope,
+                                    ).withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    '${event.houseScope.toUpperCase()} EXCLUSIVE',
+                                    style: TextStyle(
+                                      color: HouseColors.getHouseColor(
+                                        event.houseScope,
+                                      ),
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 10,
+                                    ),
+                                  ),
+                                ),
+                              if (!event.targetsAllGrades)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.teal.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    event.gradeRangeLabel.toUpperCase(),
+                                    style: TextStyle(
+                                      color: isDark
+                                          ? const Color(0xFF2DD4BF)
+                                          : const Color(0xFF0F766E),
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 10,
+                                    ),
+                                  ),
+                                ),
+                              _buildStatusBadge(event, now),
+                              if (event.pointsMultiplier > 1.0)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.amber.withValues(alpha: 0.2),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.amber),
+                                  ),
+                                  child: Text(
+                                    '${event.pointsMultiplier}x Points',
+                                    style: TextStyle(
+                                      color: isDark
+                                          ? Colors.amber
+                                          : const Color(0xFF92400E),
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
-                      ],
-                      if (!event.targetsAllGrades) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.teal.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            event.gradeRangeLabel.toUpperCase(),
-                            style: const TextStyle(
-                              color: Colors.teal,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 10,
-                            ),
-                          ),
-                        ),
-                      ],
-                      const Spacer(),
-                      _buildStatusBadge(event, now),
-                      if (event.pointsMultiplier > 1.0) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.amber.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.amber),
-                          ),
-                          child: Text(
-                            '${event.pointsMultiplier}x Points',
-                            style: const TextStyle(
-                              color: Colors.amber,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
                   const SizedBox(height: 12),
                   Text(
                     event.title,
@@ -1337,10 +1837,12 @@ class _EventsScreenState extends State<EventsScreen> {
                                           studentName: _studentName,
                                           scholarNo: _scholarNo,
                                         );
+                                    if (ctx.mounted) {
+                                      setModalState(
+                                        () => registrationBusy = false,
+                                      );
+                                    }
                                     if (!mounted) return;
-                                    setModalState(
-                                      () => registrationBusy = false,
-                                    );
                                     _showMessage(
                                       !ok
                                           ? 'Could not update your registration. Check your connection and try again.'
@@ -1385,6 +1887,9 @@ class _EventsScreenState extends State<EventsScreen> {
                 ],
               ),
             ),
+          ),
+          ),
+          ),
           );
         },
       ),
@@ -1570,7 +2075,7 @@ class _EventsScreenState extends State<EventsScreen> {
     if (ok) setState(() {});
   }
 
-  Widget _buildEmptyState(bool isDark) {
+  Widget _buildEmptyState(bool isDark, {bool hasActiveFilters = false}) {
     final houseColor = HouseColors.getHouseColor(widget.userHouse);
     return Center(
       child: Padding(
@@ -1579,18 +2084,26 @@ class _EventsScreenState extends State<EventsScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              Icons.event_busy_rounded,
+              hasActiveFilters
+                  ? Icons.filter_list_off_rounded
+                  : Icons.event_busy_rounded,
               size: 64,
               color: isDark ? Colors.grey.shade600 : Colors.grey.shade400,
             ),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               'No Events Scheduled',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: isDark ? Colors.white : const Color(0xFF0F172A),
+              ),
             ),
             const SizedBox(height: 8),
             Text(
-              'Check back later for upcoming House competitions and campus rallies.',
+              hasActiveFilters
+                  ? 'No events match your current search or filter selection.'
+                  : 'Check back later for upcoming House competitions and campus rallies.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 13,
@@ -1603,37 +2116,62 @@ class _EventsScreenState extends State<EventsScreen> {
               runSpacing: 10,
               alignment: WrapAlignment.center,
               children: [
-                ElevatedButton.icon(
-                  onPressed: () async {
-                    setState(() {
-                      _searchQuery = '';
-                      _selectedCategory = EventCategory.all;
-                      _selectedHouse = 'any';
-                    });
-                    await _reloadEvents(
-                      seedSamples: !AuthService.isFirebaseLive,
-                    );
-                  },
-                  icon: Icon(
-                    AuthService.isFirebaseLive
-                        ? Icons.refresh_rounded
-                        : Icons.event_available_rounded,
-                    size: 18,
-                  ),
-                  label: Text(
-                    AuthService.isFirebaseLive
-                        ? 'Retry Campus Events'
-                        : 'Load Sample Events',
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: houseColor,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                if (hasActiveFilters)
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() {
+                        _searchQuery = '';
+                        _selectedCategory = EventCategory.all;
+                        _selectedHouse = 'any';
+                      });
+                    },
+                    icon: const Icon(Icons.clear_all_rounded, size: 18),
+                    label: const Text(
+                      'Clear Filters',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: houseColor,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  )
+                else
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      _searchController.clear();
+                      setState(() {
+                        _searchQuery = '';
+                        _selectedCategory = EventCategory.all;
+                        _selectedHouse = 'any';
+                      });
+                      await _reloadEvents(
+                        seedSamples: !AuthService.isFirebaseLive,
+                      );
+                    },
+                    icon: Icon(
+                      AuthService.isFirebaseLive
+                          ? Icons.refresh_rounded
+                          : Icons.event_available_rounded,
+                      size: 18,
+                    ),
+                    label: Text(
+                      AuthService.isFirebaseLive
+                          ? 'Retry Campus Events'
+                          : 'Load Sample Events',
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: houseColor,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
-                ),
                 if (_isStaff)
                   OutlinedButton.icon(
                     onPressed: () => _showEventComposer(context, houseColor),
