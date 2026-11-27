@@ -1928,7 +1928,9 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
   final AuthService _authService = AuthService();
   late String _currentSubject;
   late String _effectiveClass;
+  String _statusFilter = 'All'; // 'All', 'Pending', 'Submitted', 'Graded'
   final Map<String, AssignmentStatus> _optimisticStatus = {};
+  Timer? _tickerTimer;
 
   @override
   void initState() {
@@ -1936,9 +1938,78 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
     final profile = AuthService.getCachedProfile();
     _effectiveClass = widget.classLevel ?? profile?['class_level']?.toString() ?? 'Grade 10';
     _currentSubject = widget.selectedSubject ?? 'All';
+    if (widget.mockNow == null) {
+      _tickerTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+        if (mounted) setState(() {});
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant AssignmentsTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.classLevel != oldWidget.classLevel && widget.classLevel != null) {
+      _effectiveClass = widget.classLevel!;
+    }
+    if (widget.selectedSubject != oldWidget.selectedSubject &&
+        widget.selectedSubject != null) {
+      _currentSubject = widget.selectedSubject!;
+    }
+  }
+
+  @override
+  void dispose() {
+    _tickerTimer?.cancel();
+    super.dispose();
   }
 
   DateTime get _currentTime => widget.mockNow ?? DateTime.now();
+
+  Color _subjectAccentColor(String subject, bool isDark) {
+    switch (subject.toLowerCase()) {
+      case 'mathematics':
+        return isDark ? const Color(0xFF818CF8) : const Color(0xFF4F46E5);
+      case 'physics':
+        return isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7);
+      case 'chemistry':
+        return isDark ? const Color(0xFF34D399) : const Color(0xFF059669);
+      case 'computer science':
+        return isDark ? const Color(0xFFA78BFA) : const Color(0xFF7C3AED);
+      case 'english':
+        return isDark ? const Color(0xFFFB7185) : const Color(0xFFE11D48);
+      case 'biology':
+        return isDark ? const Color(0xFF4ADE80) : const Color(0xFF16A34A);
+      default:
+        return isDark ? const Color(0xFF38BDF8) : const Color(0xFF4338CA);
+    }
+  }
+
+  IconData _subjectIcon(String subject) {
+    switch (subject.toLowerCase()) {
+      case 'all':
+        return Icons.grid_view_rounded;
+      case 'mathematics':
+        return Icons.functions_rounded;
+      case 'physics':
+        return Icons.bolt_rounded;
+      case 'chemistry':
+        return Icons.science_rounded;
+      case 'computer science':
+        return Icons.code_rounded;
+      case 'english':
+        return Icons.menu_book_rounded;
+      case 'biology':
+        return Icons.biotech_rounded;
+      case 'social studies':
+        return Icons.public_rounded;
+      case 'economics':
+      case 'business studies':
+      case 'accountancy':
+        return Icons.analytics_rounded;
+      default:
+        return Icons.assignment_rounded;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1976,94 +2047,160 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
         // Main Assignments Stream List
         Expanded(
           child: StreamBuilder<List<AcademicAssignment>>(
-            stream: _authService.getAssignmentsStream(
-              classLevel: _effectiveClass,
-              subject: _currentSubject,
-            ),
+            stream: initialList != null
+                ? Stream.value(cachedAssignments)
+                : _authService.getAssignmentsStream(
+                    classLevel: _effectiveClass,
+                    subject: _currentSubject,
+                  ),
             initialData: cachedAssignments.isNotEmpty ? cachedAssignments : null,
             builder: (context, snapshot) {
-              final rawAssignments = (snapshot.hasData && snapshot.data != null && snapshot.data!.isNotEmpty)
-                  ? snapshot.data!
-                  : cachedAssignments;
+              if (snapshot.hasError && cachedAssignments.isEmpty) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.cloud_off_rounded, size: 42, color: Colors.orangeAccent),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'Could not load homework tasks right now.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          onPressed: () => setState(() {}),
+                          icon: const Icon(Icons.refresh_rounded, size: 18),
+                          label: const Text('Retry'),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
 
-              // Apply optimistic statuses if mutated
-              final assignments = rawAssignments.map((a) {
+              final List<AcademicAssignment> rawAssignments;
+              if (initialList != null) {
+                rawAssignments = List<AcademicAssignment>.from(cachedAssignments);
+              } else if (snapshot.hasData && snapshot.data != null) {
+                rawAssignments = List<AcademicAssignment>.from(snapshot.data!);
+              } else {
+                rawAssignments = List<AcademicAssignment>.from(cachedAssignments);
+              }
+
+              // Apply optimistic statuses if mutated & sort by action priority
+              final allAssignments = rawAssignments.map((a) {
                 if (_optimisticStatus.containsKey(a.id)) {
                   return a.copyWith(status: _optimisticStatus[a.id]);
                 }
                 return a;
+              }).toList()
+                ..sort((a, b) {
+                  int rank(AcademicAssignment item) {
+                    if (item.status == AssignmentStatus.pending && item.isOverdue(now)) return 0;
+                    if (item.status == AssignmentStatus.pending) return 1;
+                    if (item.status == AssignmentStatus.submitted) return 2;
+                    return 3; // graded
+                  }
+
+                  final rA = rank(a);
+                  final rB = rank(b);
+                  if (rA != rB) return rA.compareTo(rB);
+                  return a.dueDateTime.compareTo(b.dueDateTime);
+                });
+
+              final assignments = allAssignments.where((a) {
+                if (_statusFilter == 'All') return true;
+                return a.status.displayName.toLowerCase() == _statusFilter.toLowerCase();
               }).toList();
 
               return SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Status Summary HUD (Pending, Submitted, Graded counts)
-                    if (assignments.isNotEmpty)
-                      _buildStatusSummaryHUD(assignments, isDark),
+                    // Editorial Homework Progress HUD (with interactive status filter pills)
+                    if (allAssignments.isNotEmpty) ...[
+                      _buildStatusSummaryHUD(allAssignments, isDark),
+                      const SizedBox(height: 18),
+                    ],
 
-                    const SizedBox(height: 16),
-
-                    // Section Heading
-                    Wrap(
-                      alignment: WrapAlignment.spaceBetween,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 8,
-                      runSpacing: 6,
-                      children: [
-                        Text(
-                          _currentSubject == 'All' ? 'All Assignments' : '$_currentSubject Homework',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w900,
-                            color: isDark ? Colors.white : const Color(0xFF0F172A),
+                    // Section Heading (full width so Wrap spaceBetween never collapses)
+                    SizedBox(
+                      width: double.infinity,
+                      child: Wrap(
+                        alignment: WrapAlignment.spaceBetween,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: [
+                          Text(
+                            _currentSubject == 'All' ? 'Homework Tracker' : '$_currentSubject Homework',
+                            style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w900,
+                              color: isDark ? Colors.white : const Color(0xFF0F172A),
+                            ),
                           ),
-                        ),
-                        Wrap(
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          spacing: 8,
-                          runSpacing: 4,
-                          children: [
-                            if (assignments.isNotEmpty)
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEEF2F6),
-                                  borderRadius: BorderRadius.circular(10),
+                          Wrap(
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: [
+                              if (_statusFilter != 'All')
+                                ActionChip(
+                                  label: Text(
+                                    '$_statusFilter ✕',
+                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
+                                  ),
+                                  onPressed: () => setState(() => _statusFilter = 'All'),
                                 ),
-                                child: Text(
-                                  '${assignments.length} Tasks',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: isDark ? Colors.white70 : const Color(0xFF475569),
+                              if (assignments.isNotEmpty)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEEF2F6),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text(
+                                    '${assignments.length} Tasks',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w800,
+                                      color: isDark ? Colors.white70 : const Color(0xFF475569),
+                                    ),
                                   ),
                                 ),
-                              ),
-                            if (isTeacherOrAdmin)
-                              FilledButton.icon(
-                                key: const Key('add_assignment_button'),
-                                onPressed: _showAddAssignmentModal,
-                                icon: const Icon(Icons.add_rounded, size: 16),
-                                label: const Text('Add Task', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: isDark ? const Color(0xFF38BDF8) : const Color(0xFF4338CA),
-                                  foregroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              if (isTeacherOrAdmin)
+                                FilledButton.icon(
+                                  key: const Key('add_assignment_button'),
+                                  onPressed: _showAddAssignmentModal,
+                                  icon: const Icon(Icons.add_rounded, size: 16),
+                                  label: const Text('Add Task', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: isDark ? const Color(0xFF38BDF8) : const Color(0xFF4338CA),
+                                    foregroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  ),
                                 ),
-                              ),
-                          ],
-                        ),
-                      ],
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
 
                     const SizedBox(height: 12),
 
                     // Empty State or Assignment Cards
                     if (assignments.isEmpty)
-                      _buildEmptyState(isDark, isTeacherOrAdmin)
+                      _buildEmptyState(
+                        isDark,
+                        isTeacherOrAdmin,
+                        _statusFilter != 'All' || _currentSubject != 'All',
+                      )
                     else
                       ...assignments.map((assignment) => _buildAssignmentCard(assignment, now, isDark, isTeacherOrAdmin)),
 
@@ -2126,17 +2263,28 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                               ]
                             : null,
                       ),
-                      child: Center(
-                        child: Text(
-                          subject,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w900,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _subjectIcon(subject),
+                            size: 15,
                             color: isSelected
                                 ? (isDark ? const Color(0xFF0F172A) : Colors.white)
-                                : (isDark ? Colors.white70 : const Color(0xFF334155)),
+                                : _subjectAccentColor(subject, isDark),
                           ),
-                        ),
+                          const SizedBox(width: 6),
+                          Text(
+                            subject,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w900,
+                              color: isSelected
+                                  ? (isDark ? const Color(0xFF0F172A) : Colors.white)
+                                  : (isDark ? Colors.white70 : const Color(0xFF334155)),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -2149,43 +2297,128 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
     );
   }
 
-  /// Status Summary HUD with task distribution.
+  /// Editorial Homework Progress HUD with completion meter & interactive status filter pills.
   Widget _buildStatusSummaryHUD(List<AcademicAssignment> assignments, bool isDark) {
+    final total = assignments.length;
     final pendingCount = assignments.where((a) => a.status == AssignmentStatus.pending).length;
     final submittedCount = assignments.where((a) => a.status == AssignmentStatus.submitted).length;
     final gradedCount = assignments.where((a) => a.status == AssignmentStatus.graded).length;
+    final doneCount = submittedCount + gradedCount;
+    final progress = total > 0 ? doneCount / total : 0.0;
+    final accent = isDark ? const Color(0xFF38BDF8) : const Color(0xFF4338CA);
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E293B) : Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+        gradient: LinearGradient(
+          colors: isDark
+              ? const [Color(0xFF1E293B), Color(0xFF131C2E)]
+              : const [Color(0xFFFFFFFF), Color(0xFFF4F6FF)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: accent.withValues(alpha: isDark ? 0.28 : 0.18),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.24 : 0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildHUDStatPill(
-            label: 'Pending',
-            count: pendingCount,
-            color: const Color(0xFFF59E0B),
-            isDark: isDark,
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(9),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(Icons.task_alt_rounded, color: accent, size: 19),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$doneCount of $total Tasks Completed',
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w900,
+                        color: isDark ? Colors.white : const Color(0xFF0F172A),
+                      ),
+                    ),
+                    Text(
+                      pendingCount == 0
+                          ? 'All caught up for $_effectiveClass!'
+                          : '$pendingCount pending • Tap a tile below to filter',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.white60 : const Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                '${(progress * 100).round()}%',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  color: accent,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          _buildHUDStatPill(
-            label: 'Submitted',
-            count: submittedCount,
-            color: const Color(0xFF38BDF8),
-            isDark: isDark,
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 7,
+              backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFE2E8F0),
+              valueColor: AlwaysStoppedAnimation(accent),
+            ),
           ),
-          const SizedBox(width: 8),
-          _buildHUDStatPill(
-            label: 'Graded',
-            count: gradedCount,
-            color: const Color(0xFF34D399),
-            isDark: isDark,
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              _buildHUDStatPill(
+                label: 'Pending',
+                count: pendingCount,
+                color: isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309),
+                isDark: isDark,
+                selected: _statusFilter == 'Pending',
+                onTap: () => setState(() => _statusFilter = _statusFilter == 'Pending' ? 'All' : 'Pending'),
+              ),
+              const SizedBox(width: 8),
+              _buildHUDStatPill(
+                label: 'Submitted',
+                count: submittedCount,
+                color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0369A1),
+                isDark: isDark,
+                selected: _statusFilter == 'Submitted',
+                onTap: () => setState(() => _statusFilter = _statusFilter == 'Submitted' ? 'All' : 'Submitted'),
+              ),
+              const SizedBox(width: 8),
+              _buildHUDStatPill(
+                label: 'Graded',
+                count: gradedCount,
+                color: isDark ? const Color(0xFF34D399) : const Color(0xFF047857),
+                isDark: isDark,
+                selected: _statusFilter == 'Graded',
+                onTap: () => setState(() => _statusFilter = _statusFilter == 'Graded' ? 'All' : 'Graded'),
+              ),
+            ],
           ),
         ],
       ),
@@ -2197,56 +2430,88 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
     required int count,
     required Color color,
     required bool isDark,
+    bool selected = false,
+    VoidCallback? onTap,
   }) {
     return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: isDark ? 0.15 : 0.08),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withValues(alpha: 0.3)),
-        ),
-        child: Column(
-          children: [
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                '$count',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                  color: color,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+          decoration: BoxDecoration(
+            color: selected
+                ? color.withValues(alpha: isDark ? 0.28 : 0.16)
+                : color.withValues(alpha: isDark ? 0.12 : 0.08),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: selected ? color : color.withValues(alpha: 0.3),
+              width: selected ? 1.5 : 1,
+            ),
+          ),
+          child: Column(
+            children: [
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  '$count',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: color,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 2),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: isDark ? Colors.white70 : const Color(0xFF475569),
+              const SizedBox(height: 2),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: selected ? FontWeight.w900 : FontWeight.w700,
+                    color: isDark ? Colors.white70 : const Color(0xFF475569),
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  /// Individual Assignment Card with Live Region & 48dp cycle button.
+  /// Individual Editorial Assignment Card with Subject Accent, Calendar Due Tile & 48dp Cycle Action.
   Widget _buildAssignmentCard(AcademicAssignment assignment, DateTime now, bool isDark, [bool isTeacherOrAdmin = false]) {
     final isUrgent = assignment.isUrgent(now);
     final isOverdue = assignment.isOverdue(now);
     final remainingStr = assignment.formattedRemaining(now);
     final currentStatus = assignment.status;
+    final subjectColor = _subjectAccentColor(assignment.subject, isDark);
+    final dueLocal = assignment.dueDateTime.toLocal();
+    const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+    final dueMonth = months[(dueLocal.month - 1).clamp(0, 11)];
+    final dueDay = dueLocal.day.toString().padLeft(2, '0');
+
+    final dueChipBg = isOverdue
+        ? (isDark ? const Color(0xFF450A0A) : const Color(0xFFFEE2E2))
+        : (isUrgent
+            ? (isDark ? const Color(0xFF451A03) : const Color(0xFFFEF3C7))
+            : (currentStatus == AssignmentStatus.graded
+                ? (isDark ? const Color(0xFF064E3B) : const Color(0xFFDCFCE7))
+                : (isDark ? const Color(0xFF082F49) : const Color(0xFFF0F9FF))));
+    final dueChipFg = isOverdue
+        ? (isDark ? const Color(0xFFFCA5A5) : const Color(0xFF991B1B))
+        : (isUrgent
+            ? (isDark ? const Color(0xFFFBBF24) : const Color(0xFF92400E))
+            : (currentStatus == AssignmentStatus.graded
+                ? (isDark ? const Color(0xFF34D399) : const Color(0xFF065F46))
+                : (isDark ? const Color(0xFF38BDF8) : const Color(0xFF0369A1))));
 
     return Padding(
       key: Key('assignment_card_${assignment.id}'),
-      padding: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.only(bottom: 16),
       child: Semantics(
         key: Key('assignment_semantics_${assignment.id}'),
         container: true,
@@ -2256,300 +2521,373 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
             'Homework: ${assignment.title} in ${assignment.subject} with ${assignment.teacherName}. $remainingStr.${isUrgent ? " Urgent deadline." : ""} Reward: +${assignment.pointsReward} Points. Status: ${currentStatus.displayName}.',
         child: Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(18),
+          clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF1E293B) : Colors.white,
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(22),
             border: Border.all(
               color: isOverdue
                   ? const Color(0xFFEF4444)
                   : (isUrgent
                       ? const Color(0xFFF59E0B)
                       : (currentStatus == AssignmentStatus.graded
-                          ? const Color(0xFF34D399)
+                          ? const Color(0xFF10B981)
                           : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)))),
-              width: (isUrgent || isOverdue || currentStatus == AssignmentStatus.graded) ? 2 : 1,
+              width: (isUrgent || isOverdue || currentStatus == AssignmentStatus.graded) ? 1.8 : 1,
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.04),
-                blurRadius: 10,
-                offset: const Offset(0, 3),
+                color: Colors.black.withValues(alpha: isDark ? 0.28 : 0.05),
+                blurRadius: 14,
+                offset: const Offset(0, 5),
               ),
             ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Top Bar: Subject Badge + Points Reward Pill
-              Wrap(
-                alignment: WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 8,
-                runSpacing: 6,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF0F172A) : const Color(0xFFEEF2F6),
-                      borderRadius: BorderRadius.circular(8),
+              // Subject Accent Header Ribbon
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                decoration: BoxDecoration(
+                  color: subjectColor.withValues(alpha: isDark ? 0.14 : 0.08),
+                  border: Border(
+                    bottom: BorderSide(
+                      color: subjectColor.withValues(alpha: 0.18),
                     ),
-                    child: FittedBox(
+                  ),
+                ),
+                child: Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    FittedBox(
                       fit: BoxFit.scaleDown,
-                      child: Text(
-                        assignment.subject.toUpperCase(),
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.5,
-                          color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF4338CA),
-                        ),
-                      ),
-                    ),
-                  ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.3)),
-                        ),
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.stars_rounded, size: 14, color: Color(0xFFF59E0B)),
-                              const SizedBox(width: 4),
-                              Text(
-                                '+${assignment.pointsReward} Pts',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w900,
-                                  color: Color(0xFFF59E0B),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      if (isTeacherOrAdmin)
-                        Semantics(
-                          button: true,
-                          label: 'Delete Assignment',
-                          child: IconButton(
-                            key: Key('delete_assignment_${assignment.id}'),
-                            icon: Icon(
-                              Icons.delete_outline_rounded,
-                              size: 18,
-                              color: Colors.redAccent.withValues(alpha: 0.8),
-                            ),
-                            tooltip: 'Delete Assignment',
-                            visualDensity: VisualDensity.compact,
-                            onPressed: () => _confirmDeleteAssignment(assignment),
-                          ),
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 12),
-
-              // Assignment Title
-              Text(
-                assignment.title,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: isDark ? Colors.white : const Color(0xFF0F172A),
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-
-              const SizedBox(height: 4),
-
-              // Teacher Info
-              Text(
-                'Instructor: ${assignment.teacherName}',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: isDark ? Colors.white70 : const Color(0xFF64748B),
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-
-              if (assignment.description.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Text(
-                  assignment.description,
-                  style: TextStyle(
-                    fontSize: 13,
-                    height: 1.4,
-                    color: isDark ? Colors.white60 : const Color(0xFF475569),
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-
-              if (assignment.imageUrl != null && assignment.imageUrl!.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                AcademicImageThumbnail(
-                  imageUrl: assignment.imageUrl!,
-                  title: assignment.title,
-                  height: 110,
-                ),
-              ],
-
-              const SizedBox(height: 14),
-
-              // Bottom Actions: Urgency Countdown Chip & Status Cycle Button
-              Wrap(
-                alignment: WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 12,
-                runSpacing: 10,
-                children: [
-                  // Urgency / Due Date Chip
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: isOverdue
-                          ? const Color(0xFF450A0A)
-                          : (isUrgent
-                              ? const Color(0xFF451A03)
-                              : (currentStatus == AssignmentStatus.graded
-                                  ? const Color(0xFF064E3B)
-                                  : (isDark ? const Color(0xFF082F49) : const Color(0xFFF0F9FF)))),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
-                            isOverdue
-                                ? Icons.warning_amber_rounded
-                                : (isUrgent ? Icons.alarm_rounded : Icons.schedule_rounded),
-                            size: 14,
-                            color: isOverdue
-                                ? const Color(0xFFEF4444)
-                                : (isUrgent
-                                    ? const Color(0xFFF59E0B)
-                                    : (currentStatus == AssignmentStatus.graded
-                                        ? const Color(0xFF34D399)
-                                        : (isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7)))),
-                          ),
-                          const SizedBox(width: 5),
+                          Icon(_subjectIcon(assignment.subject), size: 15, color: subjectColor),
+                          const SizedBox(width: 6),
                           Text(
-                            remainingStr,
+                            assignment.subject.toUpperCase(),
                             style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                              color: isOverdue
-                                  ? const Color(0xFFEF4444)
-                                  : (isUrgent
-                                      ? const Color(0xFFFBBF24)
-                                      : (currentStatus == AssignmentStatus.graded
-                                          ? const Color(0xFF34D399)
-                                          : (isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7)))),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.6,
+                              color: subjectColor,
                             ),
                           ),
                         ],
                       ),
                     ),
-                  ),
-
-                  // Submit Work / Rubric Modal Action
-                  ElevatedButton.icon(
-                    onPressed: () => _showSubmitAssignmentModal(context, assignment),
-                    icon: Icon(
-                      currentStatus == AssignmentStatus.pending
-                          ? Icons.upload_file_rounded
-                          : Icons.visibility_rounded,
-                      size: 15,
-                    ),
-                    label: Text(
-                      currentStatus == AssignmentStatus.pending ? 'Submit Work' : 'Rubric & Work',
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFEEF2F6),
-                      foregroundColor: isDark ? Colors.white : const Color(0xFF0F172A),
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      elevation: 0,
-                    ),
-                  ),
-
-                  // Status Transition Button (WCAG 2.5.5 minimum 48x120 dp target)
-                  Semantics(
-                    button: true,
-                    label: '${assignment.title} status: ${currentStatus.displayName.toUpperCase()}. Tap to cycle to next status.',
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(minHeight: 48, minWidth: 120),
-                      child: InkWell(
-                        onTap: () => _cycleAssignmentStatus(assignment),
-                        borderRadius: BorderRadius.circular(12),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 4,
+                      runSpacing: 4,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
-                            color: currentStatus.containerColor,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: currentStatus.textColor.withValues(alpha: 0.4),
+                            color: const Color(0xFFF59E0B).withValues(alpha: isDark ? 0.18 : 0.14),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.35)),
+                          ),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.stars_rounded,
+                                  size: 14,
+                                  color: isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '+${assignment.pointsReward} Pts',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w900,
+                                    color: isDark ? const Color(0xFFFBBF24) : const Color(0xFF92400E),
+                                  ),
+                                ),
+                              ],
                             ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: currentStatus.textColor.withValues(alpha: 0.2),
-                                blurRadius: 6,
-                                offset: const Offset(0, 2),
+                          ),
+                        ),
+                        if (isTeacherOrAdmin)
+                          Semantics(
+                            button: true,
+                            label: 'Delete Assignment',
+                            child: IconButton(
+                              key: Key('delete_assignment_${assignment.id}'),
+                              icon: Icon(
+                                Icons.delete_outline_rounded,
+                                size: 18,
+                                color: Colors.redAccent.withValues(alpha: 0.85),
+                              ),
+                              tooltip: 'Delete Assignment',
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () => _confirmDeleteAssignment(assignment),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Due Date Calendar Tile + Title & Instructor
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          constraints: const BoxConstraints(minWidth: 50),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                          decoration: BoxDecoration(
+                            color: dueChipBg,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: dueChipFg.withValues(alpha: 0.28)),
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                dueMonth,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0.5,
+                                  color: dueChipFg,
+                                ),
+                              ),
+                              Text(
+                                dueDay,
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w900,
+                                  height: 1.1,
+                                  color: dueChipFg,
+                                ),
                               ),
                             ],
                           ),
-                          child: Center(
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                assignment.title,
+                                style: TextStyle(
+                                  fontSize: 16.5,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: -0.2,
+                                  color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.person_outline_rounded,
+                                    size: 13.5,
+                                    color: isDark ? Colors.white60 : const Color(0xFF64748B),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      assignment.teacherName,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: isDark ? Colors.white70 : const Color(0xFF64748B),
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    if (assignment.description.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        assignment.description,
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 1.45,
+                          color: isDark ? Colors.white70 : const Color(0xFF475569),
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+
+                    if (assignment.imageUrl != null && assignment.imageUrl!.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      AcademicImageThumbnail(
+                        imageUrl: assignment.imageUrl!,
+                        title: assignment.title,
+                        height: 118,
+                      ),
+                    ],
+
+                    const SizedBox(height: 14),
+                    Divider(
+                      height: 1,
+                      color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Bottom Actions: Adaptive Countdown Chip, Submit/Rubric & Status Cycle
+                    SizedBox(
+                      width: double.infinity,
+                      child: Wrap(
+                        alignment: WrapAlignment.spaceBetween,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: dueChipBg,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
                             child: FittedBox(
                               fit: BoxFit.scaleDown,
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Icon(
-                                    currentStatus == AssignmentStatus.pending
-                                        ? Icons.hourglass_empty_rounded
-                                        : (currentStatus == AssignmentStatus.submitted
-                                            ? Icons.upload_file_rounded
-                                            : Icons.verified_rounded),
-                                    size: 16,
-                                    color: currentStatus.textColor,
+                                    isOverdue
+                                        ? Icons.warning_amber_rounded
+                                        : (isUrgent ? Icons.alarm_rounded : Icons.schedule_rounded),
+                                    size: 14,
+                                    color: dueChipFg,
                                   ),
-                                  const SizedBox(width: 6),
+                                  const SizedBox(width: 5),
                                   Text(
-                                    currentStatus.displayName.toUpperCase(),
+                                    remainingStr,
                                     style: TextStyle(
                                       fontSize: 12,
-                                      fontWeight: FontWeight.w900,
-                                      color: currentStatus.textColor,
-                                      letterSpacing: 0.5,
+                                      fontWeight: FontWeight.w800,
+                                      color: dueChipFg,
                                     ),
                                   ),
                                 ],
                               ),
                             ),
                           ),
-                        ),
+                          Wrap(
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              ElevatedButton.icon(
+                                onPressed: () => _showSubmitAssignmentModal(context, assignment),
+                                icon: Icon(
+                                  currentStatus == AssignmentStatus.pending
+                                      ? Icons.upload_file_rounded
+                                      : Icons.visibility_rounded,
+                                  size: 15,
+                                ),
+                                label: Text(
+                                  currentStatus == AssignmentStatus.pending ? 'Submit Work' : 'Rubric & Work',
+                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFEEF2F6),
+                                  foregroundColor: isDark ? Colors.white : const Color(0xFF0F172A),
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  elevation: 0,
+                                ),
+                              ),
+                              Semantics(
+                                button: true,
+                                label:
+                                    '${assignment.title} status: ${currentStatus.displayName.toUpperCase()}. Tap to cycle to next status.',
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(minHeight: 48, minWidth: 120),
+                                  child: InkWell(
+                                    onTap: () => _cycleAssignmentStatus(assignment),
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: AnimatedContainer(
+                                      duration: const Duration(milliseconds: 200),
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                      decoration: BoxDecoration(
+                                        color: currentStatus.containerColor,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: currentStatus.textColor.withValues(alpha: 0.4),
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: currentStatus.textColor.withValues(alpha: 0.2),
+                                            blurRadius: 6,
+                                            offset: const Offset(0, 2),
+                                          ),
+                                        ],
+                                      ),
+                                      child: Center(
+                                        child: FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(
+                                                currentStatus == AssignmentStatus.pending
+                                                    ? Icons.hourglass_empty_rounded
+                                                    : (currentStatus == AssignmentStatus.submitted
+                                                        ? Icons.upload_file_rounded
+                                                        : Icons.verified_rounded),
+                                                size: 16,
+                                                color: currentStatus.textColor,
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Text(
+                                                currentStatus.displayName.toUpperCase(),
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w900,
+                                                  color: currentStatus.textColor,
+                                                  letterSpacing: 0.5,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ],
           ),
@@ -2913,7 +3251,11 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
     );
   }
 
-  Widget _buildEmptyState(bool isDark, [bool isTeacherOrAdmin = false]) {
+  Widget _buildEmptyState(
+    bool isDark, [
+    bool isTeacherOrAdmin = false,
+    bool hasFilterReset = false,
+  ]) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
@@ -2950,6 +3292,17 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
             ),
             textAlign: TextAlign.center,
           ),
+          if (hasFilterReset) ...[
+            const SizedBox(height: 14),
+            OutlinedButton.icon(
+              onPressed: () => setState(() {
+                _currentSubject = 'All';
+                _statusFilter = 'All';
+              }),
+              icon: const Icon(Icons.filter_alt_off_rounded, size: 16),
+              label: const Text('Show All Homework'),
+            ),
+          ],
           if (isTeacherOrAdmin) ...[
             const SizedBox(height: 20),
             FilledButton.icon(
