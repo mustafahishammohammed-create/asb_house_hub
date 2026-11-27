@@ -48,3 +48,10 @@ app.*.map.json
 *.bat
 *.png
 *.jpg
+
+# Keep curated portable Windows executable bundle tracked in Git
+!dist/
+!dist/windows/
+!dist/windows/**
+!dist/windows/**/*.png
+!dist/windows/**/*.jpg
