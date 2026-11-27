@@ -1,7 +1,12 @@
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import '../services/pass_document_exporter.dart';
 import '../models/election_ballot.dart';
 import '../models/digital_ballot_cast.dart';
 import '../services/auth_service.dart';
+import '../services/hierarchy_service.dart';
 import '../theme/app_theme.dart';
 import 'home_screen.dart';
 import 'election_gazette_screen.dart';
@@ -16,7 +21,7 @@ class ElectionChamberScreen extends StatefulWidget {
 
   const ElectionChamberScreen({
     super.key,
-    this.userHouse = 'ruby',
+    this.userHouse = '',
     this.scholarNo = '',
     this.studentName = '',
     this.mockNow,
@@ -30,10 +35,36 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
   final _authService = AuthService();
   BallotPosition _selectedPosition = BallotPosition.all;
   String _searchQuery = '';
+  late final Stream<List<ElectionBallot>> _electionsStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _electionsStream = _authService.getElectionsStream();
+  }
 
   String get _effectiveScholarNo {
-    if (widget.scholarNo.trim().isNotEmpty) return widget.scholarNo.trim();
-    return AuthService.getCachedScholarNo() ?? '';
+    final cached = AuthService.getCachedScholarNo()?.trim();
+    if (cached != null && cached.isNotEmpty) return cached;
+    return widget.scholarNo.trim();
+  }
+
+  bool get _canManageElections {
+    final cached = AuthService.getCachedProfile() ?? {};
+    final sNo = _effectiveScholarNo.toLowerCase();
+    final role = cached['role']?.toString().toLowerCase();
+    String? safeEmail;
+    try {
+      if (Firebase.apps.isNotEmpty) {
+        safeEmail = FirebaseAuth.instance.currentUser?.email;
+      }
+    } catch (_) {}
+    return HierarchyService.canManageElections(
+      scholarNo: sNo,
+      role: role,
+      capabilities: cached['capabilities'] is Map ? Map<String, dynamic>.from(cached['capabilities']) : null,
+      email: safeEmail,
+    );
   }
 
   @override
@@ -62,11 +93,12 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
               );
             },
           ),
-          IconButton(
-            icon: const Icon(Icons.add_circle_outline_rounded),
-            tooltip: 'Create Ballot & Candidates',
-            onPressed: () => _showCreateBallotModal(context, houseColor),
-          ),
+          if (_canManageElections)
+            IconButton(
+              icon: const Icon(Icons.add_circle_outline_rounded),
+              tooltip: 'Create Ballot & Candidates',
+              onPressed: () => _showCreateBallotModal(context, houseColor),
+            ),
           IconButton(
             icon: const Icon(Icons.how_to_vote_rounded),
             tooltip: 'Ballots & Roster Governance',
@@ -83,16 +115,18 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
         elevation: 0,
         backgroundColor: Colors.transparent,
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: houseColor,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.add_task_rounded),
-        label: const Text('Create Ballot', style: TextStyle(fontWeight: FontWeight.w900)),
-        onPressed: () => _showCreateBallotModal(context, houseColor),
-      ),
+      floatingActionButton: _canManageElections
+          ? FloatingActionButton.extended(
+              backgroundColor: houseColor,
+              foregroundColor: Colors.white,
+              icon: const Icon(Icons.add_task_rounded),
+              label: const Text('Create Ballot', style: TextStyle(fontWeight: FontWeight.w900)),
+              onPressed: () => _showCreateBallotModal(context, houseColor),
+            )
+          : null,
       body: StreamBuilder<List<ElectionBallot>>(
         initialData: cachedBallots,
-        stream: _authService.getElectionsStream(),
+        stream: _electionsStream,
         builder: (context, snapshot) {
           final ballots = snapshot.data ?? cachedBallots;
           final filteredBallots = ballots.where((b) {
@@ -120,6 +154,74 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                       child: _buildPollingStatusHUD(openBallots, houseColor, isDark),
                     ),
                   ),
+
+                // Institutional Elections v2 Banner
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            houseColor.withValues(alpha: 0.15),
+                            Colors.deepPurple.withValues(alpha: 0.1),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: houseColor.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: houseColor.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(Icons.how_to_vote_rounded, color: houseColor, size: 24),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Zero-Trust Official Ballots (v2)',
+                                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Cast secret ballots, verify cryptographic receipts, and view certified results.',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: isDark ? Colors.grey[400] : Colors.grey[600],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          FilledButton.tonal(
+                            style: FilledButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            ),
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const SchoolElectionsPage(),
+                                ),
+                              );
+                            },
+                            child: const Text('Open v2', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
 
                 // Position Selector Pills
                 SliverToBoxAdapter(
@@ -384,29 +486,50 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: ballot.isOpen
-                            ? Colors.green.withValues(alpha: 0.15)
-                            : Colors.grey.withValues(alpha: 0.15),
+                        color: ballot.status == BallotStatus.certified
+                            ? Colors.amber.withValues(alpha: 0.15)
+                            : (ballot.isOpen
+                                ? Colors.green.withValues(alpha: 0.15)
+                                : Colors.grey.withValues(alpha: 0.15)),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
                         ballot.status.displayName.toUpperCase(),
                         style: TextStyle(
-                          color: ballot.isOpen ? Colors.green : Colors.grey,
+                          color: ballot.status == BallotStatus.certified
+                              ? Colors.amber.shade800
+                              : (ballot.isOpen ? Colors.green : Colors.grey),
                           fontWeight: FontWeight.w800,
                           fontSize: 10,
                         ),
                       ),
                     ),
                     const Spacer(),
-                    Text(
-                      ballot.formattedRemaining,
-                      style: TextStyle(
-                        color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
+                    if (_canManageElections && ballot.status != BallotStatus.certified && ballot.candidates.isNotEmpty)
+                      FilledButton.tonalIcon(
+                        style: FilledButton.styleFrom(
+                          foregroundColor: Colors.amber.shade900,
+                          backgroundColor: Colors.amber.withValues(alpha: 0.15),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          visualDensity: VisualDensity.compact,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        icon: const Icon(Icons.workspace_premium_rounded, size: 14),
+                        label: const Text(
+                          'Certify & End',
+                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11),
+                        ),
+                        onPressed: () => _certifyBallotWinner(ballot, houseColor),
+                      )
+                    else
+                      Text(
+                        ballot.formattedRemaining,
+                        style: TextStyle(
+                          color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
                       ),
-                    ),
                   ],
                 ),
                 const SizedBox(height: 10),
@@ -453,6 +576,51 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                 return _buildCandidateRow(ballot, candidate, houseColor, isDark);
               },
             ),
+          if (_canManageElections && ballot.status != BallotStatus.certified && ballot.candidates.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.amber.shade700,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  minimumSize: const Size.fromHeight(46),
+                ),
+                icon: const Icon(Icons.workspace_premium_rounded, size: 20),
+                label: Text(
+                  ballot.isOpen ? 'Certify Election & Conclude Voting' : 'Certify Election Proclamation',
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                ),
+                onPressed: () => _certifyBallotWinner(ballot, houseColor),
+              ),
+            )
+          else if (ballot.status == BallotStatus.certified)
+            Container(
+              margin: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+              decoration: BoxDecoration(
+                color: Colors.amber.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.workspace_premium_rounded, color: Colors.amber, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Election Certified & Concluded. Official results recorded in Campus Gazette.',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                        color: isDark ? Colors.amber.shade200 : Colors.amber.shade900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -465,7 +633,12 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
     bool isDark,
   ) {
     final candHouseColor = HouseColors.getHouseColor(candidate.houseName);
-    final hasVoted = AuthService.hasVotedInBallotCached(ballot.id);
+    final receipt = AuthService.getReceiptForBallot(ballot.id, scholarNo: _effectiveScholarNo);
+    final isMyVote = receipt != null &&
+        (receipt.candidateScholarNo.trim().toLowerCase() == candidate.scholarNo.trim().toLowerCase() ||
+            (receipt.candidateScholarNo.isEmpty &&
+                receipt.candidateName.trim().toLowerCase() == candidate.fullName.trim().toLowerCase()));
+    final hasVotedAny = receipt != null || AuthService.hasVotedInBallotCached(ballot.id, scholarNo: _effectiveScholarNo);
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -576,18 +749,18 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
             ),
           ),
 
-          // Vote Button or Voted Indicator
+          // Vote Button or Candidate-Specific Voted Indicator
           if (ballot.isOpen) ...[
             const SizedBox(width: 6),
             ConstrainedBox(
               constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-              child: hasVoted
+              child: isMyVote
                   ? Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                       decoration: BoxDecoration(
                         color: Colors.green.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                        border: Border.all(color: Colors.green.withValues(alpha: 0.4)),
                       ),
                       child: const Row(
                         mainAxisSize: MainAxisSize.min,
@@ -595,7 +768,7 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                           Icon(Icons.check_circle_rounded, color: Colors.green, size: 16),
                           SizedBox(width: 4),
                           Text(
-                            'Voted',
+                            'Your Vote',
                             style: TextStyle(
                               color: Colors.green,
                               fontWeight: FontWeight.w800,
@@ -605,45 +778,54 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                         ],
                       ),
                     )
-                  : ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: houseColor,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                  : hasVotedAny
+                      ? Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text(
+                            'Not selected',
+                            style: TextStyle(
+                              color: Colors.grey,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 11,
+                            ),
+                          ),
+                        )
+                      : ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: houseColor,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          icon: const Icon(Icons.how_to_vote_rounded, size: 16),
+                          label: const Text(
+                            'Vote',
+                            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+                          ),
+                          onPressed: () => _showVoteConfirmationModal(
+                            ballot: ballot,
+                            candidate: candidate,
+                            scholarNo: _effectiveScholarNo,
+                            houseColor: houseColor,
+                          ),
                         ),
-                      ),
-                      icon: const Icon(Icons.how_to_vote_rounded, size: 16),
-                      label: const Text(
-                        'Vote',
-                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
-                      ),
-                      onPressed: () => _showVoteConfirmationModal(
-                        ballot: ballot,
-                        candidate: candidate,
-                        scholarNo: _effectiveScholarNo,
-                        houseColor: houseColor,
-                      ),
-                    ),
             ),
-          ],
-          if (ballot.isOpen && ballot.candidates.isNotEmpty) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-              child: OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.amber.shade800,
-                  side: BorderSide(color: Colors.amber.shade800.withValues(alpha: 0.5)),
-                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                icon: const Icon(Icons.workspace_premium_rounded, size: 18),
-                label: const Text(
-                  'Close & Certify Election Proclamation',
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
-                ),
-                onPressed: () => _certifyBallotWinner(ballot, houseColor),
+          ] else ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.grey.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '${candidate.votesCount} votes',
+                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
               ),
             ),
           ],
@@ -658,127 +840,140 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
     required String scholarNo,
     required Color houseColor,
   }) {
+    bool isVoting = false;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (modalCtx) => Container(
-        padding: const EdgeInsets.all(28),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Center(
-              child: Container(
-                width: 44,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 22,
-                  backgroundColor: houseColor.withValues(alpha: 0.15),
-                  child: Icon(Icons.how_to_vote_rounded, color: houseColor),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Confirm Official Vote',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      Text(
-                        ballot.title,
-                        style: const TextStyle(fontSize: 13, color: Colors.grey),
-                      ),
-                    ],
+      builder: (modalCtx) => StatefulBuilder(
+        builder: (ctx, setModalState) => Container(
+          padding: const EdgeInsets.all(28),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 44,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: houseColor.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: houseColor.withValues(alpha: 0.3)),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              const SizedBox(height: 20),
+              Row(
                 children: [
-                  Text(
-                    'Candidate: ${candidate.fullName}',
-                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                  CircleAvatar(
+                    radius: 22,
+                    backgroundColor: houseColor.withValues(alpha: 0.15),
+                    child: Icon(Icons.how_to_vote_rounded, color: houseColor),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${candidate.runningPosition} • ${candidate.houseName.toUpperCase()} House',
-                    style: TextStyle(color: houseColor, fontWeight: FontWeight.w700, fontSize: 13),
-                  ),
-                  const SizedBox(height: 10),
-                  const Text(
-                    '🔒 Ballot Secrecy Protection: Your voter identity is cryptographically hashed with HMAC-SHA256. This ballot choice is completely anonymous and cannot be changed once cast.',
-                    style: TextStyle(fontSize: 11, color: Colors.grey),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Confirm Official Vote',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        Text(
+                          ballot.title,
+                          style: const TextStyle(fontSize: 13, color: Colors.grey),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: houseColor,
-                foregroundColor: Colors.white,
-                minimumSize: const Size.fromHeight(48),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: houseColor.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: houseColor.withValues(alpha: 0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Candidate: ${candidate.fullName}',
+                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${candidate.runningPosition} • ${candidate.houseName.toUpperCase()} House',
+                      style: TextStyle(color: houseColor, fontWeight: FontWeight.w700, fontSize: 13),
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      '🔒 Secret Ballot Guarantee: Your participation is registered under an anonymized cryptographic token. Your candidate choice is counted confidentially and cannot be altered once submitted.',
+                      style: TextStyle(fontSize: 11, color: Colors.grey),
+                    ),
+                  ],
+                ),
               ),
-              onPressed: () async {
-                Navigator.pop(modalCtx);
-                final res = await AuthService().castDigitalVote(
-                  ballotId: ballot.id,
-                  ballotTitle: ballot.title,
-                  candidate: candidate,
-                  scholarNo: scholarNo,
-                );
+              const SizedBox(height: 24),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: houseColor,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size.fromHeight(48),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                onPressed: isVoting ? null : () async {
+                  setModalState(() => isVoting = true);
+                  final res = await AuthService().castDigitalVote(
+                    ballotId: ballot.id,
+                    ballotTitle: ballot.title,
+                    candidate: candidate,
+                    scholarNo: _effectiveScholarNo,
+                  );
 
-                if (mounted) {
-                  if (res.success && res.receipt != null) {
-                    setState(() {});
-                    _showReceiptModal(context, res.receipt!, houseColor);
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(res.error ?? 'Voting transaction failed'),
-                        backgroundColor: Colors.redAccent,
-                      ),
-                    );
+                  if (modalCtx.mounted) {
+                    Navigator.pop(modalCtx);
                   }
-                }
-              },
-              child: const Text('Confirm & Cast My Ballot', style: TextStyle(fontWeight: FontWeight.w800)),
-            ),
-            const SizedBox(height: 10),
-            TextButton(
-              style: TextButton.styleFrom(minimumSize: const Size.fromHeight(48)),
-              onPressed: () => Navigator.pop(modalCtx),
-              child: const Text('Cancel'),
-            ),
-          ],
+
+                  if (mounted) {
+                    if (res.success && res.receipt != null) {
+                      setState(() {});
+                      _showReceiptModal(context, res.receipt!, houseColor);
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(res.error ?? 'Voting transaction failed'),
+                          backgroundColor: Colors.redAccent,
+                        ),
+                      );
+                    }
+                  }
+                },
+                child: isVoting
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                      )
+                    : const Text('Confirm & Cast My Ballot', style: TextStyle(fontWeight: FontWeight.w800)),
+              ),
+              const SizedBox(height: 10),
+              TextButton(
+                style: TextButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                onPressed: isVoting ? null : () => Navigator.pop(modalCtx),
+                child: const Text('Cancel'),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -818,17 +1013,48 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
             Text('Position: ${receipt.runningPosition}'),
             const SizedBox(height: 10),
             Text(
-              'Certified: ${receipt.timestamp.toLocal().toString().split('.').first}',
+              'Voted at: ${receipt.timestamp.toLocal().toString().split('.').first}',
               style: const TextStyle(fontSize: 11, color: Colors.grey),
             ),
           ],
         ),
         actions: [
+          TextButton.icon(
+            icon: const Icon(Icons.copy_rounded, size: 16),
+            label: const Text('Copy Token'),
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: receipt.formattedReceiptNumber));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('✓ Receipt token copied to clipboard!')),
+              );
+            },
+          ),
+          TextButton.icon(
+            icon: const Icon(Icons.download_rounded, size: 16),
+            label: const Text('Export PDF'),
+            onPressed: () async {
+              final result = await PassDocumentExporter.exportPass(
+                title: 'Official Election Ballot Receipt',
+                subtitle: receipt.ballotTitle,
+                details: 'Candidate: ${receipt.candidateName} (${receipt.candidateHouse.toUpperCase()})\nPosition: ${receipt.runningPosition}',
+                totalInfo: 'Receipt Code: ${receipt.formattedReceiptNumber}',
+                qrData: receipt.formattedReceiptNumber,
+              );
+              if (dialogCtx.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(result.success ? '✓ Receipt PDF exported: ${result.filePath}' : 'Export error: ${result.error}'),
+                    backgroundColor: result.success ? Colors.green : Colors.redAccent,
+                  ),
+                );
+              }
+            },
+          ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: houseColor,
               foregroundColor: Colors.white,
-              minimumSize: const Size(100, 48),
+              minimumSize: const Size(80, 44),
             ),
             onPressed: () => Navigator.pop(dialogCtx),
             child: const Text('Done'),
@@ -946,47 +1172,57 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Student Council and House Captain polls will be registered here by school administration.',
+              _canManageElections
+                  ? 'Student Council and House Captain polls can be staged and published here.'
+                  : 'Student Council and House Captain polls will be registered here by school administration.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 13,
                 color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
               ),
             ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: houseColor,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                elevation: 3,
+            if (_canManageElections) ...[
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: houseColor,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  elevation: 3,
+                ),
+                icon: const Icon(Icons.add_task_rounded, size: 20),
+                label: const Text(
+                  'Create Ballot & Add Candidates',
+                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
+                ),
+                onPressed: () => _showCreateBallotModal(context, houseColor),
               ),
-              icon: const Icon(Icons.add_task_rounded, size: 20),
-              label: const Text(
-                'Create Ballot & Add Candidates',
-                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
-              ),
-              onPressed: () => _showCreateBallotModal(context, houseColor),
-            ),
+            ],
           ],
         ),
       ),
     );
   }
 
-  void _showCreateBallotModal(BuildContext context, Color houseColor) {
+  Future<void> _showCreateBallotModal(BuildContext context, Color houseColor) async {
+    if (!_canManageElections) return;
     final titleController = TextEditingController(text: 'Student Council Election 2026');
     final scholarController = TextEditingController();
     final nameController = TextEditingController();
     final manifestoController = TextEditingController();
 
-    BallotPosition selectedPosition = BallotPosition.headBoy;
+    try {
+      BallotPosition selectedPosition = BallotPosition.headBoy;
     String selectedHouse = 'ruby';
     String selectedScope = 'all';
     final candidatesDraft = <ElectionCandidate>[];
+    bool isAutoFilled = false;
+    bool isRosterMatch = false;
+    String? rosterMatchInfo;
+    bool isLookingUp = false;
 
-    showModalBottomSheet(
+    await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -1228,15 +1464,123 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                                 controller: scholarController,
                                 decoration: InputDecoration(
                                   labelText: 'Scholar #',
-                                  hintText: 'e.g. 2310001',
+                                  hintText: 'e.g. 11209',
                                   filled: true,
                                   fillColor: isDark ? const Color(0xFF1E293B) : Colors.white,
                                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                                  suffixIcon: IconButton(
+                                    tooltip: 'Auto-fill details from roster',
+                                    icon: isLookingUp
+                                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                                        : const Icon(Icons.auto_awesome, color: Colors.amber, size: 20),
+                                    onPressed: () async {
+                                      final clean = scholarController.text.trim();
+                                      if (clean.isEmpty) return;
+                                      setModalState(() => isLookingUp = true);
+                                      final details = await AuthService.lookupScholarDetails(
+                                        clean,
+                                        runningPosition: selectedPosition.displayName,
+                                      );
+                                      if (!modalCtx.mounted) return;
+                                      final isFound = details['isFound'] == true;
+                                      final fullName = details['fullName'] as String? ?? '';
+                                      final house = details['houseName'] as String? ?? '';
+                                      final manifesto = details['manifesto'] as String? ?? '';
+                                      final grade = details['classLevel'] as String? ?? '';
+
+                                      if (isFound && fullName.isNotEmpty) {
+                                        nameController.text = fullName;
+                                        manifestoController.text = manifesto;
+                                        isAutoFilled = true;
+                                        setModalState(() {
+                                          selectedHouse = house;
+                                          isRosterMatch = true;
+                                          rosterMatchInfo = '$fullName ($grade • ${house.toUpperCase()})';
+                                          isLookingUp = false;
+                                        });
+                                      } else {
+                                        if (isAutoFilled) {
+                                          nameController.clear();
+                                          manifestoController.clear();
+                                          isAutoFilled = false;
+                                        }
+                                        setModalState(() {
+                                          isRosterMatch = false;
+                                          rosterMatchInfo = null;
+                                          isLookingUp = false;
+                                          final inferred = AuthService.inferHouseFromScholarNo(clean);
+                                          if (inferred != null) selectedHouse = inferred;
+                                        });
+                                      }
+                                    },
+                                  ),
                                 ),
-                                onChanged: (val) {
-                                  final inferred = AuthService.inferHouseFromScholarNo(val.trim());
-                                  if (inferred != null) {
-                                    setModalState(() => selectedHouse = inferred);
+                                onChanged: (val) async {
+                                  final clean = val.trim();
+                                  if (clean.isEmpty) {
+                                    if (isAutoFilled) {
+                                      nameController.clear();
+                                      manifestoController.clear();
+                                      isAutoFilled = false;
+                                    }
+                                    setModalState(() {
+                                      isRosterMatch = false;
+                                      rosterMatchInfo = null;
+                                      isLookingUp = false;
+                                    });
+                                    return;
+                                  }
+
+                                  if (clean.length < 3) {
+                                    if (isAutoFilled) {
+                                      nameController.clear();
+                                      manifestoController.clear();
+                                      isAutoFilled = false;
+                                    }
+                                    setModalState(() {
+                                      isRosterMatch = false;
+                                      rosterMatchInfo = null;
+                                      isLookingUp = false;
+                                      final inferred = AuthService.inferHouseFromScholarNo(clean);
+                                      if (inferred != null) selectedHouse = inferred;
+                                    });
+                                    return;
+                                  }
+
+                                  setModalState(() => isLookingUp = true);
+                                  final details = await AuthService.lookupScholarDetails(
+                                    clean,
+                                    runningPosition: selectedPosition.displayName,
+                                  );
+                                  if (!modalCtx.mounted) return;
+
+                                  final isFound = details['isFound'] == true;
+                                  final fullName = details['fullName'] as String? ?? '';
+                                  final house = details['houseName'] as String? ?? '';
+                                  final manifesto = details['manifesto'] as String? ?? '';
+                                  final grade = details['classLevel'] as String? ?? '';
+
+                                  if (isFound && fullName.isNotEmpty) {
+                                    nameController.text = fullName;
+                                    manifestoController.text = manifesto;
+                                    isAutoFilled = true;
+                                    setModalState(() {
+                                      selectedHouse = house;
+                                      isRosterMatch = true;
+                                      rosterMatchInfo = '$fullName ($grade • ${house.toUpperCase()})';
+                                      isLookingUp = false;
+                                    });
+                                  } else {
+                                    nameController.clear();
+                                    manifestoController.clear();
+                                    isAutoFilled = false;
+                                    setModalState(() {
+                                      isRosterMatch = false;
+                                      rosterMatchInfo = null;
+                                      isLookingUp = false;
+                                      final inferred = AuthService.inferHouseFromScholarNo(clean);
+                                      if (inferred != null) selectedHouse = inferred;
+                                    });
                                   }
                                 },
                               ),
@@ -1246,6 +1590,7 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                               flex: 4,
                               child: TextField(
                                 controller: nameController,
+                                onChanged: (_) => isAutoFilled = false,
                                 decoration: InputDecoration(
                                   labelText: 'Candidate Name',
                                   hintText: 'Full Name',
@@ -1257,6 +1602,51 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                             ),
                           ],
                         ),
+                        if (isRosterMatch && rosterMatchInfo != null) ...[
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.green.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.check_circle_rounded, color: Colors.green, size: 16),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    'Verified Roster Match: $rosterMatchInfo',
+                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ] else if (!isRosterMatch && scholarController.text.trim().length >= 3) ...[
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.amber.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.info_outline_rounded, color: Colors.amber, size: 16),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    'Scholar #${scholarController.text.trim()} not found in records — enter name and manifesto manually.',
+                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.amber),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 10),
                         Row(
                           children: [
@@ -1286,6 +1676,7 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                         TextField(
                           controller: manifestoController,
                           maxLines: 2,
+                          onChanged: (_) => isAutoFilled = false,
                           decoration: InputDecoration(
                             labelText: 'Campaign Manifesto & Pledges',
                             hintText: 'Key initiatives, motto or pledges for the student body...',
@@ -1313,13 +1704,24 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                               );
                               return;
                             }
-                            final effectiveName = name.isNotEmpty ? name : 'Scholar #$sNo';
+                            if (name.isEmpty) {
+                              ScaffoldMessenger.of(modalCtx).showSnackBar(
+                                const SnackBar(content: Text('Please enter candidate full name.')),
+                              );
+                              return;
+                            }
+                            if (candidatesDraft.any((c) => c.scholarNo.trim().toLowerCase() == sNo.toLowerCase())) {
+                              ScaffoldMessenger.of(modalCtx).showSnackBar(
+                                SnackBar(content: Text('Scholar # is already added as a candidate on this ballot.')),
+                              );
+                              return;
+                            }
                             final manifesto = manifestoController.text.trim();
 
                             setModalState(() {
                               candidatesDraft.add(ElectionCandidate(
                                 scholarNo: sNo,
-                                fullName: effectiveName,
+                                fullName: name,
                                 houseName: selectedHouse,
                                 runningPosition: selectedPosition.displayName,
                                 manifesto: manifesto,
@@ -1328,6 +1730,9 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                               scholarController.clear();
                               nameController.clear();
                               manifestoController.clear();
+                              isAutoFilled = false;
+                              isRosterMatch = false;
+                              rosterMatchInfo = null;
                             });
                           },
                         ),
@@ -1357,9 +1762,9 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                         );
                         return;
                       }
-                      if (candidatesDraft.isEmpty) {
+                      if (candidatesDraft.length < 2) {
                         ScaffoldMessenger.of(modalCtx).showSnackBar(
-                          const SnackBar(content: Text('Please add at least one candidate before publishing.')),
+                          const SnackBar(content: Text('Please configure at least 2 eligible candidates before publishing.')),
                         );
                         return;
                       }
@@ -1369,26 +1774,27 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                         title: title,
                         position: selectedPosition,
                         houseScope: selectedScope,
-                        eligibleGrades: const ['Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'],
+                        eligibleGrades: const ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'],
                         status: BallotStatus.open,
-                        startTime: DateTime.now(),
+                        startTime: DateTime.now().subtract(const Duration(seconds: 2)),
                         endTime: DateTime.now().add(const Duration(days: 7)),
                         candidates: candidatesDraft,
                         totalVotesCast: 0,
                       );
 
+                      final messenger = ScaffoldMessenger.of(context);
                       Navigator.pop(modalCtx);
                       final res = await AuthService().createElectionBallot(newBallot);
                       if (mounted) {
                         if (res.success) {
-                          ScaffoldMessenger.of(context).showSnackBar(
+                          messenger.showSnackBar(
                             const SnackBar(
                               content: Text('🎉 Official election ballot published! Voting is now open.'),
                               backgroundColor: Colors.green,
                             ),
                           );
                         } else {
-                          ScaffoldMessenger.of(context).showSnackBar(
+                          messenger.showSnackBar(
                             SnackBar(
                               content: Text(res.error ?? 'Failed to publish ballot.'),
                               backgroundColor: Colors.redAccent,
@@ -1405,14 +1811,85 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
         },
       ),
     );
+    } finally {
+      titleController.dispose();
+      scholarController.dispose();
+      nameController.dispose();
+      manifestoController.dispose();
+    }
   }
 
   Future<void> _certifyBallotWinner(ElectionBallot ballot, Color houseColor) async {
     if (ballot.candidates.isEmpty) return;
 
+    if (DateTime.now().isBefore(ballot.endTime)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Voting is currently active. Elections can only be certified after the scheduled voting window closes.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
     final sortedCandidates = List<ElectionCandidate>.from(ballot.candidates)
       ..sort((a, b) => b.votesCount.compareTo(a.votesCount));
-    final winner = sortedCandidates.first;
+
+    // Zero-votes guard (C8)
+    if (sortedCandidates.first.votesCount == 0) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cannot certify election: 0 votes cast. Ballots must be received prior to official certification.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
+    // Tie guard (C8)
+    if (sortedCandidates.length > 1 && sortedCandidates[0].votesCount == sortedCandidates[1].votesCount) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Cannot certify winner: Polling concluded in a tie (${sortedCandidates[0].votesCount} votes each between ${sortedCandidates[0].fullName} and ${sortedCandidates[1].fullName}). Runoff election required.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
+    final rawWinner = sortedCandidates.first;
+    String winnerHouse = rawWinner.houseName.trim().toLowerCase();
+    if (winnerHouse.isEmpty || !['ruby', 'sapphire', 'emerald', 'topaz'].contains(winnerHouse)) {
+      winnerHouse = AuthService.inferHouseFromScholarNo(rawWinner.scholarNo) ?? '';
+    }
+    if (winnerHouse.isEmpty || !['ruby', 'sapphire', 'emerald', 'topaz'].contains(winnerHouse)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cannot certify election: Winner house is unknown or not in school roster.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+      return;
+    }
+    final winner = ElectionCandidate(
+      scholarNo: rawWinner.scholarNo,
+      fullName: rawWinner.fullName,
+      houseName: winnerHouse,
+      runningPosition: rawWinner.runningPosition,
+      manifesto: rawWinner.manifesto,
+      avatarUrl: rawWinner.avatarUrl,
+      votesCount: rawWinner.votesCount,
+      isVerified: rawWinner.isVerified,
+      classLevel: rawWinner.classLevel,
+    );
 
     final confirm = await showDialog<bool>(
       context: context,
@@ -1445,25 +1922,49 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
       ),
     );
 
-    if (confirm == true) {
-      final res = await _authService.certifyElectionAndAwardPoints(
+    if (!mounted || confirm != true) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    final res = await _authService.certifyElectionAndAwardPoints(
         ballotId: ballot.id,
         ballotTitle: ballot.title,
         winner: winner,
         victoryMargin: (winner.votesCount - (sortedCandidates.length > 1 ? sortedCandidates[1].votesCount : 0)),
         commissionerName: _effectiveScholarNo.isNotEmpty ? 'Scholar #$_effectiveScholarNo' : 'Returning Officer',
+        housePoints: 100,
       );
 
       if (mounted) {
         if (res.success) {
-          ScaffoldMessenger.of(context).showSnackBar(
+          final cached = AuthService.getCachedBallots();
+          final updated = cached.map((b) {
+            if (b.id == ballot.id) {
+              return ElectionBallot(
+                id: b.id,
+                title: b.title,
+                position: b.position,
+                houseScope: b.houseScope,
+                eligibleGrades: b.eligibleGrades,
+                status: BallotStatus.certified,
+                startTime: b.startTime,
+                endTime: DateTime.now(),
+                candidates: b.candidates,
+                totalVotesCast: b.totalVotesCast,
+              );
+            }
+            return b;
+          }).toList();
+          await AuthService.cacheBallots(updated);
+          if (!mounted) return;
+          setState(() {});
+          messenger.showSnackBar(
             SnackBar(
               content: Text('🏆 ${winner.fullName} officially certified! +100 House Points awarded.'),
               backgroundColor: Colors.green,
             ),
           );
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
+          messenger.showSnackBar(
             SnackBar(
               content: Text(res.error ?? 'Certification failed.'),
               backgroundColor: Colors.redAccent,
@@ -1473,4 +1974,3 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
       }
     }
   }
-}

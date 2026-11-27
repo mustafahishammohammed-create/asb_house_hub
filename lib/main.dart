@@ -14,6 +14,39 @@ import 'l10n/app_localizations.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Custom ErrorWidget builder ensures Flutter release mode NEVER paints a blank grey box.
+  ErrorWidget.builder = (FlutterErrorDetails details) {
+    debugPrint('GLOBAL UI ERROR CAUGHT: ${details.exceptionAsString()}');
+    return Material(
+      color: Colors.transparent,
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 36),
+              const SizedBox(height: 8),
+              const Text(
+                'Something went wrong displaying this view.',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white70),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Please retry, or contact the school administrator if this persists.',
+                style: TextStyle(fontSize: 11, color: Colors.white38),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  };
+
   try {
     await AuthService.initPreferences();
     await AppThemeController.init();
@@ -21,6 +54,7 @@ void main() async {
     debugPrint('Initialization preferences warning: $e');
   }
 
+  String? firebaseInitError;
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
@@ -41,19 +75,25 @@ void main() async {
     }
   } catch (e) {
     debugPrint('Firebase initialization warning: $e');
+    if (kReleaseMode) {
+      firebaseInitError = e.toString();
+    }
   }
 
-  runApp(const ASBHouseHubApp());
+  runApp(ASBHouseHubApp(firebaseInitError: firebaseInitError));
 }
 
 class ASBHouseHubApp extends StatelessWidget {
-  const ASBHouseHubApp({super.key});
+  final String? firebaseInitError;
+  const ASBHouseHubApp({super.key, this.firebaseInitError});
 
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<ThemeMode>(
       valueListenable: AppThemeController.themeModeNotifier,
       builder: (context, currentMode, _) {
+        final hasInitFailure =
+            kReleaseMode && (firebaseInitError != null || Firebase.apps.isEmpty);
         return MaterialApp(
           title: 'ASB House Hub',
           debugShowCheckedModeBanner: false,
@@ -62,9 +102,43 @@ class ASBHouseHubApp extends StatelessWidget {
           themeMode: currentMode,
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
-          home: const AuthGate(),
+          home: hasInitFailure
+              ? const _BackendUnavailableScreen()
+              : const AuthGate(),
         );
       },
+    );
+  }
+}
+
+class _BackendUnavailableScreen extends StatelessWidget {
+  const _BackendUnavailableScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.cloud_off_rounded, size: 52, color: Colors.amber),
+              SizedBox(height: 16),
+              Text(
+                'Secure School Backend Unavailable',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: 8),
+              Text(
+                'ASB House Hub could not connect to Firebase Authentication and Cloud Firestore. Please verify your network connection and restart the app.',
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -75,13 +149,24 @@ class AuthGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<User?>(
-      stream: authStateStream ?? AuthService().authStateChanges,
-      builder: (context, snapshot) {
-        final hasCompletedOnboarding = AuthService.hasCompletedOnboarding();
+    return ValueListenableBuilder<bool>(
+      valueListenable: AuthService.authTransitionInProgress,
+      builder: (context, transitionInProgress, _) {
+        return StreamBuilder<User?>(
+          stream: authStateStream ?? AuthService().authStateChanges,
+          builder: (context, snapshot) {
+            final hasCompletedOnboarding = AuthService.hasCompletedOnboarding();
 
-        // 1. Loading / Waiting state guard
-        if (snapshot.connectionState == ConnectionState.waiting) {
+            // Keep LoginScreen/SignupScreen mounted while an active login or
+            // registration transaction is still writing/verifying profile state.
+            if (transitionInProgress) {
+              return hasCompletedOnboarding
+                  ? const LoginScreen()
+                  : const OnboardingScreen();
+            }
+
+            // 1. Loading / Waiting state guard
+            if (snapshot.connectionState == ConnectionState.waiting) {
           final currentUser = AuthService().currentUser;
           final cachedProfile = AuthService.getCachedProfile();
           final cachedHouse = AuthService.getCachedHouse();
@@ -177,11 +262,13 @@ class AuthGate extends StatelessWidget {
           return HomeScreen(key: ValueKey('home_${user.uid}'));
         }
 
-        // 4. User is signed out (snapshot.data == null)
-        if (!hasCompletedOnboarding) {
-          return const OnboardingScreen();
-        }
-        return const LoginScreen();
+            // 4. User is signed out (snapshot.data == null)
+            if (!hasCompletedOnboarding) {
+              return const OnboardingScreen();
+            }
+            return const LoginScreen();
+          },
+        );
       },
     );
   }

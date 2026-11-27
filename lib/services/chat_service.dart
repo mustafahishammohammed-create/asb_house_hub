@@ -50,10 +50,10 @@ class ChatService {
     }
   }
 
-  /// Stream of all registered users in the app so Council can pick anyone to start chatting.
-  Stream<QuerySnapshot> getAllUsersStream() {
+  /// Stream of registered users so authorised members can pick a permitted peer.
+  Stream<QuerySnapshot> getAllUsersStream({int limit = 200}) {
     try {
-      return _firestore.collection('users').snapshots();
+      return _firestore.collection('users').limit(limit).snapshots();
     } catch (_) {
       return const Stream.empty();
     }
@@ -69,9 +69,9 @@ class ChatService {
     final myUid = currentUserId;
     if (myUid.isEmpty) throw Exception('User not logged in');
 
-    // Fetch my profile name, role, and house
-    String myName = 'Council / Admin';
-    String myRole = 'admin';
+    // Fetch my profile name, role, and house (fail closed to student if absent)
+    String myName = 'Student';
+    String myRole = 'student';
     String myHouse = AuthService.getCachedHouse() ?? 'ruby';
     String? myScholar;
     try {
@@ -82,8 +82,8 @@ class ChatService {
           .timeout(const Duration(seconds: 4));
       if (myDoc.exists) {
         final d = myDoc.data() ?? {};
-        myName = d['full_name']?.toString() ?? 'Council / Admin';
-        myRole = d['role']?.toString() ?? 'admin';
+        myName = d['full_name']?.toString() ?? 'Student';
+        myRole = d['role']?.toString() ?? 'student';
         myScholar = d['scholar_no']?.toString();
         final extracted = AuthService.extractHouse(d);
         if (extracted != null && extracted.isNotEmpty) {
@@ -187,14 +187,15 @@ class ChatService {
     return roomId;
   }
 
-  /// Stream of messages in a specific chat room.
-  Stream<QuerySnapshot> getMessagesStream(String roomId) {
+  /// Stream of messages in a specific chat room (bounded).
+  Stream<QuerySnapshot> getMessagesStream(String roomId, {int limit = 150}) {
     try {
       return _firestore
           .collection('chats')
           .doc(roomId)
           .collection('messages')
           .orderBy('timestamp', descending: true)
+          .limit(limit)
           .snapshots();
     } catch (_) {
       return const Stream.empty();
@@ -238,9 +239,10 @@ class ChatService {
     String roomId,
     String text, {
     String? receiverId,
+    String? attachmentUrl,
   }) async {
     final myUid = currentUserId;
-    if (myUid.isEmpty || text.trim().isEmpty) return;
+    if (myUid.isEmpty || (text.trim().isEmpty && (attachmentUrl == null || attachmentUrl.isEmpty))) return;
 
     String senderName = 'Me';
     try {
@@ -251,6 +253,8 @@ class ChatService {
     } catch (_) {}
 
     final timestamp = FieldValue.serverTimestamp();
+    final trimmedText = text.trim();
+    final summaryText = trimmedText.isNotEmpty ? trimmedText : '📷 Photo';
 
     // Add message with read receipt tracking
     await _firestore
@@ -260,7 +264,8 @@ class ChatService {
         .add({
           'sender_id': myUid,
           'sender_name': senderName,
-          'text': text.trim(),
+          'text': trimmedText,
+          if (attachmentUrl != null && attachmentUrl.isNotEmpty) 'attachment_url': attachmentUrl,
           'timestamp': timestamp,
           'is_read': false,
           'push_alert_triggered': true,
@@ -277,7 +282,7 @@ class ChatService {
 
     // Update room summary & unread counter
     final updateMap = <String, dynamic>{
-      'last_message': text.trim(),
+      'last_message': summaryText,
       'last_updated': timestamp,
     };
     if (targetId.isNotEmpty) {
@@ -294,11 +299,12 @@ class ChatService {
             .collection('notifications')
             .add({
               'title': 'New Message from $senderName',
-              'body': text.trim(),
+              'body': summaryText,
               'timestamp': timestamp,
               'is_read': false,
               'type': 'chat_message',
               'room_id': roomId,
+              'sender_id': myUid,
             });
       } catch (_) {}
     }

@@ -12,6 +12,13 @@ class TimetablePeriod implements Comparable<TimetablePeriod> {
   final bool isBreak;
   final String dayOfWeek;
   final String classLevel;
+  final String? imageUrl;
+
+  /// Date-specific substitution marker (M3). [teacherName] is the substitute
+  /// who actually teaches, while [originalTeacherName] keeps the regular
+  /// teacher for display.
+  final bool isSubstitute;
+  final String originalTeacherName;
 
   const TimetablePeriod({
     required this.periodNumber,
@@ -22,6 +29,9 @@ class TimetablePeriod implements Comparable<TimetablePeriod> {
     this.isBreak = false,
     this.dayOfWeek = '',
     this.classLevel = '',
+    this.imageUrl,
+    this.isSubstitute = false,
+    this.originalTeacherName = '',
   });
 
   /// Parse timeSlot string into (startTime, endTime) TimeOfDay pair.
@@ -156,6 +166,10 @@ class TimetablePeriod implements Comparable<TimetablePeriod> {
     'is_break': isBreak,
     'day_of_week': dayOfWeek,
     'class_level': classLevel,
+    if (imageUrl != null && imageUrl!.isNotEmpty) 'image_url': imageUrl,
+    if (isSubstitute) 'is_substitute': true,
+    if (originalTeacherName.isNotEmpty)
+      'original_teacher_name': originalTeacherName,
   };
 
   Map<String, dynamic> toJson() => toMap();
@@ -180,6 +194,12 @@ class TimetablePeriod implements Comparable<TimetablePeriod> {
       isBreak: map['is_break'] == true || map['isBreak'] == true,
       dayOfWeek: (map['day_of_week'] ?? map['dayOfWeek'] ?? map['day'] ?? '').toString().trim(),
       classLevel: (map['class_level'] ?? map['classLevel'] ?? map['class'] ?? '').toString().trim(),
+      imageUrl: (map['image_url'] ?? map['imageUrl'])?.toString().trim(),
+      isSubstitute: map['is_substitute'] == true || map['isSubstitute'] == true,
+      originalTeacherName:
+          (map['original_teacher_name'] ?? map['originalTeacherName'] ?? '')
+              .toString()
+              .trim(),
     );
   }
 
@@ -199,6 +219,9 @@ class TimetablePeriod implements Comparable<TimetablePeriod> {
     bool? isBreak,
     String? dayOfWeek,
     String? classLevel,
+    String? imageUrl,
+    bool? isSubstitute,
+    String? originalTeacherName,
   }) {
     return TimetablePeriod(
       periodNumber: periodNumber ?? this.periodNumber,
@@ -209,6 +232,9 @@ class TimetablePeriod implements Comparable<TimetablePeriod> {
       isBreak: isBreak ?? this.isBreak,
       dayOfWeek: dayOfWeek ?? this.dayOfWeek,
       classLevel: classLevel ?? this.classLevel,
+      imageUrl: imageUrl ?? this.imageUrl,
+      isSubstitute: isSubstitute ?? this.isSubstitute,
+      originalTeacherName: originalTeacherName ?? this.originalTeacherName,
     );
   }
 
@@ -226,7 +252,10 @@ class TimetablePeriod implements Comparable<TimetablePeriod> {
         other.room == room &&
         other.isBreak == isBreak &&
         other.dayOfWeek == dayOfWeek &&
-        other.classLevel == classLevel;
+        other.classLevel == classLevel &&
+        other.imageUrl == imageUrl &&
+        other.isSubstitute == isSubstitute &&
+        other.originalTeacherName == originalTeacherName;
   }
 
   @override
@@ -239,10 +268,14 @@ class TimetablePeriod implements Comparable<TimetablePeriod> {
     isBreak,
     dayOfWeek,
     classLevel,
+    imageUrl,
+    isSubstitute,
+    originalTeacherName,
   );
 
   @override
   String toString() {
-    return 'TimetablePeriod(P$periodNumber: $subject, $timeSlot, Room: $room, Teacher: $teacherName, Day: $dayOfWeek)';
+    final sub = isSubstitute ? ', Substitute: $teacherName (regular: $originalTeacherName)' : '';
+    return 'TimetablePeriod(P$periodNumber: $subject, $timeSlot, Room: $room, Teacher: $teacherName$sub, Day: $dayOfWeek)';
   }
 }

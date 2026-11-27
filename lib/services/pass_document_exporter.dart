@@ -1,10 +1,11 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'dart:io' as io;
 
-/// Zero-dependency institutional PDF pass generation and disk export engine.
+/// Institutional PDF pass generation and disk export engine with embedded vector QR codes.
 class PassDocumentExporter {
-  /// Pure Dart standard PDF 1.4 byte builder for voucher & electronic passes
+  /// Pure Dart standard PDF 1.4 byte builder with scannable vector QR rendering
   static Uint8List buildPassPdf({
     required String title,
     required String subtitle,
@@ -12,11 +13,63 @@ class PassDocumentExporter {
     required String totalInfo,
     required String qrData,
   }) {
-    String sanitize(String s) =>
-        s.replaceAll('\\', '\\\\').replaceAll('(', '\\(').replaceAll(')', '\\)');
+    String sanitize(String s) {
+      final ascii = StringBuffer();
+      for (final unit in s.codeUnits) {
+        ascii.writeCharCode((unit >= 32 && unit <= 126) ? unit : 32);
+      }
+      return ascii
+          .toString()
+          .replaceAll('\\', '\\\\')
+          .replaceAll('(', '\\(')
+          .replaceAll(')', '\\)');
+    }
 
     final content = StringBuffer();
+
+    // Render scannable vector QR code in upper-right quadrant (x=420..560, y=612..752)
+    if (qrData.trim().isNotEmpty) {
+      try {
+        final qrCode = QrCode.fromData(
+          data: qrData.trim(),
+          errorCorrectLevel: QrErrorCorrectLevel.M,
+        );
+        final qrImage = QrImage(qrCode);
+        final modules = qrImage.moduleCount;
+        const qrSize = 140.0;
+        const originX = 420.0;
+        const originY = 612.0;
+        final cell = qrSize / modules;
+
+        content.writeln('q');
+        // White quiet zone
+        content.writeln('1 1 1 rg');
+        content.writeln(
+          '${(originX - 8).toStringAsFixed(2)} ${(originY - 8).toStringAsFixed(2)} '
+          '${(qrSize + 16).toStringAsFixed(2)} ${(qrSize + 16).toStringAsFixed(2)} re f',
+        );
+        // Dark QR modules
+        content.writeln('0 0 0 rg');
+        for (var r = 0; r < modules; r++) {
+          for (var c = 0; c < modules; c++) {
+            if (qrImage.isDark(r, c)) {
+              final x = originX + c * cell;
+              final y = originY + (modules - 1 - r) * cell;
+              content.writeln(
+                '${x.toStringAsFixed(2)} ${y.toStringAsFixed(2)} '
+                '${cell.toStringAsFixed(2)} ${cell.toStringAsFixed(2)} re f',
+              );
+            }
+          }
+        }
+        content.writeln('Q');
+      } catch (e) {
+        debugPrint('PassDocumentExporter QR vector warning: $e');
+      }
+    }
+
     content.writeln('BT');
+    content.writeln('0 0 0 rg');
     content.writeln('/F1 18 Tf');
     content.writeln('50 740 Td');
     content.writeln('(${sanitize("ASB HOUSE HUB - OFFICIAL ELECTRONIC PASS")}) Tj');
@@ -36,7 +89,7 @@ class PassDocumentExporter {
     content.writeln('(${sanitize(totalInfo)}) Tj');
     content.writeln('/F1 9 Tf');
     content.writeln('0 -24 Td');
-    content.writeln('(Verification Hash: ${sanitize(qrData)}) Tj');
+    content.writeln('(Verification Payload: ${sanitize(qrData)}) Tj');
     content.writeln('0 -14 Td');
     content.writeln('(Timestamp: ${DateTime.now().toUtc().toIso8601String()}) Tj');
     content.writeln('ET');
@@ -101,6 +154,23 @@ class PassDocumentExporter {
 
   /// Writes generated PDF bytes to the downloads directory or application documents,
   /// returning the resolved output file path.
+  static Future<({bool success, String filePath, String? error})> exportPass({
+    required String title,
+    required String subtitle,
+    required String details,
+    required String totalInfo,
+    required String qrData,
+    String? customPath,
+  }) =>
+      exportPassToDisk(
+        title: title,
+        subtitle: subtitle,
+        details: details,
+        totalInfo: totalInfo,
+        qrData: qrData,
+        customPath: customPath,
+      );
+
   static Future<({bool success, String filePath, String? error})> exportPassToDisk({
     required String title,
     required String subtitle,
@@ -120,9 +190,9 @@ class PassDocumentExporter {
 
       if (kIsWeb) {
         return (
-          success: true,
-          filePath: 'browser_download:ASB_Pass_${DateTime.now().millisecondsSinceEpoch}.pdf',
-          error: null,
+          success: false,
+          filePath: '',
+          error: 'PDF download is not available in the web app yet.',
         );
       }
 
@@ -138,8 +208,8 @@ class PassDocumentExporter {
         final dl = home != null ? io.Directory('$home/Downloads') : null;
         targetDir = (dl != null && dl.existsSync()) ? dl.path : io.Directory.systemTemp.path;
       } else if (io.Platform.isAndroid) {
-        final dl = io.Directory('/storage/emulated/0/Download');
-        targetDir = dl.existsSync() ? dl.path : io.Directory.systemTemp.path;
+        // Safe against Android 10+ (API 29+) Scoped Storage restrictions
+        targetDir = io.Directory.systemTemp.path;
       } else {
         targetDir = io.Directory.systemTemp.path;
       }

@@ -49,6 +49,8 @@ dependencies:
   mobile_scanner: ^6.0.4
   zxing2: ^0.2.3
   image: ^4.5.4
+  file_selector: ^1.1.0
+  url_launcher: ^6.3.3
 
 dev_dependencies:
   flutter_test:
@@ -76,7 +78,6 @@ flutter:
   assets:
     - assets/images/
     - assets/images/mascots/
-    - assets/3d/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

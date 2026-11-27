@@ -15,6 +15,8 @@ rules_version = '2';
 //    - house_name: string ('ruby', 'sapphire', 'emerald', 'topaz')
 //    - class_level: string (optional, <= 50 chars)
 //    - division: string (optional, <= 10 chars)
+//    - class_id: string (optional, <= 10 chars; canonical e.g. '11D', 'LKG-A'; owner-immutable)
+//    - class_verified: bool (optional; admin-only after signup, defaults false)
 //    - points: int (optional, 0-1,000,000)
 //    - points_contributed: int (optional, -100,000 to 1,000,000)
 //    - age: int (optional, 4-25)
@@ -27,9 +29,13 @@ rules_version = '2';
 //    - title: string (1-100 chars)
 //    - body: string (1-500 chars)
 //    - timestamp: timestamp
-//    - is_read: bool
+//    - is_read: bool (optional; absent means unread)
 //    - type: string (optional, <= 50 chars)
 //    - room_id: string (optional, <= 128 chars)
+//    - category: string (optional; timetable|house|class|chat|points|system)
+//    - priority: string (optional; normal|high|urgent)
+//    - dedupe_key: string (optional, 1-200 chars)
+//    - source_id: string (optional, <= 128 chars)
 //
 // 3. admin_roster/{docId}
 //    - slot_id: string (optional, <= 64 chars)
@@ -115,11 +121,25 @@ rules_version = '2';
 //     - proof_token: string
 //     - timestamp: timestamp
 //
-// 11. announcements/{announcementId}, notices/{noticeId}, events/{eventId}
+// 11. announcements/{announcementId}, events/{eventId}
 //     - title: string (1-200 chars)
 //     - body / content: string (optional, <= 5000 chars)
 //     - author_name: string (optional, <= 100 chars)
 //     - priority: string (optional)
+//
+// 11b. notices/{noticeId}
+//     - title: string (1-200 chars, required)
+//     - content: string (optional, <= 5000 chars)
+//     - category: string (optional, <= 50 chars)
+//     - target_audience: string (optional, <= 100 chars)
+//     - date: string (optional, <= 50 chars)
+//     - created_at: timestamp (optional)
+//     - attachment_url: string (optional, <= 2000 chars)
+//     - attachment_name: string (optional, <= 200 chars)
+//     - attachment_size: int (optional, <= 15 * 1024 * 1024 bytes)
+//     - house: string (optional, <= 50 chars)
+//     - body: string (optional, <= 5000 chars)
+//     - id: string (optional, <= 100 chars)
 //
 // 12. chats/{channelId} and chats/{channelId}/messages/{messageId}
 //     - Room doc: participants, participant_names, participant_roles, last_message, last_updated
@@ -168,6 +188,54 @@ rules_version = '2';
 //     - mvp_awards_count / matches_played: int (optional, >= 0)
 //     - updated_at: timestamp (optional)
 //
+// 19. school_members/{memberId}
+//     - scholar_no: string (4-64 chars) - verified school roster identifier
+//     - display_name: string (<= 120 chars)
+//     - role: string ('student', 'teacher', 'admin', etc.)
+//     - grade: int (optional, 1-12)
+//     - house: string ('ruby', 'sapphire', 'emerald', 'topaz')
+//     - active: bool
+//     - capabilities: map (optional, e.g. manage_elections: bool)
+//
+// 20. election_polls_v2/{pollId}
+//     - title: string (<= 120 chars)
+//     - position: string
+//     - minGrade: int (1-12)
+//     - maxGrade: int (1-12)
+//     - house: string ('all', 'ruby', 'sapphire', 'emerald', 'topaz')
+//     - opensAt: timestamp
+//     - closesAt: timestamp
+//     - candidates: list of candidate maps [{id, name, statement}]
+//     - status: string ('published', 'certified')
+//     - publishedAt: timestamp (optional)
+//     - result: map (optional, rows, total, leaders, outcome)
+//     - certifiedAt: timestamp (optional)
+//     - Subcollection counts/{candidateId}: count: int
+//     - Subcollection participation/{key}: receipt: string
+//
+// 21. election_drafts_v2/{draftId}
+//     - title: string (<= 120 chars)
+//     - position: string
+//     - minGrade: int (1-12)
+//     - maxGrade: int (1-12)
+//     - house: string ('all', 'ruby', 'sapphire', 'emerald', 'topaz')
+//     - startMs: int
+//     - endMs: int
+//     - candidates: list of candidate maps [{id, uid, name, statement}]
+//     - status: string ('draft', 'published', 'certified')
+//     - createdBy: string (uid)
+//     - publishedBy: string (optional, uid)
+//     - certifiedBy: string (optional, uid)
+//
+// 22. academic_classes/{classId} (M1 canonical class/section registry)
+//     - class_id: string (2-10 chars, must equal document id; e.g. '11D', 'LKG-A')
+//     - grade: string ('LKG', 'UKG', 'Grade 1'..'Grade 12')
+//     - section: string (1-3 chars)
+//     - active: bool
+//     - class_teacher: string (optional, <= 100 chars)
+//     - academic_year: string (optional, <= 20 chars)
+//     - created_at / updated_at: timestamp (optional)
+//
 // ===============================================================
 
 service cloud.firestore {
@@ -177,58 +245,301 @@ service cloud.firestore {
     // Global Helper Functions
     // ===============================================================
 
-    function isSignedIn() {
+    // Raw authentication check. Use this only where a suspended account must
+    // still be able to read its own profile or notification explaining the
+    // suspension. Every other rule goes through isSignedIn(), which is
+    // active-account aware.
+    function isAuthenticated() {
       return request.auth != null;
     }
 
     function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
+      return isAuthenticated() && request.auth.uid == userId;
     }
 
     function hasUserDoc() {
-      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
     }
 
     function getUserData() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    // Role-Based Access Control
+    // A missing user or roster document is treated as active so a brand-new
+    // account can finish provisioning. A present document must explicitly be
+    // active; suspension is therefore fail-closed for every protected read.
+    function isActiveUser() {
+      return isAuthenticated() &&
+        (!exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('status', 'active') == 'active') &&
+        (!exists(/databases/$(database)/documents/school_members/$(request.auth.uid)) ||
+         get(/databases/$(database)/documents/school_members/$(request.auth.uid)).data.get('active', true) == true);
+    }
+
+    // isSignedIn() is deliberately not auth-only. Marking an account
+    // suspended must revoke access to every rule that only checks sign-in.
+    function isSignedIn() {
+      return isActiveUser();
+    }
+
+    function isElectionManager() {
+      return isActiveUser() &&
+        exists(/databases/$(database)/documents/school_members/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/school_members/$(request.auth.uid)).data.get('capabilities', {}).get('manage_elections', false) == true;
+    }
+
+    // Internal role matchers (do not duplicate isActiveUser() when composed in rules)
+    function _hasSuperAdminRole() {
+      return (request.auth.token != null && (
+          ('admin' in request.auth.token && request.auth.token.admin == true) ||
+          ('role' in request.auth.token && request.auth.token.role in ['super_admin', 'admin']) ||
+          ('email' in request.auth.token && (
+            // Exact bootstrap accounts only. Never use a prefix regex here:
+            // any self-registered admin.* or 11209.* email would become a
+            // super admin. Role claims and the server-side admin roster below
+            // are the only other elevation paths.
+            request.auth.token.email in ['admin@asianschool.bh', '11209@asianschool.bh']
+          ))
+        )) ||
+        exists(/databases/$(database)/documents/admin_roster/$(request.auth.uid)) ||
+        (hasUserDoc() && getUserData().get('role', '') in ['super_admin', 'admin', 'administrator']) ||
+        (exists(/databases/$(database)/documents/school_members/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/school_members/$(request.auth.uid)).data.get('role', '') in ['super_admin', 'admin', 'administrator']);
+    }
+
+    function _hasSeniorAdminRole() {
+      return _hasSuperAdminRole() ||
+        (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in [
+          'principal', 'vice_principal', 'head', 'school_head', 'head_of_school',
+          'management', 'school_management', 'director',
+          'super_admin', 'admin', 'administrator'
+        ]) ||
+        (hasUserDoc() && getUserData().get('role', '') in [
+          'principal', 'vice_principal', 'head', 'school_head', 'head_of_school',
+          'management', 'school_management', 'director',
+          'super_admin', 'admin', 'administrator'
+        ]);
+    }
+
+    function _hasStaffAdminRole() {
+      return _hasSeniorAdminRole() ||
+        (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in ['teacher', 'faculty', 'principal', 'staff', 'faculty_advisor', 'teacher_lead', 'class_teacher', 'subject_teacher']) ||
+        (hasUserDoc() && getUserData().get('role', '') in ['teacher', 'faculty', 'principal', 'staff', 'faculty_advisor', 'teacher_lead', 'class_teacher', 'subject_teacher']);
+    }
+
+    function _hasCaptainRole() {
+      return (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in [
+          'captain', 'vice_captain', 'house_captain', 'house_vice_captain'
+        ]) ||
+        (hasUserDoc() && getUserData().get('role', '') in [
+          'captain', 'vice_captain', 'house_captain', 'house_vice_captain'
+        ]);
+    }
+
+    function _hasCouncilRole() {
+      return (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in [
+          'council', 'head_boy', 'head_girl', 'deputy_head_boy', 'deputy_head_girl',
+          'head_of_activities', 'cultural_secretary', 'sports_captain', 'sports_vice_captain', 'executive_council'
+        ]) ||
+        (hasUserDoc() && getUserData().get('role', '') in [
+          'council', 'head_boy', 'head_girl', 'deputy_head_boy', 'deputy_head_girl',
+          'head_of_activities', 'cultural_secretary', 'sports_captain', 'sports_vice_captain', 'executive_council'
+        ]);
+    }
+
+    function _hasPrefectRole() {
+      return (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in [
+          'prefect', 'student_rep', 'grade_prefect'
+        ]) ||
+        (hasUserDoc() && getUserData().get('role', '') in [
+          'prefect', 'student_rep', 'grade_prefect'
+        ]);
+    }
+
+    function _hasSportsLeadRole() {
+      return _hasStaffAdminRole() ||
+        (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in ['sports_captain', 'sports_vice_captain', 'sports_lead']) ||
+        (hasUserDoc() && getUserData().get('role', '') in ['sports_captain', 'sports_vice_captain', 'sports_lead']);
+    }
+
+    // Role-Based Access Control (all require active user status)
     function isSuperAdmin() {
-      return isSignedIn() && (
-        (request.auth.token != null && 'email' in request.auth.token && request.auth.token.email == 'admin@asianschool.bh') ||
-        (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in ['super_admin', 'admin']) ||
-        (hasUserDoc() && 'role' in getUserData() && getUserData().role in ['super_admin', 'admin'])
-      );
+      return isActiveUser() && _hasSuperAdminRole();
+    }
+
+    function isSeniorAdmin() {
+      return isActiveUser() && _hasSeniorAdminRole();
     }
 
     function isAdmin() {
-      return isSignedIn() && (
-        isSuperAdmin() ||
-        (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in ['teacher', 'faculty', 'principal', 'staff']) ||
-        (hasUserDoc() && 'role' in getUserData() && getUserData().role in ['teacher', 'faculty', 'principal', 'staff'])
+      return isActiveUser() && _hasStaffAdminRole();
+    }
+
+    function getClassData(classId) {
+      return get(/databases/$(database)/documents/academic_classes/$(classId)).data;
+    }
+
+    function isTimetableEditor(classId) {
+      return isSeniorAdmin() || (
+        isAdmin() &&
+        exists(/databases/$(database)/documents/academic_classes/$(classId)) &&
+        (!('timetable_editing_enabled' in getClassData(classId)) || getClassData(classId).timetable_editing_enabled == true) &&
+        (
+          ('class_teacher_uid' in getClassData(classId) && getClassData(classId).class_teacher_uid == request.auth.uid) ||
+          ('timetable_editor_uids' in getClassData(classId) && request.auth.uid in getClassData(classId).timetable_editor_uids)
+        )
+      );
+    }
+
+    function canPublishTimetable(classId) {
+      return isSeniorAdmin() || (
+        isTimetableEditor(classId) &&
+        exists(/databases/$(database)/documents/academic_classes/$(classId)) &&
+        (!('timetable_requires_approval' in getClassData(classId)) || getClassData(classId).timetable_requires_approval != true)
       );
     }
 
     function isCaptain() {
-      return isSignedIn() && hasUserDoc() && 'role' in getUserData() &&
-        getUserData().role in ['captain', 'vice_captain', 'house_captain', 'house_vice_captain'];
+      return isActiveUser() && _hasCaptainRole();
+    }
+
+    function isCouncil() {
+      return isActiveUser() && _hasCouncilRole();
+    }
+
+    function isPrefect() {
+      return isActiveUser() && _hasPrefectRole();
     }
 
     function isSportsLead() {
-      return isSignedIn() && (
-        isAdmin() ||
-        (request.auth.token != null && 'role' in request.auth.token && request.auth.token.role in ['sports_captain', 'sports_vice_captain', 'sports_lead']) ||
-        (hasUserDoc() && 'role' in getUserData() && getUserData().role in ['sports_captain', 'sports_vice_captain', 'sports_lead'])
+      return isActiveUser() && _hasSportsLeadRole();
+    }
+
+    // House group membership is derived from the verified profile, never a
+    // self-asserted join document. A house transfer therefore revokes the old
+    // group and grants the new one atomically at the profile level.
+    function _hasSameHouse(houseId) {
+      return hasUserDoc() &&
+        'house_name' in getUserData() &&
+        getUserData().house_name is string &&
+        getUserData().house_name.lower() == houseId.lower();
+    }
+
+    function isSameHouse(houseId) {
+      return isActiveUser() && _hasSameHouse(houseId);
+    }
+
+    function getCampusEvent(eventId) {
+      return get(/databases/$(database)/documents/events/$(eventId)).data;
+    }
+
+    // Campus events can target a grade band. The numeric grade is stored on
+    // users/{uid} as 0 for LKG/UKG and 1–12 for Grade 1–12. Events without
+    // grade bounds are open to everyone; grade-restricted events fail closed
+    // when the caller lacks a numeric grade on their profile.
+    function hasUserGrade() {
+      return isActiveUser() && hasUserDoc() &&
+        'grade' in getUserData() && getUserData().grade is int;
+    }
+
+    function isGradeEligibleFor(data) {
+      return (!('grade_min' in data) && !('grade_max' in data)) || (
+        hasUserGrade() &&
+        (!('grade_min' in data) || data.grade_min <= getUserData().grade) &&
+        (!('grade_max' in data) || data.grade_max >= getUserData().grade)
       );
     }
 
-    // Resolves student identity against current authenticated user (via email prefix or users profile)
+    // Authorised senders: house captains/vice-captains, council officers
+    // (sports captains, head boy/girl, etc.), and staff/faculty.
+    // Regular students and prefects remain read-only.
+    function isHouseSender(houseId) {
+      return isSameHouse(houseId) && (isAdmin() || isCaptain() || isCouncil());
+    }
+
+    function isHouseModerator(houseId) {
+      return isSeniorAdmin() || isHouseSender(houseId);
+    }
+
+    // Class-group membership is derived from the verified class placement on
+    // the profile. Unverified signups and legacy profiles without
+    // class_verified == true are not members.
+    function isVerifiedClassMember(classId) {
+      return isActiveUser() && hasUserDoc() &&
+        'class_id' in getUserData() &&
+        getUserData().class_id is string &&
+        getUserData().class_id.upper() == classId.upper() &&
+        'class_verified' in getUserData() &&
+        getUserData().class_verified == true;
+    }
+
+    function isClassTeacher(classId) {
+      return isActiveUser() &&
+        exists(/databases/$(database)/documents/academic_classes/$(classId)) &&
+        'class_teacher_uid' in getClassData(classId) &&
+        getClassData(classId).class_teacher_uid == request.auth.uid;
+    }
+
+    // Subject teachers can only post to classes where an administrator has
+    // listed their UID in academic_classes/{classId}.subject_teacher_uids.
+    function isClassSubjectTeacher(classId) {
+      return isAdmin() &&
+        exists(/databases/$(database)/documents/academic_classes/$(classId)) &&
+        'subject_teacher_uids' in getClassData(classId) &&
+        request.auth.uid in getClassData(classId).subject_teacher_uids;
+    }
+
+    function isClassRepresentative(classId) {
+      return isVerifiedClassMember(classId) && hasUserDoc() &&
+        'role' in getUserData() &&
+        getUserData().role in ['class_representative', 'vice_class_representative'];
+    }
+
+    function isClassStudentSender(classId) {
+      return isVerifiedClassMember(classId) && hasUserDoc() &&
+        'role' in getUserData() &&
+        getUserData().role in ['student', 'prefect'] &&
+        exists(/databases/$(database)/documents/academic_classes/$(classId)) &&
+        'student_posting_enabled' in getClassData(classId) &&
+        getClassData(classId).student_posting_enabled == true;
+    }
+
+    function isClassSender(classId) {
+      return isSeniorAdmin() ||
+        isClassTeacher(classId) ||
+        isClassSubjectTeacher(classId) ||
+        isClassRepresentative(classId) ||
+        isClassStudentSender(classId);
+    }
+
+    function isClassModerator(classId) {
+      return isSeniorAdmin() || isClassTeacher(classId);
+    }
+
+    function isClassViewer(classId) {
+      return isVerifiedClassMember(classId) ||
+        isClassTeacher(classId) ||
+        isClassSubjectTeacher(classId) ||
+        isClassRepresentative(classId) ||
+        isSeniorAdmin();
+    }
+
+    // Resolves student identity only when BOTH bindings agree:
+    // 1. the verified users/{uid} profile carries the same scholar number, and
+    // 2. the auth token carries the matching scholarNo@asianschool.bh address.
+    // A profile-only or email-only match is not sufficient (O02).
+    function _hasScholarOwner(scholarNo) {
+      return hasUserDoc() &&
+        'scholar_no' in getUserData() &&
+        getUserData().scholar_no == scholarNo &&
+        request.auth.token != null &&
+        'email' in request.auth.token &&
+        request.auth.token.email is string &&
+        request.auth.token.email.lower() == scholarNo.lower() + '@asianschool.bh';
+    }
+
     function isScholarOwner(scholarNo) {
-      return isSignedIn() && (
-        (request.auth.token != null && 'email' in request.auth.token && request.auth.token.email is string && request.auth.token.email.matches('^' + scholarNo + '@.*')) ||
-        (hasUserDoc() && 'scholar_no' in getUserData() && getUserData().scholar_no == scholarNo)
-      );
+      return isActiveUser() && _hasScholarOwner(scholarNo);
     }
 
     // Generic schema validation helpers
@@ -244,6 +555,44 @@ service cloud.firestore {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
     }
 
+    // A student may provision/refresh their own election roster row, but may
+    // never grant themselves a staff role, election capability, or another
+    // scholar's identity. This closes the school_members -> isSuperAdmin()
+    // escalation path while keeping normal roster self-provisioning working.
+    function isValidSelfSchoolMember(data) {
+      return hasUserDoc() &&
+        (!('status' in getUserData()) || getUserData().status == 'active') &&
+        data.active == true &&
+        data.role == 'student' &&
+        data.scholar_no is string &&
+        data.scholar_no == getUserData().scholar_no &&
+        data.display_name is string &&
+        data.display_name.size() >= 1 &&
+        data.display_name.size() <= 100 &&
+        data.house is string &&
+        data.house.lower() in ['ruby', 'sapphire', 'emerald', 'topaz'] &&
+        // House and grade drive election eligibility, so a self-provisioned
+        // roster row must mirror the immutable users profile rather than
+        // letting a student move themselves into another house or grade band.
+        (
+          ('house_name' in getUserData() &&
+            data.house.lower() == getUserData().house_name.lower()) ||
+          (!('house_name' in getUserData()) &&
+            'house' in getUserData() &&
+            data.house.lower() == getUserData().house.lower())
+        ) &&
+        data.grade is int &&
+        data.grade >= 0 &&
+        data.grade <= 12 &&
+        (!('grade' in getUserData()) || data.grade == getUserData().grade) &&
+        (!('capabilities' in data) || (
+          data.capabilities is map &&
+          data.capabilities.keys().hasOnly(['manage_elections']) &&
+          (!('manage_elections' in data.capabilities) ||
+            data.capabilities.manage_elections == false)
+        ));
+    }
+
     // ===============================================================
     // Domain Validators
     // ===============================================================
@@ -251,40 +600,271 @@ service cloud.firestore {
     function isValidUser(data) {
       return hasOnlyAllowedFields([
         'uid', 'scholar_no', 'full_name', 'role', 'house_name',
-        'class_level', 'division', 'points', 'points_contributed',
-        'created_at', 'updated_at', 'age', 'position_title', 'designation'
+        'class_level', 'division', 'class_id', 'class_verified',
+        'grade',
+        'points', 'points_contributed',
+        'created_at', 'updated_at', 'age', 'position_title', 'designation',
+        'status'
       ]) &&
       hasRequiredFields(['scholar_no', 'full_name', 'role', 'house_name']) &&
       data.full_name is string && data.full_name.size() >= 2 && data.full_name.size() <= 100 &&
       data.scholar_no is string && data.scholar_no.size() >= 4 && data.scholar_no.size() <= 20 &&
+      !(data.scholar_no in ['admin', '11209']) &&
+      !(data.scholar_no.lower() in ['admin', '11209']) &&
       data.role is string && data.role in [
         'student', 'prefect', 'captain', 'vice_captain',
         'house_captain', 'house_vice_captain', 'council',
         'sports_captain', 'sports_vice_captain', 'sports_lead',
-        'teacher', 'faculty', 'principal', 'staff', 'admin', 'super_admin'
+        'head_boy', 'head_girl', 'deputy_head_boy', 'deputy_head_girl',
+        'head_of_activities', 'cultural_secretary', 'executive_council',
+        'class_representative', 'vice_class_representative', 'parent',
+        'teacher', 'faculty', 'faculty_advisor', 'teacher_lead',
+        'class_teacher', 'subject_teacher',
+        'principal', 'staff', 'administrator', 'admin', 'super_admin',
+        'vice_principal', 'head', 'school_head', 'head_of_school',
+        'management', 'school_management', 'director'
       ] &&
-      data.house_name is string && data.house_name.toLowerCase() in ['ruby', 'sapphire', 'emerald', 'topaz'] &&
+      data.house_name is string && data.house_name.lower() in ['ruby', 'sapphire', 'emerald', 'topaz'] &&
       (!('class_level' in data) || (data.class_level is string && data.class_level.size() <= 50)) &&
       (!('division' in data) || (data.division is string && data.division.size() <= 10)) &&
+      (!('class_id' in data) || (data.class_id is string && data.class_id.size() <= 10)) &&
+      (!('class_verified' in data) || data.class_verified is bool) &&
+      (!('grade' in data) || (data.grade is int && data.grade >= 0 && data.grade <= 12)) &&
       (!('points' in data) || (data.points is int && data.points >= 0 && data.points <= 1000000)) &&
       (!('points_contributed' in data) || (data.points_contributed is int && data.points_contributed >= -100000 && data.points_contributed <= 1000000)) &&
       (!('age' in data) || (data.age is int && data.age >= 4 && data.age <= 25)) &&
       (!('position_title' in data) || (data.position_title is string && data.position_title.size() <= 100)) &&
       (!('designation' in data) || (data.designation is string && data.designation.size() <= 100)) &&
       (!('uid' in data) || (data.uid is string && data.uid.size() <= 128)) &&
+      (!('status' in data) || (data.status is string && data.status in ['active', 'suspended', 'deactivated'])) &&
       (!('created_at' in data) || data.created_at is timestamp) &&
       (!('updated_at' in data) || data.updated_at is timestamp);
     }
 
     function isValidNotification(data) {
-      return hasOnlyAllowedFields(['title', 'body', 'timestamp', 'is_read', 'type', 'room_id']) &&
-        hasRequiredFields(['title', 'body', 'timestamp', 'is_read']) &&
+      return hasOnlyAllowedFields([
+          'title', 'body', 'timestamp', 'is_read', 'type', 'room_id',
+          'category', 'priority', 'dedupe_key', 'source_id', 'sender_id',
+          'sender_name'
+        ]) &&
+        hasRequiredFields(['title', 'body', 'timestamp', 'sender_id']) &&
         data.title is string && data.title.size() >= 1 && data.title.size() <= 100 &&
         data.body is string && data.body.size() >= 1 && data.body.size() <= 500 &&
-        data.is_read is bool &&
+        (!('is_read' in data) || data.is_read is bool) &&
         data.timestamp is timestamp &&
+        data.sender_id is string && data.sender_id.size() >= 1 && data.sender_id.size() <= 128 &&
+        (!('sender_name' in data) || (data.sender_name is string && data.sender_name.size() <= 100)) &&
         (!('type' in data) || (data.type is string && data.type.size() <= 50)) &&
-        (!('room_id' in data) || (data.room_id is string && data.room_id.size() <= 128));
+        (!('room_id' in data) || (data.room_id is string && data.room_id.size() <= 128)) &&
+        (!('category' in data) || (
+          data.category is string &&
+          data.category in ['timetable', 'house', 'class', 'chat', 'points', 'system']
+        )) &&
+        (!('priority' in data) || (
+          data.priority is string &&
+          data.priority in ['normal', 'high', 'urgent']
+        )) &&
+        (!('dedupe_key' in data) || (
+          data.dedupe_key is string &&
+          data.dedupe_key.size() >= 1 &&
+          data.dedupe_key.size() <= 200
+        )) &&
+        (!('source_id' in data) || (
+          data.source_id is string && data.source_id.size() <= 128
+        ));
+    }
+
+    // Class representatives and prefects may fan out notifications only for
+    // verified members of the class/house they belong to, without claiming
+    // system/urgent priority reserved for staff.
+    function isNotificationRecipientInScope(userId, scopeType, scopeId) {
+      return exists(/databases/$(database)/documents/users/$(userId)) && (
+        (
+          scopeType == 'class_announcement' &&
+          get(/databases/$(database)/documents/users/$(userId)).data.get('class_verified', false) == true &&
+          get(/databases/$(database)/documents/users/$(userId)).data.get('class_id', '').upper() == scopeId.upper()
+        ) || (
+          scopeType == 'house_announcement' &&
+          get(/databases/$(database)/documents/users/$(userId)).data.get('house_name', '').lower() == scopeId.lower()
+        )
+      );
+    }
+
+    function isNotificationScopeSender(data, userId) {
+      return (
+        data.get('type', '') == 'class_announcement' &&
+        data.get('room_id', '') is string &&
+        data.room_id.size() >= 2 &&
+        data.get('category', 'class') == 'class' &&
+        data.get('priority', 'normal') in ['normal', 'high'] &&
+        isNotificationRecipientInScope(userId, 'class_announcement', data.room_id) && (
+          (
+            exists(/databases/$(database)/documents/academic_classes/$(data.room_id)) && (
+              getClassData(data.room_id).get('class_teacher_uid', '') == request.auth.uid ||
+              request.auth.uid in getClassData(data.room_id).get('subject_teacher_uids', [])
+            )
+          ) || (
+            hasUserDoc() &&
+            getUserData().get('class_verified', false) == true &&
+            getUserData().get('class_id', '').upper() == data.room_id.upper() && (
+              getUserData().get('role', '') in ['class_representative', 'vice_class_representative'] ||
+              (
+                getUserData().get('role', '') in ['student', 'prefect'] &&
+                exists(/databases/$(database)/documents/academic_classes/$(data.room_id)) &&
+                getClassData(data.room_id).get('student_posting_enabled', false) == true
+              )
+            )
+          )
+        )
+      ) || (
+        data.get('type', '') == 'house_announcement' &&
+        data.get('room_id', '') is string &&
+        data.room_id.size() >= 2 &&
+        data.get('category', 'house') == 'house' &&
+        data.get('priority', 'normal') in ['normal', 'high'] &&
+        hasUserDoc() &&
+        getUserData().get('house_name', '').lower() == data.room_id.lower() &&
+        (_hasCaptainRole() || _hasCouncilRole()) &&
+        isNotificationRecipientInScope(userId, 'house_announcement', data.room_id)
+      );
+    }
+
+    function isValidAcademicClass(data) {
+      return hasOnlyAllowedFields([
+        'class_id', 'grade', 'section', 'active', 'class_teacher',
+        'class_teacher_uid', 'subject_teacher_uids', 'student_posting_enabled',
+        'timetable_editor_uids', 'timetable_editing_enabled', 'timetable_requires_approval',
+        'academic_year', 'created_at', 'updated_at'
+      ]) &&
+      hasRequiredFields(['class_id', 'grade', 'section', 'active']) &&
+      data.class_id is string && data.class_id.size() >= 2 && data.class_id.size() <= 10 &&
+      data.grade is string && data.grade in [
+        'LKG', 'UKG', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5',
+        'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'
+      ] &&
+      data.section is string && data.section.size() >= 1 && data.section.size() <= 3 &&
+      data.active is bool &&
+      (!('class_teacher' in data) || (data.class_teacher is string && data.class_teacher.size() <= 100)) &&
+      (!('class_teacher_uid' in data) || (data.class_teacher_uid is string && data.class_teacher_uid.size() <= 128)) &&
+      (!('subject_teacher_uids' in data) || (data.subject_teacher_uids is list && data.subject_teacher_uids.size() <= 30)) &&
+      (!('student_posting_enabled' in data) || data.student_posting_enabled is bool) &&
+      (!('timetable_editor_uids' in data) || (data.timetable_editor_uids is list && data.timetable_editor_uids.size() <= 20)) &&
+      (!('timetable_editing_enabled' in data) || data.timetable_editing_enabled is bool) &&
+      (!('timetable_requires_approval' in data) || data.timetable_requires_approval is bool) &&
+      (!('academic_year' in data) || (data.academic_year is string && data.academic_year.size() <= 20)) &&
+      (!('created_at' in data) || data.created_at is timestamp) &&
+      (!('updated_at' in data) || data.updated_at is timestamp);
+    }
+
+    function isValidTimetableSlot(slot) {
+      return slot is map &&
+        slot.keys().hasOnly(['period_number', 'subject', 'teacher_name', 'teacher_uid', 'room', 'start_minute', 'image_url', 'notes', 'substitute_teacher_name', 'substitute_teacher_uid']) &&
+        slot.period_number is int && slot.period_number >= 1 && slot.period_number <= 8 &&
+        slot.start_minute is int && slot.start_minute >= 0 && slot.start_minute < 1440 &&
+        (!('subject' in slot) || (slot.subject is string && slot.subject.size() <= 80)) &&
+        (!('teacher_name' in slot) || (slot.teacher_name is string && slot.teacher_name.size() <= 100)) &&
+        (!('teacher_uid' in slot) || (slot.teacher_uid is string && slot.teacher_uid.size() <= 128)) &&
+        (!('room' in slot) || (slot.room is string && slot.room.size() <= 50)) &&
+        (!('image_url' in slot) || (slot.image_url is string && slot.image_url.size() <= 500000)) &&
+        (!('notes' in slot) || (slot.notes is string && slot.notes.size() <= 500)) &&
+        (!('substitute_teacher_name' in slot) || (slot.substitute_teacher_name is string && slot.substitute_teacher_name.size() <= 100)) &&
+        (!('substitute_teacher_uid' in slot) || (slot.substitute_teacher_uid is string && slot.substitute_teacher_uid.size() <= 128));
+    }
+
+    // Periods must be exactly 1..8 in order and must not overlap. Gaps are
+    // allowed (M3 transition gaps), but starts must be strictly increasing by
+    // at least the fixed 45-minute teaching duration. The last period must end
+    // by midnight.
+    function hasOrderedTimetableSlots(slots) {
+      return slots[0].period_number == 1 &&
+        slots[1].period_number == 2 &&
+        slots[2].period_number == 3 &&
+        slots[3].period_number == 4 &&
+        slots[4].period_number == 5 &&
+        slots[5].period_number == 6 &&
+        slots[6].period_number == 7 &&
+        slots[7].period_number == 8 &&
+        slots[0].start_minute + 45 <= slots[1].start_minute &&
+        slots[1].start_minute + 45 <= slots[2].start_minute &&
+        slots[2].start_minute + 45 <= slots[3].start_minute &&
+        slots[3].start_minute + 45 <= slots[4].start_minute &&
+        slots[4].start_minute + 45 <= slots[5].start_minute &&
+        slots[5].start_minute + 45 <= slots[6].start_minute &&
+        slots[6].start_minute + 45 <= slots[7].start_minute &&
+        slots[7].start_minute + 45 <= 1440;
+    }
+
+    // The 30-minute break must sit between the period it follows and the next
+    // period, and must end by midnight. break_after_period 1..8 selects the
+    // only slot pair that is checked.
+    function isValidTimetableBreakPlacement(slots, breakAfterPeriod, breakStartMinute) {
+      return breakStartMinute + 30 <= 1440 &&
+        (breakAfterPeriod != 1 || (slots[0].start_minute + 45 <= breakStartMinute && breakStartMinute + 30 <= slots[1].start_minute)) &&
+        (breakAfterPeriod != 2 || (slots[1].start_minute + 45 <= breakStartMinute && breakStartMinute + 30 <= slots[2].start_minute)) &&
+        (breakAfterPeriod != 3 || (slots[2].start_minute + 45 <= breakStartMinute && breakStartMinute + 30 <= slots[3].start_minute)) &&
+        (breakAfterPeriod != 4 || (slots[3].start_minute + 45 <= breakStartMinute && breakStartMinute + 30 <= slots[4].start_minute)) &&
+        (breakAfterPeriod != 5 || (slots[4].start_minute + 45 <= breakStartMinute && breakStartMinute + 30 <= slots[5].start_minute)) &&
+        (breakAfterPeriod != 6 || (slots[5].start_minute + 45 <= breakStartMinute && breakStartMinute + 30 <= slots[6].start_minute)) &&
+        (breakAfterPeriod != 7 || (slots[6].start_minute + 45 <= breakStartMinute && breakStartMinute + 30 <= slots[7].start_minute)) &&
+        (breakAfterPeriod != 8 || (slots[7].start_minute + 45 <= breakStartMinute));
+    }
+
+    function isValidTimetableVersion(data, classId) {
+      return hasOnlyAllowedFields([
+        'id', 'class_id', 'day_of_week', 'status', 'effective_from', 'version',
+        'break_after_period', 'break_start_minute', 'slots',
+        'created_by_uid', 'created_by_name', 'published_at',
+        'approved_by_uid', 'approved_by_name', 'supersedes_id',
+        'rejection_reason', 'created_at', 'updated_at', 'override_date'
+      ]) &&
+      hasRequiredFields(['class_id', 'day_of_week', 'status', 'effective_from', 'version', 'break_after_period', 'break_start_minute', 'slots']) &&
+      data.class_id is string && data.class_id == classId &&
+      data.day_of_week is string && data.day_of_week in ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday'] &&
+      data.status is string && data.status in ['draft', 'submitted', 'published', 'rejected'] &&
+      data.effective_from is timestamp &&
+      data.version is int && data.version >= 1 && data.version <= 10000 &&
+      data.break_after_period is int && data.break_after_period >= 1 && data.break_after_period <= 8 &&
+      data.break_start_minute is int && data.break_start_minute >= 0 && data.break_start_minute < 1440 &&
+      data.slots is list && data.slots.size() == 8 &&
+      isValidTimetableSlot(data.slots[0]) &&
+      isValidTimetableSlot(data.slots[1]) &&
+      isValidTimetableSlot(data.slots[2]) &&
+      isValidTimetableSlot(data.slots[3]) &&
+      isValidTimetableSlot(data.slots[4]) &&
+      isValidTimetableSlot(data.slots[5]) &&
+      isValidTimetableSlot(data.slots[6]) &&
+      isValidTimetableSlot(data.slots[7]) &&
+      hasOrderedTimetableSlots(data.slots) &&
+      isValidTimetableBreakPlacement(data.slots, data.break_after_period, data.break_start_minute) &&
+      (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
+      (!('created_by_uid' in data) || (data.created_by_uid is string && data.created_by_uid.size() <= 128)) &&
+      (!('created_by_name' in data) || (data.created_by_name is string && data.created_by_name.size() <= 100)) &&
+      (!('approved_by_uid' in data) || (data.approved_by_uid is string && data.approved_by_uid.size() <= 128)) &&
+      (!('approved_by_name' in data) || (data.approved_by_name is string && data.approved_by_name.size() <= 100)) &&
+      (!('supersedes_id' in data) || (data.supersedes_id is string && data.supersedes_id.size() <= 128)) &&
+      (!('rejection_reason' in data) || (data.rejection_reason is string && data.rejection_reason.size() <= 500)) &&
+      (!('override_date' in data) || data.override_date is timestamp) &&
+      (!('published_at' in data) || data.published_at is timestamp) &&
+      (!('created_at' in data) || data.created_at is timestamp) &&
+      (!('updated_at' in data) || data.updated_at is timestamp);
+    }
+
+    function isValidTimetableAudit(data) {
+      return hasOnlyAllowedFields([
+        'id', 'action', 'version_id', 'class_id', 'day_of_week', 'version',
+        'actor_uid', 'actor_name', 'details', 'timestamp'
+      ]) &&
+      hasRequiredFields(['action', 'class_id', 'actor_uid', 'timestamp']) &&
+      data.action is string && data.action in ['create', 'edit', 'submit', 'publish', 'approve', 'reject', 'restore', 'override', 'copy', 'substitute', 'promotion', 'transfer'] &&
+      data.class_id is string && data.class_id.size() >= 2 && data.class_id.size() <= 10 &&
+      data.actor_uid is string && data.actor_uid == request.auth.uid &&
+      data.timestamp is timestamp &&
+      (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
+      (!('version_id' in data) || (data.version_id is string && data.version_id.size() <= 128)) &&
+      (!('day_of_week' in data) || (data.day_of_week is string && data.day_of_week in ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday'])) &&
+      (!('version' in data) || (data.version is int && data.version >= 1)) &&
+      (!('actor_name' in data) || (data.actor_name is string && data.actor_name.size() <= 100)) &&
+      (!('details' in data) || (data.details is string && data.details.size() <= 1000));
     }
 
     function isValidAdminRoster(data) {
@@ -305,17 +885,22 @@ service cloud.firestore {
       return hasOnlyAllowedFields([
         'id', 'title', 'subject', 'class_level', 'division',
         'assigned_date', 'due_date', 'description', 'teacher_name',
-        'max_marks', 'attachments', 'created_at', 'updated_at'
+        'max_marks', 'attachments', 'created_at', 'updated_at',
+        'status', 'points_reward', 'submission_notes', 'submitted_at', 'graded_at', 'image_url'
       ]) &&
       hasRequiredFields(['title', 'subject']) &&
       data.title is string && data.title.size() >= 1 && data.title.size() <= 150 &&
       data.subject is string && data.subject.size() >= 1 && data.subject.size() <= 80 &&
+      (!('status' in data) || (data.status is string && data.status in ['pending', 'submitted', 'graded'])) &&
+      (!('points_reward' in data) || (data.points_reward is int && data.points_reward >= 0 && data.points_reward <= 500)) &&
       (!('class_level' in data) || (data.class_level is string && data.class_level.size() <= 50)) &&
       (!('division' in data) || (data.division is string && data.division.size() <= 10)) &&
       (!('description' in data) || (data.description is string && data.description.size() <= 3000)) &&
+      (!('submission_notes' in data) || (data.submission_notes is string && data.submission_notes.size() <= 3000)) &&
       (!('teacher_name' in data) || (data.teacher_name is string && data.teacher_name.size() <= 100)) &&
       (!('max_marks' in data) || (data.max_marks is number && data.max_marks >= 0 && data.max_marks <= 1000)) &&
       (!('attachments' in data) || (data.attachments is list && data.attachments.size() <= 10)) &&
+      (!('image_url' in data) || (data.image_url is string && data.image_url.size() <= 500000)) &&
       (!('created_at' in data) || data.created_at is timestamp) &&
       (!('updated_at' in data) || data.updated_at is timestamp);
     }
@@ -326,12 +911,13 @@ service cloud.firestore {
         'points', 'cert_url', 'status', 'created_at', 'auto_validated',
         'ocr_keywords', 'verified_at', 'verifiedAt', 'updated_at', 'updatedAt',
         'rejection_reason', 'reviewer_id', 'reviewer_name',
-        'file_path', 'verificationLogs'
+        'file_path', 'verificationLogs',
+        'ai_status', 'ai_confidence', 'ai_markers', 'ai_summary', 'ai_processed_at'
       ]) &&
       hasRequiredFields(['scholar_no', 'student_name', 'house_name', 'activity_title', 'points', 'cert_url', 'status']) &&
       data.scholar_no is string && data.scholar_no.size() >= 4 && data.scholar_no.size() <= 20 &&
       data.student_name is string && data.student_name.size() >= 2 && data.student_name.size() <= 100 &&
-      data.house_name is string && data.house_name.toLowerCase() in ['ruby', 'sapphire', 'emerald', 'topaz'] &&
+      data.house_name is string && data.house_name.lower() in ['ruby', 'sapphire', 'emerald', 'topaz'] &&
       data.activity_title is string && data.activity_title.size() >= 2 && data.activity_title.size() <= 150 &&
       data.points is int && data.points >= 1 && data.points <= 500 &&
       data.cert_url is string && data.cert_url.size() >= 5 && data.cert_url.size() <= 500000 &&
@@ -342,7 +928,13 @@ service cloud.firestore {
       (!('verificationLogs' in data) || (data.verificationLogs is list && data.verificationLogs.size() <= 50)) &&
       (!('auto_validated' in data) || data.auto_validated is bool) &&
       (!('ocr_keywords' in data) || (data.ocr_keywords is list && data.ocr_keywords.size() <= 30)) &&
+      (!('ai_status' in data) || (data.ai_status is string && data.ai_status.size() <= 50)) &&
+      (!('ai_confidence' in data) || (data.ai_confidence is number && data.ai_confidence >= 0 && data.ai_confidence <= 100)) &&
+      (!('ai_markers' in data) || (data.ai_markers is list && data.ai_markers.size() <= 30)) &&
+      (!('ai_summary' in data) || (data.ai_summary is string && data.ai_summary.size() <= 500)) &&
+      (!('ai_processed_at' in data) || data.ai_processed_at is timestamp) &&
       (!('rejection_reason' in data) || (data.rejection_reason is string && data.rejection_reason.size() <= 500)) &&
+      (!('reviewer_id' in data) || (data.reviewer_id is string && data.reviewer_id.size() >= 1 && data.reviewer_id.size() <= 128)) &&
       (!('reviewer_name' in data) || (data.reviewer_name is string && data.reviewer_name.size() <= 100)) &&
       (!('created_at' in data) || data.created_at is timestamp) &&
       (!('verified_at' in data) || data.verified_at is timestamp) &&
@@ -396,25 +988,6 @@ service cloud.firestore {
       (!('certification_token' in data) || (data.certification_token is string && data.certification_token.size() <= 256));
     }
 
-    function isValidElection(data) {
-      return hasOnlyAllowedFields([
-        'id', 'title', 'position', 'running_position',
-        'start_time', 'end_time', 'is_open', 'candidates',
-        'total_votes_cast', 'last_updated', 'created_at',
-        'house_scope', 'eligible_grades', 'status',
-        'is_certified', 'certified_by', 'certified_at'
-      ]) &&
-      (!('title' in data) || (data.title is string && data.title.size() <= 150)) &&
-      (!('position' in data) || (data.position is string && data.position.size() <= 100)) &&
-      (!('house_scope' in data) || (data.house_scope is string && data.house_scope.size() <= 50)) &&
-      (!('status' in data) || (data.status is string && data.status in ['upcoming', 'open', 'closed', 'certified'])) &&
-      (!('candidates' in data) || (data.candidates is list && data.candidates.size() <= 50)) &&
-      (!('eligible_grades' in data) || (data.eligible_grades is list && data.eligible_grades.size() <= 20)) &&
-      (!('is_certified' in data) || data.is_certified is bool) &&
-      (!('certified_by' in data) || (data.certified_by is string && data.certified_by.size() <= 100)) &&
-      (!('total_votes_cast' in data) || (data.total_votes_cast is int && data.total_votes_cast >= 0));
-    }
-
     function isValidAnnouncement(data) {
       return hasOnlyAllowedFields([
         'id', 'title', 'body', 'content', 'author_name',
@@ -429,13 +1002,200 @@ service cloud.firestore {
       (!('tags' in data) || (data.tags is list && data.tags.size() <= 10));
     }
 
+    // Campus events have their own lifecycle schema (draft/published/cancelled)
+    // and are not announcements: they carry house scope, points, banners and a
+    // live flag. Keeping a dedicated validator prevents the two collections
+    // from drifting apart.
+    function isValidCampusEvent(data) {
+      return hasOnlyAllowedFields([
+        'id', 'title', 'description', 'category', 'house_scope',
+        'start_time', 'end_time', 'venue', 'points_awarded',
+        'points_multiplier', 'banner_url', 'is_live', 'status',
+        'created_at', 'updated_at', 'author_uid', 'author_name',
+        'cancelled_reason', 'grade_min', 'grade_max'
+      ]) &&
+      hasRequiredFields([
+        'title', 'start_time', 'end_time', 'venue', 'category',
+        'house_scope', 'status'
+      ]) &&
+      (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
+      data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
+      (!('description' in data) ||
+        (data.description is string && data.description.size() <= 3000)) &&
+      data.category is string &&
+      data.category in ['cultural', 'sports', 'academic', 'arts', 'tech'] &&
+      data.house_scope is string &&
+      data.house_scope in ['all', 'ruby', 'sapphire', 'emerald', 'topaz'] &&
+      data.start_time is timestamp && data.end_time is timestamp &&
+      data.end_time > data.start_time &&
+      data.venue is string && data.venue.size() >= 1 && data.venue.size() <= 120 &&
+      (!('points_awarded' in data) ||
+        (data.points_awarded is int &&
+          data.points_awarded >= 0 && data.points_awarded <= 5000)) &&
+      (!('points_multiplier' in data) ||
+        ((data.points_multiplier is int || data.points_multiplier is float) &&
+          data.points_multiplier >= 0 && data.points_multiplier <= 10)) &&
+      (!('banner_url' in data) ||
+        (data.banner_url is string && data.banner_url.size() <= 500000)) &&
+      (!('is_live' in data) || data.is_live is bool) &&
+      data.status is string &&
+      data.status in ['draft', 'published', 'cancelled'] &&
+      (!('created_at' in data) || data.created_at is timestamp) &&
+      (!('updated_at' in data) || data.updated_at is timestamp) &&
+      (!('author_uid' in data) ||
+        (data.author_uid is string && data.author_uid.size() <= 128)) &&
+      (!('author_name' in data) ||
+        (data.author_name is string && data.author_name.size() <= 120)) &&
+      (!('cancelled_reason' in data) ||
+        (data.cancelled_reason is string && data.cancelled_reason.size() <= 500)) &&
+      ((!('grade_min' in data) && !('grade_max' in data)) ||
+        (('grade_min' in data) && ('grade_max' in data) &&
+          data.grade_min is int && data.grade_min >= 0 && data.grade_min <= 12 &&
+          data.grade_max is int && data.grade_max >= 0 && data.grade_max <= 12 &&
+          data.grade_min <= data.grade_max));
+    }
+
+    function isValidSchoolNotice(data) {
+      return hasOnlyAllowedFields([
+        'id', 'title', 'content', 'body', 'category', 'target_audience',
+        'date', 'created_at', 'attachment_url', 'attachment_name',
+        'attachment_size', 'house'
+      ]) &&
+      hasRequiredFields(['title']) &&
+      data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
+      (!('content' in data) || (data.content is string && data.content.size() <= 5000)) &&
+      (!('body' in data) || (data.body is string && data.body.size() <= 5000)) &&
+      (!('category' in data) || (data.category is string && data.category.size() <= 50)) &&
+      (!('target_audience' in data) || (data.target_audience is string && data.target_audience.size() <= 100)) &&
+      (!('date' in data) || (data.date is string && data.date.size() <= 50)) &&
+      (!('created_at' in data) || data.created_at is timestamp) &&
+      // Allows a token-bearing Storage URL or a small Base64 PDF data URI
+      // (inline fallback capped at 700 KB upstream; Firestore caps the doc).
+      (!('attachment_url' in data) || (data.attachment_url is string && data.attachment_url.size() <= 1000000)) &&
+      (!('attachment_name' in data) || (data.attachment_name is string && data.attachment_name.size() <= 200)) &&
+      (!('attachment_size' in data) || (data.attachment_size is int && data.attachment_size >= 0 && data.attachment_size <= 15 * 1024 * 1024)) &&
+      (!('house' in data) || (data.house is string && data.house.size() <= 50)) &&
+      (!('id' in data) || (data.id is string && data.id.size() <= 100));
+    }
+
     function isValidChatMessage(data) {
-      return hasOnlyAllowedFields(['sender_id', 'sender_name', 'text', 'timestamp', 'is_read', 'read_at', 'push_alert_triggered']) &&
+      return hasOnlyAllowedFields([
+          'sender_id', 'sender_name', 'text', 'attachment_url',
+          'timestamp', 'is_read', 'read_at', 'push_alert_triggered'
+        ]) &&
         hasRequiredFields(['sender_id', 'text', 'timestamp', 'is_read']) &&
         data.sender_id is string && data.sender_id.size() <= 128 &&
         (!('sender_name' in data) || (data.sender_name is string && data.sender_name.size() <= 100)) &&
-        data.text is string && data.text.size() >= 1 && data.text.size() <= 2000 &&
+        data.text is string && data.text.size() <= 2000 &&
+        (data.text.size() >= 1 || (
+          'attachment_url' in data &&
+          data.attachment_url is string &&
+          data.attachment_url.size() >= 1
+        )) &&
+        (!('attachment_url' in data) ||
+          (data.attachment_url is string && data.attachment_url.size() <= 900000)) &&
+        (!('push_alert_triggered' in data) || data.push_alert_triggered is bool) &&
         data.is_read is bool &&
+        data.timestamp is timestamp;
+    }
+
+    function isValidHouseGroup(houseId, data) {
+      return hasOnlyAllowedFields([
+          'house_id', 'name', 'description', 'last_message',
+          'last_message_at', 'created_at', 'updated_at'
+        ]) &&
+        hasRequiredFields(['house_id', 'name']) &&
+        data.house_id is string && data.house_id.lower() == houseId.lower() &&
+        data.name is string && data.name.size() >= 3 && data.name.size() <= 80 &&
+        (!('description' in data) || (data.description is string && data.description.size() <= 300)) &&
+        (!('last_message' in data) || (data.last_message is string && data.last_message.size() <= 500)) &&
+        (!('last_message_at' in data) || data.last_message_at is timestamp) &&
+        (!('created_at' in data) || data.created_at is timestamp) &&
+        (!('updated_at' in data) || data.updated_at is timestamp);
+    }
+
+    // House group messages are writable only by authorised senders. A message
+    // with an attachment is still a message create, so a student cannot upload
+    // an attachment by writing a document directly.
+    function isValidHouseGroupMessage(houseId, data) {
+      return hasOnlyAllowedFields([
+          'sender_id', 'sender_name', 'sender_role', 'sender_house',
+          'text', 'category', 'attachment_url', 'timestamp',
+          'is_pinned', 'is_hidden', 'moderated_by', 'moderated_at'
+        ]) &&
+        hasRequiredFields([
+          'sender_id', 'sender_name', 'sender_role', 'sender_house',
+          'text', 'category', 'is_pinned', 'is_hidden', 'timestamp'
+        ]) &&
+        data.sender_id is string && data.sender_id.size() >= 1 && data.sender_id.size() <= 128 &&
+        data.sender_name is string && data.sender_name.size() >= 1 && data.sender_name.size() <= 100 &&
+        data.sender_role is string && data.sender_role.size() <= 100 &&
+        data.sender_house is string && data.sender_house.lower() == houseId.lower() &&
+        data.text is string && data.text.size() <= 2000 &&
+        (data.text.size() >= 1 || (
+          'attachment_url' in data &&
+          data.attachment_url is string &&
+          data.attachment_url.size() >= 1
+        )) &&
+        (!('attachment_url' in data) ||
+          (data.attachment_url is string && data.attachment_url.size() <= 900000)) &&
+        data.category is string && data.category in [
+          'general', 'announcement', 'event', 'sports'
+        ] &&
+        data.is_pinned is bool &&
+        data.is_hidden is bool &&
+        (!('moderated_by' in data) || (data.moderated_by is string && data.moderated_by.size() <= 128)) &&
+        (!('moderated_at' in data) || data.moderated_at is timestamp) &&
+        data.timestamp is timestamp;
+    }
+
+    function isValidClassGroup(classId, data) {
+      return hasOnlyAllowedFields([
+          'class_id', 'name', 'description', 'last_message',
+          'last_message_at', 'created_at', 'updated_at'
+        ]) &&
+        hasRequiredFields(['class_id', 'name']) &&
+        data.class_id is string && data.class_id.upper() == classId.upper() &&
+        data.name is string && data.name.size() >= 3 && data.name.size() <= 100 &&
+        (!('description' in data) || (data.description is string && data.description.size() <= 300)) &&
+        (!('last_message' in data) || (data.last_message is string && data.last_message.size() <= 500)) &&
+        (!('last_message_at' in data) || data.last_message_at is timestamp) &&
+        (!('created_at' in data) || data.created_at is timestamp) &&
+        (!('updated_at' in data) || data.updated_at is timestamp);
+    }
+
+    // Class-group messages are writable only by the class teacher, an assigned
+    // subject teacher, a class representative, or a student when the school has
+    // enabled student posting for this class.
+    function isValidClassGroupMessage(classId, data) {
+      return hasOnlyAllowedFields([
+          'sender_id', 'sender_name', 'sender_role', 'sender_class',
+          'text', 'category', 'attachment_url', 'timestamp',
+          'is_pinned', 'is_hidden', 'moderated_by', 'moderated_at'
+        ]) &&
+        hasRequiredFields([
+          'sender_id', 'sender_name', 'sender_role', 'sender_class',
+          'text', 'category', 'is_pinned', 'is_hidden', 'timestamp'
+        ]) &&
+        data.sender_id is string && data.sender_id.size() >= 1 && data.sender_id.size() <= 128 &&
+        data.sender_name is string && data.sender_name.size() >= 1 && data.sender_name.size() <= 100 &&
+        data.sender_role is string && data.sender_role.size() <= 100 &&
+        data.sender_class is string && data.sender_class.upper() == classId.upper() &&
+        data.text is string && data.text.size() <= 2000 &&
+        (data.text.size() >= 1 || (
+          'attachment_url' in data &&
+          data.attachment_url is string &&
+          data.attachment_url.size() >= 1
+        )) &&
+        (!('attachment_url' in data) ||
+          (data.attachment_url is string && data.attachment_url.size() <= 900000)) &&
+        data.category is string && data.category in [
+          'general', 'announcement', 'event', 'sports'
+        ] &&
+        data.is_pinned is bool &&
+        data.is_hidden is bool &&
+        (!('moderated_by' in data) || (data.moderated_by is string && data.moderated_by.size() <= 128)) &&
+        (!('moderated_at' in data) || data.moderated_at is timestamp) &&
         data.timestamp is timestamp;
     }
 
@@ -455,28 +1215,127 @@ service cloud.firestore {
       (!('classLevel' in data) || (data.classLevel is string && data.classLevel.size() <= 50));
     }
 
+    function isValidMedicalLeave(data) {
+      return hasOnlyAllowedFields([
+        'id', 'scholar_no', 'scholarNo', 'student_name', 'studentName', 'house',
+        'class_level', 'classLevel', 'start_date', 'startDate', 'end_date', 'endDate',
+        'reason', 'doctor_name', 'doctorName', 'certificate_photo', 'certificatePhoto',
+        'submitted_at', 'submittedAt', 'status', 'admin_remark', 'adminRemark',
+        'reviewed_by', 'reviewedBy', 'reviewed_at', 'reviewedAt'
+      ]) &&
+      hasRequiredFields(['scholar_no', 'student_name', 'status']) &&
+      data.scholar_no is string && data.scholar_no.size() >= 1 && data.scholar_no.size() <= 30 &&
+      data.student_name is string && data.student_name.size() >= 1 && data.student_name.size() <= 100 &&
+      data.status is string && data.status in ['pending', 'approved', 'rejected'] &&
+      (!('house' in data) || (data.house is string && data.house.lower() in ['ruby', 'sapphire', 'emerald', 'topaz'])) &&
+      (!('class_level' in data) || (data.class_level is string && data.class_level.size() <= 50)) &&
+      (!('classLevel' in data) || (data.classLevel is string && data.classLevel.size() <= 50)) &&
+      (!('reason' in data) || (data.reason is string && data.reason.size() <= 2000)) &&
+      (!('doctor_name' in data) || (data.doctor_name is string && data.doctor_name.size() <= 100)) &&
+      (!('doctorName' in data) || (data.doctorName is string && data.doctorName.size() <= 100)) &&
+      (!('certificate_photo' in data) || (data.certificate_photo is string && data.certificate_photo.size() <= 500000)) &&
+      (!('certificatePhoto' in data) || (data.certificatePhoto is string && data.certificatePhoto.size() <= 500000)) &&
+      (!('admin_remark' in data) || (data.admin_remark is string && data.admin_remark.size() <= 2000)) &&
+      (!('adminRemark' in data) || (data.adminRemark is string && data.adminRemark.size() <= 2000)) &&
+      (!('reviewed_by' in data) || (data.reviewed_by is string && data.reviewed_by.size() <= 100)) &&
+      (!('reviewedBy' in data) || (data.reviewedBy is string && data.reviewedBy.size() <= 100)) &&
+      (!('start_date' in data) || (data.start_date is string && data.start_date.size() <= 50) || data.start_date is timestamp) &&
+      (!('startDate' in data) || (data.startDate is string && data.startDate.size() <= 50) || data.startDate is timestamp) &&
+      (!('end_date' in data) || (data.end_date is string && data.end_date.size() <= 50) || data.end_date is timestamp) &&
+      (!('endDate' in data) || (data.endDate is string && data.endDate.size() <= 50) || data.endDate is timestamp) &&
+      (!('submitted_at' in data) || (data.submitted_at is string && data.submitted_at.size() <= 50) || data.submitted_at is timestamp) &&
+      (!('submittedAt' in data) || (data.submittedAt is string && data.submittedAt.size() <= 50) || data.submittedAt is timestamp) &&
+      (!('reviewed_at' in data) || (data.reviewed_at is string && data.reviewed_at.size() <= 50) || data.reviewed_at is timestamp) &&
+      (!('reviewedAt' in data) || (data.reviewedAt is string && data.reviewedAt.size() <= 50) || data.reviewedAt is timestamp);
+    }
+
     function isValidSportsTrophy(data) {
       return hasOnlyAllowedFields([
-        'trophy_id', 'trophyId', 'title', 'sport', 'category',
-        'winning_house', 'winningHouse', 'points_value', 'pointsValue',
-        'year', 'awarded_date', 'awardedDate', 'cert_token', 'certToken',
-        'image_url', 'imageUrl', 'created_at'
+        'trophy_id', 'trophyId', 'title', 'tournament_title',
+        'sport', 'sport_type', 'sportType', 'category',
+        'winning_house', 'winningHouse', 'runner_up_house', 'runnerUpHouse',
+        'points_value', 'pointsValue', 'points_awarded', 'pointsAwarded',
+        'runner_up_points', 'runnerUpPoints',
+        'mvp_scholar_no', 'mvpScholarNo', 'mvp_name', 'mvpName',
+        'year', 'awarded_date', 'awardedDate', 'awarded_at', 'awardedAt',
+        'commissioner_name', 'commissionerName', 'trophy_tier', 'trophyTier',
+        'cert_token', 'certToken', 'image_url', 'imageUrl', 'created_at'
       ]) &&
-      hasRequiredFields(['title']) &&
-      data.title is string && data.title.size() >= 1 && data.title.size() <= 150 &&
+      (('title' in data && data.title is string && data.title.size() >= 1 && data.title.size() <= 150) ||
+       ('tournament_title' in data && data.tournament_title is string && data.tournament_title.size() >= 1 && data.tournament_title.size() <= 150)) &&
+      (!('trophy_id' in data) || (data.trophy_id is string && data.trophy_id.size() <= 128)) &&
       (!('sport' in data) || (data.sport is string && data.sport.size() <= 50)) &&
+      (!('sport_type' in data) || (data.sport_type is string && data.sport_type.size() <= 50)) &&
+      (!('winning_house' in data) || (data.winning_house is string && data.winning_house.lower() in ['ruby', 'sapphire', 'emerald', 'topaz'])) &&
+      (!('runner_up_house' in data) || (data.runner_up_house is string && data.runner_up_house.lower() in ['ruby', 'sapphire', 'emerald', 'topaz'])) &&
       (!('points_value' in data) || (data.points_value is int && data.points_value >= 0 && data.points_value <= 5000)) &&
-      (!('pointsValue' in data) || (data.pointsValue is int && data.pointsValue >= 0 && data.pointsValue <= 5000));
+      (!('pointsValue' in data) || (data.pointsValue is int && data.pointsValue >= 0 && data.pointsValue <= 5000)) &&
+      (!('points_awarded' in data) || (data.points_awarded is int && data.points_awarded >= 0 && data.points_awarded <= 5000)) &&
+      (!('runner_up_points' in data) || (data.runner_up_points is int && data.runner_up_points >= 0 && data.runner_up_points <= 5000)) &&
+      (!('mvp_scholar_no' in data) || data.mvp_scholar_no == null || (data.mvp_scholar_no is string && data.mvp_scholar_no.size() <= 50)) &&
+      (!('mvp_name' in data) || data.mvp_name == null || (data.mvp_name is string && data.mvp_name.size() <= 100)) &&
+      (!('commissioner_name' in data) || (data.commissioner_name is string && data.commissioner_name.size() <= 120)) &&
+      (!('trophy_tier' in data) || (data.trophy_tier is string && data.trophy_tier.size() <= 50)) &&
+      (!('awarded_at' in data) || data.awarded_at is timestamp || (data.awarded_at is string && data.awarded_at.size() <= 50));
+    }
+
+    function isValidHousePoints(houseId, data) {
+      return houseId in ['ruby', 'sapphire', 'emerald', 'topaz'] &&
+        hasOnlyAllowedFields(['house_name', 'total_points', 'last_updated', 'updated_at']) &&
+        hasRequiredFields(['house_name', 'total_points']) &&
+        data.house_name.lower() == houseId &&
+        data.total_points is int &&
+        data.total_points >= 0 &&
+        data.total_points <= 1000000 &&
+        (!('last_updated' in data) || data.last_updated is timestamp) &&
+        (!('updated_at' in data) || data.updated_at is timestamp);
+    }
+
+    function isValidHouseContributor(scholarNo, data) {
+      return hasOnlyAllowedFields([
+        'scholar_no', 'student_name', 'house_name', 'class_level',
+        'total_contributed', 'total_points', 'merits_count', 'demerits_count', 'last_updated'
+      ]) &&
+      hasRequiredFields(['scholar_no', 'house_name', 'total_contributed']) &&
+      data.scholar_no is string &&
+      data.scholar_no == scholarNo &&
+      data.house_name is string &&
+      data.house_name.lower() in ['ruby', 'sapphire', 'emerald', 'topaz'] &&
+      (!('student_name' in data) || (data.student_name is string && data.student_name.size() <= 100)) &&
+      (!('class_level' in data) || (data.class_level is string && data.class_level.size() <= 50)) &&
+      data.total_contributed is int &&
+      data.total_contributed >= -100000 &&
+      data.total_contributed <= 1000000 &&
+      (!('total_points' in data) || (data.total_points is int && data.total_points >= 0 && data.total_points <= 1000000)) &&
+      (!('merits_count' in data) || (data.merits_count is int && data.merits_count >= 0 && data.merits_count <= 10000)) &&
+      (!('demerits_count' in data) || (data.demerits_count is int && data.demerits_count >= 0 && data.demerits_count <= 10000)) &&
+      (!('last_updated' in data) || data.last_updated is timestamp);
     }
 
     function isValidSpiritReactor(data) {
       return hasOnlyAllowedFields(['ruby', 'sapphire', 'emerald', 'topaz', 'last_contributor', 'last_updated']) &&
-        (!('ruby' in data) || data.ruby is number) &&
-        (!('sapphire' in data) || data.sapphire is number) &&
-        (!('emerald' in data) || data.emerald is number) &&
-        (!('topaz' in data) || data.topaz is number) &&
+        (!('ruby' in data) || (data.ruby is number && data.ruby >= 0 && data.ruby <= 10000000)) &&
+        (!('sapphire' in data) || (data.sapphire is number && data.sapphire >= 0 && data.sapphire <= 10000000)) &&
+        (!('emerald' in data) || (data.emerald is number && data.emerald >= 0 && data.emerald <= 10000000)) &&
+        (!('topaz' in data) || (data.topaz is number && data.topaz >= 0 && data.topaz <= 10000000)) &&
         (!('last_contributor' in data) || (data.last_contributor is string && data.last_contributor.size() <= 100)) &&
         (!('last_updated' in data) || data.last_updated is timestamp);
+    }
+
+    function isValidSubmission(scholarNo, data) {
+      return hasOnlyAllowedFields([
+        'scholar_no', 'status', 'submitted_at', 'graded_at',
+        'student_name', 'house_name', 'class_level', 'last_updated'
+      ]) &&
+      hasRequiredFields(['scholar_no', 'status']) &&
+      data.scholar_no == scholarNo &&
+      data.status is string && data.status in ['pending', 'submitted', 'graded'] &&
+      (!('submitted_at' in data) || data.submitted_at is string) &&
+      (!('graded_at' in data) || data.graded_at is string) &&
+      (!('student_name' in data) || (data.student_name is string && data.student_name.size() <= 100)) &&
+      (!('house_name' in data) || (data.house_name is string && data.house_name.size() <= 50)) &&
+      (!('class_level' in data) || (data.class_level is string && data.class_level.size() <= 50)) &&
+      (!('last_updated' in data) || data.last_updated is timestamp);
     }
 
     function isValidTicker(data) {
@@ -494,7 +1353,7 @@ service cloud.firestore {
       hasRequiredFields(['scholar_no', 'student_name', 'house_name', 'image_url', 'status']) &&
       data.scholar_no is string && data.scholar_no.size() >= 4 && data.scholar_no.size() <= 20 &&
       data.student_name is string && data.student_name.size() >= 2 && data.student_name.size() <= 100 &&
-      data.house_name is string && data.house_name.toLowerCase() in ['ruby', 'sapphire', 'emerald', 'topaz'] &&
+      data.house_name is string && data.house_name.lower() in ['ruby', 'sapphire', 'emerald', 'topaz'] &&
       data.image_url is string && data.image_url.size() >= 5 && data.image_url.size() <= 500000 &&
       data.status is string && data.status in ['pending', 'approved', 'rejected'] &&
       (!('caption' in data) || (data.caption is string && data.caption.size() <= 500)) &&
@@ -513,7 +1372,7 @@ service cloud.firestore {
       hasRequiredFields(['scholar_no', 'student_name', 'house_name', 'sport_type']) &&
       data.scholar_no is string && data.scholar_no.size() >= 4 && data.scholar_no.size() <= 20 &&
       data.student_name is string && data.student_name.size() >= 2 && data.student_name.size() <= 100 &&
-      data.house_name is string && data.house_name.toLowerCase() in ['ruby', 'sapphire', 'emerald', 'topaz'] &&
+      data.house_name is string && data.house_name.lower() in ['ruby', 'sapphire', 'emerald', 'topaz'] &&
       data.sport_type is string && data.sport_type.size() <= 50 &&
       (!('goals_scored' in data) || (data.goals_scored is int && data.goals_scored >= 0)) &&
       (!('baskets_scored' in data) || (data.baskets_scored is int && data.baskets_scored >= 0)) &&
@@ -535,37 +1394,65 @@ service cloud.firestore {
 
     // 1. users/{userId}
     match /users/{userId} {
-      // Read: allow read for student directory lookup, account existence verification, and sibling auth
-      allow read: if true;
+      // Read: active account directory lookup. The owner can always read
+      // their own document even after suspension so the client can explain the
+      // account state; suspended accounts cannot enumerate other profiles.
+      allow read: if isOwner(userId) || isSignedIn();
 
-      // Create: user creating their own document; default role cannot be super_admin or admin
-      // unless authenticated as bootstrap super admin (admin@asianschool.bh) or existing super admin
+      // Create: user creating their own document; role MUST be 'student' on self-registration
+      // and token email must bind to scholar_no@asianschool.bh unless authenticated as bootstrap
+      // super admin (admin@asianschool.bh, 11209@asianschool.bh) or existing super admin.
       allow create: if isOwner(userId) &&
         isValidUser(request.resource.data) &&
-        (
-          !(request.resource.data.role in ['super_admin', 'admin']) ||
+        (!('uid' in request.resource.data) || request.resource.data.uid == userId) && (
           isSuperAdmin() ||
-          (request.auth.token != null && 'email' in request.auth.token && request.auth.token.email == 'admin@asianschool.bh')
-        ) &&
-        (!('points' in request.resource.data) || request.resource.data.points == 0 || isSuperAdmin()) &&
-        (!('points_contributed' in request.resource.data) || request.resource.data.points_contributed == 0 || isSuperAdmin()) &&
-        (!('uid' in request.resource.data) || request.resource.data.uid == userId);
+          (
+            request.resource.data.role == 'student' &&
+            request.auth.token != null &&
+            'email' in request.auth.token &&
+            request.auth.token.email is string &&
+            request.auth.token.email.lower() == request.resource.data.scholar_no.lower() + '@asianschool.bh' &&
+            request.resource.data.get('points', 0) == 0 &&
+            request.resource.data.get('points_contributed', 0) == 0 &&
+            request.resource.data.get('class_verified', false) == false &&
+            request.resource.data.get('status', 'active') == 'active'
+          )
+        );
 
       // Update:
       // - super_admin can update any field including role and points
       // - faculty/teacher/admin can update points (e.g. claim approval or conduct marks)
+      // - council/captain can update student points_contributed (bounded 0..+500 delta) on claim approvals
       // - self-update: owner can update basic profile fields, but CANNOT modify role, points, or scholar_no
-      allow update: if isValidUser(request.resource.data) && (
-        isSuperAdmin() ||
+      allow update: if isActiveUser() && isValidUser(request.resource.data) && (
+        _hasSuperAdminRole() ||
         (
-          isAdmin() &&
+          _hasStaffAdminRole() &&
           request.resource.data.role == resource.data.role &&
           areImmutableFieldsUnchanged(['scholar_no', 'created_at', 'uid'])
         ) ||
         (
+          (_hasCouncilRole() || _hasCaptainRole()) &&
+          request.resource.data.role == resource.data.role &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['points_contributed']) &&
+          (!('points_contributed' in resource.data) ?
+            (request.resource.data.points_contributed >= 0 && request.resource.data.points_contributed <= 500) :
+            (request.resource.data.points_contributed >= resource.data.points_contributed &&
+             request.resource.data.points_contributed - resource.data.points_contributed <= 500)) &&
+          request.resource.data.points_contributed <= 1000000 &&
+          areImmutableFieldsUnchanged(['role', 'points', 'scholar_no', 'created_at', 'uid'])
+        ) ||
+        (
           isOwner(userId) &&
           request.resource.data.role == resource.data.role &&
-          areImmutableFieldsUnchanged(['role', 'points', 'points_contributed', 'scholar_no', 'created_at', 'uid'])
+          areImmutableFieldsUnchanged([
+            'role', 'points', 'points_contributed', 'scholar_no',
+            'created_at', 'uid', 'class_id', 'class_verified', 'status',
+            // Identity, house, and grade are admin/roster controlled; a
+            // self-update must not move a student into another house,
+            // eligibility band, or display-name impersonation.
+            'house_name', 'grade', 'class_level', 'division', 'full_name'
+          ])
         )
       );
 
@@ -574,11 +1461,78 @@ service cloud.firestore {
       // Subcollection: users/{userId}/notifications/{notificationId}
       match /notifications/{notificationId} {
         allow read: if isOwner(userId) || isAdmin();
-        allow create: if isSignedIn() && isValidNotification(request.resource.data);
-        allow update: if isOwner(userId) &&
+        allow create: if isActiveUser() &&
+          isValidNotification(request.resource.data) &&
+          request.resource.data.sender_id == request.auth.uid && (
+          _hasStaffAdminRole() ||
+          (
+            _hasCouncilRole() &&
+            request.resource.data.get('category', 'house') in ['house', 'points', 'timetable', 'class', 'chat'] &&
+            request.resource.data.get('priority', 'normal') in ['normal', 'high'] &&
+            !(request.resource.data.get('type', '') in ['account_status', 'role_assigned'])
+          ) ||
+          (
+            _hasCaptainRole() &&
+            exists(/databases/$(database)/documents/users/$(userId)) &&
+            _hasSameHouse(get(/databases/$(database)/documents/users/$(userId)).data.get('house_name', '')) &&
+            request.resource.data.get('category', 'house') in ['house', 'points', 'chat'] &&
+            request.resource.data.get('priority', 'normal') in ['normal', 'high'] &&
+            !(request.resource.data.get('type', '') in ['account_status', 'role_assigned'])
+          ) ||
+          isNotificationScopeSender(request.resource.data, userId) ||
+          isOwner(userId) ||
+          (
+            request.resource.data.get('type', '') == 'chat_message' &&
+            request.resource.data.get('category', 'chat') == 'chat' &&
+            request.resource.data.get('priority', 'normal') == 'normal' &&
+            'room_id' in request.resource.data && request.resource.data.room_id is string &&
+            exists(/databases/$(database)/documents/chats/$(request.resource.data.room_id)) &&
+            request.auth.uid in get(/databases/$(database)/documents/chats/$(request.resource.data.room_id)).data.get('participants', []) &&
+            userId in get(/databases/$(database)/documents/chats/$(request.resource.data.room_id)).data.get('participants', [])
+          )
+        );
+        // An active owner may toggle read state. Authorised staff/leaders may refresh
+        // an existing deduplicated event notification (same dedupe/source) without
+        // ever touching is_read, so a retry cannot make a read item unread.
+        allow update: if (
+          isActiveUser() &&
+          isOwner(userId) &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['is_read']) &&
-          request.resource.data.is_read is bool;
-        allow delete: if isOwner(userId) || isAdmin();
+          request.resource.data.is_read is bool
+        ) || (
+          isActiveUser() &&
+          (
+            _hasStaffAdminRole() ||
+            (
+              _hasCouncilRole() &&
+              request.resource.data.get('category', 'house') in ['house', 'points', 'timetable', 'class', 'chat'] &&
+              request.resource.data.get('priority', 'normal') in ['normal', 'high'] &&
+              !(request.resource.data.get('type', '') in ['account_status', 'role_assigned'])
+            ) ||
+            (
+              _hasCaptainRole() &&
+              exists(/databases/$(database)/documents/users/$(userId)) &&
+              _hasSameHouse(get(/databases/$(database)/documents/users/$(userId)).data.get('house_name', '')) &&
+              request.resource.data.get('category', 'house') in ['house', 'points', 'chat'] &&
+              request.resource.data.get('priority', 'normal') in ['normal', 'high'] &&
+              !(request.resource.data.get('type', '') in ['account_status', 'role_assigned'])
+            ) ||
+            isNotificationScopeSender(request.resource.data, userId)
+          ) &&
+          'dedupe_key' in resource.data &&
+          'source_id' in resource.data &&
+          'sender_id' in resource.data &&
+          resource.data.sender_id == request.auth.uid &&
+          request.resource.data.sender_id == resource.data.sender_id &&
+          request.resource.data.dedupe_key == resource.data.dedupe_key &&
+          request.resource.data.source_id == resource.data.source_id &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'title', 'body', 'timestamp', 'type', 'room_id',
+            'category', 'priority', 'dedupe_key', 'source_id', 'sender_name'
+          ]) &&
+          isValidNotification(request.resource.data)
+        );
+        allow delete: if (isActiveUser() && isOwner(userId)) || isAdmin();
       }
     }
 
@@ -600,7 +1554,33 @@ service cloud.firestore {
 
       match /assignments/{assignmentId} {
         allow read: if isSignedIn();
-        allow write: if isAdmin() && isValidHomework(request.resource.data);
+        allow create: if isAdmin() && isValidHomework(request.resource.data);
+        allow update: if (
+          (isAdmin() && isValidHomework(request.resource.data)) ||
+          (
+            isCouncil() &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'submitted_at', 'graded_at']) &&
+            request.resource.data.status in ['pending', 'submitted', 'graded']
+          )
+        );
+        allow delete: if isAdmin();
+
+        match /submissions/{scholarNo} {
+          allow read: if isScholarOwner(scholarNo) || isCouncil() || isAdmin();
+          allow create: if isValidSubmission(scholarNo, request.resource.data) && (
+            (isAdmin() || isCouncil()) ||
+            (isScholarOwner(scholarNo) && request.resource.data.status in ['pending', 'submitted'])
+          );
+          allow update: if isValidSubmission(scholarNo, request.resource.data) && (
+            (isAdmin() || isCouncil()) ||
+            (
+              isScholarOwner(scholarNo) &&
+              request.resource.data.status in ['pending', 'submitted'] &&
+              (!('status' in resource.data) || resource.data.status in ['pending', 'submitted'])
+            )
+          );
+          allow delete: if isAdmin();
+        }
       }
 
       match /midterm_exams/{examId} {
@@ -609,8 +1589,17 @@ service cloud.firestore {
       }
 
       match /report_cards/{reportCardId} {
-        allow read: if isSignedIn();
-        allow write: if isAdmin();
+        allow read: if isAdmin() ||
+          ('scholar_no' in resource.data && isScholarOwner(resource.data.scholar_no));
+        allow create, delete: if isAdmin();
+        allow update: if isAdmin() || (
+          isActiveUser() &&
+          _hasScholarOwner(resource.data.get('scholar_no', resource.data.get('scholarNo', ''))) &&
+          !resource.data.get('is_merit_claimed', resource.data.get('isMeritClaimed', false)) &&
+          request.resource.data.is_merit_claimed == true &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['is_merit_claimed']) &&
+          resource.data.get('overall_gpa', resource.data.get('overallGpa', 0)) >= 3.80
+        );
       }
 
       match /attendance/{scholarNo}/records/{recordId} {
@@ -618,58 +1607,206 @@ service cloud.firestore {
         allow write: if isAdmin() && isValidAttendance(request.resource.data);
       }
 
-      match /{allSubcollections=**} {
-        allow read: if isSignedIn();
-        allow write: if isAdmin();
-      }
+      // No recursive allow here: Firestore combines matching grants with OR.
+      // A catch-all would bypass report-card/attendance ownership and every
+      // assignment/submission validator above. Unknown paths stay denied.
+    }
+
+    // 3b. academic_classes/{classId} — canonical class/section registry (M1)
+    // Students may only read their own assigned class; all writes are admin-only.
+    // Grade/section identity is immutable after creation (transfer students instead).
+    match /academic_classes/{classId} {
+      allow read: if isAdmin() ||
+        (isSignedIn() && hasUserDoc() && 'class_id' in getUserData() && getUserData().class_id == classId);
+      allow create: if isAdmin() &&
+        isValidAcademicClass(request.resource.data) &&
+        request.resource.data.class_id == classId;
+      allow update: if isAdmin() &&
+        isValidAcademicClass(request.resource.data) &&
+        request.resource.data.class_id == classId &&
+        areImmutableFieldsUnchanged(['grade', 'section', 'created_at']);
+      allow delete: if isAdmin();
+    }
+
+    // 3c. timetable_versions/{versionId} — recurring weekly timetable versions (M2)
+    // Students may read published versions only for their own verified class.
+    // A modified student client therefore cannot enumerate another class's
+    // timetable. Staff retain published/submitted reads across classes for the
+    // M3 teacher/room conflict check and the M7 approval queue; drafts remain
+    // editor-only. List queries must carry both the class and status filters.
+    match /timetable_versions/{versionId} {
+      allow read: if isSeniorAdmin() ||
+        (isAdmin() && resource != null &&
+          resource.data.status in ['published', 'submitted']) ||
+        (resource != null && isVerifiedClassMember(resource.data.class_id) &&
+          (resource.data.status == 'published' ||
+            isTimetableEditor(resource.data.class_id))) ||
+        (resource != null && isTimetableEditor(resource.data.class_id));
+
+      allow create: if isSignedIn() &&
+        isValidTimetableVersion(request.resource.data, request.resource.data.class_id) &&
+        isTimetableEditor(request.resource.data.class_id) &&
+        (
+          (request.resource.data.status in ['draft', 'submitted']) ||
+          (request.resource.data.status == 'published' && canPublishTimetable(request.resource.data.class_id))
+        );
+
+      // Published versions are immutable for everyone, including senior admins.
+      // Changes and restores create a new version document (supersedes_id).
+      allow update: if isSignedIn() &&
+        resource.data.status != 'published' &&
+        isValidTimetableVersion(request.resource.data, resource.data.class_id) &&
+        request.resource.data.class_id == resource.data.class_id &&
+        areImmutableFieldsUnchanged(['class_id', 'day_of_week', 'version', 'created_at']) &&
+        (
+          (isSeniorAdmin()) ||
+          (
+            isTimetableEditor(resource.data.class_id) &&
+            (
+              (request.resource.data.status in ['draft', 'submitted']) ||
+              (request.resource.data.status == 'published' && canPublishTimetable(resource.data.class_id))
+            )
+          )
+        );
+
+      allow delete: if isSeniorAdmin() && resource.data.status != 'published';
+    }
+
+    // 3d. timetable_audit/{auditId} — append-only audit log for timetable operations
+    match /timetable_audit/{auditId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn() &&
+        (isAdmin() || isTimetableEditor(request.resource.data.class_id)) &&
+        isValidTimetableAudit(request.resource.data);
+      allow update, delete: if false; // strictly immutable and append-only
     }
 
     // 4. homework/{assignmentId}
     match /homework/{assignmentId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin() && isValidHomework(request.resource.data);
+      allow create: if isAdmin() && isValidHomework(request.resource.data);
+      allow update: if (
+        (isAdmin() && isValidHomework(request.resource.data)) ||
+        (
+          isCouncil() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'submitted_at', 'graded_at']) &&
+          request.resource.data.status in ['pending', 'submitted', 'graded']
+        )
+      );
+      allow delete: if isAdmin();
+
+      match /submissions/{scholarNo} {
+        allow read: if isScholarOwner(scholarNo) || isCouncil() || isAdmin();
+        allow create: if isValidSubmission(scholarNo, request.resource.data) && (
+          (isAdmin() || isCouncil()) ||
+          (isScholarOwner(scholarNo) && request.resource.data.status in ['pending', 'submitted'])
+        );
+        allow update: if isValidSubmission(scholarNo, request.resource.data) && (
+          (isAdmin() || isCouncil()) ||
+          (
+            isScholarOwner(scholarNo) &&
+            request.resource.data.status in ['pending', 'submitted'] &&
+            (!('status' in resource.data) || resource.data.status in ['pending', 'submitted'])
+          )
+        );
+        allow delete: if isAdmin();
+      }
     }
 
     // 5. house_claims/{claimId}
     match /house_claims/{claimId} {
-      // Read: owner of the claim OR admin OR house captains
-      allow read: if isScholarOwner(resource.data.scholar_no) || isAdmin() || isCaptain();
+      // Read: owner of the claim OR admin OR council OR same-house captains
+      allow read: if isScholarOwner(resource.data.scholar_no) || isAdmin() || isCouncil() || (isCaptain() && _hasSameHouse(resource.data.house_name));
 
-      // Create: authenticated user with initial status == 'pending'
-      allow create: if isSignedIn() &&
+      // Create: authenticated user with initial status == 'pending'; AI/moderation metadata is server/staff controlled
+      allow create: if isActiveUser() &&
         isValidHouseClaim(request.resource.data) &&
         request.resource.data.status == 'pending' &&
-        (isScholarOwner(request.resource.data.scholar_no) || isAdmin());
+        (_hasStaffAdminRole() || (
+          _hasScholarOwner(request.resource.data.scholar_no) &&
+          _hasSameHouse(request.resource.data.house_name) &&
+          'full_name' in getUserData() &&
+          request.resource.data.student_name == getUserData().full_name &&
+          !request.resource.data.keys().hasAny([
+            'auto_validated', 'ocr_keywords', 'file_path', 'ai_confidence', 'ai_markers', 'ai_summary',
+            'ai_processed_at', 'verified_at', 'verifiedAt', 'reviewer_id',
+            'reviewer_name', 'rejection_reason', 'verificationLogs'
+          ]) &&
+          request.resource.data.get('ai_status', 'pending_scan') == 'pending_scan'
+        ));
 
-      // Update: strictly admin (approving/rejecting claim and awarding points)
-      allow update: if isAdmin() &&
-        isValidHouseClaim(request.resource.data) &&
-        areImmutableFieldsUnchanged(['scholar_no', 'activity_title', 'cert_url']);
+      // Update: staff admin, executive council, or captain of the same house (approving/rejecting someone else's claim),
+      // OR the owning student finalizing cert_url immediately after pre-registered Storage upload.
+      allow update: if isActiveUser() &&
+        isValidHouseClaim(request.resource.data) && (
+        (
+          _hasScholarOwner(resource.data.scholar_no) &&
+          resource.data.status == 'pending' &&
+          resource.data.cert_url.matches('^uploading://.*') &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cert_url']) &&
+          !request.resource.data.cert_url.matches('^uploading://.*')
+        ) || (
+          (
+            _hasStaffAdminRole() ||
+            _hasCouncilRole() ||
+            (_hasCaptainRole() && _hasSameHouse(resource.data.house_name))
+          ) &&
+          !_hasScholarOwner(resource.data.scholar_no) &&
+          // A reviewer may decide a pending claim exactly once. Points,
+          // identity, and certificate evidence stay immutable, and the
+          // reviewer must be the signed-in caller with a server timestamp.
+          resource.data.status == 'pending' &&
+          request.resource.data.status in ['approved', 'rejected'] &&
+          request.resource.data.keys().hasAll(['reviewer_id', 'verified_at']) &&
+          request.resource.data.reviewer_id == request.auth.uid &&
+          request.resource.data.verified_at is timestamp &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'verified_at', 'verifiedAt', 'reviewer_id',
+            'reviewer_name', 'rejection_reason', 'updated_at', 'updatedAt'
+          ]) &&
+          areImmutableFieldsUnchanged([
+            'scholar_no', 'student_name', 'activity_title',
+            'cert_url', 'points', 'house_name'
+          ])
+        )
+      );
 
       allow delete: if isSuperAdmin();
     }
 
     // 6. orders/{orderId}
     match /orders/{orderId} {
-      // Read: owner of the order OR admin
-      allow read: if (('user_id' in resource.data && isOwner(resource.data.user_id)) ||
+      // Read: active owner of the order OR admin
+      allow read: if ((isActiveUser() && 'user_id' in resource.data && isOwner(resource.data.user_id)) ||
         ('scholar_no' in resource.data && isScholarOwner(resource.data.scholar_no)) ||
         isAdmin());
 
-      // Create: authenticated user
-      allow create: if isSignedIn() &&
+      // Create: an active account may place an unpaid order only for itself.
+      // The order starts at `placed`, the scholar and house must match the
+      // caller's profile, and a positive BHD total (with zero free points) is mandatory.
+      allow create: if isActiveUser() &&
         isValidOrder(request.resource.data) &&
         (isAdmin() || (
-          request.resource.data.status in ['placed', 'pending', 'verified', 'ready'] &&
+          hasUserDoc() &&
+          request.resource.data.status == 'placed' &&
           !('claimed_at' in request.resource.data) &&
           !('claimed_by' in request.resource.data) &&
-          (!('user_id' in request.resource.data) || request.resource.data.user_id == request.auth.uid || request.resource.data.user_id == 'anonymous')
+          ('user_id' in request.resource.data && request.resource.data.user_id == request.auth.uid) &&
+          'scholar_no' in request.resource.data &&
+          request.resource.data.scholar_no is string &&
+          request.resource.data.scholar_no == getUserData().get('scholar_no', '') &&
+          (!('house' in request.resource.data) ||
+            request.resource.data.house.lower() == getUserData().get('house_name', '').lower()) &&
+          request.resource.data.get('total_bhd', 0) > 0 &&
+          request.resource.data.get('total_bhd', 0) <= 10000 &&
+          request.resource.data.get('total_pts', 0) == 0 &&
+          request.resource.data.get('total_price', request.resource.data.get('total_bhd', 0)) >= request.resource.data.get('total_bhd', 0)
         ));
 
-      // Update: admin evaluators marking order as claimed
+      // Update: admin evaluators verifying payment or marking verified orders as claimed
       allow update: if isAdmin() &&
         isValidOrder(request.resource.data) &&
-        areImmutableFieldsUnchanged(['receipt_id', 'items']);
+        areImmutableFieldsUnchanged(['receipt_id', 'items', 'user_id', 'scholar_no', 'total_bhd', 'total_pts']);
 
       allow delete: if isSuperAdmin();
     }
@@ -691,38 +1828,20 @@ service cloud.firestore {
     }
 
     // 8. elections/{electionId} and elections/{electionId}/ballots/{ballotId}
+    // Callable-managed schema: house_scope, eligible_grades, status, is_certified
     match /elections/{electionId} {
       allow read: if true;
-      allow create, delete: if isAdmin() && isValidElection(request.resource.data);
-      allow update: if isValidElection(request.resource.data) && (
-        isAdmin() ||
-        (
-          isSignedIn() &&
-          (!('is_open' in resource.data) || resource.data.is_open == true) &&
-          (!('status' in resource.data) || resource.data.status == 'open') &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['candidates', 'total_votes_cast', 'last_updated'])
-        )
-      );
+      allow write: if isAdmin();
 
       match /ballots/{ballotId} {
-        allow read: if isOwner(ballotId) || isAdmin();
-        // One-scholar-one-vote: ballotId must match user UID
-        allow create: if isOwner(ballotId) &&
-          hasRequiredFields(['ballot_id', 'candidate_scholar_no', 'timestamp']) &&
-          request.resource.data.ballot_id is string && request.resource.data.ballot_id == electionId &&
-          request.resource.data.candidate_scholar_no is string && request.resource.data.candidate_scholar_no.size() <= 20;
-        allow update, delete: if false;
+        allow read: if false;
+        allow write: if false;
       }
     }
 
     match /election_votes/{voteId} {
-      allow read: if true;
-      allow create: if isSignedIn() &&
-        hasRequiredFields(['ballot_id', 'voter_hash', 'proof_token', 'timestamp']) &&
-        request.resource.data.ballot_id is string && request.resource.data.ballot_id.size() <= 64 &&
-        request.resource.data.voter_hash is string && request.resource.data.voter_hash.size() <= 128 &&
-        request.resource.data.proof_token is string && request.resource.data.proof_token.size() <= 256;
-      allow update, delete: if false;
+      allow read: if false;
+      allow write: if false;
     }
 
     match /election_gazettes/{gazetteId} {
@@ -738,37 +1857,207 @@ service cloud.firestore {
 
     match /notices/{noticeId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin() && isValidAnnouncement(request.resource.data);
+      allow write: if isAdmin() && isValidSchoolNotice(request.resource.data);
     }
 
+    // 9c. events/{eventId} and events/{eventId}/registrations/{uid}
+    // Staff publish lifecycle-managed campus events. Students may only read
+    // published events that are school-wide or belong to their own house, and
+    // each student owns exactly one RSVP document under the event.
     match /events/{eventId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin() && isValidAnnouncement(request.resource.data);
+      // Firestore rules are not filters: a per-document grade condition on a
+      // list query would reject the whole event stream. Keep list reads
+      // constrained by status + house (which the client queries filter on),
+      // and enforce the grade band on direct document reads and RSVPs below.
+      allow get: if isSignedIn() && (
+        isAdmin() ||
+        (resource.data.status == 'published' &&
+          (resource.data.house_scope == 'all' ||
+            isSameHouse(resource.data.house_scope)) &&
+          isGradeEligibleFor(resource.data))
+      );
+      allow list: if isSignedIn() && (
+        isAdmin() ||
+        (resource.data.status == 'published' &&
+          (resource.data.house_scope == 'all' ||
+            isSameHouse(resource.data.house_scope)))
+      );
+      allow create: if isAdmin() &&
+        isValidCampusEvent(request.resource.data) &&
+        request.resource.data.author_uid == request.auth.uid;
+      // Any staff member may edit or cancel, but authorship never changes.
+      // Legacy documents without an author can be claimed once by staff.
+      allow update: if isAdmin() &&
+        isValidCampusEvent(request.resource.data) &&
+        (!('author_uid' in resource.data) ||
+          request.resource.data.author_uid == resource.data.author_uid);
+      // Events are cancelled, not deleted, so the schedule keeps an audit
+      // trail. Only senior administrators may hard-delete by exception.
+      allow delete: if isSeniorAdmin();
+
+      match /registrations/{registrationUid} {
+        allow read: if isSignedIn() &&
+          (request.auth.uid == registrationUid || isAdmin());
+        allow create: if isSignedIn() &&
+          request.auth.uid == registrationUid &&
+          exists(/databases/$(database)/documents/events/$(eventId)) &&
+          getCampusEvent(eventId).status == 'published' &&
+          request.time < getCampusEvent(eventId).end_time &&
+          (getCampusEvent(eventId).house_scope == 'all' ||
+            isSameHouse(getCampusEvent(eventId).house_scope) ||
+            isAdmin()) &&
+          isGradeEligibleFor(getCampusEvent(eventId)) &&
+          request.resource.data.keys().hasOnly([
+            'uid', 'event_id', 'student_name', 'scholar_no', 'created_at'
+          ]) &&
+          request.resource.data.uid == request.auth.uid &&
+          request.resource.data.event_id == eventId &&
+          (!('student_name' in request.resource.data) ||
+            (request.resource.data.student_name is string &&
+              request.resource.data.student_name.size() <= 120)) &&
+          (!('scholar_no' in request.resource.data) ||
+            (request.resource.data.scholar_no is string &&
+              request.resource.data.scholar_no.size() <= 64)) &&
+          (!('created_at' in request.resource.data) ||
+            request.resource.data.created_at is timestamp);
+        allow delete: if isSignedIn() &&
+          (request.auth.uid == registrationUid || isAdmin());
+        allow update: if false;
+      }
+    }
+
+    // 9b. house_groups/{houseId} and messages/{messageId}
+    // Membership is derived from users/{uid}.house_name; there is no join
+    // document. Same-house members read; only authorised leaders/staff write.
+    match /house_groups/{houseId} {
+      allow read: if isSignedIn() && (isSameHouse(houseId) || isSeniorAdmin());
+      allow create: if isHouseSender(houseId) &&
+        isValidHouseGroup(houseId, request.resource.data);
+      allow update: if isHouseModerator(houseId) &&
+        isValidHouseGroup(houseId, request.resource.data);
+      allow delete: if isSeniorAdmin();
+
+      match /messages/{messageId} {
+        allow read: if isSignedIn() && (isSameHouse(houseId) || isSeniorAdmin());
+        allow create: if isHouseSender(houseId) &&
+          request.resource.data.sender_id == request.auth.uid &&
+          isValidHouseGroupMessage(houseId, request.resource.data);
+        // Moderation only: pin/hide (and audit who did it). Message text and
+        // authorship are immutable.
+        allow update: if isHouseModerator(houseId) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'is_pinned', 'is_hidden', 'moderated_by', 'moderated_at'
+          ]) &&
+          request.resource.data.is_pinned is bool &&
+          request.resource.data.is_hidden is bool;
+        allow delete: if isHouseModerator(houseId);
+      }
+    }
+
+    // 9c. class_groups/{classId} and messages/{messageId}
+    // Membership is derived from the verified class placement; subject-teacher
+    // access is scoped by the academic_classes registry, not by the UI.
+    match /class_groups/{classId} {
+      allow read: if isClassViewer(classId);
+      allow create: if isClassModerator(classId) &&
+        isValidClassGroup(classId, request.resource.data);
+      allow update: if isClassModerator(classId) &&
+        isValidClassGroup(classId, request.resource.data);
+      allow delete: if isSeniorAdmin();
+
+      match /messages/{messageId} {
+        allow read: if isClassViewer(classId);
+        allow create: if isClassSender(classId) &&
+          request.resource.data.sender_id == request.auth.uid &&
+          isValidClassGroupMessage(classId, request.resource.data);
+        // Moderation only: pin/hide (and audit who did it). Message text and
+        // authorship are immutable.
+        allow update: if isClassModerator(classId) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'is_pinned', 'is_hidden', 'moderated_by', 'moderated_at'
+          ]) &&
+          request.resource.data.is_pinned is bool &&
+          request.resource.data.is_hidden is bool;
+        allow delete: if isClassModerator(classId);
+      }
     }
 
     // 10. chats/{channelId} and chats/{channelId}/messages/{messageId}
+    // Direct messages and staff rooms are private to their participants.
+    // Queries must include where('participants', arrayContains: uid), which
+    // chat_service.dart already does for the channel list.
     match /chats/{channelId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() &&
+      allow list: if isActiveUser() &&
+        'participants' in resource.data &&
+        request.auth.uid in resource.data.participants;
+      allow get: if isActiveUser() && (
+        (resource == null &&
+          channelId.size() > request.auth.uid.size() + 1 &&
+          (channelId[0:request.auth.uid.size() + 1] == request.auth.uid + '_' ||
+           channelId[channelId.size() - request.auth.uid.size() - 1:channelId.size()] == '_' + request.auth.uid)) ||
+        (resource != null &&
+          'participants' in resource.data &&
+          request.auth.uid in resource.data.participants)
+      );
+      function isPrivilegedChatUid(uid) {
+        return (exists(/databases/$(database)/documents/users/$(uid)) &&
+          get(/databases/$(database)/documents/users/$(uid)).data.get('role', 'student') in [
+            'teacher', 'faculty', 'principal', 'staff', 'faculty_advisor',
+            'teacher_lead', 'class_teacher', 'subject_teacher',
+            'council', 'head_boy', 'head_girl', 'deputy_head_boy', 'deputy_head_girl',
+            'head_of_activities', 'cultural_secretary', 'sports_captain',
+            'sports_vice_captain', 'executive_council', 'captain', 'vice_captain',
+            'house_captain', 'house_vice_captain', 'admin', 'super_admin', 'administrator'
+          ]) ||
+          exists(/databases/$(database)/documents/admin_roster/$(uid)) ||
+          (exists(/databases/$(database)/documents/school_members/$(uid)) &&
+           get(/databases/$(database)/documents/school_members/$(uid)).data.get('role', 'student') != 'student');
+      }
+      allow create: if isActiveUser() &&
         ('participants' in request.resource.data) &&
-        request.auth.uid in request.resource.data.participants;
-      allow update: if isSignedIn() && (
-        (resource.data != null && 'participants' in resource.data && request.auth.uid in resource.data.participants) ||
+        request.resource.data.participants is list &&
+        request.resource.data.participants.size() >= 2 &&
+        request.resource.data.participants.size() <= 50 &&
+        request.auth.uid in request.resource.data.participants && (
+          _hasStaffAdminRole() ||
+          _hasCouncilRole() ||
+          _hasCaptainRole() ||
+          (request.resource.data.participants.size() == 2 &&
+           request.resource.data.participants[0] != request.resource.data.participants[1] &&
+           isPrivilegedChatUid(
+             request.resource.data.participants[0] == request.auth.uid
+               ? request.resource.data.participants[1]
+               : request.resource.data.participants[0]
+           ))
+        );
+      allow update: if isActiveUser() && (
+        (
+          resource.data != null &&
+          'participants' in resource.data &&
+          request.auth.uid in resource.data.participants &&
+          request.resource.data.participants == resource.data.participants
+        ) ||
         isAdmin()
       );
       allow delete: if isAdmin();
 
       match /messages/{messageId} {
-        allow read: if isSignedIn();
-        allow create: if isSignedIn() &&
+        function isChannelParticipant() {
+          return isActiveUser() &&
+            request.auth.uid in get(/databases/$(database)/documents/chats/$(channelId)).data.participants;
+        }
+        allow read: if isChannelParticipant();
+        allow create: if isChannelParticipant() &&
           request.resource.data.sender_id == request.auth.uid &&
           isValidChatMessage(request.resource.data);
-        allow update: if isSignedIn() && (
+        allow update: if isActiveUser() && (
+          (isChannelParticipant() && (
           (resource.data.sender_id == request.auth.uid && isValidChatMessage(request.resource.data) && request.resource.data.sender_id == resource.data.sender_id) ||
-          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['is_read', 'read_at']) && request.resource.data.is_read is bool) ||
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['is_read', 'read_at']) && request.resource.data.is_read is bool)
+          )) ||
           isAdmin()
         );
-        allow delete: if isSignedIn() && (resource.data.sender_id == request.auth.uid || isAdmin());
+        allow delete: if isActiveUser() && (resource.data.sender_id == request.auth.uid || isAdmin());
       }
     }
 
@@ -787,35 +2076,89 @@ service cloud.firestore {
     // Additional Supporting Collections
     match /house_points/{houseId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin() || isSportsLead();
+      allow create: if isValidHousePoints(houseId, request.resource.data) && (
+        isAdmin() || (
+          (
+            isSportsLead() ||
+            isCouncil() ||
+            (isCaptain() && hasUserDoc() && 'house_name' in getUserData() && getUserData().house_name.lower() == houseId.lower())
+          ) &&
+          request.resource.data.total_points >= 0 &&
+          request.resource.data.total_points <= 500
+        )
+      );
+      allow update: if isValidHousePoints(houseId, request.resource.data) && (
+        isAdmin() || (
+          (
+            isSportsLead() ||
+            isCouncil() ||
+            (isCaptain() && hasUserDoc() && 'house_name' in getUserData() && getUserData().house_name.lower() == houseId.lower())
+          ) &&
+          // Sports leads, council, and same-house captains may only apply positive bounded increments (0 to +500); negative deductions are admin only
+          (request.resource.data.total_points >= resource.data.total_points) &&
+          (request.resource.data.total_points - resource.data.total_points <= 500)
+        )
+      );
+      allow delete: if isAdmin();
     }
 
     match /house_contributors/{scholarNo} {
       allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow write: if (
+        isAdmin() ||
+        isCouncil() ||
+        (
+          isCaptain() &&
+          hasUserDoc() &&
+          'house_name' in getUserData() &&
+          getUserData().house_name.lower() == request.resource.data.house_name.lower() &&
+          (!('house_name' in resource.data) || resource.data.house_name.lower() == getUserData().house_name.lower())
+        )
+      ) && isValidHouseContributor(scholarNo, request.resource.data);
     }
 
     match /student_conduct/{conductId} {
-      allow read: if (('scholar_no' in resource.data && isScholarOwner(resource.data.scholar_no)) || isAdmin());
-      allow write: if isAdmin();
+      allow read: if (('scholar_no' in resource.data && isScholarOwner(resource.data.scholar_no)) || isAdmin() || isCouncil() || isPrefect());
+      allow write: if isAdmin() || isCouncil();
     }
 
     match /medical_leaves/{leaveId} {
       allow read: if (('scholar_no' in resource.data && isScholarOwner(resource.data.scholar_no)) || isAdmin());
       allow create: if isSignedIn() &&
         ('scholar_no' in request.resource.data && isScholarOwner(request.resource.data.scholar_no)) &&
-        request.resource.data.status == 'pending';
-      allow update: if isAdmin();
+        request.resource.data.status == 'pending' &&
+        isValidMedicalLeave(request.resource.data);
+      allow update: if isAdmin() &&
+        resource.data.status == 'pending' &&
+        request.resource.data.status in ['approved', 'rejected'] &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewed_by', 'reviewed_at', 'admin_remark']) &&
+        isValidMedicalLeave(request.resource.data);
       allow delete: if isAdmin();
     }
 
     // 15. system_config/{configId}
     match /system_config/{configId} {
       allow read: if isSignedIn();
-      allow create, update: if isAdmin() || (
+      allow create: if isAdmin() || (
         configId == 'house_spirit_reactor' &&
         isSignedIn() &&
-        isValidSpiritReactor(request.resource.data)
+        isValidSpiritReactor(request.resource.data) &&
+        (!('ruby' in request.resource.data) || (request.resource.data.ruby >= 0 && request.resource.data.ruby <= 500)) &&
+        (!('sapphire' in request.resource.data) || (request.resource.data.sapphire >= 0 && request.resource.data.sapphire <= 500)) &&
+        (!('emerald' in request.resource.data) || (request.resource.data.emerald >= 0 && request.resource.data.emerald <= 500)) &&
+        (!('topaz' in request.resource.data) || (request.resource.data.topaz >= 0 && request.resource.data.topaz <= 500)) &&
+        (!('last_contributor' in request.resource.data) || (hasUserDoc() && 'scholar_no' in getUserData() && request.resource.data.last_contributor == getUserData().scholar_no))
+      );
+      allow update: if isAdmin() || (
+        configId == 'house_spirit_reactor' &&
+        isSignedIn() &&
+        isValidSpiritReactor(request.resource.data) &&
+        // Non-admins can only apply non-decreasing positive increments up to 500 per update
+        (!('ruby' in resource.data) || (request.resource.data.ruby >= resource.data.ruby && request.resource.data.ruby - resource.data.ruby <= 500)) &&
+        (!('sapphire' in resource.data) || (request.resource.data.sapphire >= resource.data.sapphire && request.resource.data.sapphire - resource.data.sapphire <= 500)) &&
+        (!('emerald' in resource.data) || (request.resource.data.emerald >= resource.data.emerald && request.resource.data.emerald - resource.data.emerald <= 500)) &&
+        (!('topaz' in resource.data) || (request.resource.data.topaz >= resource.data.topaz && request.resource.data.topaz - resource.data.topaz <= 500)) &&
+        (!('last_contributor' in request.resource.data) || (hasUserDoc() && 'scholar_no' in getUserData() && request.resource.data.last_contributor == getUserData().scholar_no))
       );
       allow delete: if isAdmin();
     }
@@ -853,6 +2196,75 @@ service cloud.firestore {
     match /player_sports_stats/{statsId} {
       allow read: if isSignedIn();
       allow write: if isSportsLead() && isValidPlayerSportsStats(request.resource.data);
+    }
+
+    // 19. school_members/{memberId} (Zero-Trust Elections v2 Roster)
+    match /school_members/{memberId} {
+      allow read: if isSignedIn();
+      // Roster roles are used by isSuperAdmin and backend capabilities.
+      // Ordinary teaching staff must never be able to grant those privileges.
+      allow create: if isSuperAdmin() ||
+        (isActiveUser() && isOwner(memberId) && isValidSelfSchoolMember(request.resource.data));
+      allow update: if isSuperAdmin() ||
+        (isOwner(memberId) &&
+          resource.data.active == true &&
+          isValidSelfSchoolMember(request.resource.data) &&
+          request.resource.data.role == resource.data.role &&
+          request.resource.data.scholar_no == resource.data.scholar_no &&
+          request.resource.data.house == resource.data.house &&
+          request.resource.data.grade == resource.data.grade &&
+          (!('capabilities' in resource.data) ||
+            request.resource.data.capabilities == resource.data.capabilities));
+      allow delete: if isSuperAdmin();
+    }
+
+    // 20. election_polls_v2/{pollId} (Zero-Trust Elections v2 Published Polls)
+    // Counts and participation receipts are written only by the Admin SDK
+    // callable. A signed-in client must never be able to alter a tally.
+    match /election_polls_v2/{pollId} {
+      allow read: if true;
+      allow write: if isAdmin();
+
+      match /counts/{candidateId} {
+        allow read: if true;
+        allow write: if false;
+      }
+
+      match /participation/{key} {
+        allow read: if false;
+        allow create, update, delete: if false;
+      }
+
+      match /audit/{auditId} {
+        allow read: if isAdmin() || isElectionManager();
+        allow write: if false;
+      }
+    }
+
+    // 21. election_drafts_v2/{draftId} (Zero-Trust Elections v2 Drafts)
+    match /election_drafts_v2/{draftId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // 22. election_audits/{ballotId} (Legacy & Live Election Audit Feed)
+    match /election_audits/{ballotId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() || isElectionManager();
+    }
+
+    // 23. library_copies_v2/{copyId} and library_loans_v2/{loanId} (Server-Authoritative Library)
+    match /library_copies_v2/{copyId} {
+      allow read: if isActiveUser();
+      allow write: if isAdmin();
+    }
+
+    match /library_loans_v2/{loanId} {
+      allow read: if isActiveUser() && (
+        isAdmin() ||
+        ('borrower' in resource.data && resource.data.borrower == request.auth.uid)
+      );
+      allow write: if false;
     }
   }
 }

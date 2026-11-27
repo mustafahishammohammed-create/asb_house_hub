@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/student_profile_modal.dart';
 
 class StudentBehaviorEvaluationScreen extends StatefulWidget {
   final String scholarNo;
@@ -32,6 +33,7 @@ class _StudentBehaviorEvaluationScreenState
 
   // Mode: 'well_behaved' vs 'misbehaviour'
   bool _isWellBehaved = true;
+  bool _showAllConductRecords = false;
 
   // Selected Points
   int _selectedPoints = 15;
@@ -249,84 +251,100 @@ class _StudentBehaviorEvaluationScreenState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Student Profile Card
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [houseColor, HouseColors.getHouseDarkColor(widget.houseName)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: [
-                  BoxShadow(
-                    color: houseColor.withValues(alpha: 0.35),
-                    blurRadius: 16,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
+            // Student Profile Card (Tappable to view full scholar modal)
+            InkWell(
+              onTap: () => StudentProfileModal.show(
+                context,
+                scholarNo: widget.scholarNo,
+                studentName: widget.studentName,
+                houseName: widget.houseName,
+                classLevel: widget.classLevel,
               ),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 30,
-                    backgroundColor: Colors.white,
-                    child: Text(
-                      widget.studentName.isNotEmpty ? widget.studentName[0].toUpperCase() : 'S',
-                      style: TextStyle(
-                        color: houseColor,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 26,
+              borderRadius: BorderRadius.circular(24),
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [houseColor, HouseColors.getHouseDarkColor(widget.houseName)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: houseColor.withValues(alpha: 0.35),
+                      blurRadius: 16,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 30,
+                      backgroundColor: Colors.white,
+                      child: Text(
+                        widget.studentName.isNotEmpty ? widget.studentName[0].toUpperCase() : 'S',
+                        style: TextStyle(
+                          color: houseColor,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 26,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.25),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: const Text(
-                                'VERIFIED DIGITAL ID 🟢',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w900,
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.25),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Text(
+                                  'VERIFIED DIGITAL ID 🟢',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w900,
+                                  ),
                                 ),
                               ),
+                              const Spacer(),
+                              const Icon(
+                                Icons.open_in_new_rounded,
+                                color: Colors.white70,
+                                size: 16,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            widget.studentName,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 19,
+                              fontWeight: FontWeight.w900,
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          widget.studentName,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 19,
-                            fontWeight: FontWeight.w900,
                           ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Scholar #${widget.scholarNo} • ${widget.houseName.toUpperCase()} House • ${widget.classLevel}',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.88),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
+                          const SizedBox(height: 2),
+                          Text(
+                            'Scholar #${widget.scholarNo} • ${widget.houseName.toUpperCase()} House • ${widget.classLevel}',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.88),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 24),
@@ -674,64 +692,143 @@ class _StudentBehaviorEvaluationScreenState
                   );
                 }
 
-                return ListView.separated(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: docs.length > 3 ? 3 : docs.length,
-                  separatorBuilder: (context, index) => const SizedBox(height: 8),
-                  itemBuilder: (context, i) {
-                    final raw = docs[i].data();
-                    final data = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
-                    final isMerit = data['type'] == 'merit';
-                    final points = (data['points'] as num?)?.toInt() ?? 0;
-                    final reason = data['reason'] ?? 'Conduct Record';
-                    final teacher = data['teacher_name'] ?? 'Faculty';
+                final displayedCount = _showAllConductRecords
+                    ? docs.length
+                    : (docs.length > 3 ? 3 : docs.length);
 
-                    return Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: (isMerit ? Colors.green : Colors.red)
-                              .withValues(alpha: 0.25),
+                return Column(
+                  children: [
+                    ListView.separated(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: displayedCount,
+                      separatorBuilder: (context, index) => const SizedBox(height: 8),
+                      itemBuilder: (context, i) {
+                        final raw = docs[i].data();
+                        final data = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+                        final isMerit = data['type'] == 'merit';
+                        final points = (data['points'] as num?)?.toInt() ?? 0;
+                        final reason = data['reason'] ?? 'Conduct Record';
+                        final teacher = data['teacher_name'] ?? 'Faculty';
+
+                        return Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: (isMerit ? Colors.green : Colors.red)
+                                  .withValues(alpha: 0.25),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                isMerit ? Icons.add_circle_rounded : Icons.remove_circle_rounded,
+                                color: isMerit ? Colors.green : Colors.redAccent,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      reason,
+                                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                                    ),
+                                    Text(
+                                      'By $teacher',
+                                      style: const TextStyle(fontSize: 11, color: Colors.grey),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Text(
+                                isMerit ? '+$points Pts' : '$points Pts',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: isMerit ? Colors.green : Colors.redAccent,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Colors.redAccent),
+                                tooltip: 'Revoke Mistaken Entry',
+                                onPressed: () async {
+                                  final confirm = await showDialog<bool>(
+                                    context: context,
+                                    builder: (c) => AlertDialog(
+                                      title: const Text('Revoke Conduct Entry?'),
+                                      content: Text(
+                                        'Revoke this entry ("$reason", $points Pts)?\n'
+                                        'This will reverse the points and remove it from the scholar\'s record.',
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.pop(c, false),
+                                          child: const Text('Cancel'),
+                                        ),
+                                        ElevatedButton(
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.redAccent,
+                                            foregroundColor: Colors.white,
+                                          ),
+                                          onPressed: () => Navigator.pop(c, true),
+                                          child: const Text('Revoke'),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                  if (confirm == true) {
+                                    final ok = await _authService.revokeConductRecord(
+                                      recordId: docs[i].id,
+                                      scholarNo: widget.scholarNo,
+                                      points: points,
+                                      isMerit: isMerit,
+                                    );
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            ok
+                                                ? '✓ Mistaken conduct entry revoked.'
+                                                : 'Failed to revoke entry.',
+                                          ),
+                                          backgroundColor: ok ? Colors.green[700] : Colors.redAccent,
+                                        ),
+                                      );
+                                    }
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                    if (docs.length > 3) ...[
+                      const SizedBox(height: 8),
+                      TextButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            _showAllConductRecords = !_showAllConductRecords;
+                          });
+                        },
+                        icon: Icon(
+                          _showAllConductRecords ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                          size: 18,
+                        ),
+                        label: Text(
+                          _showAllConductRecords
+                              ? 'Show Less (3 Recent Records)'
+                              : 'View All (${docs.length}) Conduct Records',
+                          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
                         ),
                       ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            isMerit ? Icons.add_circle_rounded : Icons.remove_circle_rounded,
-                            color: isMerit ? Colors.green : Colors.redAccent,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  reason,
-                                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-                                ),
-                                Text(
-                                  'By $teacher',
-                                  style: const TextStyle(fontSize: 11, color: Colors.grey),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Text(
-                            isMerit ? '+$points Pts' : '$points Pts',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w900,
-                              color: isMerit ? Colors.green : Colors.redAccent,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
+                    ],
+                  ],
                 );
               },
             ),

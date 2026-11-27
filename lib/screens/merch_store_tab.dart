@@ -4,7 +4,9 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import '../services/pass_document_exporter.dart';
 import '../theme/app_theme.dart';
 import '../services/voucher_security_service.dart';
 import '../services/auth_service.dart';
@@ -115,7 +117,7 @@ class OrderRecord {
     required this.totalPts,
     required this.date,
     required this.qrData,
-    this.status = 'ready',
+    this.status = 'placed',
     this.claimedAt,
     this.claimedBy,
   });
@@ -492,6 +494,7 @@ class GlobalWalletStore {
     await saveOrders(scholarNo: cleanScholar);
 
     // 2. Persist to Cloud Firestore orders collection
+    final isLiveFirebase = Firebase.apps.isNotEmpty || firestore != null;
     try {
       final db = firestore ?? FirebaseFirestore.instance;
       final currentUid = FirebaseAuth.instance.currentUser?.uid;
@@ -522,8 +525,14 @@ class GlobalWalletStore {
         'qr_data': order.qrData,
       };
 
-      if (totalBhd != null) {
-        orderData['total_bhd'] = totalBhd;
+      // Always persist a positive BHD total for new orders. Callers that do
+      // not pass one (for example the one-click purchase path) get the total
+      // derived from the priced cart items instead of a zero-value order that
+      // the security rules reject.
+      final effectiveBhd = totalBhd ??
+          order.items.fold<double>(0.0, (total, item) => total + item.bhdPrice);
+      if (effectiveBhd > 0) {
+        orderData['total_bhd'] = effectiveBhd;
       }
       if (order.claimedAt != null) {
         orderData['claimed_at'] = Timestamp.fromDate(order.claimedAt!);
@@ -536,9 +545,14 @@ class GlobalWalletStore {
           .collection('orders')
           .doc(order.receiptId)
           .set(orderData, SetOptions(merge: true))
-          .timeout(const Duration(seconds: 4));
-    } catch (_) {
-      // Offline fallback: order safely retained in SharedPreferences
+          .timeout(const Duration(seconds: 6));
+    } catch (e) {
+      if (isLiveFirebase && !e.toString().contains('no-app')) {
+        orders.removeWhere((o) => o.receiptId == order.receiptId);
+        await saveOrders(scholarNo: cleanScholar);
+        rethrow;
+      }
+      // Offline / unit-test fallback: order safely retained in SharedPreferences
     }
   }
 
@@ -762,14 +776,19 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
 
   bool _isProcessingOrder = false;
 
+  String get _houseDisplayLabel {
+    final trimmed = widget.userHouse.trim();
+    if (trimmed.isEmpty) return 'House';
+    return '${trimmed[0].toUpperCase()}${trimmed.substring(1)}';
+  }
+
   @override
   void initState() {
     super.initState();
     GlobalWalletStore.init(scholarNo: widget.scholarNo).then((_) {
       if (mounted) setState(() {});
     });
-    _selectedCategory =
-        'For You (${widget.userHouse[0].toUpperCase()}${widget.userHouse.substring(1)})';
+    _selectedCategory = 'For You ($_houseDisplayLabel)';
   }
 
   @override
@@ -850,13 +869,34 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
 
       AppHaptics.success();
       final itemsList = [CartItem(product: product, size: size, qty: safeQty)];
+      final totalBhd = itemsList.fold<double>(
+        0.0,
+        (total, item) => total + item.bhdPrice,
+      );
+      final effectiveScholar =
+          (widget.scholarNo?.trim().isNotEmpty == true)
+              ? widget.scholarNo!.trim()
+              : (AuthService.getCachedScholarNo() ?? '').trim();
+      if (effectiveScholar.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Please sign in with a valid scholar profile before ordering.'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+        return;
+      }
+
       final qrData = VoucherSecurityService.generateVoucherPayload(
         billNo: receiptId,
         points: 0,
-        scholarNo: widget.scholarNo ?? '2310910',
+        scholarNo: effectiveScholar,
         items: itemsList
             .map((i) => '${i.qty}x ${i.product.name} (${i.size})')
             .toList(),
+        totalBhd: totalBhd,
       );
 
       final newOrder = OrderRecord(
@@ -880,6 +920,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
         scholarNo: widget.scholarNo,
         studentName: widget.studentName,
         house: widget.userHouse,
+        totalBhd: totalBhd,
       );
 
       if (!mounted) return;
@@ -925,7 +966,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Apple Wallet Pass Header
+                // House collection pass header (local QR pass, not a Wallet pass)
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -949,7 +990,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                       ],
                     ),
                     Icon(
-                      Icons.apple,
+                      Icons.qr_code_2_rounded,
                       color: Colors.white.withValues(alpha: 0.8),
                       size: 26,
                     ),
@@ -1110,7 +1151,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                           Text(
                             order.totalPts > 0
                                 ? '${order.totalPts} Pts'
-                                : 'PAID (BHD)',
+                                : 'BHD — UNVERIFIED',
                             style: TextStyle(
                               color: widget.houseColor,
                               fontWeight: FontWeight.w900,
@@ -1147,26 +1188,42 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                         borderRadius: BorderRadius.circular(16),
                       ),
                     ),
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
+                    onPressed: () async {
+                      final itemsSummary = order.items
+                          .map((it) => '${it.qty}x ${it.product.name} (${it.size})')
+                          .join(', ');
+                      final sm = ScaffoldMessenger.of(context);
+                      final result = await PassDocumentExporter.exportPass(
+                        title: 'Official ASB Merch Collection Pass',
+                        subtitle: 'Order #${order.receiptId}',
+                        details: 'Items: $itemsSummary',
+                        totalInfo: order.totalPts > 0
+                            ? 'Total Points Paid: ${order.totalPts} PTS'
+                            : 'BHD order — payment not verified in app',
+                        qrData: order.qrData.isNotEmpty ? order.qrData : 'ASB-ORDER-${order.receiptId}',
+                      );
+                      if (!mounted) return;
+                      sm.showSnackBar(
                         SnackBar(
-                          content: const Row(
+                          content: Row(
                             children: [
                               Icon(
-                                Icons.check_circle_rounded,
-                                color: Colors.greenAccent,
+                                result.success ? Icons.check_circle_rounded : Icons.error_outline_rounded,
+                                color: result.success ? Colors.greenAccent : Colors.redAccent,
                               ),
-                              SizedBox(width: 12),
+                              const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
-                                  'Pass saved to digital wallet! Present QR code at store counter.',
+                                  result.success
+                                      ? '✓ Pass & receipt PDF saved to: ${result.filePath}'
+                                      : 'Export failed: ${result.error}',
                                 ),
                               ),
                             ],
                           ),
                           behavior: SnackBarBehavior.floating,
                           backgroundColor: const Color(0xFF1F2937),
-                          duration: const Duration(seconds: 3),
+                          duration: const Duration(seconds: 4),
                         ),
                       );
                     },
@@ -1374,7 +1431,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                                         child: Text(
                                           order.totalPts > 0
                                               ? '${order.totalPts} Pts Paid'
-                                              : 'Verified Store Order',
+                                              : 'BHD order — payment unverified',
                                           overflow: TextOverflow.ellipsis,
                                           style: TextStyle(
                                             fontWeight: FontWeight.w900,
@@ -2190,17 +2247,33 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                                 final receiptId =
                                     'ASB-${DateTime.now().millisecondsSinceEpoch.toString().substring(6)}';
                                 final itemsList = List<CartItem>.from(cart);
+                                final effectiveScholar =
+                                    (widget.scholarNo?.trim().isNotEmpty == true)
+                                        ? widget.scholarNo!.trim()
+                                        : (AuthService.getCachedScholarNo() ?? '').trim();
+                                if (effectiveScholar.isEmpty) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Please sign in with a valid scholar profile before ordering.'),
+                                        backgroundColor: Colors.redAccent,
+                                      ),
+                                    );
+                                  }
+                                  return;
+                                }
 
                               final qrData = VoucherSecurityService.generateVoucherPayload(
                                 billNo: receiptId,
                                 points: 0,
-                                scholarNo: widget.scholarNo ?? '2310910',
+                                scholarNo: effectiveScholar,
                                 items: itemsList
                                     .map(
                                       (i) =>
                                           '${i.qty}x ${i.product.name} (${i.size})',
                                     )
                                     .toList(),
+                                totalBhd: totalBhd,
                               );
                               final newOrder = OrderRecord(
                                 receiptId: receiptId,
@@ -2209,6 +2282,25 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                                 date: DateTime.now(),
                                 qrData: qrData,
                               );
+                              try {
+                                await GlobalWalletStore.addAndPersistOrder(
+                                  newOrder,
+                                  scholarNo: widget.scholarNo,
+                                  studentName: widget.studentName,
+                                  house: widget.userHouse,
+                                  totalBhd: totalBhd,
+                                );
+                              } catch (e) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Order could not be confirmed: $e'),
+                                    ),
+                                  );
+                                }
+                                return;
+                              }
+
                               setState(() {
                                 final existingIdx = GlobalWalletStore.orders.indexWhere((o) => o.receiptId == receiptId);
                                 if (existingIdx != -1) {
@@ -2219,13 +2311,6 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                                 GlobalWalletStore.cart.clear();
                               });
                               await GlobalWalletStore.clearCart(scholarNo: widget.scholarNo);
-                              await GlobalWalletStore.addAndPersistOrder(
-                                newOrder,
-                                scholarNo: widget.scholarNo,
-                                studentName: widget.studentName,
-                                house: widget.userHouse,
-                                totalBhd: totalBhd,
-                              );
 
                               if (!context.mounted) return;
                               Navigator.pop(context);
@@ -2275,8 +2360,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
 
   @override
   Widget build(BuildContext context) {
-    final userHouseLabel =
-        '${widget.userHouse[0].toUpperCase()}${widget.userHouse.substring(1)}';
+    final userHouseLabel = _houseDisplayLabel;
     final categories = [
       'For You ($userHouseLabel)',
       '💳 Digital Wallet (${GlobalWalletStore.orders.length})',
@@ -2463,79 +2547,94 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
             const SizedBox(height: 14),
 
             // Drop of the Week Banner
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [widget.houseColor, widget.houseDark],
+            InkWell(
+              onTap: () {
+                setState(() {
+                  _selectedCategory = 'For You ($userHouseLabel)';
+                  _searchQuery = '';
+                });
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('🔥 Showing $userHouseLabel Collection Weekly Drop!'),
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              },
+              borderRadius: BorderRadius.circular(24),
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [widget.houseColor, widget.houseDark],
+                  ),
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: widget.houseColor.withValues(alpha: 0.35),
+                      blurRadius: 16,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
                 ),
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: [
-                  BoxShadow(
-                    color: widget.houseColor.withValues(alpha: 0.35),
-                    blurRadius: 16,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.local_fire_department_rounded,
-                    color: Colors.amber,
-                    size: 38,
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withValues(alpha: 0.35),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: const Text(
-                                'LIVE WEEKLY DROP',
-                                style: TextStyle(
-                                  color: Colors.amber,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: 1.0,
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.local_fire_department_rounded,
+                      color: Colors.amber,
+                      size: 38,
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.35),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Text(
+                                  'LIVE WEEKLY DROP',
+                                  style: TextStyle(
+                                    color: Colors.amber,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 1.0,
+                                  ),
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            const Text(
-                              'Ends in 02d : 14h',
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
+                              const SizedBox(width: 8),
+                              const Text(
+                                'Ends in 02d : 14h',
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Rep Your Allegiance: Premium $userHouseLabel Collection',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 17,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: -0.5,
+                            ],
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 6),
+                          Text(
+                            'Rep Your Allegiance: Premium $userHouseLabel Collection',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -0.5,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 16),
@@ -2580,7 +2679,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                         ),
                         const SizedBox(height: 2),
                         const Text(
-                          'Verified School Merchandise • Orders fulfilled directly to Digital Wallet',
+                          'School merchandise catalogue • Orders are requests, not confirmed payments',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,

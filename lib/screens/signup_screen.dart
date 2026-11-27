@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/auth_service.dart';
+import '../models/academic_class.dart';
 import '../theme/app_theme.dart';
 import '../widgets/house_card.dart';
 import '../widgets/pill_selector.dart';
@@ -8,14 +9,21 @@ import '../widgets/strength_meter.dart';
 import 'home_screen.dart';
 
 class SignupScreen extends StatefulWidget {
-  const SignupScreen({super.key});
+  final AuthService? authService;
+  final WidgetBuilder? homeBuilder;
+
+  const SignupScreen({
+    super.key,
+    this.authService,
+    this.homeBuilder,
+  });
 
   @override
   State<SignupScreen> createState() => _SignupScreenState();
 }
 
 class _SignupScreenState extends State<SignupScreen> {
-  final _authService = AuthService();
+  late final AuthService _authService = widget.authService ?? AuthService();
 
   // Controllers
   final _nameController = TextEditingController();
@@ -35,7 +43,7 @@ class _SignupScreenState extends State<SignupScreen> {
   bool _isLoading = false;
   String? _errorMessage;
 
-  final List<String> _grades = ['6', '7', '8', '9', '10', '11', '12'];
+  final List<String> _grades = AcademicStructure.gradeLevels;
   final List<String> _divisions = ['A', 'B', 'C', 'D', 'E', 'F'];
 
   @override
@@ -63,12 +71,23 @@ class _SignupScreenState extends State<SignupScreen> {
       ? HouseColors.getHouseAccentColor(_houseName!)
       : HouseColors.rubyAccent;
 
-  bool _validateCurrentStep() {
-    setState(() => _errorMessage = null);
+  String get _formattedHouseName {
+    final clean = (_houseName ?? '').trim();
+    if (clean.isEmpty) return 'House';
+    return '${clean[0].toUpperCase()}${clean.substring(1)}';
+  }
 
-    if (_currentStep == 0) {
-      if (_nameController.text.trim().length < 2) {
+  bool _validateStep(int step) {
+    if (step == 0) {
+      final fullName = _nameController.text.trim();
+      if (fullName.length < 2) {
         setState(() => _errorMessage = 'Please enter your full name');
+        return false;
+      }
+      if (fullName.length > 100) {
+        setState(
+          () => _errorMessage = 'Full name must be 100 characters or fewer',
+        );
         return false;
       }
       final scholar = _scholarController.text.trim();
@@ -76,17 +95,24 @@ class _SignupScreenState extends State<SignupScreen> {
         setState(() => _errorMessage = 'Scholar number must be 5 or 6 digits');
         return false;
       }
-    } else if (_currentStep == 1) {
+      if (scholar == '11209' || scholar.toLowerCase() == 'admin') {
+        setState(
+          () => _errorMessage =
+              'This scholar number is reserved. Please sign in instead.',
+        );
+        return false;
+      }
+    } else if (step == 1) {
       if (_classLevel == null || _division == null) {
         setState(() => _errorMessage = 'Please select both Grade and Section');
         return false;
       }
-    } else if (_currentStep == 2) {
+    } else if (step == 2) {
       if (_houseName == null) {
         setState(() => _errorMessage = 'Please select your House to continue');
         return false;
       }
-    } else if (_currentStep == 3) {
+    } else if (step == 3) {
       if (_passwordController.text.length < 6) {
         setState(
           () => _errorMessage = 'Password must be at least 6 characters',
@@ -101,7 +127,26 @@ class _SignupScreenState extends State<SignupScreen> {
     return true;
   }
 
+  bool _validateCurrentStep() {
+    setState(() => _errorMessage = null);
+    return _validateStep(_currentStep);
+  }
+
+  bool _validateUpToStep(int targetStep) {
+    setState(() => _errorMessage = null);
+    for (int step = _currentStep; step < targetStep; step++) {
+      if (!_validateStep(step)) {
+        if (_currentStep != step) {
+          setState(() => _currentStep = step);
+        }
+        return false;
+      }
+    }
+    return true;
+  }
+
   void _nextStep() {
+    if (_isLoading) return;
     if (_validateCurrentStep()) {
       if (_currentStep < 3) {
         setState(() {
@@ -117,6 +162,7 @@ class _SignupScreenState extends State<SignupScreen> {
   }
 
   void _prevStep() {
+    if (_isLoading) return;
     if (_currentStep > 0) {
       setState(() {
         _currentStep--;
@@ -128,26 +174,38 @@ class _SignupScreenState extends State<SignupScreen> {
   }
 
   Future<void> _handleSignup() async {
+    if (_isLoading) return;
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
+    AuthService.authTransitionInProgress.value = true;
     try {
-      await _authService.signUp(
-        scholarNo: _scholarController.text.trim(),
-        password: _passwordController.text,
-        fullName: _nameController.text.trim(),
-        age: _age,
-        classLevel: _classLevel ?? 'Grade 10',
-        division: _division ?? 'A',
-        houseName: _houseName ?? 'ruby',
-      );
+      await _authService
+          .signUp(
+            scholarNo: _scholarController.text.trim(),
+            password: _passwordController.text,
+            fullName: _nameController.text.trim(),
+            age: _age,
+            classLevel: _classLevel!,
+            division: _division!,
+            houseName: _houseName!,
+          )
+          .timeout(const Duration(seconds: 45));
 
       if (!mounted) return;
 
+      AuthService.authTransitionInProgress.value = false;
       Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
+        MaterialPageRoute(
+          builder: widget.homeBuilder ??
+              (_) => HomeScreen(
+                    key: ValueKey(
+                      'home_${DateTime.now().millisecondsSinceEpoch}',
+                    ),
+                  ),
+        ),
         (_) => false,
       );
     } catch (e) {
@@ -156,23 +214,42 @@ class _SignupScreenState extends State<SignupScreen> {
         _errorMessage = _parseFirebaseError(e.toString());
       });
     } finally {
+      AuthService.authTransitionInProgress.value = false;
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
   String _parseFirebaseError(String error) {
+    if (error.contains('TimeoutException') ||
+        error.contains('timed out') ||
+        error.contains('Future not completed')) {
+      return 'Connection timed out. Please check your internet connection and try again.';
+    }
     if (error.contains('email-already-in-use')) {
       return 'An account already exists for this scholar number.';
     }
     if (error.contains('weak-password')) {
       return 'Password is too weak. Choose a stronger password.';
     }
-    if (error.contains('network-request-failed')) {
+    if (error.contains('operation-not-allowed')) {
+      return 'This scholar number is reserved. Please sign in instead or contact the school administrator.';
+    }
+    if (error.contains('invalid-email')) {
+      return 'Invalid scholar number format.';
+    }
+    if (error.contains('too-many-requests')) {
+      return 'Too many attempts. Please try again later.';
+    }
+    if (error.contains('permission-denied')) {
+      return 'Registration was rejected by server rules. Verify your details or contact an administrator.';
+    }
+    if (error.contains('network-request-failed') ||
+        error.contains('unavailable')) {
       return 'Network error. Check your connection.';
     }
     return error
         .replaceAll('Exception: ', '')
-        .replaceAll('[firebase_auth/', '[');
+        .replaceFirst(RegExp(r'^\[firebase_auth/[^\]]+\]\s*'), '');
   }
 
   @override
@@ -248,7 +325,7 @@ class _SignupScreenState extends State<SignupScreen> {
                         ),
                         const SizedBox(width: 5),
                         Text(
-                          '${_houseName![0].toUpperCase()}${_houseName!.substring(1)}',
+                          _formattedHouseName,
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w800,
@@ -338,38 +415,41 @@ class _SignupScreenState extends State<SignupScreen> {
   }
 
   Widget _buildErrorBanner() {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 24),
-      padding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 12,
-      ),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFEE2E2),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: const Color(0xFFFCA5A5),
+    return Semantics(
+      liveRegion: true,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 24),
+        padding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
         ),
-      ),
-      child: Row(
-        children: [
-          const Icon(
-            Icons.error_outline_rounded,
-            color: Color(0xFFDC2626),
-            size: 20,
+        decoration: BoxDecoration(
+          color: const Color(0xFFFEE2E2),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: const Color(0xFFFCA5A5),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              _errorMessage!,
-              style: const TextStyle(
-                color: Color(0xFFDC2626),
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.error_outline_rounded,
+              color: Color(0xFFDC2626),
+              size: 20,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                _errorMessage!,
+                style: const TextStyle(
+                  color: Color(0xFFDC2626),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -518,8 +598,8 @@ class _SignupScreenState extends State<SignupScreen> {
               ? activeColor
               : (isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8));
 
-          final stepTitle = (index == 2 && _houseName != null)
-              ? '${_houseName![0].toUpperCase()}${_houseName!.substring(1)}'
+          final stepTitle = (index == 2 && (_houseName?.trim().isNotEmpty ?? false))
+              ? _formattedHouseName
               : (steps[index]['title'] as String);
 
           return Expanded(
@@ -527,9 +607,10 @@ class _SignupScreenState extends State<SignupScreen> {
               children: [
                 Expanded(
                   child: InkWell(
-                    onTap: isUnlocked && !isCurrent
+                    onTap: isUnlocked && !isCurrent && !_isLoading
                         ? () {
-                            if (index < _currentStep || _validateCurrentStep()) {
+                            if (index < _currentStep ||
+                                _validateUpToStep(index)) {
                               setState(() {
                                 _currentStep = index;
                                 _errorMessage = null;
@@ -678,6 +759,10 @@ class _SignupScreenState extends State<SignupScreen> {
             TextFormField(
               controller: _nameController,
               textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.next,
+              inputFormatters: [
+                LengthLimitingTextInputFormatter(100),
+              ],
               decoration: InputDecoration(
                 labelText: 'Full Name',
                 prefixIcon: Icon(
@@ -699,6 +784,8 @@ class _SignupScreenState extends State<SignupScreen> {
             TextFormField(
               controller: _scholarController,
               keyboardType: TextInputType.number,
+              textInputAction: TextInputAction.done,
+              onFieldSubmitted: (_) => _nextStep(),
               inputFormatters: [
                 FilteringTextInputFormatter.digitsOnly,
                 LengthLimitingTextInputFormatter(6),
@@ -797,7 +884,7 @@ class _SignupScreenState extends State<SignupScreen> {
                     Material(
                       color: Colors.transparent,
                       child: InkWell(
-                        onTap: _age > 10
+                        onTap: _age > 4
                             ? () {
                                 AppHaptics.selectionClick();
                                 setState(() => _age--);
@@ -809,7 +896,7 @@ class _SignupScreenState extends State<SignupScreen> {
                           height: 34,
                           decoration: BoxDecoration(
                             color: activeColor.withValues(
-                              alpha: _age > 10 ? 0.15 : 0.05,
+                              alpha: _age > 4 ? 0.15 : 0.05,
                             ),
                             borderRadius: BorderRadius.circular(10),
                           ),
@@ -817,7 +904,7 @@ class _SignupScreenState extends State<SignupScreen> {
                           child: Icon(
                             Icons.remove_rounded,
                             size: 18,
-                            color: _age > 10
+                            color: _age > 4
                                 ? activeColor
                                 : (isDark ? Colors.white30 : Colors.black26),
                           ),
@@ -1008,7 +1095,7 @@ class _SignupScreenState extends State<SignupScreen> {
                                           WrapCrossAlignment.center,
                                       children: [
                                         Text(
-                                          '${_houseName![0].toUpperCase()}${_houseName!.substring(1)} House',
+                                          '$_formattedHouseName House',
                                           style: TextStyle(
                                             fontSize: 18,
                                             fontWeight: FontWeight.w800,
@@ -1125,6 +1212,10 @@ class _SignupScreenState extends State<SignupScreen> {
       case 3:
       default:
         final house = _houseName ?? 'ruby';
+        final classId = AcademicStructure.classIdFrom(
+          _classLevel ?? '',
+          _division ?? '',
+        );
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1241,7 +1332,7 @@ class _SignupScreenState extends State<SignupScreen> {
                         ),
                         const SizedBox(height: 3),
                         Text(
-                          'Scholar #${_scholarController.text.trim().isEmpty ? "Pending" : _scholarController.text.trim()} • Grade ${_classLevel ?? "?"}-${_division ?? "?"} • $_age yrs',
+                          'Scholar #${_scholarController.text.trim().isEmpty ? "Pending" : _scholarController.text.trim()} • Class ${classId.isEmpty ? '?' : classId} • $_age yrs',
                           style: TextStyle(
                             fontSize: 12.5,
                             fontWeight: FontWeight.w600,
@@ -1274,6 +1365,7 @@ class _SignupScreenState extends State<SignupScreen> {
             TextFormField(
               controller: _passwordController,
               obscureText: _obscurePassword,
+              textInputAction: TextInputAction.next,
               onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
                 labelText: 'Password',
@@ -1321,6 +1413,8 @@ class _SignupScreenState extends State<SignupScreen> {
             TextFormField(
               controller: _confirmPasswordController,
               obscureText: _obscureConfirm,
+              textInputAction: TextInputAction.done,
+              onFieldSubmitted: (_) => _nextStep(),
               onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
                 labelText: 'Confirm Password',

@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:file_selector/file_selector.dart';
+import '../services/pass_document_exporter.dart';
 import '../models/timetable_period.dart';
 import '../models/academic_assignment.dart';
 import '../models/exam_schedule_item.dart';
@@ -11,11 +13,17 @@ import '../models/attendance_record.dart';
 import '../models/medical_leave_request.dart';
 import '../services/auth_service.dart';
 import '../services/hierarchy_service.dart';
+import '../services/timetable_service.dart';
+import '../models/academic_class.dart';
+import '../models/class_timetable.dart';
 import '../widgets/managed_modal_scope.dart';
+import '../widgets/academic_image.dart';
 import 'home_screen.dart';
+import 'teacher_timetable_editor_screen.dart';
 
-/// School days in The Asian School Bahrain (Sunday through Thursday).
+/// School days in The Asian School Bahrain (Saturday through Thursday, 6 days, no Friday per M2 spec).
 const List<String> kBahrainSchoolDays = [
+  'Saturday',
   'Sunday',
   'Monday',
   'Tuesday',
@@ -282,6 +290,7 @@ class TimetableTab extends StatefulWidget {
 
 class _TimetableTabState extends State<TimetableTab> {
   final AuthService _authService = AuthService();
+  final TimetableService _timetableService = TimetableService();
   late String _selectedDay;
   late String _effectiveClass;
   Timer? _tickerTimer;
@@ -314,6 +323,8 @@ class _TimetableTabState extends State<TimetableTab> {
 
   static String _getCurrentOrNextSchoolDay(DateTime now) {
     switch (now.weekday) {
+      case DateTime.saturday:
+        return 'Saturday';
       case DateTime.sunday:
         return 'Sunday';
       case DateTime.monday:
@@ -325,38 +336,140 @@ class _TimetableTabState extends State<TimetableTab> {
       case DateTime.thursday:
         return 'Thursday';
       default:
-        return 'Sunday';
+        // Friday is the weekend; next school day is Saturday
+        return 'Saturday';
     }
   }
 
   DateTime get _currentTime => widget.mockNow ?? DateTime.now();
+
+  /// Opens the recurring timetable editor only for a class the signed-in
+  /// teacher is actually assigned to. Super admins with no class on their
+  /// profile get an explicit picker instead of a hard-coded fallback class.
+  Future<void> _openRecurringTimetableEditor(
+    List<AcademicClass> editableClasses,
+    AcademicClass? preferred,
+  ) async {
+    var target = preferred;
+
+    if (target == null) {
+      if (editableClasses.length == 1) {
+        target = editableClasses.first;
+      } else if (editableClasses.length > 1) {
+        target = await showDialog<AcademicClass>(
+          context: context,
+          builder: (ctx) => SimpleDialog(
+            title: const Text('Select a Class Timetable'),
+            children: editableClasses
+                .map(
+                  (c) => SimpleDialogOption(
+                    onPressed: () => Navigator.pop(ctx, c),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Text(
+                        '${c.classId} · ${c.displayLabel}',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+        );
+      }
+    }
+
+    if (target == null || !mounted) return;
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => TeacherTimetableEditorScreen(
+          classId: target!.classId,
+          academicClass: target,
+          initialDay: _selectedDay,
+        ),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final now = _currentTime;
 
+    final profile = AuthService.getCachedProfile();
+    final role = profile?['role']?.toString();
+    final scholarNo = profile?['scholar_no']?.toString() ?? AuthService.getCachedScholarNo();
+    final isTeacherOrAdmin = HierarchyService.isTeacherOrFaculty(role: role, scholarNo: scholarNo) ||
+        HierarchyService.isSuperAdmin(role: role, scholarNo: scholarNo);
+
+    final rawClassId = profile?['class_id']?.toString().trim() ?? '';
+    final parsedClass = AcademicStructure.parseClassId(rawClassId) ?? AcademicStructure.parseClassId(_effectiveClass);
+    final canonicalClassId = rawClassId.isNotEmpty ? rawClassId : (parsedClass != null ? AcademicStructure.classIdFrom(parsedClass.$1, parsedClass.$2) : '');
+
+    final editableClasses = <AcademicClass>[];
+    if (isTeacherOrAdmin) {
+      for (final c in AuthService.getCachedAcademicClasses().where((c) => c.active)) {
+        if (HierarchyService.canEditTimetable(
+          profile: profile,
+          classId: c.classId,
+          academicClass: c,
+        )) {
+          editableClasses.add(c);
+        }
+      }
+    }
+    AcademicClass? editorClass;
+    for (final c in editableClasses) {
+      if (c.classId.toUpperCase() == canonicalClassId.toUpperCase()) {
+        editorClass = c;
+        break;
+      }
+    }
+    editorClass ??= editableClasses.length == 1 ? editableClasses.first : null;
+    final canManageTimetable = editableClasses.isNotEmpty;
+
+    final activeSectionVersion = canonicalClassId.isNotEmpty
+        ? _timetableService.getCachedActiveVersion(canonicalClassId, _selectedDay, now)
+        : null;
+
     final cachedPeriods = (widget.initialPeriods != null && widget.initialPeriods!.isNotEmpty)
         ? widget.initialPeriods!
-        : AuthService.getCachedTimetable(
-            classLevel: _effectiveClass,
-            dayOfWeek: _selectedDay,
-          );
+        : (activeSectionVersion != null
+            ? activeSectionVersion.toPeriods()
+            : AuthService.getCachedTimetable(
+                classLevel: _effectiveClass,
+                dayOfWeek: _selectedDay,
+              ));
 
     return Column(
       children: [
         _buildWeekdaySelector(isDark),
         Expanded(
-          child: StreamBuilder<List<TimetablePeriod>>(
-            stream: _authService.getTimetableStream(
-              classLevel: _effectiveClass,
-              dayOfWeek: _selectedDay,
-            ),
-            initialData: cachedPeriods.isNotEmpty ? cachedPeriods : null,
-            builder: (context, snapshot) {
-              final periods = (snapshot.hasData && snapshot.data != null && snapshot.data!.isNotEmpty)
-                  ? snapshot.data!
-                  : cachedPeriods;
+          child: StreamBuilder<ClassTimetableVersion?>(
+            stream: canonicalClassId.isNotEmpty
+                ? _timetableService.getActiveTimetableStream(canonicalClassId, _selectedDay, now)
+                : const Stream.empty(),
+            initialData: activeSectionVersion,
+            builder: (context, versionSnapshot) {
+              final activeVer = versionSnapshot.data ?? activeSectionVersion;
+              final sectionPeriods = activeVer?.toPeriods();
+
+              return StreamBuilder<List<TimetablePeriod>>(
+                stream: sectionPeriods == null
+                    ? _authService.getTimetableStream(
+                        classLevel: _effectiveClass,
+                        dayOfWeek: _selectedDay,
+                      )
+                    : const Stream.empty(),
+                initialData: cachedPeriods.isNotEmpty ? cachedPeriods : null,
+                builder: (context, snapshot) {
+                  final periods = sectionPeriods ??
+                      ((snapshot.hasData && snapshot.data != null && snapshot.data!.isNotEmpty)
+                          ? snapshot.data!
+                          : cachedPeriods);
 
               TimetablePeriod? activePeriod;
               TimetablePeriod? nextUpcomingPeriod;
@@ -396,6 +509,10 @@ class _TimetableTabState extends State<TimetableTab> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    if (activeVer != null && activeVer.isTemporary) ...[
+                      _buildTemporaryScheduleBanner(activeVer, isDark),
+                      const SizedBox(height: 12),
+                    ],
                     if (activePeriod != null)
                       _buildActivePeriodCard(activePeriod, now, isDark)
                     else if (nextUpcomingPeriod != null)
@@ -442,18 +559,34 @@ class _TimetableTabState extends State<TimetableTab> {
                                   ),
                                 ),
                               ),
-                            FilledButton.icon(
-                              key: const Key('add_period_button'),
-                              onPressed: () => _showAddEditPeriodModal(),
-                              icon: const Icon(Icons.add_rounded, size: 16),
-                              label: const Text('Add Period', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
-                              style: FilledButton.styleFrom(
-                                backgroundColor: isDark ? const Color(0xFF38BDF8) : const Color(0xFF4338CA),
-                                foregroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            if (isTeacherOrAdmin) ...[
+                              if (canManageTimetable)
+                                FilledButton.icon(
+                                  key: const Key('manage_recurring_timetable_button'),
+                                  onPressed: () =>
+                                      _openRecurringTimetableEditor(editableClasses, editorClass),
+                                  icon: const Icon(Icons.edit_calendar_rounded, size: 16),
+                                  label: const Text('Edit Timetable', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: isDark ? const Color(0xFF38BDF8) : const Color(0xFF4338CA),
+                                    foregroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  ),
+                                ),
+                              FilledButton.icon(
+                                key: const Key('add_period_button'),
+                                onPressed: () => _showAddEditPeriodModal(),
+                                icon: const Icon(Icons.add_rounded, size: 16),
+                                label: const Text('Add Period', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: isDark ? const Color(0xFF38BDF8) : const Color(0xFF4338CA),
+                                  foregroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                ),
                               ),
-                            ),
+                            ],
                           ],
                         ),
                       ],
@@ -462,11 +595,11 @@ class _TimetableTabState extends State<TimetableTab> {
                     const SizedBox(height: 12),
 
                     if (periods.isEmpty)
-                      _buildEmptyState(isDark)
+                      _buildEmptyState(isDark, isTeacherOrAdmin)
                     else
                       ...periods.map((p) {
                         final isCurrent = activePeriod?.periodNumber == p.periodNumber;
-                        return _buildPeriodCard(p, isCurrent, isDark);
+                        return _buildPeriodCard(p, isCurrent, isDark, isTeacherOrAdmin);
                       }),
 
                     const SizedBox(height: 32),
@@ -474,11 +607,13 @@ class _TimetableTabState extends State<TimetableTab> {
                 ),
               );
             },
-          ),
-        ),
-      ],
-    );
-  }
+          );
+        },
+      ),
+    ),
+  ],
+);
+}
 
   Widget _buildWeekdaySelector(bool isDark) {
     return Container(
@@ -529,7 +664,7 @@ class _TimetableTabState extends State<TimetableTab> {
                       ),
                       child: Center(
                         child: Text(
-                          day.substring(0, 3).toUpperCase(),
+                          (day.length >= 3 ? day.substring(0, 3) : day).toUpperCase(),
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w900,
@@ -551,6 +686,52 @@ class _TimetableTabState extends State<TimetableTab> {
     );
   }
 
+  Widget _buildTemporaryScheduleBanner(
+    ClassTimetableVersion version,
+    bool isDark,
+  ) {
+    final date = version.overrideDate;
+    final label = date == null
+        ? 'Temporary schedule'
+        : 'Temporary schedule for ${date.year.toString().padLeft(4, '0')}-'
+            '${date.month.toString().padLeft(2, '0')}-'
+            '${date.day.toString().padLeft(2, '0')}';
+    return Container(
+      key: const Key('temporary_timetable_banner'),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: isDark ? 0.18 : 0.12),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.orange.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.event_busy_rounded, color: Colors.orange, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const Text(
+                  'This one-day schedule does not change the recurring weekly timetable.',
+                  style: TextStyle(fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildActivePeriodCard(TimetablePeriod period, DateTime now, bool isDark) {
     final remainingStr = period.formattedRemaining(now);
 
@@ -559,7 +740,7 @@ class _TimetableTabState extends State<TimetableTab> {
       container: true,
       readOnly: true,
       label:
-          'Period ${period.periodNumber}: ${period.subject} with ${period.teacherName} in Room ${period.room}. ${period.timeSlot}. Currently in progress. $remainingStr',
+          'Period ${period.periodNumber}: ${period.subject} with ${period.isSubstitute ? 'substitute teacher ${period.teacherName}${period.originalTeacherName.isNotEmpty ? ', regular teacher ${period.originalTeacherName}' : ''}' : period.teacherName} in Room ${period.room}. ${period.timeSlot}. Currently in progress. $remainingStr',
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.all(18),
@@ -613,6 +794,37 @@ class _TimetableTabState extends State<TimetableTab> {
                     ),
                   ),
                 ),
+                if (period.isSubstitute)
+                  Container(
+                    key: const Key('active_substitute_badge'),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: Colors.orange),
+                    ),
+                    child: const FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.swap_horiz_rounded,
+                              size: 14, color: Colors.orange),
+                          SizedBox(width: 5),
+                          Text(
+                            'SUBSTITUTE',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.orange,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
@@ -706,9 +918,13 @@ class _TimetableTabState extends State<TimetableTab> {
                 ),
                 _buildInfoBadge(
                   icon: Icons.person_rounded,
-                  label: period.teacherName,
+                  label: period.isSubstitute
+                      ? '${period.teacherName} (Substitute)'
+                      : period.teacherName,
                   isDark: isDark,
-                  badgeColor: const Color(0xFF059669),
+                  badgeColor: period.isSubstitute
+                      ? Colors.orange
+                      : const Color(0xFF059669),
                 ),
               ],
             ),
@@ -816,14 +1032,14 @@ class _TimetableTabState extends State<TimetableTab> {
     );
   }
 
-  Widget _buildPeriodCard(TimetablePeriod period, bool isCurrent, bool isDark) {
+  Widget _buildPeriodCard(TimetablePeriod period, bool isCurrent, bool isDark, [bool isTeacherOrAdmin = false]) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Semantics(
         container: true,
         readOnly: true,
         label:
-            'Period ${period.periodNumber}: ${period.subject} with ${period.teacherName} in Room ${period.room}. ${period.timeSlot}.${isCurrent ? " Currently in progress" : ""}',
+            'Period ${period.periodNumber}: ${period.subject} with ${period.isSubstitute ? 'substitute teacher ${period.teacherName}${period.originalTeacherName.isNotEmpty ? ', regular teacher ${period.originalTeacherName}' : ''}' : period.teacherName} in Room ${period.room}. ${period.timeSlot}.${isCurrent ? " Currently in progress" : ""}',
         child: Container(
           width: double.infinity,
           padding: const EdgeInsets.all(16),
@@ -912,15 +1128,49 @@ class _TimetableTabState extends State<TimetableTab> {
                             ),
                           ),
                         ],
+                        if (period.isSubstitute) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            key: Key(
+                              'substitute_badge_p${period.periodNumber}',
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.withValues(alpha: 0.18),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: Colors.orange.withValues(alpha: 0.6),
+                              ),
+                            ),
+                            child: const Text(
+                              'SUBSTITUTE',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.orange,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Teacher: ${period.teacherName}',
+                      period.isSubstitute
+                          ? 'Substitute: ${period.teacherName}'
+                              '${period.originalTeacherName.isNotEmpty ? ' (regular: ${period.originalTeacherName})' : ''}'
+                          : 'Teacher: ${period.teacherName}',
                       style: TextStyle(
                         fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: isDark ? Colors.white70 : const Color(0xFF475569),
+                        fontWeight: period.isSubstitute
+                            ? FontWeight.w800
+                            : FontWeight.w600,
+                        color: period.isSubstitute
+                            ? Colors.orange
+                            : (isDark ? Colors.white70 : const Color(0xFF475569)),
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -976,42 +1226,51 @@ class _TimetableTabState extends State<TimetableTab> {
                         ),
                       ],
                     ),
+                    if (period.imageUrl != null && period.imageUrl!.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      AcademicImageThumbnail(
+                        imageUrl: period.imageUrl!,
+                        title: '${period.subject} — P${period.periodNumber}',
+                        height: 110,
+                      ),
+                    ],
                   ],
                 ),
               ),
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Semantics(
-                    button: true,
-                    label: 'Edit Period ${period.periodNumber}',
-                    child: IconButton(
-                      key: Key('edit_period_${period.periodNumber}'),
-                      icon: Icon(
-                        Icons.edit_outlined,
-                        size: 18,
-                        color: isDark ? Colors.white70 : const Color(0xFF475569),
+              if (isTeacherOrAdmin)
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Semantics(
+                      button: true,
+                      label: 'Edit Period ${period.periodNumber}',
+                      child: IconButton(
+                        key: Key('edit_period_${period.periodNumber}'),
+                        icon: Icon(
+                          Icons.edit_outlined,
+                          size: 18,
+                          color: isDark ? Colors.white70 : const Color(0xFF475569),
+                        ),
+                        tooltip: 'Edit Period',
+                        onPressed: () => _showAddEditPeriodModal(period),
                       ),
-                      tooltip: 'Edit Period',
-                      onPressed: () => _showAddEditPeriodModal(period),
                     ),
-                  ),
-                  Semantics(
-                    button: true,
-                    label: 'Delete Period ${period.periodNumber}',
-                    child: IconButton(
-                      key: Key('delete_period_${period.periodNumber}'),
-                      icon: Icon(
-                        Icons.delete_outline_rounded,
-                        size: 18,
-                        color: Colors.redAccent.withValues(alpha: 0.8),
+                    Semantics(
+                      button: true,
+                      label: 'Delete Period ${period.periodNumber}',
+                      child: IconButton(
+                        key: Key('delete_period_${period.periodNumber}'),
+                        icon: Icon(
+                          Icons.delete_outline_rounded,
+                          size: 18,
+                          color: Colors.redAccent.withValues(alpha: 0.8),
+                        ),
+                        tooltip: 'Delete Period',
+                        onPressed: () => _confirmDeletePeriod(period),
                       ),
-                      tooltip: 'Delete Period',
-                      onPressed: () => _confirmDeletePeriod(period),
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
             ],
           ),
         ),
@@ -1019,7 +1278,7 @@ class _TimetableTabState extends State<TimetableTab> {
     );
   }
 
-  Widget _buildEmptyState(bool isDark) {
+  Widget _buildEmptyState(bool isDark, [bool isTeacherOrAdmin = false]) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 20),
@@ -1056,38 +1315,40 @@ class _TimetableTabState extends State<TimetableTab> {
             ),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 20),
-          Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 12,
-            runSpacing: 10,
-            children: [
-              FilledButton.icon(
-                key: const Key('empty_add_period_button'),
-                onPressed: () => _showAddEditPeriodModal(),
-                icon: const Icon(Icons.add_rounded, size: 16),
-                label: const Text('+ Add Period', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
-                style: FilledButton.styleFrom(
-                  backgroundColor: isDark ? const Color(0xFF38BDF8) : const Color(0xFF4338CA),
-                  foregroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          if (isTeacherOrAdmin) ...[
+            const SizedBox(height: 20),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 12,
+              runSpacing: 10,
+              children: [
+                FilledButton.icon(
+                  key: const Key('empty_add_period_button'),
+                  onPressed: () => _showAddEditPeriodModal(),
+                  icon: const Icon(Icons.add_rounded, size: 16),
+                  label: const Text('+ Add Period', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: isDark ? const Color(0xFF38BDF8) : const Color(0xFF4338CA),
+                    foregroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
                 ),
-              ),
-              OutlinedButton.icon(
-                key: const Key('empty_load_cbse_button'),
-                onPressed: _populateCBSETemplate,
-                icon: const Icon(Icons.bolt_rounded, size: 16),
-                label: const Text('Auto-Load CBSE Timetable', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: isDark ? const Color(0xFF38BDF8) : const Color(0xFF4338CA),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  side: BorderSide(color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF4338CA)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                OutlinedButton.icon(
+                  key: const Key('empty_load_cbse_button'),
+                  onPressed: _populateCBSETemplate,
+                  icon: const Icon(Icons.bolt_rounded, size: 16),
+                  label: const Text('Auto-Load CBSE Timetable', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: isDark ? const Color(0xFF38BDF8) : const Color(0xFF4338CA),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    side: BorderSide(color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF4338CA)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -1147,7 +1408,7 @@ class _TimetableTabState extends State<TimetableTab> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Auto-Load CBSE Timetable?'),
-        content: Text('This will populate a complete 8-period CBSE weekly schedule (Sunday to Thursday) for $_effectiveClass.'),
+        content: Text('This will populate an indicative 8-period CBSE weekly starter schedule (Sunday to Thursday) for $_effectiveClass.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           FilledButton(
@@ -1159,15 +1420,24 @@ class _TimetableTabState extends State<TimetableTab> {
     );
 
     if (confirmed == true) {
-      await _authService.populateDefaultCBSEWeeklyTimetable(classLevel: _effectiveClass);
+      final ok = await _authService.populateDefaultCBSEWeeklyTimetable(classLevel: _effectiveClass);
       if (mounted) {
         setState(() {});
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('CBSE Weekly Timetable Loaded Successfully!'),
-            backgroundColor: Color(0xFF10B981),
-          ),
-        );
+        if (ok) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('CBSE Starter Template Loaded Successfully!'),
+              backgroundColor: Color(0xFF10B981),
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to load CBSE timetable. Insufficient permissions.'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
       }
     }
   }
@@ -1222,6 +1492,7 @@ class _TimetableTabState extends State<TimetableTab> {
     String selectedDay = (existing != null && existing.dayOfWeek.isNotEmpty) ? existing.dayOfWeek : _selectedDay;
     String selectedTimeSlot = existing?.timeSlot ?? '07:45 - 08:30';
     bool isBreak = existing?.isBreak ?? false;
+    String? photoBase64 = existing?.imageUrl;
 
     final subjectController = TextEditingController(text: existing?.subject ?? '');
     final teacherController = TextEditingController(text: existing?.teacherName ?? '');
@@ -1516,6 +1787,13 @@ class _TimetableTabState extends State<TimetableTab> {
                         value: isBreak,
                         onChanged: (v) => setModalState(() => isBreak = v),
                       ),
+                      const SizedBox(height: 10),
+
+                      AcademicImageUploadField(
+                        label: 'Timetable / Circular Photo (Optional)',
+                        value: photoBase64,
+                        onChanged: (v) => setModalState(() => photoBase64 = v),
+                      ),
                       const SizedBox(height: 16),
 
                       SizedBox(
@@ -1537,6 +1815,7 @@ class _TimetableTabState extends State<TimetableTab> {
                               isBreak: isBreak,
                               dayOfWeek: selectedDay,
                               classLevel: _effectiveClass,
+                              imageUrl: photoBase64,
                             );
 
                             final scaffoldMessenger = ScaffoldMessenger.of(context);
@@ -1641,6 +1920,12 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final now = _currentTime;
 
+    final profile = AuthService.getCachedProfile();
+    final role = profile?['role']?.toString();
+    final scholarNo = profile?['scholar_no']?.toString() ?? AuthService.getCachedScholarNo();
+    final isTeacherOrAdmin = HierarchyService.isTeacherOrFaculty(role: role, scholarNo: scholarNo) ||
+        HierarchyService.isSuperAdmin(role: role, scholarNo: scholarNo);
+
     final initialList = widget.initialAssignments;
     final List<AcademicAssignment> cachedAssignments;
     if (initialList != null && initialList.isNotEmpty) {
@@ -1731,18 +2016,19 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                                   ),
                                 ),
                               ),
-                            FilledButton.icon(
-                              key: const Key('add_assignment_button'),
-                              onPressed: _showAddAssignmentModal,
-                              icon: const Icon(Icons.add_rounded, size: 16),
-                              label: const Text('Add Task', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
-                              style: FilledButton.styleFrom(
-                                backgroundColor: isDark ? const Color(0xFF38BDF8) : const Color(0xFF4338CA),
-                                foregroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            if (isTeacherOrAdmin)
+                              FilledButton.icon(
+                                key: const Key('add_assignment_button'),
+                                onPressed: _showAddAssignmentModal,
+                                icon: const Icon(Icons.add_rounded, size: 16),
+                                label: const Text('Add Task', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: isDark ? const Color(0xFF38BDF8) : const Color(0xFF4338CA),
+                                  foregroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                ),
                               ),
-                            ),
                           ],
                         ),
                       ],
@@ -1752,9 +2038,9 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
 
                     // Empty State or Assignment Cards
                     if (assignments.isEmpty)
-                      _buildEmptyState(isDark)
+                      _buildEmptyState(isDark, isTeacherOrAdmin)
                     else
-                      ...assignments.map((assignment) => _buildAssignmentCard(assignment, now, isDark)),
+                      ...assignments.map((assignment) => _buildAssignmentCard(assignment, now, isDark, isTeacherOrAdmin)),
 
                     const SizedBox(height: 32),
                   ],
@@ -1927,7 +2213,7 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
   }
 
   /// Individual Assignment Card with Live Region & 48dp cycle button.
-  Widget _buildAssignmentCard(AcademicAssignment assignment, DateTime now, bool isDark) {
+  Widget _buildAssignmentCard(AcademicAssignment assignment, DateTime now, bool isDark, [bool isTeacherOrAdmin = false]) {
     final isUrgent = assignment.isUrgent(now);
     final isOverdue = assignment.isOverdue(now);
     final remainingStr = assignment.formattedRemaining(now);
@@ -2025,21 +2311,22 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                           ),
                         ),
                       ),
-                      Semantics(
-                        button: true,
-                        label: 'Delete Assignment',
-                        child: IconButton(
-                          key: Key('delete_assignment_${assignment.id}'),
-                          icon: Icon(
-                            Icons.delete_outline_rounded,
-                            size: 18,
-                            color: Colors.redAccent.withValues(alpha: 0.8),
+                      if (isTeacherOrAdmin)
+                        Semantics(
+                          button: true,
+                          label: 'Delete Assignment',
+                          child: IconButton(
+                            key: Key('delete_assignment_${assignment.id}'),
+                            icon: Icon(
+                              Icons.delete_outline_rounded,
+                              size: 18,
+                              color: Colors.redAccent.withValues(alpha: 0.8),
+                            ),
+                            tooltip: 'Delete Assignment',
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () => _confirmDeleteAssignment(assignment),
                           ),
-                          tooltip: 'Delete Assignment',
-                          visualDensity: VisualDensity.compact,
-                          onPressed: () => _confirmDeleteAssignment(assignment),
                         ),
-                      ),
                     ],
                   ),
                 ],
@@ -2072,6 +2359,29 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
+
+              if (assignment.description.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  assignment.description,
+                  style: TextStyle(
+                    fontSize: 13,
+                    height: 1.4,
+                    color: isDark ? Colors.white60 : const Color(0xFF475569),
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+
+              if (assignment.imageUrl != null && assignment.imageUrl!.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                AcademicImageThumbnail(
+                  imageUrl: assignment.imageUrl!,
+                  title: assignment.title,
+                  height: 110,
+                ),
+              ],
 
               const SizedBox(height: 14),
 
@@ -2130,6 +2440,28 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                           ),
                         ],
                       ),
+                    ),
+                  ),
+
+                  // Submit Work / Rubric Modal Action
+                  ElevatedButton.icon(
+                    onPressed: () => _showSubmitAssignmentModal(context, assignment),
+                    icon: Icon(
+                      currentStatus == AssignmentStatus.pending
+                          ? Icons.upload_file_rounded
+                          : Icons.visibility_rounded,
+                      size: 15,
+                    ),
+                    label: Text(
+                      currentStatus == AssignmentStatus.pending ? 'Submit Work' : 'Rubric & Work',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFEEF2F6),
+                      foregroundColor: isDark ? Colors.white : const Color(0xFF0F172A),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      elevation: 0,
                     ),
                   ),
 
@@ -2202,7 +2534,24 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
   }
 
   void _cycleAssignmentStatus(AcademicAssignment assignment) {
-    final nextStatus = assignment.status.nextStatus;
+    var nextStatus = assignment.status.nextStatus;
+
+    // G4 & R1: Gating graded status to staff + council
+    if (nextStatus == AssignmentStatus.graded) {
+      final role = AuthService.getCachedRole() ?? '';
+      final sNo = AuthService.getCachedScholarNo() ?? '';
+      if (!HierarchyService.canGradeAcademics(role: role, scholarNo: sNo)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Grading and merit points require teacher or council verification.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        // Student cannot advance to graded; cycle back to pending (unsubmit)
+        nextStatus = AssignmentStatus.pending;
+      }
+    }
+
     setState(() {
       _optimisticStatus[assignment.id] = nextStatus;
     });
@@ -2227,7 +2576,312 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
     }
   }
 
-  Widget _buildEmptyState(bool isDark) {
+  void _showSubmitAssignmentModal(BuildContext context, AcademicAssignment assignment) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final notesController = TextEditingController(text: assignment.submissionNotes);
+    String? attachedFileName;
+    final currentStatus = _optimisticStatus[assignment.id] ?? assignment.status;
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          return Container(
+            padding: EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 20,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+            ),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF0F172A) : Colors.white,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 44,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF6366F1).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          assignment.subject.toUpperCase(),
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFF6366F1),
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '+${assignment.pointsReward} PTS',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFFF59E0B),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    assignment.title,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      color: isDark ? Colors.white : const Color(0xFF0F172A),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Instructor: ${assignment.teacherName} • ${assignment.formattedRemaining()}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white60 : const Color(0xFF64748B),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.description_outlined, size: 16, color: Color(0xFF6366F1)),
+                            SizedBox(width: 6),
+                            Text(
+                              'ASSIGNMENT BRIEF & RUBRIC',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.5,
+                                color: Color(0xFF6366F1),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          assignment.description.isNotEmpty
+                              ? assignment.description
+                              : 'Review chapter concepts and complete all assigned exercises. Submit clean working steps or attached document for assessment.',
+                          style: TextStyle(
+                            fontSize: 13,
+                            height: 1.45,
+                            color: isDark ? Colors.white70 : const Color(0xFF334155),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Rubric: Quality of answer (40%), Methodology (30%), Timeliness (30%).',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontStyle: FontStyle.italic,
+                            color: isDark ? Colors.white54 : const Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Student Submission Notes / Work Links:',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? Colors.white70 : const Color(0xFF334155),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: notesController,
+                    maxLines: 3,
+                    style: TextStyle(fontSize: 13, color: isDark ? Colors.white : Colors.black87),
+                    decoration: InputDecoration(
+                      hintText: 'Type your answer, paste links (GitHub, Google Drive, Docs), or notes for teacher...',
+                      hintStyle: const TextStyle(fontSize: 12, color: Colors.grey),
+                      filled: true,
+                      fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (attachedFileName != null)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.green.withValues(alpha: 0.4)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.attach_file_rounded, size: 18, color: Colors.green),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              attachedFileName!,
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, size: 16),
+                            onPressed: () => setModalState(() {
+                              attachedFileName = null;
+                            }),
+                          ),
+                        ],
+                      ),
+                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.attach_file_rounded, size: 16),
+                          label: const Text('Attach Solution File', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          onPressed: () async {
+                            try {
+                              const typeGroup = XTypeGroup(
+                                label: 'Homework Files',
+                                extensions: ['pdf', 'png', 'jpg', 'jpeg', 'docx', 'txt'],
+                              );
+                              final file = await openFile(acceptedTypeGroups: const [typeGroup]);
+                              if (file != null) {
+                                setModalState(() {
+                                  attachedFileName = file.name;
+                                });
+                              }
+                            } catch (e) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('File picker error: $e')),
+                                );
+                              }
+                            }
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.upload_file_rounded, size: 20),
+                      label: Text(
+                        currentStatus == AssignmentStatus.pending
+                            ? 'Turn In / Submit Homework'
+                            : 'Update Homework Submission',
+                        style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF6366F1),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      onPressed: () {
+                        final notes = notesController.text.trim();
+                        final finalNotes = attachedFileName != null
+                            ? '$notes\n[Attached File: $attachedFileName]'.trim()
+                            : notes;
+
+                        final updated = assignment.copyWith(
+                          status: AssignmentStatus.submitted,
+                          submittedAt: DateTime.now(),
+                          submissionNotes: finalNotes,
+                        );
+
+                        setState(() {
+                          _optimisticStatus[assignment.id] = AssignmentStatus.submitted;
+                        });
+
+                        widget.onStatusChanged?.call(updated);
+
+                        _authService.updateAssignmentStatus(
+                          assignmentId: assignment.id,
+                          newStatus: AssignmentStatus.submitted,
+                          classLevel: _effectiveClass,
+                          pointsReward: assignment.pointsReward,
+                        );
+
+                        Navigator.of(ctx).pop();
+
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Row(
+                              children: [
+                                const Icon(Icons.check_circle_rounded, color: Colors.greenAccent),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text('✓ Homework for "${assignment.title}" submitted to ${assignment.teacherName}!'),
+                                ),
+                              ],
+                            ),
+                            backgroundColor: const Color(0xFF1E293B),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(bool isDark, [bool isTeacherOrAdmin = false]) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
@@ -2264,19 +2918,21 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
             ),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 20),
-          FilledButton.icon(
-            key: const Key('empty_add_assignment_button'),
-            onPressed: _showAddAssignmentModal,
-            icon: const Icon(Icons.add_rounded, size: 16),
-            label: const Text('+ Add Homework Task', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
-            style: FilledButton.styleFrom(
-              backgroundColor: isDark ? const Color(0xFF38BDF8) : const Color(0xFF4338CA),
-              foregroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          if (isTeacherOrAdmin) ...[
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              key: const Key('empty_add_assignment_button'),
+              onPressed: _showAddAssignmentModal,
+              icon: const Icon(Icons.add_rounded, size: 16),
+              label: const Text('+ Add Homework Task', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+              style: FilledButton.styleFrom(
+                backgroundColor: isDark ? const Color(0xFF38BDF8) : const Color(0xFF4338CA),
+                foregroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -2300,30 +2956,43 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
     );
 
     if (confirmed == true) {
-      await _authService.deleteAssignment(
+      final ok = await _authService.deleteAssignment(
         assignmentId: assignment.id,
         classLevel: _effectiveClass,
         subject: assignment.subject,
       );
       if (mounted) {
-        setState(() {});
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Assignment deleted successfully.'),
-            backgroundColor: Color(0xFFEF4444),
-          ),
-        );
+        if (ok) {
+          setState(() {});
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Assignment deleted successfully.'),
+              backgroundColor: Color(0xFFEF4444),
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to delete assignment. Please check your staff permissions.'),
+              backgroundColor: Color(0xFFEF4444),
+            ),
+          );
+        }
       }
     }
   }
 
   void _showAddAssignmentModal() {
+    final profile = AuthService.getCachedProfile();
     final titleController = TextEditingController();
-    final teacherController = TextEditingController(text: 'Mr. Sharma');
+    final teacherController = TextEditingController(
+      text: profile?['full_name']?.toString() ?? '',
+    );
     final descController = TextEditingController();
     String selectedSubject = _currentSubject != 'All' ? _currentSubject : 'Mathematics';
     DateTime selectedDue = DateTime.now().add(const Duration(days: 1));
     int selectedPoints = 20;
+    String? photoBase64;
 
     final formKey = GlobalKey<FormState>();
 
@@ -2499,6 +3168,13 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                         ),
                       ),
+                      const SizedBox(height: 14),
+
+                      AcademicImageUploadField(
+                        label: 'Worksheet / Reference Photo (Optional)',
+                        value: photoBase64,
+                        onChanged: (v) => setModalState(() => photoBase64 = v),
+                      ),
                       const SizedBox(height: 20),
 
                       SizedBox(
@@ -2518,25 +3194,35 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                               status: AssignmentStatus.pending,
                               description: descController.text.trim(),
                               classLevel: _effectiveClass,
+                              imageUrl: photoBase64,
                             );
 
                             final scaffoldMessenger = ScaffoldMessenger.of(context);
                             final nav = Navigator.of(ctx);
 
-                            await _authService.publishAssignment(
+                            final ok = await _authService.publishAssignment(
                               assignment: newAssignment,
                               classLevel: _effectiveClass,
                             );
 
                             if (mounted) {
-                              setState(() {});
-                              nav.pop();
-                              scaffoldMessenger.showSnackBar(
-                                const SnackBar(
-                                  content: Text('Homework task published successfully!'),
-                                  backgroundColor: Color(0xFF10B981),
-                                ),
-                              );
+                              if (ok) {
+                                setState(() {});
+                                nav.pop();
+                                scaffoldMessenger.showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Homework task published successfully!'),
+                                    backgroundColor: Color(0xFF10B981),
+                                  ),
+                                );
+                              } else {
+                                scaffoldMessenger.showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Failed to publish homework. Please check your staff permissions.'),
+                                    backgroundColor: Color(0xFFEF4444),
+                                  ),
+                                );
+                              }
                             }
                           },
                           icon: const Icon(Icons.check_circle_outline_rounded),
@@ -4102,7 +4788,7 @@ class _ExamsTabState extends State<ExamsTab> {
         return Image.memory(
           base64Decode(base64Str),
           fit: fit,
-          errorBuilder: (_, __, ___) => const Center(
+          errorBuilder: (_, _, _) => const Center(
             child: Icon(Icons.broken_image_rounded, color: Colors.grey),
           ),
         );
@@ -4113,7 +4799,7 @@ class _ExamsTabState extends State<ExamsTab> {
       return Image.network(
         imageUrl,
         fit: fit,
-        errorBuilder: (_, __, ___) => const Center(
+        errorBuilder: (_, _, _) => const Center(
           child: Icon(Icons.broken_image_rounded, color: Colors.grey),
         ),
       );
@@ -4258,16 +4944,15 @@ class _ReportCardTabState extends State<ReportCardTab> {
       _isClaiming = false;
     });
 
-    final view = View.maybeOf(context);
-    if (view != null) {
-      SemanticsService.sendAnnouncement(
-        view,
-        'Claimed 50 House Points for Academic Distinction in ${card.term}!',
-        TextDirection.ltr,
-      );
-    }
-
     if (success) {
+      final view = View.maybeOf(context);
+      if (view != null) {
+        SemanticsService.sendAnnouncement(
+          view,
+          'Claimed 50 House Points for Academic Distinction in ${card.term}!',
+          TextDirection.ltr,
+        );
+      }
       widget.onHonoursClaimed?.call(card.copyWith(pointsClaimed: true));
     }
   }
@@ -4883,6 +5568,16 @@ class _ReportCardTabState extends State<ReportCardTab> {
             ),
           ),
 
+          if (card.imageUrl != null && card.imageUrl!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+              child: AcademicImageThumbnail(
+                imageUrl: card.imageUrl!,
+                title: '${card.studentName} — ${card.termName}',
+                height: 140,
+              ),
+            ),
+
           // 2. Subject Performance Analytics
           Padding(
             padding: const EdgeInsets.all(20),
@@ -5049,6 +5744,65 @@ class _ReportCardTabState extends State<ReportCardTab> {
                     );
                   },
                 ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.picture_as_pdf_rounded, size: 20),
+                    label: const Text(
+                      'Download / Export Official Report Card PDF',
+                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF6366F1),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    onPressed: () async {
+                      final sm = ScaffoldMessenger.of(context);
+                      final subjectsSummary = card.subjectGrades
+                          .map((s) => '• ${s.subject}: ${s.score.toStringAsFixed(1)}/${s.maxScore.toStringAsFixed(1)} (${s.gradeLetter}, ${s.percentage.toStringAsFixed(1)}%)')
+                          .join('\n');
+                      final details = 'Scholar: ${card.studentName.isNotEmpty ? card.studentName : "Scholar"} (#$_effectiveScholarNo) • Class: $_effectiveClass\n'
+                          'Term: ${card.termName} (${card.academicYear})\n'
+                          'Attendance: ${card.attendanceRate.toStringAsFixed(1)}%\n\n'
+                          'Subjects Breakdown:\n$subjectsSummary\n\n'
+                          'Teacher Remarks: ${card.teacherRemarks.isNotEmpty ? card.teacherRemarks : "Commendable academic progress and disciplined conduct."}';
+                      final res = await PassDocumentExporter.exportPass(
+                        title: 'Official Academic Progress & Report Card',
+                        subtitle: 'ASB Ministry of Education Accredited Transcript',
+                        details: details,
+                        totalInfo: 'Overall Cumulative GPA: ${card.overallGpa.toStringAsFixed(2)} / 4.00',
+                        qrData: 'ASB-REPORT-${card.id}-$_effectiveScholarNo',
+                      );
+                      if (!mounted) return;
+                      sm.showSnackBar(
+                        SnackBar(
+                          content: Row(
+                            children: [
+                              Icon(
+                                res.success ? Icons.check_circle_rounded : Icons.error_outline_rounded,
+                                color: res.success ? Colors.greenAccent : Colors.redAccent,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  res.success
+                                      ? '✓ Official Report Card PDF saved to: ${res.filePath}'
+                                      : 'Export failed: ${res.error}',
+                                ),
+                              ),
+                            ],
+                          ),
+                          behavior: SnackBarBehavior.floating,
+                          backgroundColor: const Color(0xFF1E293B),
+                          duration: const Duration(seconds: 4),
+                        ),
+                      );
+                    },
+                  ),
+                ),
               ],
             ),
           ),
@@ -5193,20 +5947,19 @@ class _ReportCardTabState extends State<ReportCardTab> {
     ];
 
     final scholarController = TextEditingController(
-      text: _effectiveScholarNo.isNotEmpty ? _effectiveScholarNo : '2310910',
+      text: _effectiveScholarNo.isNotEmpty ? _effectiveScholarNo : '',
     );
     final nameController = TextEditingController();
     String selectedGrade = _effectiveClass.isNotEmpty && gradeLevels.contains(_effectiveClass)
         ? _effectiveClass
         : 'Grade 10';
     String selectedTerm = 'Term 1 Mid-Term';
-    final gpaController = TextEditingController(text: '3.85');
-    final pctController = TextEditingController(text: '92.5');
-    final attController = TextEditingController(text: '98.0');
-    final remarksController = TextEditingController(
-      text: 'Exemplary academic effort and analytical diligence in all subjects.',
-    );
+    final gpaController = TextEditingController();
+    final pctController = TextEditingController();
+    final attController = TextEditingController();
+    final remarksController = TextEditingController();
     bool isSaving = false;
+    String? photoBase64;
 
     showModalBottomSheet(
       context: context,
@@ -5435,6 +6188,13 @@ class _ReportCardTabState extends State<ReportCardTab> {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 14),
+
+                  AcademicImageUploadField(
+                    label: 'Report Card Scan / Photo (Optional)',
+                    value: photoBase64,
+                    onChanged: (v) => setModalState(() => photoBase64 = v),
+                  ),
                   const SizedBox(height: 20),
 
                   // Submit Button
@@ -5462,48 +6222,78 @@ class _ReportCardTabState extends State<ReportCardTab> {
                                 return;
                               }
 
+                              final pct = double.tryParse(pctController.text.trim());
+                              if (pct == null || pct < 0 || pct > 100) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Please enter a valid overall percentage (0 - 100).'),
+                                    backgroundColor: Colors.redAccent,
+                                  ),
+                                );
+                                return;
+                              }
+
+                              final parsedGpa = double.tryParse(gpaController.text.trim());
+                              final gpa = parsedGpa ?? ((pct / 100.0) * 4.0);
+                              if (gpa < 0 || gpa > 4.0) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Please enter a valid GPA (0.0 - 4.0).'),
+                                    backgroundColor: Colors.redAccent,
+                                  ),
+                                );
+                                return;
+                              }
+
+                              final att = double.tryParse(attController.text.trim());
+                              if (att == null || att < 0 || att > 100) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Please enter a valid attendance percentage (0 - 100).'),
+                                    backgroundColor: Colors.redAccent,
+                                  ),
+                                );
+                                return;
+                              }
+
                               setModalState(() => isSaving = true);
 
-                              final pct = double.tryParse(pctController.text.trim()) ?? 90.0;
-                              final gpa = double.tryParse(gpaController.text.trim()) ?? ((pct / 100.0) * 4.0);
-                              final att = double.tryParse(attController.text.trim()) ?? 98.0;
-
-                              // Generate standard balanced subject grades
+                              // Standard indicative subject breakdown (template)
                               final subjects = [
                                 SubjectGrade(
                                   subject: 'Mathematics',
                                   score: (pct + 2).clamp(0.0, 100.0),
                                   maxScore: 100.0,
                                   gradeLetter: SubjectGrade.computeGradeLetter((pct + 2).clamp(0.0, 100.0), 100.0),
-                                  teacherComment: 'Strong problem-solving capability.',
+                                  teacherComment: '',
                                 ),
                                 SubjectGrade(
                                   subject: 'Physics',
                                   score: (pct - 1).clamp(0.0, 100.0),
                                   maxScore: 100.0,
                                   gradeLetter: SubjectGrade.computeGradeLetter((pct - 1).clamp(0.0, 100.0), 100.0),
-                                  teacherComment: 'Good grasp of physical principles.',
+                                  teacherComment: '',
                                 ),
                                 SubjectGrade(
                                   subject: 'Chemistry',
                                   score: pct.clamp(0.0, 100.0),
                                   maxScore: 100.0,
                                   gradeLetter: SubjectGrade.computeGradeLetter(pct.clamp(0.0, 100.0), 100.0),
-                                  teacherComment: 'Active laboratory work participation.',
+                                  teacherComment: '',
                                 ),
                                 SubjectGrade(
                                   subject: 'Computer Science',
                                   score: (pct + 4).clamp(0.0, 100.0),
                                   maxScore: 100.0,
                                   gradeLetter: SubjectGrade.computeGradeLetter((pct + 4).clamp(0.0, 100.0), 100.0),
-                                  teacherComment: 'Exceptional programming and logic.',
+                                  teacherComment: '',
                                 ),
                                 SubjectGrade(
                                   subject: 'English',
                                   score: (pct - 2).clamp(0.0, 100.0),
                                   maxScore: 100.0,
                                   gradeLetter: SubjectGrade.computeGradeLetter((pct - 2).clamp(0.0, 100.0), 100.0),
-                                  teacherComment: 'Fluent analytical comprehension.',
+                                  teacherComment: '',
                                 ),
                               ];
 
@@ -5520,6 +6310,7 @@ class _ReportCardTabState extends State<ReportCardTab> {
                                   attendanceRate: att,
                                   teacherRemarks: remarksController.text.trim(),
                                   subjectGrades: subjects,
+                                  imageUrl: photoBase64,
                                 );
 
                                 if (ctx.mounted) {
@@ -5640,7 +6431,7 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
             Semantics(
               liveRegion: true,
               label:
-                  'Warning: Academic attendance at ${summary.percentage.toStringAsFixed(1)} percent is below the mandatory 75 percent Ministry threshold',
+                  'Warning: Academic attendance at ${summary.percentage!.toStringAsFixed(1)} percent is below the mandatory 75 percent Ministry threshold',
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
@@ -5808,7 +6599,7 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: leaves.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              separatorBuilder: (_, _) => const SizedBox(height: 10),
               itemBuilder: (context, idx) {
                 final item = leaves[idx];
                 final isApproved = item.status == MedicalLeaveStatus.approved;
@@ -5922,8 +6713,14 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
   }
 
   Widget _buildSummaryCard(AttendanceSummary summary, bool isDark) {
+    final pct = summary.percentage;
+    final hasData = summary.hasData;
     final compliant = summary.isMinistryCompliant;
-    final badgeColor = compliant ? const Color(0xFF10B981) : const Color(0xFFEF4444);
+    final badgeColor = !hasData
+        ? const Color(0xFF64748B)
+        : compliant
+            ? const Color(0xFF10B981)
+            : const Color(0xFFEF4444);
 
     return Container(
       width: double.infinity,
@@ -5964,7 +6761,7 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${summary.percentage.toStringAsFixed(1)}%',
+                    hasData ? '${pct!.toStringAsFixed(1)}%' : 'No data',
                     style: TextStyle(
                       fontSize: 32,
                       fontWeight: FontWeight.w900,
@@ -5987,15 +6784,21 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
-                        compliant ? Icons.verified : Icons.error_outline,
+                        !hasData
+                            ? Icons.info_outline
+                            : compliant
+                                ? Icons.verified
+                                : Icons.error_outline,
                         size: 14,
                         color: badgeColor,
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        compliant
-                            ? 'Ministry 75% Met'
-                            : 'Below 75% Threshold',
+                        !hasData
+                            ? 'No attendance data'
+                            : compliant
+                                ? 'Ministry 75% Met'
+                                : 'Below 75% Threshold',
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w800,
@@ -6012,7 +6815,7 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
           ClipRRect(
             borderRadius: BorderRadius.circular(6),
             child: LinearProgressIndicator(
-              value: (summary.percentage / 100.0).clamp(0.0, 1.0),
+              value: hasData ? (pct! / 100.0).clamp(0.0, 1.0) : 0.0,
               minHeight: 8,
               backgroundColor:
                   isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
@@ -6285,32 +7088,60 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
                   final targetScholar = scholarController.text.trim();
                   if (targetScholar.isEmpty) return;
 
-                  Navigator.pop(ctx);
-                  await AuthService().markStudentAttendance(
-                    classLevel: widget.classLevel ?? 'Grade 10',
-                    scholarNo: targetScholar,
-                    status: selectedStatus,
-                    remarks: remarksController.text.trim().isNotEmpty
-                        ? remarksController.text.trim()
-                        : null,
-                  );
-
-                  if (mounted) {
-                    setState(() {
-                      _records = AuthService.getCachedAttendanceRecords(
-                        classLevel: widget.classLevel,
-                        scholarNo: targetScholar,
-                      );
-                    });
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          'Attendance marked: #$targetScholar is ${selectedStatus.name.toUpperCase()}',
-                        ),
-                        backgroundColor: const Color(0xFF10B981),
-                        behavior: SnackBarBehavior.floating,
-                      ),
+                  try {
+                    final ok = await AuthService().markStudentAttendance(
+                      classLevel: widget.classLevel ?? 'Grade 10',
+                      scholarNo: targetScholar,
+                      status: selectedStatus,
+                      remarks: remarksController.text.trim().isNotEmpty
+                          ? remarksController.text.trim()
+                          : null,
                     );
+
+                    if (!ok) {
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          const SnackBar(
+                            content: Text('Failed to save attendance. Please check your staff permissions.'),
+                            backgroundColor: Color(0xFFEF4444),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      }
+                      return;
+                    }
+
+                    if (ctx.mounted) {
+                      Navigator.pop(ctx);
+                    }
+
+                    if (mounted) {
+                      setState(() {
+                        _records = AuthService.getCachedAttendanceRecords(
+                          classLevel: widget.classLevel,
+                          scholarNo: targetScholar,
+                        );
+                      });
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Attendance marked: #$targetScholar is ${selectedStatus.name.toUpperCase()}',
+                          ),
+                          backgroundColor: const Color(0xFF10B981),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    }
+                  } catch (e) {
+                    if (ctx.mounted) {
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        SnackBar(
+                          content: Text('Error saving attendance: $e'),
+                          backgroundColor: const Color(0xFFEF4444),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    }
                   }
                 },
                 child: const Text('Save Attendance', style: TextStyle(fontWeight: FontWeight.w800)),
@@ -6617,6 +7448,7 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
     DateTime startDate = DateTime.now();
     DateTime endDate = DateTime.now();
     String? photoBase64;
+    String? pdfFileName;
     final picker = ImagePicker();
 
     showModalBottomSheet(
@@ -6787,22 +7619,54 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
                     if (photoBase64 != null) ...[
                       Stack(
                         children: [
-                          Container(
-                            height: 150,
-                            width: double.infinity,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: const Color(0xFF6366F1), width: 1.5),
-                            ),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: Image.memory(
-                                base64Decode(photoBase64!.split(',').last),
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.broken_image)),
+                          if (photoBase64!.startsWith('data:application/pdf'))
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF6366F1).withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: const Color(0xFF6366F1), width: 1.5),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.picture_as_pdf_rounded, color: Colors.redAccent, size: 36),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          pdfFileName ?? 'Official_Medical_Certificate.pdf',
+                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        const SizedBox(height: 2),
+                                        const Text('Official PDF Certificate Attached', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          else
+                            Container(
+                              height: 150,
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: const Color(0xFF6366F1), width: 1.5),
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Image.memory(
+                                  base64Decode(photoBase64!.split(',').last),
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) => const Center(child: Icon(Icons.broken_image)),
+                                ),
                               ),
                             ),
-                          ),
                           Positioned(
                             top: 4,
                             right: 4,
@@ -6817,7 +7681,10 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
                                   padding: const EdgeInsets.all(12),
                                   icon: const Icon(Icons.close, size: 18, color: Colors.white),
                                   tooltip: 'Remove photo',
-                                  onPressed: () => setModalState(() => photoBase64 = null),
+                                  onPressed: () => setModalState(() {
+                                    photoBase64 = null;
+                                    pdfFileName = null;
+                                  }),
                                 ),
                               ),
                             ),
@@ -6825,65 +7692,105 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
                         ],
                       ),
                     ] else ...[
-                      Row(
+                      Column(
                         children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () async {
-                                try {
-                                  final xfile = await picker.pickImage(
-                                    source: ImageSource.camera,
-                                    imageQuality: 80,
-                                    maxWidth: 1200,
-                                  );
-                                  if (xfile != null) {
-                                    final bytes = await xfile.readAsBytes();
-                                    setModalState(() {
-                                      photoBase64 = 'data:image/jpeg;base64,${base64Encode(bytes)}';
-                                    });
-                                  }
-                                } catch (e) {
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('Camera unavailable: $e')),
-                                    );
-                                  }
-                                }
-                              },
-                              icon: const Icon(Icons.camera_alt_rounded, size: 18),
-                              label: const Text('Take Photo', style: TextStyle(fontWeight: FontWeight.w700)),
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: () async {
+                                    try {
+                                      final xfile = await picker.pickImage(
+                                        source: ImageSource.camera,
+                                        imageQuality: 80,
+                                        maxWidth: 1200,
+                                      );
+                                      if (xfile != null) {
+                                        final bytes = await xfile.readAsBytes();
+                                        setModalState(() {
+                                          photoBase64 = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+                                          pdfFileName = null;
+                                        });
+                                      }
+                                    } catch (e) {
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(content: Text('Camera unavailable: $e')),
+                                        );
+                                      }
+                                    }
+                                  },
+                                  icon: const Icon(Icons.camera_alt_rounded, size: 18),
+                                  label: const Text('Take Photo', style: TextStyle(fontWeight: FontWeight.w700)),
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                ),
                               ),
-                            ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: () async {
+                                    try {
+                                      final xfile = await picker.pickImage(
+                                        source: ImageSource.gallery,
+                                        imageQuality: 80,
+                                        maxWidth: 1200,
+                                      );
+                                      if (xfile != null) {
+                                        final bytes = await xfile.readAsBytes();
+                                        setModalState(() {
+                                          photoBase64 = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+                                          pdfFileName = null;
+                                        });
+                                      }
+                                    } catch (e) {
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(content: Text('Gallery picker failed: $e')),
+                                        );
+                                      }
+                                    }
+                                  },
+                                  icon: const Icon(Icons.photo_library_rounded, size: 18),
+                                  label: const Text('Upload Image', style: TextStyle(fontWeight: FontWeight.w700)),
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
+                          const SizedBox(height: 10),
+                          SizedBox(
+                            width: double.infinity,
                             child: OutlinedButton.icon(
                               onPressed: () async {
                                 try {
-                                  final xfile = await picker.pickImage(
-                                    source: ImageSource.gallery,
-                                    imageQuality: 80,
-                                    maxWidth: 1200,
+                                  const typeGroup = XTypeGroup(
+                                    label: 'Medical Certificate PDFs',
+                                    extensions: ['pdf'],
                                   );
-                                  if (xfile != null) {
-                                    final bytes = await xfile.readAsBytes();
+                                  final file = await openFile(acceptedTypeGroups: const [typeGroup]);
+                                  if (file != null) {
+                                    final bytes = await file.readAsBytes();
                                     setModalState(() {
-                                      photoBase64 = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+                                      pdfFileName = file.name;
+                                      photoBase64 = 'data:application/pdf;base64,${base64Encode(bytes)}';
                                     });
                                   }
                                 } catch (e) {
                                   if (context.mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('Gallery picker failed: $e')),
+                                      SnackBar(content: Text('PDF picker failed: $e')),
                                     );
                                   }
                                 }
                               },
-                              icon: const Icon(Icons.photo_library_rounded, size: 18),
-                              label: const Text('Upload Image', style: TextStyle(fontWeight: FontWeight.w700)),
+                              icon: const Icon(Icons.picture_as_pdf_rounded, size: 18, color: Colors.redAccent),
+                              label: const Text('Upload PDF Medical Certificate', style: TextStyle(fontWeight: FontWeight.w700)),
                               style: OutlinedButton.styleFrom(
                                 padding: const EdgeInsets.symmetric(vertical: 12),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -6908,12 +7815,28 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
                           Navigator.of(ctx).pop();
 
                           final profile = AuthService.getCachedProfile();
-                          final sNo = widget.scholarNo ?? (profile?['scholar_no'] ?? '2310910').toString();
-                          final sName = (profile?['full_name'] ?? 'Mohammed Ayaan').toString();
+                          final sNo = widget.scholarNo ?? (profile?['scholar_no']?.toString().trim().isNotEmpty == true
+                              ? profile!['scholar_no'].toString().trim()
+                              : (AuthService.getCachedScholarNo() ?? ''));
+                          final sName = (profile?['full_name']?.toString().trim().isNotEmpty == true
+                              ? profile!['full_name'].toString().trim()
+                              : 'Scholar #$sNo');
                           final sHouse = AuthService.getCachedHouse() ?? 'ruby';
-                          final sClass = widget.classLevel ?? (profile?['class_level'] ?? 'Grade 10').toString();
+                          final sClass = widget.classLevel ?? (profile?['class_level']?.toString().trim().isNotEmpty == true
+                              ? profile!['class_level'].toString().trim()
+                              : 'Grade 10');
 
-                          await AuthService().submitMedicalLeaveRequest(
+                          if (sNo.isEmpty) {
+                            parentMessenger.showSnackBar(
+                              const SnackBar(
+                                content: Text('Cannot submit leave: student profile is not loaded.'),
+                                backgroundColor: Colors.redAccent,
+                              ),
+                            );
+                            return;
+                          }
+
+                          final ok = await AuthService().submitMedicalLeaveRequest(
                             scholarNo: sNo,
                             studentName: sName,
                             house: sHouse,
@@ -6926,14 +7849,23 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
                           );
 
                           if (!mounted) return;
-                          parentMessenger.showSnackBar(
-                            SnackBar(
-                              content: const Text(
-                                'Medical Leave Pass & Doctor Prescription submitted directly to Administration for approval!',
+                          if (ok) {
+                            parentMessenger.showSnackBar(
+                              SnackBar(
+                                content: const Text(
+                                  'Medical Leave Pass & Doctor Prescription submitted directly to Administration for approval!',
+                                ),
+                                backgroundColor: Colors.green[700],
                               ),
-                              backgroundColor: Colors.green[700],
-                            ),
-                          );
+                            );
+                          } else {
+                            parentMessenger.showSnackBar(
+                              const SnackBar(
+                                content: Text('Failed to submit medical leave request. Please check permissions or connection.'),
+                                backgroundColor: Colors.redAccent,
+                              ),
+                            );
+                          }
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF6366F1),

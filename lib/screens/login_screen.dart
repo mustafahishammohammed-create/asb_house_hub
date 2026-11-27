@@ -31,7 +31,98 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  Future<void> _handleForgotPassword() async {
+    final resetCtrl = TextEditingController(text: _scholarController.text.trim());
+    String? dialogError;
+    try {
+      final sent = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Row(
+              children: [
+                Icon(Icons.lock_reset_rounded, color: Color(0xFF1E3A8A)),
+                SizedBox(width: 10),
+                Text('Reset Password', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Enter your Scholar Number or email to receive a password reset link:',
+                  style: TextStyle(fontSize: 13, color: Colors.grey),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: resetCtrl,
+                  keyboardType: TextInputType.text,
+                  onChanged: (_) {
+                    if (dialogError != null) {
+                      setDialogState(() => dialogError = null);
+                    }
+                  },
+                  decoration: InputDecoration(
+                    labelText: 'Scholar # / Email',
+                    prefixIcon: const Icon(Icons.badge_outlined),
+                    errorText: dialogError,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  if (resetCtrl.text.trim().isEmpty) {
+                    setDialogState(() => dialogError = 'Enter your scholar number or email');
+                    return;
+                  }
+                  Navigator.pop(ctx, true);
+                },
+                child: const Text('Send Reset Link'),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      if (sent == true && mounted) {
+        final scholar = resetCtrl.text.trim();
+        try {
+          await _authService.resetPassword(scholar);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Password reset instructions sent for #$scholar. Please check your inbox.'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(_parseFirebaseError(e.toString())),
+                backgroundColor: Colors.redAccent,
+              ),
+            );
+          }
+        }
+      }
+    } finally {
+      resetCtrl.dispose();
+    }
+  }
+
   Future<void> _handleLogin() async {
+    if (_isLoading) return;
     if (_formKey.currentState?.validate() != true) return;
 
     setState(() {
@@ -39,59 +130,29 @@ class _LoginScreenState extends State<LoginScreen> {
       _errorMessage = null;
     });
 
+    AuthService.authTransitionInProgress.value = true;
     try {
       final idText = _scholarController.text.trim().toLowerCase();
-      if (_isAdminLogin &&
-          (idText == 'admin' || idText.isEmpty)) {
+      if (_isAdminLogin && (idText == 'admin' || idText.isEmpty)) {
         await _authService.signInAdmin(password: _passwordController.text);
-        await AuthService.recordActiveAccount(
-          profile: AuthService.adminProfile,
-          password: _passwordController.text,
-        );
       } else {
         final scholarInput = _scholarController.text.trim();
-        final inferredHouse = AuthService.inferHouseFromScholarNo(scholarInput);
-        if (inferredHouse != null) {
-          await AuthService.cacheHouse(inferredHouse);
-        }
-
         final cred = await _authService.signIn(
           scholarNo: scholarInput,
           password: _passwordController.text,
         );
 
         final user = cred?.user ?? _authService.currentUser;
-        final uid = user?.uid ?? 'user_$scholarInput';
-
-        Map<String, dynamic>? profile;
-        try {
-          profile = await _authService.getUserProfile(uid, scholarNo: scholarInput);
-        } catch (_) {}
-        final house = AuthService.extractHouse(profile) ?? inferredHouse ?? 'emerald';
-        await AuthService.cacheHouse(house);
+        final activeProfile = AuthService.getCachedProfile();
         final isSuper = HierarchyService.isSuperAdmin(
           scholarNo: scholarInput,
-          role: profile?['role'],
-        );
-        final activeProfile = profile ?? {
-          'uid': uid,
-          'scholar_no': scholarInput,
-          'full_name': user?.displayName ?? (isSuper ? 'Administrator' : 'Student'),
-          'house_name': house,
-          'role': isSuper ? 'super_admin' : 'student',
-          'class_level': isSuper ? 'Staff' : 'Grade 11',
-          'division': isSuper ? 'Admin' : 'D',
-        };
-        await AuthService.cacheProfile(activeProfile);
-        await AuthService.recordActiveAccount(
-          profile: activeProfile,
-          password: _passwordController.text,
+          role: activeProfile?['role']?.toString(),
         );
 
         if (_isAdminLogin) {
-          final roleStr = activeProfile['role']?.toString();
-          final nameStr = activeProfile['full_name']?.toString();
-          final scholarNo = activeProfile['scholar_no']?.toString() ?? scholarInput;
+          final roleStr = activeProfile?['role']?.toString() ?? (isSuper ? 'super_admin' : null);
+          final nameStr = activeProfile?['full_name']?.toString() ?? user?.displayName;
+          final scholarNo = activeProfile?['scholar_no']?.toString() ?? scholarInput;
 
           final isAuthorized = HierarchyService.isAdmin(
             scholarNo: scholarNo,
@@ -100,6 +161,7 @@ class _LoginScreenState extends State<LoginScreen> {
           );
 
           if (!isAuthorized) {
+            await AuthService.removeSavedAccount(scholarNo);
             await _authService.signOut();
             throw Exception(
               'Access Denied: Your account does not have Admin, Captain, or Council privileges in the database.',
@@ -123,6 +185,7 @@ class _LoginScreenState extends State<LoginScreen> {
         _errorMessage = _parseFirebaseError(e.toString());
       });
     } finally {
+      AuthService.authTransitionInProgress.value = false;
       if (mounted) setState(() => _isLoading = false);
     }
   }
@@ -133,26 +196,33 @@ class _LoginScreenState extends State<LoginScreen> {
         error.contains('Future not completed')) {
       return 'Connection timed out. Please check your internet connection and try again.';
     }
-    if (error.contains('user-not-found')) {
-      return 'No account found with these credentials.';
-    }
-    if (error.contains('wrong-password') ||
+    if (error.contains('user-not-found') ||
+        error.contains('wrong-password') ||
         error.contains('invalid-credential') ||
         error.contains('invalid-login-credentials')) {
-      return 'Incorrect password. Please try again.';
+      return 'Incorrect scholar number or password.';
+    }
+    if (error.contains('user-disabled') || error.contains('suspended') || error.contains('deactivated')) {
+      return 'Your account has been suspended or deactivated. Please contact the school administrator.';
     }
     if (error.contains('too-many-requests')) {
       return 'Too many attempts. Please try again later.';
     }
-    if (error.contains('network-request-failed')) {
+    if (error.contains('network-request-failed') || error.contains('unavailable')) {
       return 'Network connection failed. Check your internet.';
     }
     if (error.contains('invalid-email')) {
       return 'Invalid Scholar Number or Admin ID format.';
     }
+    if (error.contains('operation-not-allowed')) {
+      return 'This sign-in method is currently unavailable. Contact the school administrator.';
+    }
+    if (error.contains('permission-denied')) {
+      return 'Permission denied while verifying your account.';
+    }
     return error
         .replaceAll('Exception: ', '')
-        .replaceAll('[firebase_auth/', '[');
+        .replaceFirst(RegExp(r'^\[firebase_auth/[^\]]+\]\s*'), '');
   }
 
   @override
@@ -164,37 +234,37 @@ class _LoginScreenState extends State<LoginScreen> {
 
     return Scaffold(
       body: SafeArea(
-        child: Stack(
+        child: Column(
           children: [
-            Positioned(
-              top: 8,
-              right: 16,
-              child: IconButton(
-                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-                icon: Icon(
-                  isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
-                  color: isDark ? Colors.amberAccent : const Color(0xFF475569),
-                  size: 22,
-                ),
-                tooltip: isDark ? 'Switch to Light Theme' : 'Switch to Dark Theme',
-                onPressed: () => AppThemeController.cycleTheme(),
+            Padding(
+              padding: const EdgeInsets.only(top: 8, right: 16, left: 16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  IconButton(
+                    constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                    icon: Icon(
+                      isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
+                      color: isDark ? Colors.amberAccent : const Color(0xFF475569),
+                      size: 22,
+                    ),
+                    tooltip: isDark ? 'Switch to Light Theme' : 'Switch to Dark Theme',
+                    onPressed: () => AppThemeController.cycleTheme(),
+                  ),
+                ],
               ),
             ),
-            Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 40),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 400),
-              child: CallbackShortcuts(
-                bindings: {
-                  const SingleActivator(LogicalKeyboardKey.enter): _handleLogin,
-                  const SingleActivator(LogicalKeyboardKey.numpadEnter): _handleLogin,
-                },
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
+            Expanded(
+              child: Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(28, 12, 28, 36),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 400),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
                       // Portal Selector Tabs
                       Container(
                         padding: const EdgeInsets.all(4),
@@ -207,135 +277,153 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: Row(
                           children: [
                             Expanded(
-                              child: InkWell(
-                                onTap: () {
-                                  if (_isAdminLogin) {
-                                    setState(() {
-                                      _isAdminLogin = false;
-                                      _errorMessage = null;
+                              child: Semantics(
+                                button: true,
+                                selected: !_isAdminLogin,
+                                label: 'Student Login',
+                                child: InkWell(
+                                  onTap: () {
+                                    if (_isAdminLogin) {
+                                      setState(() {
+                                        _isAdminLogin = false;
+                                        _errorMessage = null;
+                                      });
+                                      _formKey.currentState?.reset();
                                       _scholarController.clear();
-                                    });
-                                  }
-                                },
-                                borderRadius: BorderRadius.circular(12),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 12,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: !_isAdminLogin
-                                        ? (isDark
-                                              ? const Color(0xFF334155)
-                                              : Colors.white)
-                                        : Colors.transparent,
-                                    borderRadius: BorderRadius.circular(12),
-                                    boxShadow: !_isAdminLogin
-                                        ? [
-                                            BoxShadow(
-                                              color: Colors.black.withValues(
-                                                alpha: 0.05,
-                                              ),
-                                              blurRadius: 4,
-                                            ),
-                                          ]
-                                        : [],
-                                  ),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(
-                                        Icons.school_rounded,
-                                        size: 18,
-                                        color: !_isAdminLogin
-                                            ? HouseColors.ruby
-                                            : Colors.grey,
+                                    }
+                                  },
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: ConstrainedBox(
+                                    constraints: const BoxConstraints(minHeight: 48),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 12,
                                       ),
-                                      const SizedBox(width: 8),
-                                      Flexible(
-                                        child: FittedBox(
-                                          fit: BoxFit.scaleDown,
-                                          child: Text(
-                                            'Student Login',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w700,
-                                              fontSize: 13,
-                                              color: !_isAdminLogin
-                                                  ? (isDark
-                                                        ? Colors.white
-                                                        : Colors.black87)
-                                                  : Colors.grey,
+                                      decoration: BoxDecoration(
+                                        color: !_isAdminLogin
+                                            ? (isDark
+                                                  ? const Color(0xFF334155)
+                                                  : Colors.white)
+                                            : Colors.transparent,
+                                        borderRadius: BorderRadius.circular(12),
+                                        boxShadow: !_isAdminLogin
+                                            ? [
+                                                BoxShadow(
+                                                  color: Colors.black.withValues(
+                                                    alpha: 0.05,
+                                                  ),
+                                                  blurRadius: 4,
+                                                ),
+                                              ]
+                                            : [],
+                                      ),
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(
+                                            Icons.school_rounded,
+                                            size: 18,
+                                            color: !_isAdminLogin
+                                                ? HouseColors.ruby
+                                                : Colors.grey,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Flexible(
+                                            child: FittedBox(
+                                              fit: BoxFit.scaleDown,
+                                              child: Text(
+                                                'Student Login',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w700,
+                                                  fontSize: 13,
+                                                  color: !_isAdminLogin
+                                                      ? (isDark
+                                                            ? Colors.white
+                                                            : Colors.black87)
+                                                      : Colors.grey,
+                                                ),
+                                              ),
                                             ),
                                           ),
-                                        ),
+                                        ],
                                       ),
-                                    ],
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
                             Expanded(
-                              child: InkWell(
-                                onTap: () {
-                                  if (!_isAdminLogin) {
-                                    setState(() {
-                                      _isAdminLogin = true;
-                                      _errorMessage = null;
+                              child: Semantics(
+                                button: true,
+                                selected: _isAdminLogin,
+                                label: 'Admin Login',
+                                child: InkWell(
+                                  onTap: () {
+                                    if (!_isAdminLogin) {
+                                      setState(() {
+                                        _isAdminLogin = true;
+                                        _errorMessage = null;
+                                      });
+                                      _formKey.currentState?.reset();
                                       _scholarController.text = 'admin';
-                                    });
-                                  }
-                                },
-                                borderRadius: BorderRadius.circular(12),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 12,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: _isAdminLogin
-                                        ? (isDark
-                                              ? const Color(0xFF334155)
-                                              : Colors.white)
-                                        : Colors.transparent,
-                                    borderRadius: BorderRadius.circular(12),
-                                    boxShadow: _isAdminLogin
-                                        ? [
-                                            BoxShadow(
-                                              color: Colors.black.withValues(
-                                                alpha: 0.05,
-                                              ),
-                                              blurRadius: 4,
-                                            ),
-                                          ]
-                                        : [],
-                                  ),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(
-                                        Icons.admin_panel_settings_rounded,
-                                        size: 18,
-                                        color: _isAdminLogin
-                                            ? Colors.amber.shade700
-                                            : Colors.grey,
+                                    }
+                                  },
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: ConstrainedBox(
+                                    constraints: const BoxConstraints(minHeight: 48),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 12,
                                       ),
-                                      const SizedBox(width: 8),
-                                      Flexible(
-                                        child: FittedBox(
-                                          fit: BoxFit.scaleDown,
-                                          child: Text(
-                                            'Admin Login',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w700,
-                                              fontSize: 13,
-                                              color: _isAdminLogin
-                                                  ? (isDark
-                                                        ? Colors.white
-                                                        : Colors.black87)
-                                                  : Colors.grey,
+                                      decoration: BoxDecoration(
+                                        color: _isAdminLogin
+                                            ? (isDark
+                                                  ? const Color(0xFF334155)
+                                                  : Colors.white)
+                                            : Colors.transparent,
+                                        borderRadius: BorderRadius.circular(12),
+                                        boxShadow: _isAdminLogin
+                                            ? [
+                                                BoxShadow(
+                                                  color: Colors.black.withValues(
+                                                    alpha: 0.05,
+                                                  ),
+                                                  blurRadius: 4,
+                                                ),
+                                              ]
+                                            : [],
+                                      ),
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(
+                                            Icons.admin_panel_settings_rounded,
+                                            size: 18,
+                                            color: _isAdminLogin
+                                                ? Colors.amber.shade700
+                                                : Colors.grey,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Flexible(
+                                            child: FittedBox(
+                                              fit: BoxFit.scaleDown,
+                                              child: Text(
+                                                'Admin Login',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w700,
+                                                  fontSize: 13,
+                                                  color: _isAdminLogin
+                                                      ? (isDark
+                                                            ? Colors.white
+                                                            : Colors.black87)
+                                                      : Colors.grey,
+                                                ),
+                                              ),
                                             ),
                                           ),
-                                        ),
+                                        ],
                                       ),
-                                    ],
+                                    ),
                                   ),
                                 ),
                               ),
@@ -368,7 +456,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             child: Image.asset(
                               'assets/images/app_logo_modern.png',
                               fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => ClipRRect(
+                              errorBuilder: (_, _, _) => ClipRRect(
                                 borderRadius: BorderRadius.circular(20),
                                 child: GridView.count(
                                   crossAxisCount: 2,
@@ -426,121 +514,135 @@ class _LoginScreenState extends State<LoginScreen> {
 
                       // Error banner
                       if (_errorMessage != null)
-                        Container(
-                          margin: const EdgeInsets.only(bottom: 20),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFEE2E2),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFFFCA5A5)),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.error_outline_rounded,
-                                color: Color(0xFFDC2626),
-                                size: 20,
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  _errorMessage!,
-                                  style: const TextStyle(
-                                    color: Color(0xFFDC2626),
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w500,
+                        Semantics(
+                          liveRegion: true,
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 20),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFEE2E2),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0xFFFCA5A5)),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.error_outline_rounded,
+                                  color: Color(0xFFDC2626),
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    _errorMessage!,
+                                    style: const TextStyle(
+                                      color: Color(0xFFDC2626),
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ],
-                          ),
-                        ),
-
-                      // Input Field (Scholar Number or Admin ID)
-                      if (!_isAdminLogin)
-                        TextFormField(
-                          controller: _scholarController,
-                          keyboardType: TextInputType.number,
-                          textInputAction: TextInputAction.next,
-                          onFieldSubmitted: (_) {
-                            if (_passwordController.text.trim().isNotEmpty) {
-                              _handleLogin();
-                            }
-                          },
-                          inputFormatters: [
-                            FilteringTextInputFormatter.digitsOnly,
-                            LengthLimitingTextInputFormatter(6),
-                          ],
-                          decoration: const InputDecoration(
-                            labelText: 'Scholar Number',
-                            prefixIcon: Icon(Icons.badge_rounded),
-                          ),
-                          validator: (v) {
-                            if (v == null || v.isEmpty) {
-                              return 'Enter your scholar number';
-                            }
-                            if (v.length < 5) {
-                              return 'Must be 5–6 digits';
-                            }
-                            return null;
-                          },
-                        )
-                      else
-                        TextFormField(
-                          controller: _scholarController,
-                          textInputAction: TextInputAction.next,
-                          onFieldSubmitted: (_) {
-                            if (_passwordController.text.trim().isNotEmpty) {
-                              _handleLogin();
-                            }
-                          },
-                          decoration: const InputDecoration(
-                            labelText: 'Scholar Number / Admin ID',
-                            prefixIcon: Icon(Icons.admin_panel_settings_rounded),
-                          ),
-                          validator: (v) {
-                            if (v == null || v.isEmpty) {
-                              return 'Enter scholar number or ID';
-                            }
-                            return null;
-                          },
-                        ),
-                      const SizedBox(height: 18),
-
-                      // Password
-                      TextFormField(
-                        controller: _passwordController,
-                        obscureText: _obscurePassword,
-                        textInputAction: TextInputAction.done,
-                        onFieldSubmitted: (_) => _handleLogin(),
-                        decoration: InputDecoration(
-                          labelText: 'Password',
-                          prefixIcon: const Icon(Icons.lock_rounded),
-                          suffixIcon: Semantics(
-                            button: true,
-                            label: _obscurePassword ? 'Show password' : 'Hide password',
-                            child: IconButton(
-                              icon: Icon(
-                                _obscurePassword
-                                    ? Icons.visibility_off_rounded
-                                    : Icons.visibility_rounded,
-                              ),
-                              tooltip: _obscurePassword ? 'Show password' : 'Hide password',
-                              onPressed: () => setState(
-                                () => _obscurePassword = !_obscurePassword,
-                              ),
+                              ],
                             ),
                           ),
                         ),
-                        validator: (v) {
-                          if (v == null || v.isEmpty) {
-                            return 'Enter your password';
-                          }
-                          return null;
+
+                      // Input Fields (Enter submits when focused inside inputs)
+                      CallbackShortcuts(
+                        bindings: {
+                          const SingleActivator(LogicalKeyboardKey.enter): _handleLogin,
+                          const SingleActivator(LogicalKeyboardKey.numpadEnter): _handleLogin,
                         },
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (!_isAdminLogin)
+                              TextFormField(
+                                controller: _scholarController,
+                                keyboardType: TextInputType.number,
+                                textInputAction: TextInputAction.next,
+                                onFieldSubmitted: (_) {
+                                  if (_passwordController.text.trim().isNotEmpty) {
+                                    _handleLogin();
+                                  }
+                                },
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                  LengthLimitingTextInputFormatter(6),
+                                ],
+                                decoration: const InputDecoration(
+                                  labelText: 'Scholar Number',
+                                  prefixIcon: Icon(Icons.badge_rounded),
+                                ),
+                                validator: (v) {
+                                  if (v == null || v.isEmpty) {
+                                    return 'Enter your scholar number';
+                                  }
+                                  if (v.length < 5) {
+                                    return 'Must be 5–6 digits';
+                                  }
+                                  return null;
+                                },
+                              )
+                            else
+                              TextFormField(
+                                controller: _scholarController,
+                                textInputAction: TextInputAction.next,
+                                onFieldSubmitted: (_) {
+                                  if (_passwordController.text.trim().isNotEmpty) {
+                                    _handleLogin();
+                                  }
+                                },
+                                decoration: const InputDecoration(
+                                  labelText: 'Scholar Number / Admin ID',
+                                  prefixIcon: Icon(Icons.admin_panel_settings_rounded),
+                                ),
+                                validator: (v) {
+                                  if (v == null || v.trim().isEmpty) {
+                                    return 'Enter scholar number or ID';
+                                  }
+                                  return null;
+                                },
+                              ),
+                            const SizedBox(height: 18),
+
+                            // Password
+                            TextFormField(
+                              controller: _passwordController,
+                              obscureText: _obscurePassword,
+                              textInputAction: TextInputAction.done,
+                              onFieldSubmitted: (_) => _handleLogin(),
+                              decoration: InputDecoration(
+                                labelText: 'Password',
+                                prefixIcon: const Icon(Icons.lock_rounded),
+                                suffixIcon: Semantics(
+                                  button: true,
+                                  label: _obscurePassword ? 'Show password' : 'Hide password',
+                                  child: IconButton(
+                                    icon: Icon(
+                                      _obscurePassword
+                                          ? Icons.visibility_off_rounded
+                                          : Icons.visibility_rounded,
+                                    ),
+                                    tooltip: _obscurePassword ? 'Show password' : 'Hide password',
+                                    onPressed: () => setState(
+                                      () => _obscurePassword = !_obscurePassword,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              validator: (v) {
+                                if (v == null || v.isEmpty) {
+                                  return 'Enter your password';
+                                }
+                                return null;
+                              },
+                            ),
+                          ],
+                        ),
                       ),
                     const SizedBox(height: 8),
 
@@ -548,15 +650,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     Align(
                       alignment: Alignment.centerRight,
                       child: TextButton(
-                        onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Password reset contact school administrator.',
-                              ),
-                            ),
-                          );
-                        },
+                        onPressed: _handleForgotPassword,
                         child: const Text('Forgot Password?'),
                       ),
                     ),
@@ -663,7 +757,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
         ),
-      ),
+            ),
           ],
         ),
       ),

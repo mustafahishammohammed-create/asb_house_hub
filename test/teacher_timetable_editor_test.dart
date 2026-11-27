@@ -1,0 +1,535 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:asb_house_hub/models/academic_class.dart';
+import 'package:asb_house_hub/models/class_timetable.dart';
+import 'package:asb_house_hub/screens/academics_screen.dart';
+import 'package:asb_house_hub/screens/teacher_timetable_editor_screen.dart';
+import 'package:asb_house_hub/services/auth_service.dart';
+import 'package:asb_house_hub/services/timetable_service.dart';
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  late TimetableService timetableService;
+
+  setUp(() async {
+    SharedPreferences.setMockInitialValues({});
+    await AuthService.initPreferences();
+    await AuthService.clearCache();
+    AuthService.isFirebaseLiveOverride = false;
+    AuthService.firestoreFailureSimulated = null;
+    timetableService = TimetableService();
+  });
+
+  tearDown(() {
+    AuthService.isFirebaseLiveOverride = null;
+    AuthService.firestoreFailureSimulated = null;
+  });
+
+  Future<void> seedTeacherProfile({String classId = '11D'}) async {
+    await AuthService.cacheProfile({
+      'uid': 'uid_teacher_fatima',
+      'scholar_no': '2310101',
+      'full_name': 'Ms. Fatima',
+      'role': 'teacher',
+      'house_name': 'ruby',
+      'class_id': classId,
+      'class_level': 'Grade 11',
+      'division': 'D',
+    });
+    await AuthService.cacheAcademicClasses([
+      const AcademicClass(
+        classId: '11D',
+        grade: 'Grade 11',
+        section: 'D',
+        classTeacher: 'Ms. Fatima',
+        classTeacherUid: 'uid_teacher_fatima',
+        timetableEditingEnabled: true,
+      ),
+    ]);
+  }
+
+  Future<void> seedUnassignedTeacherProfile() async {
+    await AuthService.cacheProfile({
+      'uid': 'uid_teacher_unassigned',
+      'scholar_no': '2310199',
+      'full_name': 'Mr. Sharma',
+      'role': 'teacher',
+      'house_name': 'ruby',
+      'class_id': '11D',
+      'class_level': 'Grade 11',
+      'division': 'D',
+    });
+    await AuthService.cacheAcademicClasses([
+      const AcademicClass(
+        classId: '11D',
+        grade: 'Grade 11',
+        section: 'D',
+        classTeacher: 'Ms. Fatima',
+        classTeacherUid: 'uid_teacher_fatima',
+        timetableEditingEnabled: true,
+      ),
+    ]);
+  }
+
+  Future<void> seedStudentProfile({String classId = '11D'}) async {
+    await AuthService.cacheProfile({
+      'uid': 'uid_student_1',
+      'scholar_no': '2310910',
+      'full_name': 'Ayaan Mohammed',
+      'role': 'student',
+      'house_name': 'ruby',
+      'class_id': classId,
+      'class_level': 'Grade 11',
+      'division': 'D',
+    });
+  }
+
+  Future<void> pickPeriodStart(
+    WidgetTester tester,
+    int period,
+    String hour,
+    String minute,
+  ) async {
+    final button = find.byKey(Key('period_${period}_time_button'));
+    await tester.ensureVisible(button);
+    await tester.pumpAndSettle();
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+
+    // Material's time picker opens in dial mode. Switch to keyboard input so
+    // the test can enter an exact time deterministically.
+    final keyboard = find.byIcon(Icons.keyboard_outlined);
+    if (keyboard.evaluate().isNotEmpty) {
+      await tester.tap(keyboard);
+      await tester.pumpAndSettle();
+    }
+
+    final fields = find.descendant(
+      of: find.byType(Dialog),
+      matching: find.byType(TextField),
+    );
+    expect(fields, findsNWidgets(2));
+    await tester.enterText(fields.at(0), hour);
+    await tester.enterText(fields.at(1), minute);
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+  }
+
+  group('M2e: Teacher 6-Day Timetable Editor Widget Tests', () {
+    testWidgets('renders 6 school days (Saturday to Thursday) and 8 periods', (tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      await seedTeacherProfile();
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: TeacherTimetableEditorScreen(classId: '11D', initialDay: 'Saturday'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Verify all 6 day chips are visible
+      expect(find.text('Saturday'), findsOneWidget);
+      expect(find.text('Sunday'), findsOneWidget);
+      expect(find.text('Monday'), findsOneWidget);
+      expect(find.text('Tuesday'), findsOneWidget);
+      expect(find.text('Wednesday'), findsOneWidget);
+      expect(find.text('Thursday'), findsOneWidget);
+
+      // Verify 8 teaching periods are present
+      expect(find.text('Period 1'), findsOneWidget);
+      expect(find.text('Period 2'), findsOneWidget);
+      expect(find.text('Period 8'), findsOneWidget);
+
+      // Verify break card is present
+      expect(find.textContaining('School Break'), findsOneWidget);
+
+      // Verify buttons
+      expect(find.byKey(const Key('save_timetable_draft_button')), findsOneWidget);
+      expect(find.byKey(const Key('publish_timetable_button')), findsOneWidget);
+    });
+
+    testWidgets('Standard 07:45 timing button applies sequential 45m slots and 30m break', (tester) async {
+      tester.view.physicalSize = const Size(1080, 3400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      await seedTeacherProfile();
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: TeacherTimetableEditorScreen(classId: '11D', initialDay: 'Saturday'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Tap "Standard 07:45"
+      await tester.tap(find.byKey(const Key('load_standard_timing_button')));
+      await tester.pumpAndSettle();
+
+      // P1: 07:45 - 08:30
+      expect(find.text('07:45 - 08:30'), findsOneWidget);
+      // P2: 08:30 - 09:15
+      expect(find.text('08:30 - 09:15'), findsOneWidget);
+      // P3: 09:15 - 10:00
+      expect(find.text('09:15 - 10:00'), findsOneWidget);
+      // P4: 10:00 - 10:45
+      expect(find.text('10:00 - 10:45'), findsOneWidget);
+      // Break: 10:45 - 11:15 (+30m)
+      expect(find.text('10:45 - 11:15'), findsOneWidget);
+
+      // Validation status shows valid
+      expect(find.textContaining('Timetable Valid'), findsOneWidget);
+    });
+
+    testWidgets('Moving the break recalculates all period times (Acceptance Test 14)',
+        (tester) async {
+      tester.view.physicalSize = const Size(1080, 3400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      await seedTeacherProfile();
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: TeacherTimetableEditorScreen(classId: '11D', initialDay: 'Saturday'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('break_after_period_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('After Period 6').last);
+      await tester.pumpAndSettle();
+
+      // The break moved after Period 6 and the day recalculated sequentially:
+      // P6 11:30-12:15, Break 12:15-12:45, P7 12:45-13:30.
+      expect(find.text('After Period 6'), findsWidgets);
+      expect(find.text('11:30 - 12:15'), findsOneWidget);
+      expect(find.text('12:15 - 12:45'), findsOneWidget);
+      expect(find.text('12:45 - 13:30'), findsOneWidget);
+      expect(find.textContaining('Timetable Valid'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Customise Period 1 start with the time picker (Acceptance Test 24)',
+        (tester) async {
+      tester.view.physicalSize = const Size(1080, 3400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      await seedTeacherProfile();
+      await tester.pumpWidget(
+        MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+            child: child!,
+          ),
+          home: const TeacherTimetableEditorScreen(
+            classId: '11D',
+            initialDay: 'Saturday',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('07:45 - 08:30'), findsOneWidget);
+
+      await pickPeriodStart(tester, 1, '07', '00');
+
+      // Period 1 moved to 07:00-07:45, its end time stayed derived at +45m,
+      // and the other periods were not silently shifted.
+      expect(find.text('07:00 - 07:45'), findsOneWidget);
+      expect(find.text('07:45 - 08:30'), findsNothing);
+      expect(find.text('08:30 - 09:15'), findsOneWidget);
+      expect(find.textContaining('Timetable Valid'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Customise a later period independently (Acceptance Test 25)',
+        (tester) async {
+      tester.view.physicalSize = const Size(1080, 3400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      await seedTeacherProfile();
+      await tester.pumpWidget(
+        MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+            child: child!,
+          ),
+          home: const TeacherTimetableEditorScreen(
+            classId: '11D',
+            initialDay: 'Saturday',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('13:30 - 14:15'), findsOneWidget);
+      expect(find.text('12:45 - 13:30'), findsOneWidget);
+
+      await pickPeriodStart(tester, 8, '14', '30');
+
+      // Period 8 moved independently; Period 7 kept its original start/end.
+      expect(find.text('14:30 - 15:15'), findsOneWidget);
+      expect(find.text('13:30 - 14:15'), findsNothing);
+      expect(find.text('12:45 - 13:30'), findsOneWidget);
+      expect(find.textContaining('Timetable Valid'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Save Draft persists version to cache without publishing to active', (tester) async {
+      await seedTeacherProfile();
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: TeacherTimetableEditorScreen(classId: '11D', initialDay: 'Sunday'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Tap Save Draft
+      await tester.tap(find.byKey(const Key('save_timetable_draft_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('saved successfully'), findsOneWidget);
+
+      // Verify stored in history
+      final versions = timetableService.getCachedVersions('11D', 'Sunday');
+      expect(versions, isNotEmpty);
+      expect(versions.first.status, TimetableStatus.draft);
+
+      // Verify NOT published as active
+      final active = timetableService.getCachedActiveVersion('11D', 'Sunday');
+      expect(active, isNull);
+    });
+
+    testWidgets('Publish button activates recurring timetable version', (tester) async {
+      await seedTeacherProfile();
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: TeacherTimetableEditorScreen(classId: '11D', initialDay: 'Monday'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Tap Publish
+      await tester.tap(find.byKey(const Key('publish_timetable_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('published and recurring live'), findsOneWidget);
+
+      // Verify active version is now published
+      final active = timetableService.getCachedActiveVersion('11D', 'Monday');
+      expect(active, isNotNull);
+      expect(active!.isPublished, isTrue);
+      expect(active.slots.length, 8);
+    });
+
+    testWidgets('Full week preview dialog opens and shows week overview', (tester) async {
+      await seedTeacherProfile();
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: TeacherTimetableEditorScreen(classId: '11D', initialDay: 'Saturday'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('full_week_preview_button')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('11D 6-Day Timetable Preview'), findsOneWidget);
+      expect(find.text('Close'), findsOneWidget);
+
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+      expect(find.text('11D 6-Day Timetable Preview'), findsNothing);
+    });
+  });
+
+  group('M2e: Student View Migration (6-Day Sat–Thu with Section-Aware Engine)', () {
+    testWidgets('TimetableTab renders 6 school days (SAT through THU)', (tester) async {
+      await seedStudentProfile(classId: '11D');
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(body: TimetableTab(classLevel: '11D')),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Verify SAT is rendered first
+      expect(find.text('SAT'), findsOneWidget);
+      expect(find.text('SUN'), findsOneWidget);
+      expect(find.text('MON'), findsOneWidget);
+      expect(find.text('TUE'), findsOneWidget);
+      expect(find.text('WED'), findsOneWidget);
+      expect(find.text('THU'), findsOneWidget);
+      // Friday should not be a school day
+      expect(find.text('FRI'), findsNothing);
+    });
+
+    testWidgets('Student sees published recurring timetable version with 8 periods + break', (tester) async {
+      await seedStudentProfile(classId: '11D');
+
+      // Publish a recurring Tuesday version for 11D
+      final version = ClassTimetableVersion.template(
+        classId: '11D',
+        dayOfWeek: 'Tuesday',
+        createdByUid: 'uid_fatima',
+      );
+      await timetableService.publishTimetable(
+        version,
+        publisherUid: 'uid_fatima',
+        publisherName: 'Ms. Fatima',
+      );
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: TimetableTab(classLevel: '11D', initialDay: 'Tuesday'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Verify 8 teaching periods + 1 break = 9 items
+      expect(find.text('9 Periods'), findsOneWidget);
+      expect(find.textContaining('Tuesday Schedule'), findsOneWidget);
+
+      // Student sees no edit or add affordances
+      expect(find.byKey(const Key('manage_recurring_timetable_button')), findsNothing);
+      expect(find.byKey(const Key('add_period_button')), findsNothing);
+    });
+
+    testWidgets('Staff sees "Edit Timetable" button and can open the recurring editor', (tester) async {
+      await seedTeacherProfile(classId: '11D');
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: TimetableTab(classLevel: '11D', initialDay: 'Wednesday'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Verify staff sees Edit Timetable button
+      final editBtn = find.byKey(const Key('manage_recurring_timetable_button'));
+      expect(editBtn, findsOneWidget);
+
+      // Tap Edit Timetable opens TeacherTimetableEditorScreen
+      await tester.tap(editBtn);
+      await tester.pumpAndSettle();
+
+      expect(find.text('11D Timetable Editor'), findsOneWidget);
+      expect(find.byKey(const Key('save_timetable_draft_button')), findsOneWidget);
+    });
+
+    testWidgets('Unassigned teacher sees no Edit Timetable button (Acceptance Test 35)',
+        (tester) async {
+      await seedUnassignedTeacherProfile();
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: TimetableTab(classLevel: '11D', initialDay: 'Wednesday'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('manage_recurring_timetable_button')), findsNothing);
+    });
+
+    testWidgets('Unauthorized editor blocks Save/Publish and never writes the old 10A fallback',
+        (tester) async {
+      await seedUnassignedTeacherProfile();
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: TeacherTimetableEditorScreen(classId: '10A', initialDay: 'Saturday'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('timetable_editor_unauthorized')), findsOneWidget);
+      expect(find.byKey(const Key('save_timetable_draft_button')), findsNothing);
+      expect(find.byKey(const Key('publish_timetable_button')), findsNothing);
+      expect(timetableService.getCachedVersions('10A', 'Saturday'), isEmpty);
+    });
+
+    testWidgets('Assigned teacher is authorized in the editor', (tester) async {
+      await seedTeacherProfile();
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: TeacherTimetableEditorScreen(classId: '11D', initialDay: 'Saturday'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('timetable_editor_unauthorized')), findsNothing);
+      expect(find.byKey(const Key('save_timetable_draft_button')), findsOneWidget);
+      expect(find.byKey(const Key('publish_timetable_button')), findsOneWidget);
+    });
+
+    testWidgets('Multi-class editor picker opens dialog and navigates to selected class (Acceptance Test 22)',
+        (tester) async {
+      await AuthService.cacheProfile({
+        'uid': 'uid_teacher_multiclass',
+        'scholar_no': '2310102',
+        'full_name': 'Ms. Multiclass',
+        'role': 'teacher',
+        'house_name': 'ruby',
+      });
+      await AuthService.cacheAcademicClasses([
+        const AcademicClass(
+          classId: '11A',
+          grade: 'Grade 11',
+          section: 'A',
+          classTeacher: 'Ms. Multiclass',
+          classTeacherUid: 'uid_teacher_multiclass',
+          timetableEditingEnabled: true,
+        ),
+        const AcademicClass(
+          classId: '11B',
+          grade: 'Grade 11',
+          section: 'B',
+          classTeacher: 'Ms. Multiclass',
+          classTeacherUid: 'uid_teacher_multiclass',
+          timetableEditingEnabled: true,
+        ),
+      ]);
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: TimetableTab(classLevel: '', initialDay: 'Wednesday'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final editBtn = find.byKey(const Key('manage_recurring_timetable_button'));
+      expect(editBtn, findsOneWidget);
+
+      await tester.tap(editBtn);
+      await tester.pumpAndSettle();
+
+      // Dialog opens with class options
+      expect(find.text('Select a Class Timetable'), findsOneWidget);
+      expect(find.textContaining('11A · Grade 11'), findsOneWidget);
+      expect(find.textContaining('11B · Grade 11'), findsOneWidget);
+
+      // Select 11B
+      await tester.tap(find.textContaining('11B · Grade 11'));
+      await tester.pumpAndSettle();
+
+      // Editor screen opens for 11B
+      expect(find.text('11B Timetable Editor'), findsOneWidget);
+      expect(find.byKey(const Key('save_timetable_draft_button')), findsOneWidget);
+    });
+  });
+}

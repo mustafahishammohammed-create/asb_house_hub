@@ -88,7 +88,18 @@ function publicHeader(draft) {
   };
 }
 
-exports.schoolElection = onCall(async (request) => {
+// App Check Attestation & Surface Strategy:
+// Windows Desktop currently has no native FlutterFire App Check provider (such as Play Integrity on Android).
+// To prevent total denial of service on Windows clients while protecting mobile/web deployment surfaces:
+// When deploying to production with mobile/web clients, enforceAppCheck can be activated via environment flag.
+// Strict compensating security controls protect this callable on Windows desktop:
+// 1. Mandatory Firebase Auth verification (request.auth is required for all operations).
+// 2. Strict claims-based role verification (isAdmin/manager checks).
+// 3. Firestore Security Rules locking direct collection writes (write: if false).
+// 4. Server-side transaction locks prevent double-voting and concurrency races.
+const shouldEnforceAppCheck = process.env.ENFORCE_APP_CHECK === "true";
+
+exports.schoolElection = onCall({ enforceAppCheck: shouldEnforceAppCheck }, async (request) => {
   const uid = request.auth?.uid;
   if (!uid) fail("unauthenticated", "Sign in to continue.");
   const data = request.data ?? {};
@@ -102,9 +113,36 @@ exports.schoolElection = onCall(async (request) => {
     const person = (await tx.get(member)).data();
     if (person?.active !== true) fail("permission-denied", "School membership required.");
 
+    const logAudit = (eventType, auditData = {}) => {
+      const auditRef = poll.collection("audit").doc(randomUUID());
+      tx.set(auditRef, {
+        event: eventType,
+        uid,
+        scholar_no: person.scholar_no || "",
+        timestamp: FieldValue.serverTimestamp(),
+        ...auditData
+      });
+    };
+
+    if (action === "getMyParticipation") {
+      const pollIds = Array.isArray(data.pollIds) ? data.pollIds.slice(0, 50) : [];
+      const scholar = boundedText(person.scholar_no, 64, "verified roster identity").trim().toLowerCase();
+      const results = {};
+      for (const pId of pollIds) {
+        const cleanPid = resourceId(pId);
+        const pKey = createHash("sha256").update(cleanPid + ":" + scholar).digest("hex");
+        const pRef = db.collection("election_polls_v2").doc(cleanPid).collection("participation").doc(pKey);
+        const partSnap = await tx.get(pRef);
+        if (partSnap.exists) {
+          results[cleanPid] = partSnap.data()?.receipt || "recorded";
+        }
+      }
+      return { participation: results };
+    }
+
     if (action === "vote" || action === "receipt") {
       if (person.role !== "student") fail("permission-denied", "Student account required.");
-      const scholar = boundedText(person.scholar_no, 64, "verified roster identity");
+      const scholar = boundedText(person.scholar_no, 64, "verified roster identity").trim().toLowerCase();
       const key = createHash("sha256").update(pollId + ":" + scholar).digest("hex");
       const participation = poll.collection("participation").doc(key);
       const prior = (await tx.get(participation)).data();
@@ -133,6 +171,7 @@ exports.schoolElection = onCall(async (request) => {
         { count: FieldValue.increment(1) },
         { merge: true }
       );
+      logAudit("vote", { receipt });
       return { receipt, alreadyRecorded: false };
     }
 
@@ -152,6 +191,7 @@ exports.schoolElection = onCall(async (request) => {
       }
       requireState(settings.endMs > Date.now(), "Choose a future deadline.");
       tx.create(draft, { ...settings, candidates: [], status: "draft", createdBy: uid });
+      logAudit("create");
       return { pollId };
     }
 
@@ -161,6 +201,10 @@ exports.schoolElection = onCall(async (request) => {
       const box = (await tx.get(poll)).data();
       requireState(Boolean(box), "Publish the ballot first.");
       if (box.status === "certified") return { pollId, result: box.result };
+      requireState(
+        box.status === "published" || box.status === "closed",
+        "Only published or closed ballots can be certified."
+      );
       requireState(Date.now() >= box.closesAt.toMillis(), "Voting is still open.");
       const totals = await tx.getAll(...box.candidates.map((c) => poll.collection("counts").doc(c.id)));
       const rows = box.candidates.map((c, i) => {
@@ -173,15 +217,95 @@ exports.schoolElection = onCall(async (request) => {
       const leaders = total ? rows.filter((r) => r.count === max).map((r) => r.id) : [];
       const outcome = !total ? "no_votes" : leaders.length > 1 ? "tie" : "winner";
       const result = { rows, total, leaders, outcome };
+
+      // Public candidates intentionally omit account identifiers. Resolve the
+      // winner from the private draft before any transaction writes. Older
+      // drafts without a scholar snapshot can be reconciled with the roster.
+      let winnerScholar = "";
+      if (outcome === "winner") {
+        const nominee = current.candidates.find((c) => c.id === leaders[0]);
+        requireState(Boolean(nominee), "Winner is missing from the private draft.");
+        if (nominee.scholarNo) {
+          winnerScholar = boundedText(nominee.scholarNo, 64, "winner scholar number");
+        } else {
+          requireState(typeof nominee.uid === "string" && nominee.uid.length > 0,
+            "Winner roster identity is missing. Reconcile the draft before certification.");
+          const roster = (await tx.get(db.collection("school_members").doc(nominee.uid))).data();
+          winnerScholar = boundedText(roster?.scholar_no, 64, "winner scholar number");
+        }
+      }
       tx.update(poll, { status: "certified", result, certifiedAt: FieldValue.serverTimestamp() });
       tx.update(draft, { status: "certified", certifiedBy: uid });
+
+      // In winner outcome, award 100 points to winner's genuine house and publish gazette (C8, M10, F14)
+      if (outcome === "winner" && leaders.length === 1) {
+        const winner = box.candidates.find((c) => c.id === leaders[0]);
+        const winnerHouse = (winner?.house || "").toLowerCase();
+        requireState(
+          ["ruby", "sapphire", "emerald", "topaz"].includes(winnerHouse),
+          "Winner house is unknown or invalid in roster records. Cannot award house points."
+        );
+        tx.set(
+          db.collection("house_points").doc(winnerHouse),
+          {
+            house_name: winnerHouse,
+            total_points: FieldValue.increment(100),
+            last_updated: FieldValue.serverTimestamp()
+          },
+          { merge: true }
+        );
+        const runnerUpCount = rows.length > 1 ? Math.max(...rows.filter((r) => r.id !== leaders[0]).map((r) => r.count)) : 0;
+        tx.set(db.collection("election_gazettes").doc(pollId), {
+          ballot_id: pollId,
+          ballot_title: box.title,
+          running_position: box.position,
+          winner_scholar_no: winnerScholar,
+          winner_name: winner?.name || "Elected Candidate",
+          winner_house: winnerHouse,
+          total_votes_received: max,
+          victory_margin_votes: max - runnerUpCount,
+          house_points_awarded: 100,
+          commissioner_name: person.display_name || "Returning Officer",
+          commissioner_role: person.role || "Electoral Commissioner",
+          certified_at: FieldValue.serverTimestamp(),
+          proclamation_text: `By order of the Electoral Commission, ${winner?.name || "the candidate"} is officially certified as ${box.position}, conferring +100 championship points to ${winnerHouse.toUpperCase()} House.`
+        });
+      }
+
+      logAudit("certify", { outcome, leaders, totalVotes: total });
       return { pollId, result };
+    }
+
+    if (action === "close") {
+      const box = (await tx.get(poll)).data();
+      requireState(Boolean(box), "Poll not found.");
+      requireState(box.status === "published", "Only published polls can be closed.");
+      tx.update(poll, { status: "closed", closesAt: FieldValue.serverTimestamp() });
+      logAudit("close");
+      return { pollId, status: "closed" };
+    }
+
+    if (action === "cancel") {
+      const box = (await tx.get(poll)).data();
+      requireState(Boolean(box), "Poll not found.");
+      requireState(box.status !== "certified", "Certified elections cannot be cancelled.");
+      tx.update(poll, { status: "cancelled", closesAt: FieldValue.serverTimestamp(), cancelledAt: FieldValue.serverTimestamp(), cancelledBy: uid });
+      logAudit("cancel");
+      return { pollId, status: "cancelled" };
+    }
+
+    if (action === "deleteDraft") {
+      requireState(current.status === "draft", "Only unconfirmed drafts can be deleted.");
+      tx.delete(draft);
+      logAudit("deleteDraft");
+      return { pollId, deleted: true };
     }
 
     requireState(current.status === "draft", "Published candidates and settings are frozen.");
     if (action === "remove") {
       const key = resourceId(data.candidateId);
       tx.update(draft, { candidates: current.candidates.filter((c) => c.id !== key) });
+      logAudit("remove", { candidateId: key });
       return { pollId };
     }
 
@@ -197,10 +321,13 @@ exports.schoolElection = onCall(async (request) => {
       requireState(eligible(candidate, current), "Candidate is not eligible for this ballot.");
       const name = boundedText(candidate.display_name, 120, "roster display name");
       const existing = current.candidates.find((c) => c.uid === doc.id);
-      const next = { id: existing?.id ?? randomUUID(), uid: doc.id, name, statement };
+      const next = { id: existing?.id ?? randomUUID(), uid: doc.id,
+        scholarNo: boundedText(candidate.scholar_no, 64, "candidate scholar number"),
+        name, statement, house: candidate.house };
       const list = current.candidates.filter((c) => c.uid !== doc.id);
       requireState(list.length < 20, "This ballot supports up to 20 candidates.");
       tx.update(draft, { candidates: [...list, next] });
+      logAudit("add", { candidateId: next.id });
       return { pollId, candidateId: next.id };
     }
 
@@ -215,7 +342,9 @@ exports.schoolElection = onCall(async (request) => {
         requireState(eligible(registered, current), "Review a candidate whose membership changed.");
         const name = boundedText(registered.display_name, 120, "roster display name");
         requireState(name === c.name, "A candidate changed name. Refresh their draft entry.");
-        return { id: c.id, name, statement: c.statement };
+        requireState(!c.scholarNo || c.scholarNo === registered.scholar_no,
+          "A candidate changed scholar number. Refresh their draft entry.");
+        return { id: c.id, name, statement: c.statement, house: registered.house };
       });
       tx.create(poll, {
         ...publicHeader(current),
@@ -224,6 +353,7 @@ exports.schoolElection = onCall(async (request) => {
         publishedAt: FieldValue.serverTimestamp()
       });
       tx.update(draft, { status: "published", publishedBy: uid });
+      logAudit("publish", { candidateCount: candidates.length });
       return { pollId, status: "published" };
     }
     fail("invalid-argument", "Unknown election action.");

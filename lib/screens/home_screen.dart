@@ -1,17 +1,30 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/rendering.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/auth_service.dart';
 import '../services/hierarchy_service.dart';
+import '../services/notification_service.dart';
+import '../services/timetable_service.dart';
 import '../theme/app_theme.dart';
+import '../models/academic_class.dart';
+import '../models/app_notification.dart';
+import '../models/class_timetable.dart';
+import '../models/school_notice.dart';
+import '../models/timetable_period.dart';
 import 'admin_claims_screen.dart';
 import 'merch_store_tab.dart';
 import '../widgets/camera_capture_dialog.dart';
 import 'chat_list_screen.dart';
+import 'house_group_screen.dart';
+import 'class_group_screen.dart';
+import 'notification_center_screen.dart';
 import 'digital_wallet_screen.dart';
 import 'house_leaderboard_screen.dart';
 import 'id_scanner_screen.dart';
@@ -27,10 +40,16 @@ import '../widgets/confetti_overlay.dart';
 import '../widgets/account_switcher_modal.dart';
 import '../widgets/student_profile_modal.dart';
 import '../widgets/managed_modal_scope.dart';
+import '../widgets/school_circular_composer.dart';
 
 class HomeScreen extends StatefulWidget {
   final int initialIndex;
-  const HomeScreen({super.key, this.initialIndex = 0});
+
+  /// Fixed clock for deterministic dashboard tests. When null the dashboard
+  /// refreshes the current/next period every 30 seconds.
+  final DateTime? mockNow;
+
+  const HomeScreen({super.key, this.initialIndex = 0, this.mockNow});
 
   /// Dual-Mode Resilient Image Engine:
   /// Decodes Base64 data URIs (webcam/desktop uploads) and renders Image.memory,
@@ -154,6 +173,75 @@ class _HomeScreenState extends State<HomeScreen>
   late final AnimationController _pulseController;
   late final Animation<double> _pulseAnimation;
   final _authService = AuthService();
+  final _notificationService = NotificationService();
+  final _timetableService = TimetableService();
+  Stream<int>? _unreadCountStream;
+  String _unreadCountUid = '';
+  Stream<NotificationUnreadBreakdown>? _unreadBreakdownStream;
+  String _unreadBreakdownUid = '';
+  DateTime _now = DateTime.now();
+  Timer? _clockTimer;
+
+  /// Reuse the unread-count stream across rebuilds, but refresh it if the
+  /// signed-in account changes (account switching).
+  Stream<int> _unreadCountStreamForCurrentUser() {
+    final uid = _notificationService.currentUserId;
+    if (_unreadCountStream == null || _unreadCountUid != uid) {
+      _unreadCountUid = uid;
+      _unreadCountStream = _notificationService.getUnreadCountStream();
+    }
+    return _unreadCountStream!;
+  }
+
+  Stream<NotificationUnreadBreakdown> _unreadBreakdownStreamForCurrentUser() {
+    final uid = _notificationService.currentUserId;
+    if (_unreadBreakdownStream == null || _unreadBreakdownUid != uid) {
+      _unreadBreakdownUid = uid;
+      _unreadBreakdownStream = _notificationService.getUnreadBreakdownStream();
+    }
+    return _unreadBreakdownStream!;
+  }
+
+  /// Canonical class id from the profile. `class_id` wins when it parses;
+  /// legacy grade/division fields are only a fallback.
+  String _classIdForProfile(String classLevel, String division) {
+    final raw = (_profile?['class_id'] ?? '').toString().trim().toUpperCase();
+    if (raw.isNotEmpty && AcademicStructure.parseClassId(raw) != null) {
+      return raw;
+    }
+    return AcademicStructure.classIdFrom(classLevel, division);
+  }
+
+  AcademicClass? _cachedAcademicClass(String classId) {
+    final id = classId.trim().toUpperCase();
+    if (id.isEmpty) return null;
+    for (final cls in AuthService.getCachedAcademicClasses()) {
+      if (cls.classId.trim().toUpperCase() == id) return cls;
+    }
+    return null;
+  }
+
+  /// Live class-teacher data, falling back to the verified local registry when
+  /// Firebase is unavailable or the read is denied.
+  Stream<AcademicClass?> _academicClassStream(String classId) {
+    final cached = _cachedAcademicClass(classId);
+    final firestore = _safeFirestore;
+    if (firestore == null || !AuthService.isFirebaseLive || classId.isEmpty) {
+      return Stream.value(cached);
+    }
+    return firestore
+        .collection('academic_classes')
+        .doc(classId)
+        .snapshots()
+        .map<AcademicClass?>((doc) {
+          if (!doc.exists) return cached;
+          return AcademicClass.fromFirestore(doc);
+        })
+        .handleError((Object error) {
+          debugPrint('Academic class stream error: $error');
+          return cached;
+        });
+  }
   FirebaseFirestore? get _safeFirestore {
     try {
       return FirebaseFirestore.instance;
@@ -196,10 +284,63 @@ class _HomeScreenState extends State<HomeScreen>
     },
   ];
 
+  static const String _kLibraryLoansPrefKey = 'asb_library_loans_cache';
+
+  Future<void> _loadLibraryLoans() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_kLibraryLoansPrefKey);
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw) as List<dynamic>;
+        if (mounted && decoded.isNotEmpty) {
+          setState(() {
+            _borrowedBooks.clear();
+            for (final item in decoded) {
+              if (item is Map) {
+                _borrowedBooks.add(Map<String, dynamic>.from(item));
+              }
+            }
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading library loans cache: $e');
+    }
+  }
+
+  Future<void> _saveLibraryLoans() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = jsonEncode(_borrowedBooks);
+      await prefs.setString(_kLibraryLoansPrefKey, jsonStr);
+
+      final curUser = _authService.currentUser;
+      final firestore = _safeFirestore;
+      if (curUser != null && firestore != null && AuthService.isFirebaseLive) {
+        final scholarNo = _profile?['scholar_no'] ?? curUser.uid;
+        await firestore.collection('library_loans').doc(scholarNo.toString()).set({
+          'scholar_no': scholarNo,
+          'books': _borrowedBooks,
+          'updated_at': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+    } catch (e) {
+      debugPrint('Error saving library loans: $e');
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     _selectedIndex = widget.initialIndex;
+    _now = widget.mockNow ?? DateTime.now();
+    if (widget.mockNow == null) {
+      _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+        if (mounted) {
+          setState(() => _now = DateTime.now());
+        }
+      });
+    }
     final cachedProfile = AuthService.getCachedProfile();
 
     if (cachedProfile != null) {
@@ -236,6 +377,7 @@ class _HomeScreenState extends State<HomeScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _loadProfile();
+        _loadLibraryLoans();
       }
     });
   }
@@ -243,6 +385,7 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void dispose() {
     _watchdogTimer?.cancel();
+    _clockTimer?.cancel();
     _pulseController.dispose();
     _isMyHouseFirstPlaceNotifier.dispose();
     super.dispose();
@@ -319,7 +462,99 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
+  Future<String?> _promptForSwitchPassword(
+    String scholarNo, {
+    String? errorText,
+  }) async {
+    final controller = TextEditingController();
+    bool obscure = true;
+    try {
+      return await showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            backgroundColor: const Color(0xFF1E222D),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text(
+              'Re-authenticate Session',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Enter password for Scholar #$scholarNo to verify session switch:',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 13),
+                ),
+                if (errorText != null && errorText.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    errorText,
+                    style: const TextStyle(
+                      color: Colors.redAccent,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                TextField(
+                  controller: controller,
+                  obscureText: obscure,
+                  autofocus: true,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    labelText: 'Password',
+                    labelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
+                    filled: true,
+                    fillColor: Colors.black.withValues(alpha: 0.3),
+                    suffixIcon: IconButton(
+                      icon: Icon(obscure ? Icons.visibility_off : Icons.visibility, color: Colors.white70),
+                      onPressed: () => setDialogState(() => obscure = !obscure),
+                    ),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onSubmitted: (val) => Navigator.of(ctx).pop(val),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(null),
+                child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFD4AF37),
+                  foregroundColor: Colors.black,
+                ),
+                onPressed: () => Navigator.of(ctx).pop(controller.text),
+                child: const Text('Verify & Switch', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+        ),
+      );
+    } finally {
+      controller.dispose();
+    }
+  }
+
   Future<void> _switchActiveSession(SavedAccount account) async {
+    SavedAccount accountToSwitch = account;
+    if (AuthService.isFirebaseLive &&
+        _authService.currentUser?.uid != account.uid &&
+        (account.password == null || account.password!.isEmpty)) {
+      final pwd = await _promptForSwitchPassword(account.scholarNo);
+      if (pwd == null || pwd.isEmpty) {
+        return; // User cancelled prompt, no session switch occurs
+      }
+      accountToSwitch = account.copyWith(password: pwd);
+    }
+
+    if (!mounted) return;
     setState(() {
       _loading = true;
       if (!_pulseController.isAnimating) {
@@ -327,10 +562,9 @@ class _HomeScreenState extends State<HomeScreen>
       }
     });
 
-    try {
-      await _authService.switchAccount(account);
+    Future<bool> attemptSwitch(SavedAccount targetAccount) async {
+      await _authService.switchAccount(targetAccount);
       await AuthService.cacheHouse(account.houseName);
-      await AuthService.cacheProfile(account.cachedProfile);
 
       if (mounted) {
         // Clean slate re-navigation: forces fresh state initialization for the switched scholar
@@ -345,7 +579,62 @@ class _HomeScreenState extends State<HomeScreen>
           (route) => false,
         );
       }
+      return true;
+    }
+
+    try {
+      await attemptSwitch(accountToSwitch);
     } catch (e) {
+      final errText = e.toString();
+      final isCredErr =
+          errText.contains('invalid-credential') ||
+          errText.contains('requires-recent-login');
+      if (isCredErr && mounted) {
+        setState(() {
+          _loading = false;
+          if (_pulseController.isAnimating) {
+            _pulseController.stop();
+          }
+        });
+        final freshPwd = await _promptForSwitchPassword(
+          account.scholarNo,
+          errorText:
+              'Incorrect scholar number or password for #${account.scholarNo}. Please try again.',
+        );
+        if (freshPwd != null && freshPwd.isNotEmpty && mounted) {
+          setState(() {
+            _loading = true;
+            if (!_pulseController.isAnimating) {
+              _pulseController.repeat(reverse: true);
+            }
+          });
+          try {
+            await attemptSwitch(account.copyWith(password: freshPwd));
+            return;
+          } catch (retryErr) {
+            if (mounted) {
+              setState(() {
+                _loading = false;
+                if (_pulseController.isAnimating) {
+                  _pulseController.stop();
+                }
+              });
+              final rawMsg = retryErr.toString().replaceFirst(
+                RegExp(r'^(Exception|StateError):\s*'),
+                '',
+              );
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Failed to switch account: $rawMsg'),
+                  backgroundColor: Colors.redAccent,
+                ),
+              );
+            }
+            return;
+          }
+        }
+        return;
+      }
       if (mounted) {
         setState(() {
           _loading = false;
@@ -353,9 +642,10 @@ class _HomeScreenState extends State<HomeScreen>
             _pulseController.stop();
           }
         });
+        final rawMsg = errText.replaceFirst(RegExp(r'^(Exception|StateError):\s*'), '');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to switch account: $e'),
+            content: Text('Failed to switch account: $rawMsg'),
             backgroundColor: Colors.redAccent,
           ),
         );
@@ -385,6 +675,209 @@ class _HomeScreenState extends State<HomeScreen>
       onAddSiblingPressed: () {
         Navigator.pop(context);
         _showAddSiblingModal(houseColor);
+      },
+    );
+  }
+
+  void _showStudentClaimsHistoryModal({
+    required BuildContext context,
+    required String scholarNo,
+    required String houseName,
+    required Color themeColor,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final isDark = Theme.of(ctx).brightness == Brightness.dark;
+        return Container(
+          height: MediaQuery.of(ctx).size.height * 0.75,
+          padding: const EdgeInsets.only(top: 24, left: 24, right: 24, bottom: 24),
+          decoration: BoxDecoration(
+            color: Theme.of(ctx).colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 48,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: themeColor.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Icon(Icons.history_edu_rounded, color: themeColor, size: 24),
+                  ),
+                  const SizedBox(width: 14),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'My Certificate Claims',
+                          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+                        ),
+                        Text(
+                          'Real-time status of your house point submissions',
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: StreamBuilder<QuerySnapshot>(
+                  stream: _authService.getStudentClaimsStream(scholarNo),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    final docs = snapshot.data?.docs ?? [];
+                    if (docs.isEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.assignment_late_outlined, size: 48, color: Colors.grey[400]),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'No claims submitted yet',
+                              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Upload certificates to earn points for ${houseName.toUpperCase()} House!',
+                              style: const TextStyle(fontSize: 13, color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+                    return ListView.separated(
+                      itemCount: docs.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 12),
+                      itemBuilder: (context, idx) {
+                        final data = docs[idx].data() as Map<String, dynamic>? ?? {};
+                        final title = (data['activity_title'] ?? 'Competition Entry').toString();
+                        final pts = data['points'] ?? 10;
+                        final status = (data['status'] ?? 'pending').toString().toLowerCase();
+                        final aiStatus = data['ai_status']?.toString().toLowerCase();
+                        final reason = data['rejection_reason']?.toString();
+
+                        Color statusColor;
+                        String statusLabel;
+                        IconData statusIcon;
+
+                        if (status == 'approved') {
+                          statusColor = Colors.green;
+                          statusLabel = 'Approved (+$pts Pts)';
+                          statusIcon = Icons.check_circle_rounded;
+                        } else if (status == 'rejected') {
+                          statusColor = Colors.redAccent;
+                          statusLabel = 'Not Approved';
+                          statusIcon = Icons.cancel_rounded;
+                        } else {
+                          statusColor = Colors.amber;
+                          statusLabel = 'Under Review';
+                          statusIcon = Icons.hourglass_top_rounded;
+                        }
+
+                        return Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF1E293B) : Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: statusColor.withValues(alpha: 0.3),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      title,
+                                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: statusColor.withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: statusColor.withValues(alpha: 0.5)),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(statusIcon, size: 12, color: statusColor),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          statusLabel,
+                                          style: TextStyle(
+                                            color: statusColor,
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (aiStatus == 'verified') ...[
+                                const SizedBox(height: 6),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.verified_rounded, size: 12, color: Colors.green),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'AI Seal Verified',
+                                      style: TextStyle(color: Colors.green[700], fontSize: 11, fontWeight: FontWeight.w600),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                              if (status == 'rejected' && reason != null && reason.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Feedback: $reason',
+                                  style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+                                ),
+                              ],
+                            ],
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
       },
     );
   }
@@ -475,6 +968,19 @@ class _HomeScreenState extends State<HomeScreen>
                           ),
                         ],
                       ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.history_rounded),
+                      tooltip: 'View My Claims History',
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _showStudentClaimsHistoryModal(
+                          context: context,
+                          scholarNo: scholarNo,
+                          houseName: houseName,
+                          themeColor: color,
+                        );
+                      },
                     ),
                   ],
                 ),
@@ -756,44 +1262,44 @@ class _HomeScreenState extends State<HomeScreen>
                             final navigator = Navigator.of(context);
 
                             try {
-                              String claimId;
-                              try {
-                                claimId = _firestore.collection('house_claims').doc().id;
-                              } catch (_) {
-                                claimId = 'claim_${DateTime.now().millisecondsSinceEpoch}';
-                              }
-
-                              final certUrl = await _authService
-                                  .uploadCertificateImage(
-                                    fileBytes: selectedImageBytes!,
-                                    scholarNo: scholarNo,
-                                    house: houseName,
-                                    claimId: claimId,
-                                  );
-                              await _authService.submitHouseClaim(
+                              // Create the pending claim before uploading so
+                              // the certificate object always has an
+                              // authoritative owner and a real claim ID.
+                              final claimId = await _authService.submitHouseClaim(
                                 scholarNo: scholarNo,
                                 studentName: studentName,
                                 houseName: houseName,
                                 activityTitle: titleController.text.trim(),
                                 points: selectedPoints,
-                                certUrl: certUrl,
-                                claimId: claimId,
+                                fileBytes: selectedImageBytes!,
                               );
 
-                              // Also post to Live Event Wall pending approval
+                              String certUrl = '';
                               try {
-                                await _firestore.collection('event_wall').add({
-                                  'scholar_no': scholarNo,
-                                  'student_name': studentName,
-                                  'house_name': houseName,
-                                  'class_level': AuthService.getCachedProfile()?['class_level'] ?? 'Senior Tier',
-                                  'caption': titleController.text.trim(),
-                                  'image_url': certUrl,
-                                  'timestamp': FieldValue.serverTimestamp(),
-                                  'status': 'pending',
-                                  'likes': 0,
-                                });
+                                final claimSnap = await _firestore
+                                    .collection('house_claims')
+                                    .doc(claimId)
+                                    .get();
+                                certUrl =
+                                    (claimSnap.data()?['cert_url'] ?? '').toString();
                               } catch (_) {}
+
+                              // Also post to Live Event Wall pending approval
+                              if (certUrl.isNotEmpty) {
+                                try {
+                                  await _firestore.collection('event_wall').add({
+                                    'scholar_no': scholarNo,
+                                    'student_name': studentName,
+                                    'house_name': houseName,
+                                    'class_level': AuthService.getCachedProfile()?['class_level'] ?? 'Senior Tier',
+                                    'caption': titleController.text.trim(),
+                                    'image_url': certUrl,
+                                    'timestamp': FieldValue.serverTimestamp(),
+                                    'status': 'pending',
+                                    'likes': 0,
+                                  });
+                                } catch (_) {}
+                              }
 
                               AppHaptics.success();
                               navigator.pop();
@@ -966,9 +1472,12 @@ class _HomeScreenState extends State<HomeScreen>
     final houseMascot = HouseColors.getHouseMascotName(houseName);
     final houseMotto = HouseColors.getHouseMotto(houseName);
     final fullName = _profile?['full_name'] ?? _profile?['name'] ?? user?.displayName ?? 'Student';
-    final scholarNo = _profile?['scholar_no'] ?? '---';
-    final classLevel = _profile?['class_level'] ?? '--';
-    final division = _profile?['division'] ?? '';
+    final scholarNo = (_profile?['scholar_no'] ?? '---').toString();
+    final classLevel = (_profile?['class_level'] ?? '--').toString();
+    final division = (_profile?['division'] ?? '').toString();
+    final isClassVerified = _profile?['class_verified'] == true;
+    final profileClassId = _classIdForProfile(classLevel, division);
+    final verifiedClassId = isClassVerified ? profileClassId : '';
 
     // Strict role validation via centralized HierarchyService
     final roleStr = (_profile?['role'] ?? '').toString();
@@ -987,6 +1496,14 @@ class _HomeScreenState extends State<HomeScreen>
       role: roleStr,
       fullName: fullName,
     );
+    final isFaculty = HierarchyService.isTeacherOrFaculty(
+      scholarNo: scholarNo,
+      role: roleStr,
+      fullName: fullName,
+    );
+    final showStudentDashboard = !isFaculty && !isSuperAdmin;
+    final isYoungerStudent =
+        showStudentDashboard && AcademicStructure.isPrimaryGrade(classLevel);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     if (_loading) {
@@ -1178,6 +1695,67 @@ class _HomeScreenState extends State<HomeScreen>
       );
     }
 
+    final accountStatus = (_profile?['status'] ?? 'active')
+        .toString()
+        .trim()
+        .toLowerCase();
+    if (!_loading &&
+        (accountStatus == 'suspended' || accountStatus == 'deactivated')) {
+      final isDeactivated = accountStatus == 'deactivated';
+      return Scaffold(
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        body: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isDeactivated
+                          ? Icons.person_off_rounded
+                          : Icons.block_rounded,
+                      size: 56,
+                      color: Colors.redAccent,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      isDeactivated ? 'Account Deactivated' : 'Account Suspended',
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Access for Scholar #$scholarNo is currently $accountStatus. Please contact the school administration.',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withValues(alpha: 0.72),
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton.icon(
+                      onPressed: _handleSignOut,
+                      icon: const Icon(Icons.logout_rounded),
+                      label: const Text('Sign Out'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     Widget currentTabBody;
     if (_selectedIndex == 1) {
       currentTabBody = MerchStoreTab(
@@ -1188,91 +1766,13 @@ class _HomeScreenState extends State<HomeScreen>
         studentName: fullName,
       );
     } else if (_selectedIndex == 2) {
-      currentTabBody = RefreshIndicator(
-        onRefresh: _loadProfile,
-        color: houseColor,
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                '🏆 Live House Standings',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -0.5,
-                ),
-              ),
-              ValueListenableBuilder<bool>(
-                valueListenable: _isMyHouseFirstPlaceNotifier,
-                builder: (context, isFirst, _) {
-                  if (!isFirst) return const SizedBox.shrink();
-                  return Semantics(
-                    container: true,
-                    liveRegion: true,
-                    label:
-                        'Celebration: Your house is in 1st place! Confetti celebrations active! Keep participating to maintain the lead.',
-                    child: Column(
-                      children: [
-                        const SizedBox(height: 16),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFFF59E0B), Color(0xFFD97706)],
-                            ),
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.amber.withValues(alpha: 0.4),
-                                blurRadius: 16,
-                                offset: const Offset(0, 6),
-                              ),
-                            ],
-                          ),
-                          child: const Row(
-                            children: [
-                              Text('🎉', style: TextStyle(fontSize: 32)),
-                              SizedBox(width: 14),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'YOUR HOUSE IS IN 1ST PLACE!',
-                                      style: TextStyle(
-                                        fontSize: 17,
-                                        fontWeight: FontWeight.w900,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                    Text(
-                                      'Confetti celebrations active! Keep participating to maintain the lead.',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.white70,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 20),
-              _buildLiveStandingsSection(),
-              const SizedBox(height: 100),
-            ],
-          ),
-        ),
+      currentTabBody = _buildStandingsTab(
+        houseName: houseName,
+        houseColor: houseColor,
+        houseDark: houseDark,
+        scholarNo: scholarNo,
+        fullName: fullName,
+        isAdmin: isAdmin,
       );
     } else if (_selectedIndex == 3) {
       currentTabBody = RefreshIndicator(
@@ -1303,7 +1803,15 @@ class _HomeScreenState extends State<HomeScreen>
                 houseDark,
                 isSuperAdmin,
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 16),
+              if (showStudentDashboard) ...[
+                _buildVerifiedClassStrip(
+                  classId: profileClassId,
+                  verified: isClassVerified,
+                  houseColor: houseColor,
+                ),
+                const SizedBox(height: 16),
+              ],
               _buildStudentContributionRecord(
                 scholarNo: scholarNo,
                 studentName: fullName,
@@ -1323,7 +1831,11 @@ class _HomeScreenState extends State<HomeScreen>
         color: houseColor,
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          padding: EdgeInsets.symmetric(
+            horizontal:
+                MediaQuery.sizeOf(context).width >= 900 ? 96 : 24,
+            vertical: 16,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1338,7 +1850,28 @@ class _HomeScreenState extends State<HomeScreen>
                 houseDark,
                 isSuperAdmin,
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 16),
+
+              // M8: verified-class identity, class teacher, today's published
+              // timetable and unread class/house counts.
+              if (showStudentDashboard) ...[
+                _buildVerifiedClassStrip(
+                  classId: profileClassId,
+                  verified: isClassVerified,
+                  houseColor: houseColor,
+                ),
+                const SizedBox(height: 16),
+                if (verifiedClassId.isNotEmpty) ...[
+                  _buildTodayTimetableCard(
+                    classId: verifiedClassId,
+                    houseColor: houseColor,
+                    houseDark: houseDark,
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                _buildAnnouncementUnreadCard(houseColor),
+                const SizedBox(height: 24),
+              ],
 
               // 👑 Hidden Admin Button (Appears if user role == 'admin' or accessible in Drawer)
               if (isAdmin) ...[
@@ -1415,39 +1948,49 @@ class _HomeScreenState extends State<HomeScreen>
                 const SizedBox(height: 24),
               ],
 
-              // 2. ASB House Warroom & Spirit Clash Arena Feature Banner
-              _buildHouseArenaBanner(houseName, scholarNo, fullName, houseColor, isAdmin),
-              const SizedBox(height: 16),
+              // M8: younger students (LKG-UKG / Grades 1-5) get a simpler
+              // dashboard without council, sports-league and AI clutter.
+              if (!isYoungerStudent) ...[
+                // 2. ASB House Warroom & Spirit Clash Arena Feature Banner
+                _buildHouseArenaBanner(
+                  houseName,
+                  scholarNo,
+                  fullName,
+                  houseColor,
+                  isAdmin,
+                ),
+                const SizedBox(height: 16),
 
-              // 2.5 Campus Academics Command Center Banner (Phase 5)
-              _buildCampusAcademicsBanner(
-                houseName,
-                scholarNo,
-                fullName,
-                houseColor,
-                classLevel,
-                division,
-              ),
-              const SizedBox(height: 16),
+                // 2.5 Campus Academics Command Center Banner (Phase 5)
+                _buildCampusAcademicsBanner(
+                  houseName,
+                  scholarNo,
+                  fullName,
+                  houseColor,
+                  classLevel,
+                  division,
+                ),
+                const SizedBox(height: 16),
 
-              // 2.6 Inter-House Sports League Banner (Phase 7)
-              _buildSportsLeagueBanner(
-                houseName,
-                scholarNo,
-                fullName,
-                houseColor,
-              ),
-              const SizedBox(height: 16),
+                // 2.6 Inter-House Sports League Banner (Phase 7)
+                _buildSportsLeagueBanner(
+                  houseName,
+                  scholarNo,
+                  fullName,
+                  houseColor,
+                ),
+                const SizedBox(height: 16),
 
-              // 2.7 ASB House AI Companion Mentor Banner
-              _buildHouseAiCompanionBanner(
-                houseName,
-                scholarNo,
-                fullName,
-                houseColor,
-                classLevel,
-              ),
-              const SizedBox(height: 24),
+                // 2.7 ASB House AI Companion Mentor Banner
+                _buildHouseAiCompanionBanner(
+                  houseName,
+                  scholarNo,
+                  fullName,
+                  houseColor,
+                  classLevel,
+                ),
+                const SizedBox(height: 24),
+              ],
 
               // 3. Real-Time House Standings (Streamed Live from Firestore)
               Row(
@@ -1499,7 +2042,13 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
               ),
               const SizedBox(height: 16),
-              _buildActionCards(houseName, scholarNo, fullName, houseColor),
+              _buildActionCards(
+                houseName,
+                scholarNo,
+                fullName,
+                houseColor,
+                younger: isYoungerStudent,
+              ),
               const SizedBox(height: 36),
 
               // 4. Live Notice Board Feed from Firestore
@@ -1522,47 +2071,53 @@ class _HomeScreenState extends State<HomeScreen>
                 ],
               ),
               const SizedBox(height: 16),
-              _buildLiveNoticesFeed(houseColor),
+              _buildLiveNoticesFeed(
+                houseColor,
+                canPost: isAdmin || isSuperAdmin,
+              ),
               const SizedBox(height: 36),
 
               // 5. Live Instagram-Style Event Photo Feed / Wall
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Flexible(
-                    child: Text(
-                      '📸 Live Event Wall',
-                      style: TextStyle(
-                        fontSize: 19,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.5,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.purple.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Text(
-                      'Community Feed',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.purple,
+              if (!isYoungerStudent) ...[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Flexible(
+                      child: Text(
+                        '📸 Live Event Wall',
+                        style: TextStyle(
+                          fontSize: 19,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.5,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              _buildLiveEventWall(houseColor, isAdmin || isSuperAdmin),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.purple.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Text(
+                        'Community Feed',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.purple,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                _buildLiveEventWall(houseColor, isAdmin || isSuperAdmin),
+                const SizedBox(height: 36),
+              ],
               const SizedBox(height: 100),
             ],
           ),
@@ -1743,6 +2298,65 @@ class _HomeScreenState extends State<HomeScreen>
                     studentName: fullName,
                     scholarNo: scholarNo,
                   ),
+                ),
+              );
+            },
+          ),
+          StreamBuilder<int>(
+            stream: _unreadCountStreamForCurrentUser(),
+            builder: (context, snapshot) {
+              final unread = snapshot.data ?? 0;
+              return IconButton(
+                key: const Key('home_notifications_button'),
+                padding: const EdgeInsets.all(8),
+                constraints:
+                    const BoxConstraints(minWidth: 48, minHeight: 48),
+                tooltip: unread > 0
+                    ? 'Notifications ($unread unread)'
+                    : 'Notifications',
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const NotificationCenterScreen(),
+                    ),
+                  );
+                },
+                icon: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Icon(
+                      Icons.notifications_none_rounded,
+                      color: houseColor,
+                      size: 24,
+                    ),
+                    if (unread > 0)
+                      Positioned(
+                        right: -5,
+                        top: -5,
+                        child: Container(
+                          key: const Key('home_notifications_badge'),
+                          constraints: const BoxConstraints(
+                            minWidth: 16,
+                            minHeight: 16,
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 3),
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: Colors.redAccent,
+                            borderRadius: BorderRadius.circular(9),
+                          ),
+                          child: Text(
+                            unread > 99 ? '99+' : '$unread',
+                            style: const TextStyle(
+                              fontSize: 8.5,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               );
             },
@@ -1981,6 +2595,573 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  /// M8: verified-class strip shared by the dashboard and profile tabs.
+  Widget _buildVerifiedClassStrip({
+    required String classId,
+    required bool verified,
+    required Color houseColor,
+  }) {
+    return StreamBuilder<AcademicClass?>(
+      stream: classId.isEmpty ? null : _academicClassStream(classId),
+      builder: (context, snapshot) {
+        final cls = snapshot.data ?? _cachedAcademicClass(classId);
+        final teacher = cls?.classTeacher.trim() ?? '';
+        final label = classId.isNotEmpty ? classId : 'No class on profile';
+        final accent =
+            verified ? const Color(0xFF059669) : const Color(0xFFD97706);
+        final title =
+            verified ? 'Verified Class · $label' : 'Class not verified';
+        final subtitle = verified
+            ? (teacher.isNotEmpty
+                ? 'Class Teacher · $teacher'
+                : 'Class teacher not assigned yet')
+            : (classId.isNotEmpty
+                ? '$label · awaiting school verification'
+                : 'Ask the school office to add your section');
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: accent.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: accent.withValues(alpha: 0.35)),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                verified
+                    ? Icons.verified_rounded
+                    : Icons.shield_outlined,
+                color: accent,
+                size: 24,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: accent,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withValues(alpha: 0.7),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (verified)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    'VERIFIED',
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.8,
+                      color: accent,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// M8: today's published timetable for the verified class only.
+  Widget _buildTodayTimetableCard({
+    required String classId,
+    required Color houseColor,
+    required Color houseDark,
+  }) {
+    final now = _now;
+    final day = timetableDayForWeekday(now.weekday);
+    final isSchoolDay = now.weekday != DateTime.friday;
+
+    return StreamBuilder<ClassTimetableVersion?>(
+      stream: _timetableService.getActiveTimetableStream(classId, day, now),
+      initialData:
+          _timetableService.getCachedActiveVersion(classId, day, now),
+      builder: (context, snapshot) {
+        final version = snapshot.data;
+        final periods = version?.toPeriods() ?? const <TimetablePeriod>[];
+        TimetablePeriod? current;
+        TimetablePeriod? next;
+        TimetablePeriod? breakPeriod;
+        if (isSchoolDay) {
+          for (final period in periods) {
+            if (period.isBreak) {
+              breakPeriod ??= period;
+            }
+            if (current == null && period.isCurrentPeriod(now, true)) {
+              current = period;
+            }
+            if (next == null && period.isUpcomingPeriod(now, true)) {
+              next = period;
+            }
+          }
+        }
+        final teachingCount = periods.where((p) => !p.isBreak).length;
+
+        return Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest
+                .withValues(alpha: 0.45),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: houseColor.withValues(alpha: 0.22),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      houseColor.withValues(alpha: 0.9),
+                      houseDark.withValues(alpha: 0.9),
+                    ],
+                  ),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(24),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.today_rounded,
+                      color: Colors.white,
+                      size: 22,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            isSchoolDay
+                                ? "Today's Timetable"
+                                : 'Next School Day',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          Text(
+                            '$classId · $day · $teachingCount periods',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.82),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (snapshot.connectionState == ConnectionState.waiting &&
+                        !snapshot.hasData)
+                      const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: periods.isEmpty
+                    ? Text(
+                        'No published timetable for $classId yet. Your class '
+                        'teacher publishes it from Academics → Timetable.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 1.4,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withValues(alpha: 0.72),
+                        ),
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (!isSchoolDay)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: Text(
+                                'Friday is a weekend. Showing the next school '
+                                'day ($day) schedule.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurface
+                                      .withValues(alpha: 0.66),
+                                ),
+                              ),
+                            ),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              _buildTimetableStatusChip(
+                                label: 'Now',
+                                value: current == null
+                                    ? (isSchoolDay ? 'Free' : 'Weekend')
+                                    : (current.isBreak
+                                        ? 'Break'
+                                        : 'P${current.periodNumber} '
+                                            '${current.subject}'),
+                                color: houseColor,
+                                highlighted: current != null,
+                              ),
+                              _buildTimetableStatusChip(
+                                label: 'Next',
+                                value: next == null
+                                    ? 'Done'
+                                    : (next.isBreak
+                                        ? 'Break'
+                                        : 'P${next.periodNumber} '
+                                            '${next.subject}'),
+                                color: houseColor,
+                                highlighted: next != null,
+                              ),
+                              _buildTimetableStatusChip(
+                                label: 'Break',
+                                value: breakPeriod?.timeSlot ?? '—',
+                                color: const Color(0xFFD97706),
+                                highlighted: current?.isBreak == true,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+                          for (final period in periods)
+                            _buildDashboardPeriodRow(
+                              period,
+                              isNow: period == current,
+                              isNext: period == next,
+                              houseColor: houseColor,
+                            ),
+                        ],
+                      ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildTimetableStatusChip({
+    required String label,
+    required String value,
+    required Color color,
+    required bool highlighted,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: highlighted
+            ? color.withValues(alpha: 0.14)
+            : Theme.of(context).colorScheme.surface.withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: highlighted
+              ? color.withValues(alpha: 0.5)
+              : Colors.grey.withValues(alpha: 0.2),
+        ),
+      ),
+      child: RichText(
+        text: TextSpan(
+          style: TextStyle(
+            fontSize: 11,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
+          children: [
+            TextSpan(
+              text: '$label · ',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: highlighted ? color : null,
+              ),
+            ),
+            TextSpan(
+              text: value,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDashboardPeriodRow(
+    TimetablePeriod period, {
+    required bool isNow,
+    required bool isNext,
+    required Color houseColor,
+  }) {
+    final details = <String>[
+      if (period.teacherName.trim().isNotEmpty) period.teacherName.trim(),
+      if (period.room.trim().isNotEmpty) 'Room ${period.room.trim()}',
+    ];
+    final accent = period.isBreak
+        ? const Color(0xFFD97706)
+        : houseColor;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: isNow
+            ? accent.withValues(alpha: 0.14)
+            : (isNext
+                ? Colors.amber.withValues(alpha: 0.09)
+                : Colors.transparent),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isNow
+              ? accent.withValues(alpha: 0.5)
+              : (isNext
+                  ? Colors.amber.withValues(alpha: 0.45)
+                  : Colors.grey.withValues(alpha: 0.14)),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 28,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: isNow || isNext ? 0.18 : 0.08),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              period.isBreak ? 'BRK' : 'P${period.periodNumber}',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+                color: accent,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  period.isBreak ? 'Break' : period.subject,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                Text(
+                  details.isEmpty
+                      ? (period.isBreak
+                          ? '30-minute interval'
+                          : 'Teacher/room not published')
+                      : details.join(' · '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withValues(alpha: 0.62),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            period.timeSlot,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: Theme.of(context)
+                  .colorScheme
+                  .onSurface
+                  .withValues(alpha: 0.7),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// M8: unread class/house/timetable announcement counts. Tapping opens the
+  /// notification centre; the bell badge remains the total unread count.
+  Widget _buildAnnouncementUnreadCard(Color houseColor) {
+    return StreamBuilder<NotificationUnreadBreakdown>(
+      stream: _unreadBreakdownStreamForCurrentUser(),
+      builder: (context, snapshot) {
+        final data = snapshot.data ?? NotificationUnreadBreakdown.empty;
+        return InkWell(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const NotificationCenterScreen(),
+              ),
+            );
+          },
+          borderRadius: BorderRadius.circular(18),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: houseColor.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: houseColor.withValues(alpha: 0.22),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.notifications_active_rounded,
+                      size: 18,
+                      color: houseColor,
+                    ),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Unread Announcements',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      data.total > 99 ? '99+' : '${data.total}',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                        color: houseColor,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      size: 12,
+                      color: houseColor,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _buildUnreadPill(
+                      icon: Icons.school_rounded,
+                      label: 'Class',
+                      count: data.classCount,
+                      color: houseColor,
+                    ),
+                    _buildUnreadPill(
+                      icon: Icons.groups_rounded,
+                      label: 'House',
+                      count: data.houseCount,
+                      color: houseColor,
+                    ),
+                    _buildUnreadPill(
+                      icon: Icons.schedule_rounded,
+                      label: 'Timetable',
+                      count: data.timetableCount,
+                      color: houseColor,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildUnreadPill({
+    required IconData icon,
+    required String label,
+    required int count,
+    required Color color,
+  }) {
+    final hasUnread = count > 0;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: hasUnread
+            ? color.withValues(alpha: 0.16)
+            : Theme.of(context).colorScheme.surface.withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: hasUnread
+              ? color.withValues(alpha: 0.4)
+              : Colors.grey.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 13,
+            color: hasUnread ? color : Colors.grey,
+          ),
+          const SizedBox(width: 5),
+          Text(
+            '$label $count',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: hasUnread ? FontWeight.w800 : FontWeight.w600,
+              color: hasUnread ? color : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildHeroCard(
     String name,
     String scholarNo,
@@ -2029,7 +3210,9 @@ class _HomeScreenState extends State<HomeScreen>
                     ),
                   ),
                   child: Text(
-                    '${house[0].toUpperCase()}${house.substring(1)} House',
+                    house.trim().isNotEmpty
+                        ? '${house.trim()[0].toUpperCase()}${house.trim().substring(1)} House'
+                        : 'House',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -2741,6 +3924,628 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  String _formatHouseLabel(String rawHouse) {
+    final clean = rawHouse.trim();
+    if (clean.isEmpty) return 'House';
+    return '${clean[0].toUpperCase()}${clean.substring(1).toLowerCase()}';
+  }
+
+  List<MapEntry<String, int>> _sortedStandingsFromSnapshot(
+    AsyncSnapshot<QuerySnapshot> snapshot,
+  ) {
+    final pointsMap = Map<String, int>.from(
+      AuthService.getCachedHouseStandings(),
+    );
+    if (snapshot.hasData && snapshot.data!.docs.isNotEmpty) {
+      for (final doc in snapshot.data!.docs) {
+        final raw = doc.data();
+        final data =
+            raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+        final h = (data['house_name'] ?? doc.id).toString().toLowerCase();
+        final pts = (data['total_points'] as num?)?.toInt() ?? 0;
+        pointsMap[h] = pts;
+      }
+      AuthService.cacheHouseStandings(pointsMap, syncedAt: DateTime.now());
+    }
+    final sorted = pointsMap.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return sorted;
+  }
+
+  Widget _buildStandingsTab({
+    required String houseName,
+    required Color houseColor,
+    required Color houseDark,
+    required String scholarNo,
+    required String fullName,
+    required bool isAdmin,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return RefreshIndicator(
+      onRefresh: _loadProfile,
+      color: houseColor,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 880),
+            child: StreamBuilder<QuerySnapshot>(
+              stream: _authService.getHouseStandingsStream(),
+              builder: (context, snapshot) {
+                final isConnecting =
+                    !snapshot.hasData ||
+                    (snapshot.hasData && snapshot.data!.docs.isEmpty);
+                final sortedHouses = _sortedStandingsFromSnapshot(snapshot);
+                final totalSchoolPoints = sortedHouses.fold<int>(
+                  0,
+                  (acc, e) => acc + e.value,
+                );
+                final topHouse =
+                    sortedHouses.isNotEmpty ? sortedHouses.first : null;
+                final secondPts =
+                    sortedHouses.length > 1 ? sortedHouses[1].value : 0;
+                final leadMargin = topHouse != null
+                    ? (topHouse.value - secondPts).clamp(0, 10000000)
+                    : 0;
+
+                final myHouseKey = (AuthService.extractHouse(_profile) ??
+                        _cachedHouse ??
+                        AuthService.getCachedHouse() ??
+                        houseName)
+                    .trim()
+                    .toLowerCase();
+                final myRankIndex = sortedHouses.indexWhere(
+                  (e) => e.key.toLowerCase() == myHouseKey,
+                );
+                final myRank = myRankIndex >= 0 ? myRankIndex + 1 : 0;
+                final myPts =
+                    myRankIndex >= 0 ? sortedHouses[myRankIndex].value : 0;
+                final ptsBehindLeader = topHouse != null
+                    ? (topHouse.value - myPts).clamp(0, 10000000)
+                    : 0;
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '🏆 Live House Standings',
+                                style: TextStyle(
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: -0.6,
+                                ),
+                              ),
+                              SizedBox(height: 2),
+                              Text(
+                                'ASB Inter-House Championship Race & Leaderboard',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: (isConnecting ? Colors.amber : Colors.green)
+                                .withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: (isConnecting ? Colors.amber : Colors.green)
+                                  .withValues(alpha: 0.35),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 7,
+                                height: 7,
+                                decoration: BoxDecoration(
+                                  color: isConnecting
+                                      ? Colors.amber.shade700
+                                      : Colors.green,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                isConnecting ? 'Saved Cache' : 'Live Sync',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  color: isConnecting
+                                      ? Colors.amber.shade800
+                                      : Colors.green.shade700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Hero Championship Summary Card
+                    _buildStandingsHeroCard(
+                      isDark: isDark,
+                      houseName: houseName,
+                      houseColor: houseColor,
+                      houseDark: houseDark,
+                      scholarNo: scholarNo,
+                      fullName: fullName,
+                      isAdmin: isAdmin,
+                      topHouse: topHouse,
+                      leadMargin: leadMargin,
+                      totalSchoolPoints: totalSchoolPoints,
+                      myRank: myRank,
+                      ptsBehindLeader: ptsBehindLeader,
+                    ),
+
+                    ValueListenableBuilder<bool>(
+                      valueListenable: _isMyHouseFirstPlaceNotifier,
+                      builder: (context, isFirst, _) {
+                        if (!isFirst) return const SizedBox.shrink();
+                        return Semantics(
+                          container: true,
+                          liveRegion: true,
+                          label:
+                              'Celebration: Your house is in 1st place! Confetti celebrations active! Keep participating to maintain the lead.',
+                          child: Column(
+                            children: [
+                              const SizedBox(height: 16),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(18),
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    colors: [
+                                      Color(0xFFF59E0B),
+                                      Color(0xFFD97706),
+                                    ],
+                                  ),
+                                  borderRadius: BorderRadius.circular(22),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.amber.withValues(alpha: 0.35),
+                                      blurRadius: 16,
+                                      offset: const Offset(0, 6),
+                                    ),
+                                  ],
+                                ),
+                                child: const Row(
+                                  children: [
+                                    Text('🎉', style: TextStyle(fontSize: 30)),
+                                    SizedBox(width: 14),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'YOUR HOUSE IS IN 1ST PLACE!',
+                                            style: TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w900,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                          Text(
+                                            'Confetti celebrations active! Keep participating to maintain the lead.',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.white70,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+
+                    if (sortedHouses.length >= 3) ...[
+                      const SizedBox(height: 20),
+                      _buildStandingsPodium(
+                        sortedHouses: sortedHouses,
+                        totalSchoolPoints: totalSchoolPoints,
+                        isDark: isDark,
+                      ),
+                    ],
+
+                    const SizedBox(height: 20),
+                    _buildLiveStandingsSection(),
+                    const SizedBox(height: 100),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStandingsHeroCard({
+    required bool isDark,
+    required String houseName,
+    required Color houseColor,
+    required Color houseDark,
+    required String scholarNo,
+    required String fullName,
+    required bool isAdmin,
+    required MapEntry<String, int>? topHouse,
+    required int leadMargin,
+    required int totalSchoolPoints,
+    required int myRank,
+    required int ptsBehindLeader,
+  }) {
+    final leaderKey = topHouse?.key ?? houseName;
+    final leaderDisplay = _formatHouseLabel(leaderKey);
+    final leaderEmoji = HouseColors.getHouseEmoji(leaderKey);
+    final leaderPts = topHouse?.value ?? 0;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isDark
+              ? [const Color(0xFF172033), const Color(0xFF0F172A)]
+              : [houseColor.withValues(alpha: 0.92), houseDark],
+        ),
+        borderRadius: BorderRadius.circular(26),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: isDark ? 0.12 : 0.2),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: (isDark ? Colors.black : houseColor).withValues(alpha: 0.28),
+            blurRadius: 22,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Center(
+                      child: Text(
+                        leaderEmoji,
+                        style: const TextStyle(fontSize: 28),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Flexible(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          leaderPts > 0
+                              ? '$leaderDisplay Leads the Cup'
+                              : 'Championship Season Ready',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          leaderPts > 0
+                              ? '$leaderPts pts • +$leadMargin pt lead over #2'
+                              : 'Award points to launch live standings',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.8),
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      '$totalSchoolPoints Pts',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    Text(
+                      'School Total',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.72),
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.shield_rounded, color: Colors.amberAccent, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    myRank > 0
+                        ? 'Your House (${_formatHouseLabel(houseName)}): Rank #$myRank${myRank == 1 && leaderPts > 0 ? " • In the lead!" : ptsBehindLeader > 0 ? " • $ptsBehindLeader pts behind #1" : ""}'
+                        : 'Your House: ${_formatHouseLabel(houseName)}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: isDark ? const Color(0xFF0F172A) : houseDark,
+                  minimumSize: const Size(0, 48),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                onPressed: () {
+                  HapticFeedback.lightImpact();
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => HouseLeaderboardScreen(
+                        initialHouse: _formatHouseLabel(houseName),
+                        initialPoints: 0,
+                      ),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.leaderboard_rounded, size: 18),
+                label: const Text(
+                  'House Leaderboard',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: BorderSide(color: Colors.white.withValues(alpha: 0.45)),
+                  minimumSize: const Size(0, 48),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                onPressed: () {
+                  HapticFeedback.lightImpact();
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => HouseArenaScreen(
+                        userHouse: houseName,
+                        scholarNo: scholarNo,
+                        userName: fullName,
+                        isAdmin: isAdmin,
+                      ),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+                label: const Text(
+                  'House Arena',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStandingsPodium({
+    required List<MapEntry<String, int>> sortedHouses,
+    required int totalSchoolPoints,
+    required bool isDark,
+  }) {
+    final second = sortedHouses[1];
+    final first = sortedHouses[0];
+    final third = sortedHouses[2];
+
+    Widget podiumStep({
+      required MapEntry<String, int> entry,
+      required int rank,
+      required double height,
+    }) {
+      final color = HouseColors.getHouseColor(entry.key);
+      final emoji = HouseColors.getHouseEmoji(entry.key);
+      final label = _formatHouseLabel(entry.key);
+      final share = totalSchoolPoints > 0
+          ? ((entry.value / totalSchoolPoints) * 100).round()
+          : 0;
+      const medals = {1: '🥇', 2: '🥈', 3: '🥉'};
+
+      return Expanded(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () {
+            HapticFeedback.lightImpact();
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => HouseLeaderboardScreen(
+                  initialHouse: label,
+                  initialPoints: entry.value,
+                ),
+              ),
+            );
+          },
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(10, 14, 10, 12),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? color.withValues(alpha: rank == 1 ? 0.16 : 0.1)
+                  : color.withValues(alpha: rank == 1 ? 0.12 : 0.06),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: rank == 1
+                    ? Colors.amber.withValues(alpha: 0.7)
+                    : color.withValues(alpha: 0.28),
+                width: rank == 1 ? 1.8 : 1,
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  medals[rank] ?? '#$rank',
+                  style: TextStyle(fontSize: rank == 1 ? 24 : 20),
+                ),
+                const SizedBox(height: 6),
+                CircleAvatar(
+                  radius: rank == 1 ? 24 : 20,
+                  backgroundColor: color.withValues(alpha: 0.2),
+                  child: Text(
+                    emoji,
+                    style: TextStyle(fontSize: rank == 1 ? 24 : 20),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: rank == 1 ? 15 : 13.5,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    '${entry.value} pts',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12.5,
+                      color: color,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  height: height,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        color.withValues(alpha: 0.85),
+                        color.withValues(alpha: 0.45),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Center(
+                    child: Text(
+                      '$share%',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        podiumStep(entry: second, rank: 2, height: 42),
+        const SizedBox(width: 10),
+        podiumStep(entry: first, rank: 1, height: 64),
+        const SizedBox(width: 10),
+        podiumStep(entry: third, rank: 3, height: 32),
+      ],
+    );
+  }
+
   Widget _buildLiveStandingsSection() {
     return StreamBuilder<QuerySnapshot>(
       stream: _authService.getHouseStandingsStream(),
@@ -2749,7 +4554,7 @@ class _HomeScreenState extends State<HomeScreen>
             !snapshot.hasData || (snapshot.hasData && snapshot.data!.docs.isEmpty);
 
         // Pre-hydrate from local cache so the dashboard never renders blank or 0-points
-        Map<String, int> pointsMap = Map<String, int>.from(
+        final pointsMap = Map<String, int>.from(
           AuthService.getCachedHouseStandings(),
         );
 
@@ -2762,7 +4567,7 @@ class _HomeScreenState extends State<HomeScreen>
             pointsMap[h] = pts;
           }
           // Persist the latest live points to disk for future launches
-          AuthService.cacheHouseStandings(pointsMap);
+          AuthService.cacheHouseStandings(pointsMap, syncedAt: DateTime.now());
         }
 
         final sortedHouses = pointsMap.entries.toList()
@@ -2772,7 +4577,10 @@ class _HomeScreenState extends State<HomeScreen>
           0,
           (acc, val) => acc + val,
         );
-        final maxPts = totalSchoolPoints > 0 ? totalSchoolPoints : 1;
+        final topHousePts =
+            sortedHouses.isNotEmpty && sortedHouses.first.value > 0
+                ? sortedHouses.first.value
+                : 1;
 
         final myHouse = (AuthService.extractHouse(_profile) ??
                 _cachedHouse ??
@@ -2796,10 +4604,12 @@ class _HomeScreenState extends State<HomeScreen>
                 ? sortedHouses[0].key
                 : null;
         if (currentLeader != null &&
+            currentLeader.trim().isNotEmpty &&
             _previousLeader != null &&
             currentLeader != _previousLeader) {
+          final cleanLeader = currentLeader.trim();
           final leaderNameDisplay =
-              '${currentLeader[0].toUpperCase()}${currentLeader.substring(1)}';
+              '${cleanLeader[0].toUpperCase()}${cleanLeader.substring(1)}';
           final leaderPts = sortedHouses[0].value;
           try {
             SemanticsService.sendAnnouncement(
@@ -2812,18 +4622,18 @@ class _HomeScreenState extends State<HomeScreen>
         _previousLeader = currentLeader;
 
         final standingsWidget = Container(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surface,
             borderRadius: BorderRadius.circular(28),
             border: Border.all(
               color: Theme.of(
                 context,
-              ).colorScheme.outline.withValues(alpha: 0.5),
+              ).colorScheme.outline.withValues(alpha: 0.45),
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.03),
+                color: Colors.black.withValues(alpha: 0.04),
                 blurRadius: 18,
                 offset: const Offset(0, 6),
               ),
@@ -2870,14 +4680,18 @@ class _HomeScreenState extends State<HomeScreen>
               final house = entry.value.key;
               final pts = entry.value.value;
               final color = HouseColors.getHouseColor(house);
-              final houseNameDisplay =
-                  '${house[0].toUpperCase()}${house.substring(1)}';
+              final houseEmoji = HouseColors.getHouseEmoji(house);
+              final houseNameDisplay = _formatHouseLabel(house);
+              final isMine = house.trim().toLowerCase() == myHouse;
+              final sharePct = totalSchoolPoints > 0
+                  ? ((pts / totalSchoolPoints) * 100).round()
+                  : 0;
               // Medal emojis for top 3 positions
               const medals = {1: '🥇', 2: '🥈', 3: '🥉'};
               final medal = medals[rank];
 
               return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
+                padding: const EdgeInsets.symmetric(vertical: 5),
                 child: MergeSemantics(
                   child: Semantics(
                     container: true,
@@ -2904,10 +4718,11 @@ class _HomeScreenState extends State<HomeScreen>
                       vertical: 10,
                     ),
                     decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.04),
+                      color: color.withValues(alpha: isMine ? 0.09 : 0.04),
                       borderRadius: BorderRadius.circular(18),
                       border: Border.all(
-                        color: color.withValues(alpha: 0.15),
+                        color: color.withValues(alpha: isMine ? 0.55 : 0.16),
+                        width: isMine ? 1.5 : 1,
                       ),
                     ),
                     child: Column(
@@ -2925,15 +4740,15 @@ class _HomeScreenState extends State<HomeScreen>
                                         height: 36,
                                         decoration: BoxDecoration(
                                           color: rank == 1
-                                              ? Colors.amber.withValues(alpha: 0.2)
+                                              ? Colors.amber.withValues(alpha: 0.22)
                                               : rank == 2
                                               ? const Color(
                                                   0xFFC0C0C0,
-                                                ).withValues(alpha: 0.2)
+                                                ).withValues(alpha: 0.22)
                                               : rank == 3
                                               ? const Color(
                                                   0xFFCD7F32,
-                                                ).withValues(alpha: 0.2)
+                                                ).withValues(alpha: 0.22)
                                               : color.withValues(alpha: 0.12),
                                           shape: BoxShape.circle,
                                         ),
@@ -2953,35 +4768,58 @@ class _HomeScreenState extends State<HomeScreen>
                                                 ),
                                         ),
                                       ),
-                                      const SizedBox(width: 12),
+                                      const SizedBox(width: 10),
                                       Expanded(
                                         child: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            Row(
+                                            Wrap(
+                                              crossAxisAlignment:
+                                                  WrapCrossAlignment.center,
+                                              spacing: 6,
+                                              runSpacing: 3,
                                               children: [
-                                                Flexible(
-                                                  child: Text(
-                                                    houseNameDisplay,
-                                                    overflow: TextOverflow.ellipsis,
-                                                    style: const TextStyle(
-                                                      fontSize: 16,
-                                                      fontWeight: FontWeight.w700,
-                                                    ),
+                                                Text(
+                                                  houseEmoji,
+                                                  style: const TextStyle(fontSize: 14),
+                                                ),
+                                                Text(
+                                                  houseNameDisplay,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: const TextStyle(
+                                                    fontSize: 15.5,
+                                                    fontWeight: FontWeight.w800,
                                                   ),
                                                 ),
-                                                const SizedBox(width: 6),
-                                                Icon(
-                                                  Icons.leaderboard_outlined,
-                                                  size: 14,
-                                                  color: color.withValues(alpha: 0.8),
-                                                ),
+                                                if (isMine)
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(
+                                                      horizontal: 6,
+                                                      vertical: 2,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color: color.withValues(alpha: 0.16),
+                                                      borderRadius:
+                                                          BorderRadius.circular(999),
+                                                    ),
+                                                    child: Text(
+                                                      'YOUR HOUSE',
+                                                      style: TextStyle(
+                                                        fontSize: 9,
+                                                        fontWeight: FontWeight.w900,
+                                                        color: color,
+                                                      ),
+                                                    ),
+                                                  ),
                                               ],
                                             ),
+                                            const SizedBox(height: 2),
                                             Text(
-                                              rank == 1
-                                                  ? 'Leading • Tap for Leaderboard'
+                                              rank == 1 && pts > 0
+                                                  ? '$sharePct% share • Leading • Tap for roster'
+                                                  : totalSchoolPoints > 0
+                                                  ? '$sharePct% of school total • Tap for roster'
                                                   : 'Tap to view contributor roster',
                                               overflow: TextOverflow.ellipsis,
                                               style: TextStyle(
@@ -3014,17 +4852,17 @@ class _HomeScreenState extends State<HomeScreen>
                                           child: Container(
                                             padding: const EdgeInsets.symmetric(
                                               horizontal: 10,
-                                              vertical: 4,
+                                              vertical: 5,
                                             ),
                                             decoration: BoxDecoration(
-                                              color: color.withValues(alpha: 0.1),
+                                              color: color.withValues(alpha: 0.12),
                                               borderRadius: BorderRadius.circular(10),
                                             ),
                                             child: Text(
                                               '$pts Pts',
                                               style: TextStyle(
                                                 fontSize: 14,
-                                                fontWeight: FontWeight.w800,
+                                                fontWeight: FontWeight.w900,
                                                 color: color,
                                               ),
                                             ),
@@ -3035,7 +4873,7 @@ class _HomeScreenState extends State<HomeScreen>
                                       Icon(
                                         Icons.chevron_right_rounded,
                                         size: 18,
-                                        color: color.withValues(alpha: 0.6),
+                                        color: color.withValues(alpha: 0.65),
                                       ),
                                     ],
                                   ),
@@ -3048,7 +4886,9 @@ class _HomeScreenState extends State<HomeScreen>
                         ClipRRect(
                           borderRadius: BorderRadius.circular(999),
                           child: LinearProgressIndicator(
-                            value: pts == 0 ? 0.05 : pts / maxPts,
+                            value: pts <= 0
+                                ? 0.04
+                                : (pts / topHousePts).clamp(0.06, 1.0),
                             backgroundColor: color.withValues(alpha: 0.12),
                             valueColor: AlwaysStoppedAnimation<Color>(color),
                             minHeight: rank == 1 ? 10 : 8,
@@ -3085,8 +4925,9 @@ class _HomeScreenState extends State<HomeScreen>
     String houseName,
     String scholarNo,
     String studentName,
-    Color themeColor,
-  ) {
+    Color themeColor, {
+    bool younger = false,
+  }) {
     final cards = [
       {
         'title': '👥 Switch Account / Siblings',
@@ -3107,6 +4948,20 @@ class _HomeScreenState extends State<HomeScreen>
             'Private direct messaging between students and school council members.',
         'icon': Icons.chat_bubble_rounded,
         'color': const Color(0xFF2563EB),
+      },
+      {
+        'title': '🏠 My House Group',
+        'sub':
+            'Read house announcements and updates from your captains, council, and staff.',
+        'icon': Icons.groups_rounded,
+        'color': HouseColors.getHouseColor(houseName),
+      },
+      {
+        'title': '🏫 My Class Group',
+        'sub':
+            'Class announcements, homework, and updates from your class teacher and representatives.',
+        'icon': Icons.school_rounded,
+        'color': themeColor,
       },
       {
         'title': 'Attendance Record',
@@ -3140,13 +4995,24 @@ class _HomeScreenState extends State<HomeScreen>
       },
     ];
 
+    // Younger students get the simpler service list: no 1:1 council chat,
+    // election ballot, or certificate-claim workflow.
+    final visibleCards = younger
+        ? cards.where((item) {
+            final title = item['title'] as String;
+            return title != '1-on-1 Council & Student Chats' &&
+                title != '🗳️ Student Council Elections' &&
+                title != 'Submit House Claim';
+          }).toList()
+        : cards;
+
     return ListView.separated(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      itemCount: cards.length,
+      itemCount: visibleCards.length,
       separatorBuilder: (context, index) => const SizedBox(height: 14),
       itemBuilder: (context, index) {
-        final item = cards[index];
+        final item = visibleCards[index];
         final color = item['color'] as Color;
         return InkWell(
           onTap: () {
@@ -3164,6 +5030,16 @@ class _HomeScreenState extends State<HomeScreen>
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const ChatListScreen()),
+              );
+            } else if (item['title'] == '🏠 My House Group') {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const HouseGroupScreen()),
+              );
+            } else if (item['title'] == '🏫 My Class Group') {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ClassGroupScreen()),
               );
             } else if (item['title'] == 'Attendance Record') {
               Navigator.push(
@@ -3199,11 +5075,14 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
               );
             } else if (item['title'] == '🗳️ Student Council Elections') {
+              final activeSNo = (AuthService.getCachedScholarNo() ?? scholarNo).trim();
               Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) => ElectionChamberScreen(
                     userHouse: houseName,
+                    scholarNo: activeSNo,
+                    studentName: studentName,
                   ),
                 ),
               );
@@ -3698,7 +5577,7 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _buildLiveNoticesFeed(Color themeColor) {
+  Widget _buildLiveNoticesFeed(Color themeColor, {required bool canPost}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -3712,11 +5591,16 @@ class _HomeScreenState extends State<HomeScreen>
               'Official Circulars & Notices',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
             ),
-            TextButton.icon(
-              onPressed: _showPostCircularDialog,
-              icon: const Icon(Icons.post_add_rounded, size: 18),
-              label: const Text('Post Circular', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
-            ),
+            if (canPost)
+              TextButton.icon(
+                key: const Key('post_circular_button'),
+                onPressed: _showPostCircularDialog,
+                icon: const Icon(Icons.post_add_rounded, size: 18),
+                label: const Text(
+                  'Post Circular',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+                ),
+              ),
           ],
         ),
         const SizedBox(height: 8),
@@ -3732,7 +5616,54 @@ class _HomeScreenState extends State<HomeScreen>
               );
             }
 
-            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+            final cached = AuthService.getCachedNotices();
+            final hasRemoteDocs = snapshot.hasData && snapshot.data!.docs.isNotEmpty;
+
+            if (snapshot.hasError && cached.isEmpty) {
+              return Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: Colors.red.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: const Column(
+                  children: [
+                    Icon(Icons.cloud_off_rounded, color: Colors.red, size: 34),
+                    SizedBox(height: 8),
+                    Text(
+                      'Could not load circulars',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Check the connection and try again.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            final notices = hasRemoteDocs
+                ? snapshot.data!.docs.map((doc) {
+                    final raw = doc.data();
+                    final data = raw is Map
+                        ? Map<String, dynamic>.from(raw)
+                        : <String, dynamic>{};
+                    return SchoolNotice.fromMap(doc.id, data);
+                  }).toList()
+                : (cached.isNotEmpty ? cached : SchoolNotice.getFoundationalNotices());
+
+            if (hasRemoteDocs) {
+              AuthService.cacheNotices(notices);
+            }
+
+            if (notices.isEmpty) {
               return Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(36),
@@ -3751,11 +5682,16 @@ class _HomeScreenState extends State<HomeScreen>
                     const SizedBox(height: 14),
                     const Text(
                       'No Circulars Posted Yet',
-                      style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'When school administrators publish new announcements or circulars, they will appear live right here.',
+                      canPost
+                          ? 'Post the first circular with details and an optional PDF attachment.'
+                          : 'When school administrators publish new announcements or circulars, they will appear live right here.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 14,
@@ -3771,16 +5707,10 @@ class _HomeScreenState extends State<HomeScreen>
             return ListView.separated(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              itemCount: snapshot.data!.docs.length,
+              itemCount: notices.length,
               separatorBuilder: (context, index) => const SizedBox(height: 12),
               itemBuilder: (context, index) {
-                final doc = snapshot.data!.docs[index];
-                final raw = doc.data();
-                final data = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
-                final title = data['title'] ?? 'School Announcement';
-                final desc = data['content'] ?? '';
-                final date = data['date'] ?? 'Recent';
-
+                final notice = notices[index];
                 return Container(
                   padding: const EdgeInsets.all(22),
                   decoration: BoxDecoration(
@@ -3808,7 +5738,7 @@ class _HomeScreenState extends State<HomeScreen>
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
-                              'Circular',
+                              notice.categoryLabel,
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
@@ -3818,7 +5748,9 @@ class _HomeScreenState extends State<HomeScreen>
                           ),
                           Flexible(
                             child: Text(
-                              date.toString(),
+                              notice.date.trim().isEmpty
+                                  ? 'Recent'
+                                  : notice.date,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
@@ -3830,23 +5762,103 @@ class _HomeScreenState extends State<HomeScreen>
                           ),
                         ],
                       ),
+                      if (notice.targetAudience.trim().isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          notice.targetAudience,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 12),
                       Text(
-                        title.toString(),
+                        notice.title,
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        desc.toString(),
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey[600],
-                          height: 1.4,
+                      if (notice.content.trim().isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          notice.content,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey[600],
+                            height: 1.4,
+                          ),
                         ),
-                      ),
+                      ],
+                      if (notice.hasAttachment) ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          key: ValueKey('circular_attachment_${notice.id}'),
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withValues(alpha: 0.07),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.red.withValues(alpha: 0.3),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.picture_as_pdf_rounded,
+                                color: Colors.red,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      notice.attachmentLabel,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    if (notice.attachmentSize > 0)
+                                      Text(
+                                        notice.attachmentSize >= 1024 * 1024
+                                            ? '${(notice.attachmentSize / (1024 * 1024)).toStringAsFixed(1)} MB'
+                                            : '${(notice.attachmentSize / 1024).toStringAsFixed(0)} KB',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.grey[600],
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              TextButton.icon(
+                                key: ValueKey(
+                                  'circular_open_pdf_${notice.id}',
+                                ),
+                                onPressed: () =>
+                                    _openCircularAttachment(notice),
+                                icon: const Icon(
+                                  Icons.open_in_new_rounded,
+                                  size: 15,
+                                ),
+                                label: const Text(
+                                  'Open PDF',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 );
@@ -3858,14 +5870,56 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  Future<void> _openCircularAttachment(SchoolNotice notice) async {
+    final url = notice.attachmentUrl.trim();
+    if (url.isEmpty) return;
+
+    if (url.startsWith('data:application/pdf;base64,') || url.startsWith('data:')) {
+      try {
+        final commaIdx = url.indexOf(',');
+        final b64 = commaIdx >= 0 ? url.substring(commaIdx + 1) : url;
+        final bytes = base64Decode(b64);
+        final tempDir = Directory.systemTemp;
+        final safeName = notice.attachmentName.isNotEmpty
+            ? notice.attachmentName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_')
+            : 'circular_${notice.id}.pdf';
+        final file = File('${tempDir.path}/$safeName');
+        await file.writeAsBytes(bytes, flush: true);
+        final opened = await launchUrl(Uri.file(file.path));
+        if (opened) return;
+      } catch (e) {
+        debugPrint('Error opening base64 pdf: $e');
+      }
+    }
+
+    final uri = Uri.tryParse(url);
+    if (uri == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('This circular attachment link is invalid.')),
+      );
+      return;
+    }
+    var opened = false;
+    try {
+      opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      opened = false;
+    }
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Could not open the PDF. Check that a PDF viewer or browser is available.',
+          ),
+        ),
+      );
+    }
+  }
+
   void _showPostCircularDialog() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final titleController = TextEditingController();
-    final contentController = TextEditingController();
-    String category = 'Academic';
-    String targetAudience = 'All Students';
-
-    showModalBottomSheet(
+    showModalBottomSheet<SchoolNoticePublishResult>(
       context: context,
       isScrollControlled: true,
       backgroundColor: isDark ? const Color(0xFF151D2E) : Colors.white,
@@ -3873,147 +5927,45 @@ class _HomeScreenState extends State<HomeScreen>
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) {
-        return ManagedModalScope(
-          controllers: [titleController, contentController],
-          child: StatefulBuilder(
-            builder: (modalCtx, setModalState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 20,
-                right: 20,
-                top: 24,
-                bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '📢 Post School Circular & Notice',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                        color: isDark ? Colors.white : const Color(0xFF0F172A),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Publish official circulars or event notices to all students and faculty.',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: titleController,
-                      decoration: InputDecoration(
-                        labelText: 'Circular Title',
-                        hintText: 'e.g. Mid-Term Examination Conduct & Guidelines',
-                        filled: true,
-                        fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: DropdownButtonFormField<String>(
-                            initialValue: category,
-                            decoration: InputDecoration(
-                              labelText: 'Category',
-                              filled: true,
-                              fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                            ),
-                            items: ['Academic', 'Sports', 'Examination', 'Holiday & Closure', 'General'].map((c) {
-                              return DropdownMenuItem(value: c, child: Text(c));
-                            }).toList(),
-                            onChanged: (val) {
-                              if (val != null) setModalState(() => category = val);
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: DropdownButtonFormField<String>(
-                            initialValue: targetAudience,
-                            decoration: InputDecoration(
-                              labelText: 'Audience',
-                              filled: true,
-                              fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                            ),
-                            items: ['All Students', 'Middle School (6-8)', 'Secondary (9-10)', 'Senior Secondary (11-12)'].map((a) {
-                              return DropdownMenuItem(value: a, child: Text(a, overflow: TextOverflow.ellipsis));
-                            }).toList(),
-                            onChanged: (val) {
-                              if (val != null) setModalState(() => targetAudience = val);
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: contentController,
-                      maxLines: 4,
-                      decoration: InputDecoration(
-                        labelText: 'Circular Content / Details',
-                        hintText: 'Enter full proclamation or circular text...',
-                        filled: true,
-                        fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 48,
-                      child: ElevatedButton(
-                        onPressed: () async {
-                          final noticeTitle = titleController.text.trim();
-                          final noticeContent = contentController.text.trim();
-                          if (noticeTitle.isEmpty || noticeContent.isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Please enter circular title and content.')),
-                            );
-                            return;
-                          }
-                          final messenger = ScaffoldMessenger.of(context);
-                          Navigator.of(ctx).pop();
-                          await _authService.publishSchoolNotice(
-                            title: noticeTitle,
-                            content: noticeContent,
-                            category: category,
-                            targetAudience: targetAudience,
-                          );
-                          if (!mounted) return;
-                          setState(() {});
-                          messenger.showSnackBar(
-                            SnackBar(
-                              content: Text('Published circular: "$noticeTitle"!'),
-                              backgroundColor: Colors.green[700],
-                            ),
-                          );
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF4338CA),
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                        ),
-                        child: const Text('Broadcast Circular', style: TextStyle(fontWeight: FontWeight.w800)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+        return SchoolCircularComposer(
+          isDark: isDark,
+          onPublish: ({
+            required String title,
+            required String content,
+            required String category,
+            required String targetAudience,
+            PickedCircularPdf? pdf,
+          }) {
+            return _authService.publishSchoolNotice(
+              title: title,
+              content: content,
+              category: category,
+              targetAudience: targetAudience,
+              attachmentBytes: pdf?.bytes,
+              attachmentName: pdf?.fileName,
             );
           },
-        ),
-      );
-    },
-  );
-}
+        );
+      },
+    ).then((result) {
+      if (result != null && result.success && mounted) {
+        setState(() {});
+        final localOnly = result.localOnly;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              localOnly
+                  ? 'Saved on this device only. It was not broadcast to other users.'
+                  : result.attachmentUrl != null
+                      ? 'Published circular with PDF attachment!'
+                      : 'Published circular successfully!',
+            ),
+            backgroundColor: localOnly ? Colors.orange[800] : Colors.green[700],
+          ),
+        );
+      }
+    });
+  }
 
   Widget _buildLiveTickerBanner(bool isSuperAdmin) {
     return StreamBuilder<DocumentSnapshot>(
@@ -4790,6 +6742,48 @@ class _HomeScreenState extends State<HomeScreen>
                     },
                   ),
                   _buildDrawerTile(
+                    Icons.groups_rounded,
+                    '🏠 House Group',
+                    color,
+                    () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const HouseGroupScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildDrawerTile(
+                    Icons.school_rounded,
+                    '🏫 Class Group',
+                    color,
+                    () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ClassGroupScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildDrawerTile(
+                    Icons.notifications_active_rounded,
+                    '🔔 Notifications',
+                    color,
+                    () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const NotificationCenterScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildDrawerTile(
                     Icons.person_outline_rounded,
                     'My Academic Profile',
                     color,
@@ -5046,19 +7040,16 @@ class _HomeScreenState extends State<HomeScreen>
     Color color,
   ) {
     // Dynamically calculate attendance rate from cached attendance records
+    // using the shared institutional policy. No records means no data, not 100%.
     final records = AuthService.getCachedAttendanceRecords(scholarNo: scholarNo);
+    final summary = AttendanceSummary.fromRecords(records);
     String attendanceDisplay;
-    if (records.isNotEmpty) {
-      final presentCount = records
-          .where((r) => r.status == AttendanceStatus.present || r.status == AttendanceStatus.excused)
-          .length;
-      final lateCount = records.where((r) => r.status == AttendanceStatus.late).length;
-      final rate = ((presentCount + (lateCount * 0.5)) / records.length) * 100.0;
-      attendanceDisplay = '${rate.toStringAsFixed(1)}%';
+    if (summary.hasData) {
+      attendanceDisplay = '${summary.percentage!.toStringAsFixed(1)}%';
     } else if (_profile?['attendance_rate'] != null) {
       attendanceDisplay = '${_profile!['attendance_rate']}%';
     } else {
-      attendanceDisplay = '100.0%';
+      attendanceDisplay = 'No attendance data';
     }
 
     final standingDisplay = _profile?['academic_standing']?.toString() ?? 'High Honors 🏆';
@@ -5237,15 +7228,42 @@ class _HomeScreenState extends State<HomeScreen>
                     Icon(Icons.local_library_rounded, color: color, size: 28),
                     const SizedBox(width: 12),
                     const Text(
-                      'ASB Library Portal',
+                      'ASB Library Portal (Sample)',
                       style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
                     ),
                   ],
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Your currently borrowed textbooks and literature catalog.',
+                  'Sample preview only. This portal is not connected to the school library system; the loans below are illustrative.',
                   style: TextStyle(color: Colors.grey, fontSize: 13),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.amber.withValues(alpha: 0.45),
+                    ),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.info_outline_rounded, size: 18),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'SAMPLE DATA — no live library connection',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 20),
                 ...books.map(
@@ -5302,16 +7320,17 @@ class _HomeScreenState extends State<HomeScreen>
                               b['due'] = 'Due in $newDays days (Renewed)';
                               b['renewalCount'] = count;
                             });
+                            _saveLibraryLoans();
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text(
-                                  'Renewed "${b['title']}" for an additional 14 days! (Due in ${b['dueDays']} days)',
+                                  'Sample renewal: "${b['title']}" extended by 14 days (Due in ${b['dueDays']} days). This does not update a real library account.',
                                 ),
                               ),
                             );
                           },
                           child: const Text(
-                            'Renew Loan',
+                            'Simulate Renewal',
                             style: TextStyle(
                               fontWeight: FontWeight.w800,
                               fontSize: 12,
@@ -5332,7 +7351,6 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   void _showAppSettingsModal(Color color) {
-    bool pushNotifs = true;
     bool soundEffects = true;
     bool darkTheme = AppThemeController.isDarkMode(context);
 
@@ -5368,16 +7386,16 @@ class _HomeScreenState extends State<HomeScreen>
                 const SizedBox(height: 20),
                 SwitchListTile(
                   title: const Text(
-                    'Push Notifications',
+                    'In-App Notifications',
                     style: TextStyle(fontWeight: FontWeight.w700),
                   ),
                   subtitle: const Text(
-                    'Live house point alerts & council messages',
+                    'Alerts appear inside the app only. Background push is not configured.',
                     style: TextStyle(fontSize: 12),
                   ),
-                  value: pushNotifs,
+                  value: true,
                   activeThumbColor: color,
-                  onChanged: (v) => setModalState(() => pushNotifs = v),
+                  onChanged: null,
                 ),
                 SwitchListTile(
                   title: const Text(
@@ -5443,14 +7461,36 @@ class _HomeScreenState extends State<HomeScreen>
                     'Clear App Cache',
                     style: TextStyle(fontWeight: FontWeight.w700),
                   ),
-                  onTap: () {
+                  onTap: () async {
                     Navigator.pop(context);
+                    int freedBytes = 0;
+                    try {
+                      PaintingBinding.instance.imageCache.clear();
+                      PaintingBinding.instance.imageCache.clearLiveImages();
+                    } catch (_) {}
+                    try {
+                      final tempDir = Directory.systemTemp;
+                      if (tempDir.existsSync()) {
+                        final files = tempDir.listSync(recursive: false);
+                        for (final entity in files) {
+                          try {
+                            if (entity is File && (entity.path.contains('asb') || entity.path.contains('image_picker'))) {
+                              freedBytes += entity.lengthSync();
+                              entity.deleteSync();
+                            }
+                          } catch (_) {}
+                        }
+                      }
+                    } catch (_) {}
                     if (!mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
+                      SnackBar(
                         content: Text(
-                          'Temporary cache cleared. Performance optimized!',
+                          freedBytes > 0
+                              ? 'App cache cleared (${(freedBytes / 1024).toStringAsFixed(1)} KB reclaimed). Performance optimized!'
+                              : 'Memory image cache and temporary buffers cleared. Performance optimized!',
                         ),
+                        behavior: SnackBarBehavior.floating,
                       ),
                     );
                   },

@@ -11,9 +11,9 @@ class GeminiAiService {
 
   /// Official Google Gemini production models in priority fallback order
   static const List<String> _candidateModels = [
+    'gemini-2.5-flash',
+    'gemini-2.5-pro',
     'gemini-2.0-flash',
-    'gemini-1.5-flash',
-    'gemini-1.5-pro',
   ];
 
   /// Public read-only view of official candidate models in priority fallback order
@@ -64,11 +64,14 @@ class GeminiAiService {
     for (final model in _candidateModels) {
       try {
         final url = Uri.parse(
-          'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$trimmed',
+          'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent',
         );
         final res = await _post(
           url: url,
-          headers: {'Content-Type': 'application/json'},
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': trimmed,
+          },
           body: jsonEncode({
             'contents': [
               {
@@ -119,12 +122,10 @@ class GeminiAiService {
     try {
       final records = AuthService.getCachedAttendanceRecords(scholarNo: scholarNo);
       if (records.isNotEmpty) {
-        final total = records.length;
-        final present = records.where((r) => r.status == AttendanceStatus.present).length;
-        final lateCount = records.where((r) => r.status == AttendanceStatus.late).length;
-        final pct = (present / total) * 100.0;
+        final summary = AttendanceSummary.fromRecords(records);
+        final pct = summary.percentage!;
         buffer.writeln('\n[Attendance Metrics]');
-        buffer.writeln('Total Tracked Days: $total, Present: $present, Late: $lateCount');
+        buffer.writeln('Total Tracked Days: ${summary.totalDays}, Present: ${summary.presentDays}, Late: ${summary.lateDays}, Excused: ${summary.excusedDays}, Absent: ${summary.absentDays}');
         buffer.writeln('Attendance Percentage: ${pct.toStringAsFixed(1)}%');
         if (pct < 75.0) {
           buffer.writeln('⚠️ STATUTORY ATTENDANCE WARNING: Student attendance (${pct.toStringAsFixed(1)}%) is BELOW the mandatory CBSE 75% minimum threshold!');
@@ -132,7 +133,7 @@ class GeminiAiService {
           buffer.writeln('✅ Attendance Status: Satisfies statutory CBSE 75% threshold.');
         }
       } else {
-        buffer.writeln('\n[Attendance Metrics] No attendance records logged yet (100% baseline).');
+        buffer.writeln('\n[Attendance Metrics] No attendance records logged yet. Attendance data is unavailable.');
       }
     } catch (_) {}
 
@@ -186,7 +187,16 @@ class GeminiAiService {
       final housePts = standings[house.toLowerCase()] ?? 0;
       final contrib = AuthService.getCachedStudentContribution(scholarNo);
 
-      buffer.writeln('\n[House Standings & Contribution]');
+      final syncedAt = AuthService.getStandingsLastSyncedAt();
+      final isFresh = AuthService.isFirebaseLive &&
+          syncedAt != null &&
+          DateTime.now().difference(syncedAt).inMinutes < 15;
+      final provenanceStr = isFresh
+          ? 'Live Server Verified (synced ${syncedAt.hour.toString().padLeft(2, '0')}:${syncedAt.minute.toString().padLeft(2, '0')})'
+          : (syncedAt != null
+              ? 'Cached Offline (last synced ${syncedAt.hour.toString().padLeft(2, '0')}:${syncedAt.minute.toString().padLeft(2, '0')})'
+              : 'Offline Baseline');
+      buffer.writeln('\n[House Standings & Contribution ($provenanceStr)]');
       buffer.writeln('Current House Rank: #${houseRank == 0 ? 1 : houseRank} / 4 (${house.toUpperCase()} has $housePts PTS)');
       buffer.writeln('Student Contribution: ${contrib.totalPoints} PTS (Merits: ${contrib.merits}, Demerits: ${contrib.demerits})');
       final standingsList = sorted.map((e) => '${e.key.toUpperCase()}: ${e.value} pts').join(' | ');
@@ -301,7 +311,7 @@ ${liveContext ?? ''}
     for (final modelName in _candidateModels) {
       try {
         final restUrl = Uri.parse(
-          'https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$userKey',
+          'https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent',
         );
 
         final contents = [
@@ -340,7 +350,10 @@ ${liveContext ?? ''}
 
         final res = await _post(
           url: restUrl,
-          headers: {'Content-Type': 'application/json'},
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': userKey,
+          },
           body: jsonEncode(payload),
           timeout: const Duration(seconds: 15),
         );
@@ -393,7 +406,7 @@ ${liveContext ?? ''}
     final effectiveClass = classLevel ?? (AuthService.getCachedProfile()?['class_level']?.toString() ?? 'Grade 10');
 
     // 1. Timetable / Schedule Queries
-    if (lower.contains('timetable') || lower.contains('period') || lower.contains('class') || lower.contains('schedule for today') || (lower.contains('schedule') && !lower.contains('exam'))) {
+    if (lower.contains('timetable') || lower.contains('period') || lower.contains('class schedule') || lower.contains('my class') || lower.contains('next class') || lower.contains('schedule for today') || (lower.contains('schedule') && !lower.contains('exam'))) {
       final periods = AuthService.getCachedTimetable(classLevel: effectiveClass);
       if (periods.isNotEmpty) {
         final buffer = StringBuffer();
@@ -413,18 +426,15 @@ ${liveContext ?? ''}
     if (lower.contains('attendance') || lower.contains('present') || lower.contains('absent') || lower.contains('percentage')) {
       final records = AuthService.getCachedAttendanceRecords(scholarNo: effectiveScholar);
       if (records.isNotEmpty) {
-        final total = records.length;
-        final present = records.where((r) => r.status == AttendanceStatus.present).length;
-        final lateCount = records.where((r) => r.status == AttendanceStatus.late).length;
-        final absent = records.where((r) => r.status == AttendanceStatus.absent).length;
-        final pct = (present / total) * 100.0;
+        final summary = AttendanceSummary.fromRecords(records);
+        final pct = summary.percentage!;
         final isUnderThreshold = pct < 75.0;
 
         final buffer = StringBuffer();
         buffer.writeln('📊 Live Attendance Audit for $studentName\n');
         buffer.writeln('• Scholar No: $effectiveScholar');
-        buffer.writeln('• Total Recorded Sessions: $total days');
-        buffer.writeln('• Present: $present | Late: $lateCount | Absent: $absent');
+        buffer.writeln('• Total Recorded Sessions: ${summary.totalDays} days');
+        buffer.writeln('• Present: ${summary.presentDays} | Late: ${summary.lateDays} | Excused: ${summary.excusedDays} | Absent: ${summary.absentDays}');
         buffer.writeln('• Attendance Percentage: ${pct.toStringAsFixed(1)}%\n');
 
         if (isUnderThreshold) {
@@ -434,7 +444,7 @@ ${liveContext ?? ''}
         }
         return buffer.toString();
       } else {
-        return '📊 Live Attendance Audit\nNo attendance logs recorded yet for Scholar $effectiveScholar. Your baseline attendance is at 100%!';
+        return '📊 Live Attendance Audit\nNo attendance logs recorded yet for Scholar $effectiveScholar. Attendance data is unavailable.';
       }
     }
 
@@ -525,7 +535,16 @@ ${liveContext ?? ''}
       final contrib = AuthService.getCachedStudentContribution(effectiveScholar);
 
       final buffer = StringBuffer();
-      buffer.writeln('🏆 Live House Standings & Strategy for $studentName ($hUpper)\n');
+      final syncedAt = AuthService.getStandingsLastSyncedAt();
+      final isFresh = AuthService.isFirebaseLive &&
+          syncedAt != null &&
+          DateTime.now().difference(syncedAt).inMinutes < 15;
+      final provenanceStr = isFresh
+          ? 'Live Server Verified'
+          : (syncedAt != null
+              ? 'Cached (synced ${syncedAt.hour.toString().padLeft(2, '0')}:${syncedAt.minute.toString().padLeft(2, '0')})'
+              : 'Offline / Cached');
+      buffer.writeln('🏆 House Standings ($provenanceStr) & Strategy for $studentName ($hUpper)\n');
       buffer.writeln('• $hUpper Current Rank: #$houseRank with $housePts PTS');
       buffer.writeln('• Your Contribution: ${contrib.totalPoints} PTS (Merits: ${contrib.merits}, Demerits: ${contrib.demerits})\n');
       buffer.writeln('Current Standings:');

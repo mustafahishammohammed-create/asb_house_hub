@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
 import '../screens/merch_store_tab.dart';
 
 typedef VoucherValidationResult = ({
@@ -37,17 +38,27 @@ class VoucherSecurityService {
   // Institutional HMAC salt for tamper prevention
   static const String _institutionSecret = 'ASB_HOUSE_HUB_OFFICIAL_MERCH_KEY_2026_SECURE';
 
-  /// Generates a HMAC-SHA256 signature token for an order voucher.
+  static String _canonicalItemsDigest(List<String> items) {
+    final normalized = items.map((e) => e.trim()).join(';');
+    return sha256.convert(utf8.encode(normalized)).toString();
+  }
+
+  /// Generates an HMAC-SHA256 signature token for an order voucher.
   static String generateVoucherToken({
     required String billNo,
     required int points,
     required String scholarNo,
     required int timestampMillis,
+    List<String>? items,
+    double? totalBhd,
   }) {
-    final payload = '$billNo|$points|$scholarNo|$timestampMillis|$_institutionSecret';
-    final bytes = utf8.encode(payload);
-    final digest = sha256.convert(bytes);
-    return digest.toString();
+    final itemsSuffix = items != null ? '|${_canonicalItemsDigest(items)}' : '';
+    final bhdSuffix =
+        totalBhd != null ? '|${totalBhd.toStringAsFixed(3)}' : '';
+    final payload =
+        '$billNo|$points|$scholarNo|$timestampMillis$itemsSuffix$bhdSuffix';
+    final hmac = Hmac(sha256, utf8.encode(_institutionSecret));
+    return hmac.convert(utf8.encode(payload)).toString();
   }
 
   /// Builds a complete scannable JSON payload with cryptographic verification token.
@@ -56,6 +67,7 @@ class VoucherSecurityService {
     required int points,
     required String scholarNo,
     required List<String> items,
+    double? totalBhd,
     int? timestampMillis,
   }) {
     final ts = timestampMillis ?? DateTime.now().millisecondsSinceEpoch;
@@ -64,14 +76,17 @@ class VoucherSecurityService {
       points: points,
       scholarNo: scholarNo,
       timestampMillis: ts,
+      items: items,
+      totalBhd: totalBhd,
     );
 
     return jsonEncode({
       'type': 'asb_store_voucher',
-      'version': '1.0',
+      'version': '2.0',
       'bill_no': billNo,
       'scholar_no': scholarNo,
       'pts': points,
+      if (totalBhd != null) 'total_bhd': double.parse(totalBhd.toStringAsFixed(3)),
       'items': items,
       'timestamp': ts,
       'token': token,
@@ -85,13 +100,17 @@ class VoucherSecurityService {
     required int points,
     required String scholarNo,
     required int timestampMillis,
+    List<String>? items,
+    double? totalBhd,
   }) {
-    if (token.isEmpty || billNo.isEmpty || points <= 0) return false;
+    if (token.isEmpty || billNo.isEmpty || points < 0) return false;
     final expected = generateVoucherToken(
       billNo: billNo,
       points: points,
       scholarNo: scholarNo,
       timestampMillis: timestampMillis,
+      items: items,
+      totalBhd: totalBhd,
     );
     return token.toLowerCase() == expected.toLowerCase();
   }
@@ -108,19 +127,8 @@ class VoucherSecurityService {
   }) validateVoucherPayload(String rawPayload) {
     final trimmed = rawPayload.trim();
     if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) {
-      // Legacy token fallback check (e.g. ASB-ORDER-ASB-123456)
-      if (trimmed.startsWith('ASB-ORDER-')) {
-        final id = trimmed.replaceFirst('ASB-ORDER-', '');
-        return (
-          isValid: true,
-          isTampered: false,
-          billNo: id,
-          points: null,
-          scholarNo: null,
-          items: <String>[],
-          error: null,
-        );
-      }
+      // Legacy unsigned vouchers are no longer accepted: without a signature
+      // anyone could print or edit a QR code and redeem merchandise.
       return (
         isValid: false,
         isTampered: false,
@@ -128,7 +136,8 @@ class VoucherSecurityService {
         points: null,
         scholarNo: null,
         items: <String>[],
-        error: 'Not a valid voucher QR payload',
+        error:
+            'Unsigned legacy voucher rejected. Ask staff to reissue a signed pass.',
       );
     }
 
@@ -156,6 +165,9 @@ class VoucherSecurityService {
       final List<String> items = (rawItems is List)
           ? rawItems.map((e) => e.toString()).toList()
           : <String>[];
+      final rawBhd = data['total_bhd'];
+      final double? totalBhd = rawBhd is num ? rawBhd.toDouble() : null;
+      final isV2 = (data['version']?.toString() ?? '') == '2.0';
 
       if (billNo.isEmpty) {
         return (
@@ -169,26 +181,39 @@ class VoucherSecurityService {
         );
       }
 
-      // If token is present, strictly verify HMAC
-      if (token.isNotEmpty && ts > 0) {
-        final matches = validateVoucherToken(
-          token: token,
+      // A signature is mandatory. A JSON payload without one is treated as
+      // unsigned, not as a legacy-compatible voucher.
+      if (token.isEmpty || ts <= 0) {
+        return (
+          isValid: false,
+          isTampered: false,
           billNo: billNo,
           points: points,
           scholarNo: scholarNo,
-          timestampMillis: ts,
+          items: items,
+          error: 'Missing cryptographic signature',
         );
-        if (!matches) {
-          return (
-            isValid: false,
-            isTampered: true,
-            billNo: billNo,
-            points: points,
-            scholarNo: scholarNo,
-            items: items,
-            error: 'Cryptographic signature mismatch — possible tampering detected!',
-          );
-        }
+      }
+
+      final matches = validateVoucherToken(
+        token: token,
+        billNo: billNo,
+        points: points,
+        scholarNo: scholarNo,
+        timestampMillis: ts,
+        items: isV2 ? items : null,
+        totalBhd: isV2 ? totalBhd : null,
+      );
+      if (!matches) {
+        return (
+          isValid: false,
+          isTampered: true,
+          billNo: billNo,
+          points: points,
+          scholarNo: scholarNo,
+          items: items,
+          error: 'Cryptographic signature mismatch — possible tampering detected!',
+        );
       }
 
       return (
@@ -444,11 +469,22 @@ class VoucherSecurityService {
     try {
       final db = firestore ?? FirebaseFirestore.instance;
       final docRef = db.collection('orders').doc(cleanBill);
-      final snapshot = await docRef.get();
 
-      if (snapshot.exists) {
+      final txResult = await db.runTransaction((tx) async {
+        final snapshot = await tx.get(docRef);
+        if (!snapshot.exists) {
+          return (
+            exists: false,
+            unverified: false,
+            claimedBy: null as String?,
+            claimedAt: null as DateTime?,
+            status: null as String?,
+          );
+        }
+
         final data = snapshot.data();
-        final currentStatus = data?['status']?.toString().toLowerCase();
+        final currentStatus =
+            (data?['status']?.toString().toLowerCase() ?? 'placed').trim();
         if (currentStatus == 'claimed') {
           final claimedBy = data?['claimed_by'] as String? ?? 'Another Evaluator';
           DateTime? claimedAt;
@@ -459,22 +495,63 @@ class VoucherSecurityService {
             claimedAt = DateTime.tryParse(rawTs);
           }
           return (
-            success: false,
-            alreadyClaimed: true,
+            exists: true,
+            unverified: false,
             claimedBy: claimedBy,
             claimedAt: claimedAt,
-            message: 'Voucher #$cleanBill has already been claimed by $claimedBy.',
+            status: currentStatus,
           );
         }
 
-        // Atomically claim the order in Cloud Firestore
-        await docRef.update({
+        // An unpaid/unverified order ('placed' or 'pending') must never be
+        // fulfilled until staff/admin has verified payment ('verified'/'ready').
+        if (currentStatus != 'verified' && currentStatus != 'ready') {
+          return (
+            exists: true,
+            unverified: true,
+            claimedBy: null as String?,
+            claimedAt: null as DateTime?,
+            status: currentStatus,
+          );
+        }
+
+        tx.update(docRef, {
           'status': 'claimed',
           'claimed_by': evaluatorName,
           'claimed_at': FieldValue.serverTimestamp(),
         });
+        return (
+          exists: true,
+          unverified: false,
+          claimedBy: null as String?,
+          claimedAt: null as DateTime?,
+          status: currentStatus,
+        );
+      });
 
-        // Also update local wallet store if present (local cache update only, avoid redundant remote write)
+      if (txResult.exists && txResult.unverified) {
+        return (
+          success: false,
+          alreadyClaimed: false,
+          claimedBy: null,
+          claimedAt: null,
+          message:
+              'Voucher #$cleanBill is still "${txResult.status}" and has not been verified for handover.',
+        );
+      }
+
+      if (txResult.exists && txResult.claimedBy != null) {
+        return (
+          success: false,
+          alreadyClaimed: true,
+          claimedBy: txResult.claimedBy,
+          claimedAt: txResult.claimedAt,
+          message: 'Voucher #$cleanBill has already been claimed by ${txResult.claimedBy}.',
+        );
+      }
+
+      if (txResult.exists) {
+        // Update local wallet store cache if present
         try {
           await GlobalWalletStore.markOrderClaimed(
             cleanBill,
@@ -491,28 +568,8 @@ class VoucherSecurityService {
           message: 'Voucher #$cleanBill successfully claimed and fulfilled.',
         );
       } else {
-        // Document NOT found in remote database.
-        // Check local wallet cache to verify whether this is a genuine locally cached voucher
-        final localMatch = GlobalWalletStore.orders.where((o) => o.receiptId == cleanBill);
-        if (localMatch.isNotEmpty) {
-          await GlobalWalletStore.markOrderClaimed(
-            cleanBill,
-            claimedBy: evaluatorName,
-            claimedAt: DateTime.now(),
-            firestore: db,
-          );
-
-          return (
-            success: true,
-            alreadyClaimed: false,
-            claimedBy: evaluatorName,
-            claimedAt: DateTime.now(),
-            message: 'Voucher #$cleanBill verified from local wallet and claimed.',
-          );
-        }
-
-        // Voucher NOT in Firestore and NOT found in local wallet:
-        // ELIMINATE FALSE-POSITIVE: Return success: false!
+        // In live Firebase mode, an order missing from Firestore must be rejected
+        // rather than trusted from local cache.
         return (
           success: false,
           alreadyClaimed: false,
@@ -521,7 +578,19 @@ class VoucherSecurityService {
           message: 'Voucher #$cleanBill not found in school records. Claim rejected.',
         );
       }
-    } catch (_) {
+    } catch (e) {
+      final isOfflineOrUninit = firestore == null &&
+          Firebase.apps.isEmpty &&
+          e.toString().contains('no-app');
+      if (!isOfflineOrUninit) {
+        return (
+          success: false,
+          alreadyClaimed: false,
+          claimedBy: null,
+          claimedAt: null,
+          message: 'Voucher #$cleanBill verification failed on server.',
+        );
+      }
       // Offline / uninitialized Firestore fallback:
       // Verify against local wallet store before claiming
       final localMatch = GlobalWalletStore.orders.where((o) => o.receiptId == cleanBill);
@@ -541,8 +610,6 @@ class VoucherSecurityService {
         );
       }
 
-      // Offline and voucher NOT found in local store:
-      // ELIMINATE FALSE-POSITIVE: Return success: false!
       return (
         success: false,
         alreadyClaimed: false,

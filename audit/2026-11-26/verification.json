@@ -1,0 +1,45 @@
+{
+  "audit_date": "2026-11-26",
+  "baseline_commit": "9d0a559",
+  "scope": "Local source, builds, synthetic demo Firestore emulator; read-only deployed Functions inventory",
+  "checks": {
+    "flutter_analysis": "No issues",
+    "flutter_tests": {
+      "passed": 685,
+      "failed": 0
+    },
+    "firebase_emulator_tests": {
+      "passed": 13,
+      "failed": 0
+    },
+    "javascript_syntax": "3 modules pass",
+    "windows_release": "pass",
+    "web_release": "pass with CupertinoIcons font warning",
+    "npm_audit": {
+      "info": 0,
+      "low": 0,
+      "moderate": 10,
+      "high": 0,
+      "critical": 0,
+      "total": 10
+    },
+    "deployed_functions": []
+  },
+  "limitations": [
+    "No production writes, deployment, or billing changes",
+    "Billing, deployed rules/indexes and Storage initialization not independently checked",
+    "Android/iOS builds and physical devices untested",
+    "Node 22 deployment parity untested; emulator host Node 24",
+    "No Storage emulator or deployed HTTP/Auth/App Check integration suite",
+    "Known-gap probes record remaining failures; they are not passing security assertions"
+  ],
+  "local_logs": [
+    "build/audit/flutter-test-final.log",
+    "build/audit/flutter-analyze-final.log",
+    "build/audit/flutter-windows-build.log",
+    "build/audit/flutter-web-build-final.log",
+    "build/audit/emulator-final.log",
+    "build/audit/npm-audit-all-after.json",
+    "build/audit/firebase-functions-list.json"
+  ]
+}

@@ -441,7 +441,7 @@ class _AccountSwitcherModalState extends State<AccountSwitcherModal> {
                                     await widget.onSignOutCurrent();
                                   }
                                 } else {
-                                  setState(() {});
+                                  if (mounted) setState(() {});
                                 }
                               }
                             },

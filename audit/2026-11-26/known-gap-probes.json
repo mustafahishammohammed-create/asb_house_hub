@@ -1,0 +1,68 @@
+{
+  "scope": "Local demo emulator only; expected release blockers, not passing security assertions",
+  "results": [
+    {
+      "id": "O02a",
+      "description": "New account can claim a different scholar identity",
+      "result": "DENIED",
+      "code": "permission-denied"
+    },
+    {
+      "id": "O02b",
+      "description": "Forged scholar profile can read victim report card",
+      "result": "DENIED",
+      "code": "permission-denied"
+    },
+    {
+      "id": "O01",
+      "description": "Unverified bootstrap email grants admin write without a user profile",
+      "result": "ALLOWED"
+    },
+    {
+      "id": "O07",
+      "description": "Any signed-in user can send official-looking notifications to another user",
+      "result": "DENIED",
+      "code": "permission-denied"
+    },
+    {
+      "id": "O21",
+      "description": "Student can create a zero-price verified merchandise order",
+      "result": "DENIED",
+      "code": "permission-denied"
+    },
+    {
+      "id": "O08",
+      "description": "Student can self-assert AI verified metadata on a pending claim",
+      "result": "DENIED",
+      "code": "permission-denied"
+    },
+    {
+      "id": "O27",
+      "description": "New chat room existence check",
+      "result": "DENIED",
+      "code": "permission-denied"
+    },
+    {
+      "id": "O28",
+      "description": "Client photo message payload rejected by schema",
+      "result": "ALLOWED"
+    },
+    {
+      "id": "O19",
+      "description": "Current trophy model payload rejected for admin",
+      "result": "ALLOWED"
+    },
+    {
+      "id": "O04",
+      "description": "Suspended teacher still has staff access to medical records",
+      "result": "DENIED",
+      "code": "permission-denied"
+    },
+    {
+      "id": "O33",
+      "description": "Account without grade/profile can register for senior-only event",
+      "result": "DENIED",
+      "code": "permission-denied"
+    }
+  ]
+}

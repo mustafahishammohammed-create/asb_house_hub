@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/semantics.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../services/auth_service.dart';
+import '../services/gamification_security_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/confetti_overlay.dart';
 import '../widgets/apple_fitness_badges_vault.dart';
@@ -160,6 +161,7 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
   Timer? _comboResetTimer;
   DateTime _lastTapTime = DateTime.now();
   bool _showChantSynthesizer = false;
+  double _unflushedSpiritDelta = 0.0;
 
   // Simulated live spirit gauge across 4 houses
   double _rubySpirit = 420;
@@ -174,6 +176,7 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
   int _blitzComboStreak = 0;
   bool _blitzActive = false;
   bool _blitzFinished = false;
+  bool _blitzIsDemo = false;
   int? _blitzSelectedOption;
   bool? _blitzAnswerCorrect;
   Timer? _blitzTimer;
@@ -301,7 +304,38 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
     _comboResetTimer?.cancel();
     _blitzTimer?.cancel();
     _advanceTimer?.cancel();
+    // Flush earned reactor energy before leaving the screen.
+    _flushSpiritDelta();
     super.dispose();
+  }
+
+  /// Persist any pending spirit delta. Called every fifth tap and from
+  /// dispose(), so closing the arena does not silently discard earned energy.
+  void _flushSpiritDelta() {
+    final deltaToCommit = _unflushedSpiritDelta;
+    if (deltaToCommit <= 0) return;
+    _unflushedSpiritDelta = 0.0;
+
+    final houseKey = widget.userHouse.toLowerCase();
+    const validHouses = ['ruby', 'sapphire', 'emerald', 'topaz'];
+    if (!validHouses.contains(houseKey)) return;
+
+    try {
+      final payload = <String, dynamic>{
+        houseKey: FieldValue.increment(deltaToCommit),
+        'last_updated': FieldValue.serverTimestamp(),
+      };
+      if (widget.scholarNo.trim().isNotEmpty) {
+        payload['last_contributor'] = widget.scholarNo.trim();
+      }
+      FirebaseFirestore.instance
+          .collection('system_config')
+          .doc('house_spirit_reactor')
+          .set(payload, SetOptions(merge: true))
+          .catchError((e) {
+            debugPrint('Spirit reactor commit rejected or offline: $e');
+          });
+    } catch (_) {}
   }
 
   // --- Reactor Tap Logic ---
@@ -350,27 +384,20 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
       if (mounted) setState(() => _comboMultiplier = 1);
     });
 
+    final tapGain = _comboMultiplier * 1.5;
+    _unflushedSpiritDelta += tapGain;
+
     setState(() {
       _localTapCount++;
-      if (houseKey == 'ruby') _rubySpirit += _comboMultiplier * 1.5;
-      if (houseKey == 'sapphire') _sapphireSpirit += _comboMultiplier * 1.5;
-      if (houseKey == 'emerald') _emeraldSpirit += _comboMultiplier * 1.5;
-      if (houseKey == 'topaz') _topazSpirit += _comboMultiplier * 1.5;
+      if (houseKey == 'ruby') _rubySpirit += tapGain;
+      if (houseKey == 'sapphire') _sapphireSpirit += tapGain;
+      if (houseKey == 'emerald') _emeraldSpirit += tapGain;
+      if (houseKey == 'topaz') _topazSpirit += tapGain;
     });
 
-    // Debounced persist to Firestore
+    // Debounced persist to Firestore: atomic FieldValue.increment for caller's house only
     if (_localTapCount % 5 == 0) {
-      FirebaseFirestore.instance
-          .collection('system_config')
-          .doc('house_spirit_reactor')
-          .set({
-        'ruby': _rubySpirit,
-        'sapphire': _sapphireSpirit,
-        'emerald': _emeraldSpirit,
-        'topaz': _topazSpirit,
-        'last_contributor': widget.userName,
-        'last_updated': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      _flushSpiritDelta();
     }
   }
 
@@ -491,48 +518,35 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
         _startBlitzCountdown();
       } else {
         // Finished Quiz!
+        final effectiveScore = _blitzScore.clamp(0, 50);
         setState(() {
           _blitzFinished = true;
           _blitzActive = false;
-          _showConfetti = _blitzScore >= 60;
         });
 
-        if (_blitzScore > 0) {
-          final batch = FirebaseFirestore.instance.batch();
-          final hName = widget.userHouse.toLowerCase().trim();
-          final houseRef = FirebaseFirestore.instance
-              .collection('house_points')
-              .doc(hName);
-          batch.set(houseRef, {
-            'house_name': hName,
-            'total_points': FieldValue.increment(_blitzScore),
-            'last_updated': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
-
-          final uid = FirebaseAuth.instance.currentUser?.uid;
-          if (uid != null) {
-            final userRef =
-                FirebaseFirestore.instance.collection('users').doc(uid);
-            batch.set(userRef, {
-              'points_contributed': FieldValue.increment(_blitzScore),
-            }, SetOptions(merge: true));
-          }
-
-          if (widget.scholarNo.isNotEmpty && widget.scholarNo != '---') {
-            final contribRef = FirebaseFirestore.instance
-                .collection('house_contributors')
-                .doc(widget.scholarNo);
-            batch.set(contribRef, {
-              'scholar_no': widget.scholarNo,
-              'student_name': widget.userName,
-              'house_name': widget.userHouse,
-              'total_contributed': FieldValue.increment(_blitzScore),
-              'merits_count': FieldValue.increment((_blitzScore / 20).round()),
-              'last_blitz_date': FieldValue.serverTimestamp(),
-            }, SetOptions(merge: true));
-          }
-
-          await batch.commit().catchError((_) {});
+        if (effectiveScore > 0) {
+          final sNo = widget.scholarNo.isNotEmpty && widget.scholarNo != '---'
+              ? widget.scholarNo
+              : (AuthService.getCachedScholarNo() ?? 'guest');
+          final token = GamificationSecurityService.generateScoreProofToken(
+            scholarNo: sNo,
+            activityId: 'blitz_quiz',
+            points: effectiveScore,
+          );
+          AuthService().awardVerifiedGamificationPoints(
+            scholarNo: sNo,
+            activityId: 'blitz_quiz',
+            house: widget.userHouse,
+            token: token,
+            studentName: widget.userName,
+          ).then((res) {
+            if (mounted && res.success) {
+              setState(() {
+                _blitzIsDemo = res.isDemo;
+                _showConfetti = _blitzScore >= 40;
+              });
+            }
+          });
         }
       }
     });
@@ -740,105 +754,109 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       child: Column(
         children: [
-          // Live Spirit Multi-Bar
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFF131A29),
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Expanded(
-                      child: Row(
-                        children: [
-                          Icon(Icons.public_rounded, color: Colors.cyanAccent, size: 18),
-                          SizedBox(width: 8),
-                          Flexible(
-                            child: Text(
-                              'Live Inter-House Spirit Grid',
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 13,
+          // Live Spirit Multi-Bar (Tappable to view detailed breakdown)
+          InkWell(
+            onTap: () => _showSpiritBreakdownModal(context),
+            borderRadius: BorderRadius.circular(22),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF131A29),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Expanded(
+                        child: Row(
+                          children: [
+                            Icon(Icons.public_rounded, color: Colors.cyanAccent, size: 18),
+                            SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                'Live Inter-House Spirit Grid',
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 13,
+                                ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: Colors.redAccent.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Row(
-                        children: [
-                          Icon(Icons.fiber_manual_record, color: Colors.redAccent, size: 10),
-                          SizedBox(width: 4),
-                          Text(
-                            'LIVE',
-                            style: TextStyle(
-                              color: Colors.redAccent,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w900,
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.redAccent.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.fiber_manual_record, color: Colors.redAccent, size: 10),
+                            SizedBox(width: 4),
+                            Text(
+                              'LIVE',
+                              style: TextStyle(
+                                color: Colors.redAccent,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                              ),
                             ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  // Segmented Multi-Bar
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: SizedBox(
+                      height: 14,
+                      child: Row(
+                        children: [
+                          Expanded(
+                            flex: (_rubySpirit / maxSpirit * 1000).toInt().clamp(1, 1000),
+                            child: Container(color: HouseColors.ruby),
+                          ),
+                          Expanded(
+                            flex: (_sapphireSpirit / maxSpirit * 1000).toInt().clamp(1, 1000),
+                            child: Container(color: HouseColors.sapphire),
+                          ),
+                          Expanded(
+                            flex: (_emeraldSpirit / maxSpirit * 1000).toInt().clamp(1, 1000),
+                            child: Container(color: HouseColors.emerald),
+                          ),
+                          Expanded(
+                            flex: (_topazSpirit / maxSpirit * 1000).toInt().clamp(1, 1000),
+                            child: Container(color: HouseColors.topaz),
                           ),
                         ],
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                // Segmented Multi-Bar
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: SizedBox(
-                    height: 14,
-                    child: Row(
-                      children: [
-                        Expanded(
-                          flex: (_rubySpirit / maxSpirit * 1000).toInt().clamp(1, 1000),
-                          child: Container(color: HouseColors.ruby),
-                        ),
-                        Expanded(
-                          flex: (_sapphireSpirit / maxSpirit * 1000).toInt().clamp(1, 1000),
-                          child: Container(color: HouseColors.sapphire),
-                        ),
-                        Expanded(
-                          flex: (_emeraldSpirit / maxSpirit * 1000).toInt().clamp(1, 1000),
-                          child: Container(color: HouseColors.emerald),
-                        ),
-                        Expanded(
-                          flex: (_topazSpirit / maxSpirit * 1000).toInt().clamp(1, 1000),
-                          child: Container(color: HouseColors.topaz),
-                        ),
-                      ],
                     ),
                   ),
-                ),
-                const SizedBox(height: 10),
-                // Legend
-                Wrap(
-                  alignment: WrapAlignment.spaceAround,
-                  spacing: 12,
-                  runSpacing: 6,
-                  children: [
-                    _buildSpiritLegendItem('Ruby', _rubySpirit, HouseColors.ruby),
-                    _buildSpiritLegendItem('Sapphire', _sapphireSpirit, HouseColors.sapphire),
-                    _buildSpiritLegendItem('Emerald', _emeraldSpirit, HouseColors.emerald),
-                    _buildSpiritLegendItem('Topaz', _topazSpirit, HouseColors.topaz),
-                  ],
-                ),
-              ],
+                  const SizedBox(height: 10),
+                  // Legend
+                  Wrap(
+                    alignment: WrapAlignment.spaceAround,
+                    spacing: 12,
+                    runSpacing: 6,
+                    children: [
+                      _buildSpiritLegendItem('Ruby', _rubySpirit, HouseColors.ruby),
+                      _buildSpiritLegendItem('Sapphire', _sapphireSpirit, HouseColors.sapphire),
+                      _buildSpiritLegendItem('Emerald', _emeraldSpirit, HouseColors.emerald),
+                      _buildSpiritLegendItem('Topaz', _topazSpirit, HouseColors.topaz),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 24),
@@ -1074,22 +1092,171 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
   }
 
   Widget _buildSpiritLegendItem(String name, double val, Color c) {
-    return Row(
-      children: [
-        Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+    return InkWell(
+      onTap: () => _showSpiritBreakdownModal(context, name),
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              '$name: ${val.toInt()}',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.8),
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 4),
-        Text(
-          '$name: ${val.toInt()}',
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.8),
-            fontSize: 10,
-            fontWeight: FontWeight.w700,
+      ),
+    );
+  }
+
+  void _showSpiritBreakdownModal(BuildContext context, [String? targetHouse]) {
+    final house = (targetHouse ?? widget.userHouse).toLowerCase();
+    final col = HouseColors.getHouseColor(house);
+    final score = house == 'ruby'
+        ? _rubySpirit
+        : (house == 'sapphire'
+            ? _sapphireSpirit
+            : (house == 'emerald' ? _emeraldSpirit : _topazSpirit));
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: const BoxDecoration(
+          color: Color(0xFF0F172A),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 20,
+                    backgroundColor: col.withValues(alpha: 0.2),
+                    child: Text(
+                      house.isNotEmpty ? house[0].toUpperCase() : '?',
+                      style: TextStyle(color: col, fontWeight: FontWeight.w900, fontSize: 18),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${house.toUpperCase()} HOUSE SPIRIT METER',
+                          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: col),
+                        ),
+                        Text(
+                          'Current Spirit Rating: ${score.toInt()} PTS (Live Dynamic Grid)',
+                          style: const TextStyle(fontSize: 12, color: Colors.white70),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E293B),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: col.withValues(alpha: 0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'HOW HOUSE SPIRIT IS COMPUTED',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.8,
+                        color: Colors.cyanAccent,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _buildFormulaRow('📚 Academics & Homework Turn-ins', '35% weight'),
+                    const SizedBox(height: 6),
+                    _buildFormulaRow('⚽ Sports Tournament Matches & Cheers', '30% weight'),
+                    const SizedBox(height: 6),
+                    _buildFormulaRow('⭐ Positive Conduct & Faculty Merits', '20% weight'),
+                    const SizedBox(height: 6),
+                    _buildFormulaRow('🗳️ Campus Election Voting Turnout', '15% weight'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.bolt_rounded, size: 20),
+                  label: Text('Energize ${house.toUpperCase()} Spirit (+10)', style: const TextStyle(fontWeight: FontWeight.w900)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: col,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      if (house == 'ruby') _rubySpirit += 10;
+                      if (house == 'sapphire') _sapphireSpirit += 10;
+                      if (house == 'emerald') _emeraldSpirit += 10;
+                      if (house == 'topaz') _topazSpirit += 10;
+                    });
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('⚡ Energized ${house.toUpperCase()} House! +10 Spirit points added to the live grid.'),
+                        backgroundColor: col,
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildFormulaRow(String label, String weight) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Expanded(child: Text(label, style: const TextStyle(fontSize: 12, color: Colors.white))),
+        Text(weight, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white70)),
       ],
     );
   }
@@ -1186,6 +1353,25 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
                 fontSize: 16,
               ),
             ),
+            if (_blitzIsDemo) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.amber.withValues(alpha: 0.5)),
+                ),
+                child: const Text(
+                  'Demo Mode: Points recorded in local standings',
+                  style: TextStyle(
+                    color: Colors.amber,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 24),
             ElevatedButton.icon(
               icon: const Icon(Icons.refresh_rounded),

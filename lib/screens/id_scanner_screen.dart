@@ -394,19 +394,23 @@ class _IdScannerScreenState extends State<IdScannerScreen>
                                 billNo: billNo,
                                 evaluatorName: widget.evaluatorName,
                               );
-                              if (billNo.isNotEmpty) {
+                              if ((result.success || result.alreadyClaimed) &&
+                                  billNo.isNotEmpty) {
                                 await GlobalWalletStore.markOrderClaimed(
                                   billNo,
                                   scholarNo: voucher.scholarNo,
-                                  claimedBy: widget.evaluatorName,
+                                  claimedBy: result.claimedBy ?? widget.evaluatorName,
                                   claimedAt: result.claimedAt,
                                 );
                               }
                               setDialogState(() {
                                 isClaiming = false;
-                                claimedState = true;
-                                currentClaimedBy = result.claimedBy ?? widget.evaluatorName;
-                                currentClaimedAt = result.claimedAt;
+                                if (result.success || result.alreadyClaimed) {
+                                  claimedState = true;
+                                  currentClaimedBy =
+                                      result.claimedBy ?? widget.evaluatorName;
+                                  currentClaimedAt = result.claimedAt;
+                                }
                               });
                               _updateLiveRegion(result.message);
                               if (mounted) {

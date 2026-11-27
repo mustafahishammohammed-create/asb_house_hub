@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:convert';
 import '../services/auth_service.dart';
+import '../services/hierarchy_service.dart';
 import '../models/medical_leave_request.dart';
 import '../theme/app_theme.dart';
 import '../widgets/student_profile_modal.dart';
 import 'chat_list_screen.dart';
 import 'approved_claims_screen.dart';
+import 'admin_academics_screen.dart';
+import 'class_group_screen.dart';
 
 class AdminClaimsScreen extends StatefulWidget {
   final bool isSuperAdmin;
@@ -24,11 +27,18 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
   String _searchQuery = '';
   String _medicalStatusFilter = 'all'; // 'all', 'pending', 'approved', 'rejected'
   late TabController _tabController;
+  bool _canReviewMedical = false;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    final profile = AuthService.getCachedProfile();
+    final role = profile?['role']?.toString();
+    final scholarNo = profile?['scholar_no']?.toString() ?? AuthService.getCachedScholarNo();
+    _canReviewMedical = HierarchyService.isTeacherOrFaculty(role: role, scholarNo: scholarNo) ||
+        HierarchyService.isSuperAdmin(role: role, scholarNo: scholarNo) ||
+        HierarchyService.isSeniorAdmin(role: role, scholarNo: scholarNo);
+    _tabController = TabController(length: _canReviewMedical ? 2 : 1, vsync: this);
   }
 
   @override
@@ -47,6 +57,19 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
     String activityTitle,
   ) async {
     if (_processingClaimIds.contains(claimId)) return;
+    final currentScholar =
+        (AuthService.getCachedScholarNo() ?? '').trim().toLowerCase();
+    if (currentScholar.isNotEmpty &&
+        scholarNo.trim().toLowerCase() == currentScholar &&
+        !widget.isSuperAdmin) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Self-approval is blocked: another reviewer must approve your claim.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
     setState(() => _processingClaimIds.add(claimId));
     try {
       await _authService.approveClaim(
@@ -110,22 +133,43 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
     }
   }
 
+  String _getReviewerName() {
+    final profile = AuthService.getCachedProfile();
+    final name = (profile?['full_name'] as String?)?.trim();
+    if (name != null && name.isNotEmpty) return name;
+    final email = (profile?['email'] as String?)?.trim();
+    if (email != null && email.isNotEmpty) return email;
+    final sNo = AuthService.getCachedScholarNo();
+    if (sNo != null && sNo.isNotEmpty) return 'Staff #$sNo';
+    return 'School Staff';
+  }
+
   void _handleApproveMedicalLeave(String requestId, String studentName) async {
     if (_processingClaimIds.contains(requestId)) return;
     setState(() => _processingClaimIds.add(requestId));
     try {
-      await _authService.approveMedicalLeave(
+      final reviewer = _getReviewerName();
+      final ok = await _authService.approveMedicalLeave(
         leaveId: requestId,
-        reviewerName: 'School Administration',
+        reviewerName: reviewer,
         adminRemark: 'Approved - Medical Certificate Verified',
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Approved Medical Leave for $studentName!'),
-          backgroundColor: Colors.teal[700],
-        ),
-      );
+      if (ok) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Approved Medical Leave for $studentName!'),
+            backgroundColor: Colors.teal[700],
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Error approving medical leave: Permission denied or network failure.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -144,18 +188,28 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
     if (_processingClaimIds.contains(requestId)) return;
     setState(() => _processingClaimIds.add(requestId));
     try {
-      await _authService.rejectMedicalLeave(
+      final reviewer = _getReviewerName();
+      final ok = await _authService.rejectMedicalLeave(
         leaveId: requestId,
-        reviewerName: 'School Administration',
+        reviewerName: reviewer,
         adminRemark: 'Declined - Incomplete or illegible medical certificate',
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Declined Medical Leave request for $studentName.'),
-          backgroundColor: Colors.orange[800],
-        ),
-      );
+      if (ok) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Declined Medical Leave request for $studentName.'),
+            backgroundColor: Colors.orange[800],
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Error declining medical leave: Permission denied or network failure.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -467,6 +521,28 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
             tooltip: '1-on-1 Chats',
           ),
           const SizedBox(width: 8),
+          if (widget.isSuperAdmin || _canReviewMedical) ...[
+            IconButton(
+              key: const Key('admin_portal_class_groups_button'),
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.indigo.withValues(alpha: 0.15),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ClassGroupScreen()),
+              ),
+              icon: const Icon(
+                Icons.school_rounded,
+                color: Colors.indigoAccent,
+                size: 20,
+              ),
+              tooltip: 'Class Groups & Messaging',
+            ),
+            const SizedBox(width: 8),
+          ],
           if (widget.isSuperAdmin) ...[
             IconButton(
               style: IconButton.styleFrom(
@@ -485,33 +561,111 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
             ),
             const SizedBox(width: 8),
           ],
+          PopupMenuButton<String>(
+            tooltip: 'Administrative Tools',
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            icon: const Icon(Icons.more_vert_rounded),
+            onSelected: (value) async {
+              if (value == 'class_groups') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const ClassGroupScreen(),
+                  ),
+                );
+                return;
+              }
+              if (value == 'academic_management') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const AdminAcademicsScreen(),
+                  ),
+                );
+                return;
+              }
+              if (value == 'migrate_contributors') {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Starting legacy contributor migration...')),
+                );
+                final count = await AuthService.migrateLegacyContributorDocs();
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Migration complete: $count legacy contributor record(s) merged into unified scheme.'),
+                      backgroundColor: Colors.green[700],
+                    ),
+                  );
+                }
+              }
+            },
+            itemBuilder: (context) => [
+              if (widget.isSuperAdmin || _canReviewMedical)
+                const PopupMenuItem(
+                  value: 'class_groups',
+                  child: Row(
+                    children: [
+                      Icon(Icons.forum_rounded, size: 20, color: Colors.indigoAccent),
+                      SizedBox(width: 10),
+                      Text('Class Groups & Messaging', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+              if (_canReviewMedical)
+                const PopupMenuItem(
+                  value: 'academic_management',
+                  child: Row(
+                    children: [
+                      Icon(Icons.school_rounded, size: 20, color: Colors.indigo),
+                      SizedBox(width: 10),
+                      Text('Academic Management', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+              const PopupMenuItem(
+                value: 'migrate_contributors',
+                child: Row(
+                  children: [
+                    Icon(Icons.merge_type_rounded, size: 20, color: Colors.blueAccent),
+                    SizedBox(width: 10),
+                    Text('Merge Legacy Contributors', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 8),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: Colors.amber,
-          indicatorWeight: 3,
-          labelColor: Theme.of(context).colorScheme.onSurface,
-          unselectedLabelColor: Colors.grey,
-          labelStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
-          tabs: const [
-            Tab(
-              icon: Icon(Icons.verified_user_rounded, size: 20),
-              text: 'Point Claims',
-            ),
-            Tab(
-              icon: Icon(Icons.medical_services_rounded, size: 20),
-              text: 'Medical Reports',
-            ),
-          ],
-        ),
+        bottom: _canReviewMedical
+            ? TabBar(
+                controller: _tabController,
+                indicatorColor: Colors.amber,
+                indicatorWeight: 3,
+                labelColor: Theme.of(context).colorScheme.onSurface,
+                unselectedLabelColor: Colors.grey,
+                labelStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                tabs: const [
+                  Tab(
+                    icon: Icon(Icons.verified_user_rounded, size: 20),
+                    text: 'Point Claims',
+                  ),
+                  Tab(
+                    icon: Icon(Icons.medical_services_rounded, size: 20),
+                    text: 'Medical Reports',
+                  ),
+                ],
+              )
+            : null,
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildClaimsTab(),
-          _buildMedicalReportsTab(),
-        ],
-      ),
+      body: _canReviewMedical
+          ? TabBarView(
+              controller: _tabController,
+              children: [
+                _buildClaimsTab(),
+                _buildMedicalReportsTab(),
+              ],
+            )
+          : _buildClaimsTab(),
     );
   }
 
@@ -869,6 +1023,88 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
                             ),
                           ),
                         ),
+                        if (data['ai_status'] != null) ...[
+                          const SizedBox(height: 10),
+                          Builder(builder: (context) {
+                            final aiStatus = data['ai_status']?.toString().toLowerCase();
+                            final aiConfidence = (data['ai_confidence'] as num?)?.toDouble() ?? 0.0;
+                            final aiSummary = data['ai_summary']?.toString() ?? '';
+
+                            if (aiStatus == 'verified') {
+                              return Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.verified_rounded, color: Colors.green, size: 18),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'AI Seal Matched (${aiConfidence.toInt()}% confidence)\n${aiSummary.isNotEmpty ? aiSummary : "Institutional marker detected"}',
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.green,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            } else if (aiStatus == 'unrecognized') {
+                              return Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
+                                ),
+                                child: const Row(
+                                  children: [
+                                    Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 18),
+                                    SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'AI Warning: No official school seal detected. Manual staff inspection required.',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.amber,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            } else {
+                              return Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Row(
+                                  children: [
+                                    SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    ),
+                                    SizedBox(width: 10),
+                                    Text(
+                                      'Cloud Vision AI scanning certificate in background...',
+                                      style: TextStyle(fontSize: 11, color: Colors.blue),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
+                          }),
+                        ],
                         const SizedBox(height: 20),
                         Divider(color: Colors.grey.withValues(alpha: 0.2)),
                         const SizedBox(height: 12),

@@ -1,0 +1,182 @@
+path,lines,sha256,review_mode,empty_catches,todo_markers,now_defaults,local_storage_refs,database_refs,test_hook_refs
+.firebaserc,5,1b88fc047e55bea53441ff2147bd939acbe9e88c28695de66e2185815012594c,source/config scan,0,0,0,0,0,0
+analysis_options.yaml,36,1e2bd4bbe45f5ba76451375ff9348972d4119fad67254356ffb7a56fe681d8c3,source/config scan; targeted behavioral review,0,0,0,0,0,0
+android/app/build.gradle.kts,50,ce0b78ef9ea55eb99d4ce8daa2a873fc9dbbd5e7a30c2f9730a3cd57412099f4,source/config scan; targeted behavioral review,0,2,0,0,0,0
+android/app/google-services.json,29,17835c18f98608a6b3b2ae6f4aa37897309d0797213823505dc858b27775c1d9,source/config scan,0,0,0,0,0,0
+android/app/proguard-rules.pro,38,4bc7f25db98e79c9001aff1e3d881a3136a7924582eafe5d07084ba3dc8cb2a1,source/config scan,0,0,0,0,0,0
+android/app/src/debug/AndroidManifest.xml,7,b01a4541a8144c15bc617bab7eb267c99fa1476368fbbda5a12cdbf4e316a34c,source/config scan,0,0,0,0,0,0
+android/app/src/main/AndroidManifest.xml,72,4eb4914a36919cc5c13b38fc5ca9a7fb062aaba493aacdd14297a390f69763d7,source/config scan; targeted behavioral review,0,0,0,0,0,0
+android/app/src/main/kotlin/bh/asianschool/asb_house_hub/MainActivity.kt,5,17560fbcd860901d36613cb007bc0c3ea8178c8193f0653b64b7b474543640bf,source/config scan; targeted behavioral review,0,0,0,0,0,0
+android/app/src/main/res/drawable-v21/launch_background.xml,12,dca312ec77de83e43ef70a825c299b51451247286c29167d62f19165750b8793,source/config scan,0,0,0,0,0,0
+android/app/src/main/res/drawable/launch_background.xml,12,2df60e2cfbee873ce2858088cf003e6b93498f2f568476da437610467ea1a9d7,source/config scan,0,0,0,0,0,0
+android/app/src/main/res/values-night/styles.xml,18,ea763597dc1a84c8034251caee98d7753e0fbf57340ffc94677427de4b537516,source/config scan,0,0,0,0,0,0
+android/app/src/main/res/values/styles.xml,18,cca15a99b59380a548bf6a890f7ca5380ee509b1f9bbb2f5f9ec3589fa25c2f7,source/config scan,0,0,0,0,0,0
+android/app/src/profile/AndroidManifest.xml,7,b01a4541a8144c15bc617bab7eb267c99fa1476368fbbda5a12cdbf4e316a34c,source/config scan,0,0,0,0,0,0
+android/build.gradle.kts,24,218f400e3fff31c9c986a2535dfb974560e1b4d33cc27b7c1fee96a2b7e44454,source/config scan,0,0,0,0,0,0
+android/gradle.properties,6,4922e39cd2ea910bd97156fd4320b0be9217df262fc45435ce408bad534a20d0,source/config scan,0,0,0,0,0,0
+android/gradle/wrapper/gradle-wrapper.properties,5,1220fdd333a881e47441de07b23f9dd1ebd35459730543ae429cf249847d91bf,source/config scan,0,0,0,0,0,0
+android/settings.gradle.kts,29,27d01fb2f1f5e5561a5c7aebff165756e3bddd31a78f5a75f1ce3b5f9c09df9e,source/config scan,0,0,0,0,0,0
+devtools_options.yaml,3,e8ba6877169885107d577db47d3e9eb10b32b7aded5959dfc52cae8022a5de84,source/config scan,0,0,0,0,0,0
+firebase.audit.json,8,d6a9f0812da554e9174bd6ffb2fd6c4579beaccc2df563cfc277bb6c3ef221f7,source/config scan; targeted behavioral review,0,0,0,0,0,0
+firebase.json,40,a69e5800f94ca60abeaa2759d9b81eaa1caa71a3241e12c8c9acd8948de3e6e8,source/config scan; targeted behavioral review,0,0,0,0,0,0
+firestore.rules,1937,b64e077395969ef99bd61e7f08f4a8067afadd9fea66dc66669ee4cd8ee5e484,source/config scan; targeted behavioral review,0,0,0,0,0,0
+functions/elections-v2.js,361,ed71915d1ec04bca1833f1d742725984a760fec59dc8934a49fcf1d76705abda,source/config scan; targeted behavioral review,0,0,0,0,14,0
+functions/index.js,185,f4ca15bd873cf8cffcfcc25213cc2efe845ca93eb5424b1a4b9126bcbf22f660,source/config scan; targeted behavioral review,0,0,0,0,1,0
+functions/library-v2.js,124,e31c32f8e2a69c3afc033ffad8a904d4b34d82e7afb1056b01ff653fa698fac6,source/config scan; targeted behavioral review,0,0,0,0,5,0
+functions/package-lock.json,4839,dbba5972e43a1dbddd553ee95748ce6357decf1bc70064ce2db92aa01db72dec,source/config scan,0,0,0,0,0,0
+functions/package.json,27,66ebc6ea286e9be11b3e8012614953931b8ed09f697bfeddec2bcbe7ebcad189,source/config scan,0,0,0,0,0,0
+functions/test/security.test.js,164,78d63eaf816e87255dfd97dc5aef98461cb501fe75f2fdbd93c60bfd6f1738e8,test suite inspection/execution,0,0,0,0,2,0
+ios/Flutter/AppFrameworkInfo.plist,24,e51cfa76fca1ae586244b43bf97423577315d2906394c1e7768ef43b8d23e161,source/config scan,0,0,0,0,0,0
+ios/Flutter/Debug.xcconfig,1,c0d1da54718e75f2028962b689258ecc741abf7cdaed50483aa5225264d0a7d7,source/config scan,0,0,0,0,0,0
+ios/Flutter/Release.xcconfig,1,c0d1da54718e75f2028962b689258ecc741abf7cdaed50483aa5225264d0a7d7,source/config scan,0,0,0,0,0,0
+ios/Runner.xcodeproj/project.pbxproj,620,a4fb64131bb52de85ab668ceb11b072a77c524b2246845e50bf3d3e5905555ca,source/config scan; targeted behavioral review,0,0,0,0,0,0
+ios/Runner.xcodeproj/project.xcworkspace/contents.xcworkspacedata,7,ac28b35c2b940210bec0fff8e424b07fd0efe9112ab178a10533583f251a386c,source/config scan,0,0,0,0,0,0
+ios/Runner.xcodeproj/project.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist,8,d557c2c32fc6258ec28981fa45dc847b76c9968beb90a2e26d13ef9c4ea45c30,source/config scan,0,0,0,0,0,0
+ios/Runner.xcodeproj/project.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings,8,dd64c0308ab2971c456871b990b24a008bdc3ece09833e8dbe9675e33a496e74,source/config scan,0,0,0,0,0,0
+ios/Runner.xcodeproj/xcshareddata/xcschemes/Runner.xcscheme,101,570c49fd61c67330efb75097018d1b0df0c68d03667631105a5acf5621112b1b,source/config scan,0,0,0,0,0,0
+ios/Runner.xcworkspace/contents.xcworkspacedata,7,706a4c812f2a1e220e6785c27580020d58048e2ae4d30d1280f3c43344ce6b38,source/config scan,0,0,0,0,0,0
+ios/Runner.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist,8,d557c2c32fc6258ec28981fa45dc847b76c9968beb90a2e26d13ef9c4ea45c30,source/config scan,0,0,0,0,0,0
+ios/Runner.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings,8,dd64c0308ab2971c456871b990b24a008bdc3ece09833e8dbe9675e33a496e74,source/config scan,0,0,0,0,0,0
+ios/Runner/AppDelegate.swift,16,54a5e98d6c3e8a79413ad50607b83aac8ded8828bc913eda1fe86bb33a66cd5d,source/config scan; targeted behavioral review,0,0,0,0,0,0
+ios/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json,122,5f8b941b774bde4496d73347c1f79cbdd786bb76fbdab9ed1f3f0cb78a0fb0d3,source/config scan,0,0,0,0,0,0
+ios/Runner/Assets.xcassets/LaunchImage.imageset/Contents.json,23,fbd112a9f3b541a1d811f71ac8e4fe68b6176687d973a5f4d99b7aa4a722e94e,source/config scan,0,0,0,0,0,0
+ios/Runner/Base.lproj/LaunchScreen.storyboard,37,bc3644fbb251ff1e18de25a4932c927850ae1a025be3dd1447940429633fe4b2,source/config scan,0,0,0,0,0,0
+ios/Runner/Base.lproj/Main.storyboard,26,dcea4686c02065e56217fd19fcfb73d7509b41872e7486126149d47a18559363,source/config scan,0,0,0,0,0,0
+ios/Runner/Info.plist,78,832aec40ef04658458b650b158828bcb966d2c75f3229aef50406bcfb7e4cb29,source/config scan; targeted behavioral review,0,0,0,0,0,0
+ios/Runner/Runner-Bridging-Header.h,1,efe657d8b27f7f8595a0d416bffb33fe7d93bd2869d81f7353b556c439d7a1a7,source/config scan,0,0,0,0,0,0
+ios/Runner/SceneDelegate.swift,6,edce811c671ca0a6ccb14753e14e16deb0d89a0adf4f1b685e362d87d8f4c366,source/config scan; targeted behavioral review,0,0,0,0,0,0
+ios/RunnerTests/RunnerTests.swift,12,c0e04141287eb7f9c9f3d31cf5be8cb626a9ea71351206c9121578e8b8f480c3,source/config scan,0,0,0,0,0,0
+l10n.yaml,3,30981e598ddc284f51e4bb899a35cc12515a8d6531d26d91bcb183d7c01132b4,source/config scan,0,0,0,0,0,0
+lib/firebase_options.dart,59,cca4f172e415105068f17dcb61e428e8938abd3fe9876de4c027849bb7120928,source/config scan; targeted behavioral review,0,0,0,0,0,0
+lib/l10n/app_ar.arb,44,029bb85970a980144b5c5156efd859f1f3d31bae70a8ee015a739a5f33850999,source/config scan,0,0,0,0,0,0
+lib/l10n/app_en.arb,167,97d66449426cc201f32eec8d4a635fc03eaf4b9a4f51c0d0d03eb8ce9dd9ed0a,source/config scan,0,0,0,0,0,0
+lib/l10n/app_localizations.dart,380,9d72e65f22776e3c270f4953a8063de6ea335a557d7de2a36ac4ac7e8e1348e1,generated/config scan,0,0,0,0,0,0
+lib/l10n/app_localizations_ar.dart,133,7f868454d9a2129e688ed9ee377c557232538dccc42c4cbfaecface599656569,generated/config scan,0,0,0,0,0,0
+lib/l10n/app_localizations_en.dart,133,62f41a040a779638e136bf20866e0f8c9310a7ab10034b6c0f6469a0430906f6,generated/config scan,0,0,0,0,0,0
+lib/main.dart,223,f25b7f4295a4d811c703938e412cbf04b9a40a433c5958fe331e8b30b9448321,source/config scan; targeted behavioral review,0,0,0,0,0,0
+lib/models/academic_assignment.dart,318,c6e46e1259b558c11710c4ca84f07a39ac0f9825513f76ff2b77c7c5f3cd9df8,source/config scan,0,0,5,0,0,0
+lib/models/academic_class.dart,291,c47afaa6861604fa810ef55abb5d05eadfeb22fb7cad8f1ddb9491699b69614d,source/config scan,0,0,0,0,0,0
+lib/models/academic_report_card.dart,315,3f9f5643f290ba5aadf02d9b50337f40b3de2f63e093ad7132e883c25ab5e5fa,source/config scan,0,0,0,0,0,0
+lib/models/app_notification.dart,196,03c9394b5a5c5dabe09d24b954698acd0204b28ab3c0f93cc9ecbbccc721a230,source/config scan,0,0,0,0,0,0
+lib/models/attendance_record.dart,258,d5fd0bdfb4535d7670ff1800cee48f34f36970d2f450953c34bd0802051738e6,source/config scan,0,0,1,0,0,0
+lib/models/campus_event.dart,334,b344b2a8a2f3153f7e66f14e1e4bc755787979e81662051989260410d081dda0,source/config scan,0,0,1,1,0,0
+lib/models/class_group.dart,384,54372f592d6c04d267f42b4ce60bb61a3ea4845d29708c9c0c091924be7d9471,source/config scan,0,0,0,0,0,0
+lib/models/class_timetable.dart,680,7c0f3b0781b5dfb33efb96828f143ec45978c9cd7c7046e8b420ccbbbd423aea,source/config scan,0,0,2,1,0,0
+lib/models/digital_ballot_cast.dart,95,ffd91702effe27577880bf4cf906a52399aa092446ede7ab824fe4ac94f28170,source/config scan,0,0,1,0,0,0
+lib/models/election_audit_record.dart,102,696149e3972780e8f82d6888e9f9d84d8230573d83fd4051e7c2ce5692d381f6,source/config scan,0,0,0,0,0,0
+lib/models/election_ballot.dart,269,c23503f4c7c3162c4379c804091a28a91592ba0af0c52b155c003438e88b979c,source/config scan,0,0,0,0,0,0
+lib/models/election_gazette.dart,85,7a371ef207e9ff9de6986a8363e8162a526d86842851bc599f3b151c50975151,source/config scan,0,0,1,0,0,0
+lib/models/exam_schedule_item.dart,201,25e179eb362f32d8e9125cc93caefffcb72004471e021a202b736d152a3993d5,source/config scan,0,0,5,0,0,0
+lib/models/house_group.dart,319,6715d0e2f69c5a353dc6988c266e5c90d0665773f33b87c41a777a2c15827736,source/config scan,0,0,0,0,0,0
+lib/models/match_telemetry.dart,260,be25952e28d6082dedd85a4730b79ba915b578198c81fe358a24444842232b89,source/config scan; targeted behavioral review,0,0,1,0,0,0
+lib/models/medical_leave_request.dart,140,38fd7dc7371c35767776a68a3862a446761ea8cf31ce5cb1c189094575c45177,source/config scan,0,0,0,0,0,0
+lib/models/player_sports_stats.dart,155,8aa0cbada0a92fca05b69f5c9cd8518c4a1ec93f71f38021edebb68080351365,source/config scan,0,0,0,0,0,0
+lib/models/school_notice.dart,176,5bfe12b2925e84c0d444033a426d362a1b3eab5482080c1ef475ae8275dbe129,source/config scan,0,0,0,0,0,0
+lib/models/sports_tournament.dart,299,22136b4a52e65b80c76df4a9db94d6eb0c8c5449a72076d46908a0727df1d82d,source/config scan; targeted behavioral review,0,0,1,0,0,0
+lib/models/sports_trophy.dart,147,1f1fd2c2dfb9122286ba3a5b5bc789f72fe1bd6c59769100fbf3e0e2f2f24491,source/config scan; targeted behavioral review,0,0,1,0,0,0
+lib/models/timetable_period.dart,281,2671f35f70b68949a6f0a5aaf847cfa01dc6b334d7822e6faa27a73b7dd29d99,source/config scan,2,0,5,0,0,0
+lib/screens/academics_screen.dart,7936,84307802e4b7b99f78ebe76c398c28634d299da9f3f565daa07edd8cdf05cb40,source/config scan; targeted behavioral review,0,0,4,0,0,0
+lib/screens/admin_academics_screen.dart,2114,b70fae4072cb272325cd49e1d0bf75f85e7afe25ffb66188bf2addb8b347e6bf,source/config scan,1,0,0,0,0,0
+lib/screens/admin_claims_screen.dart,2637,367f78cb2b67399591282fc9c7bd861946402814cded29884d2972de14522bf0,source/config scan,0,0,0,0,2,1
+lib/screens/approved_claims_screen.dart,645,57f3422ded22f302fd153ba673ab4220f3a091ec444e133ed6af0b3d5cd97fbe,source/config scan,0,0,0,0,0,0
+lib/screens/chat_list_screen.dart,897,0edb563f215a7b19128b6f58c5290337c64279ff9c88ffb4aa16fbdaeed8cf0b,source/config scan,4,0,0,0,1,0
+lib/screens/chat_room_screen.dart,1045,36cd8130164431f5962cd6a6d3c276f6dc18d5c685ead72ff2b035615e075ada,source/config scan; targeted behavioral review,7,0,0,0,4,0
+lib/screens/class_group_screen.dart,1014,689cd5a8264820daf83f7dd4645585603ba1e9d928dea2ab28eb9dfcc9f2a90b,source/config scan,0,0,0,0,0,0
+lib/screens/digital_wallet_screen.dart,1793,7eaa415cefc5618a677e5a932b9594d0218c1b5688cb1a8e9fb259d6ccd2682b,source/config scan; targeted behavioral review,2,0,0,0,1,0
+lib/screens/election_audit_screen.dart,407,21948354a9a7a119edf27f0ea6446d135657f67d33338537c4c3c3abc63e18b7,source/config scan; targeted behavioral review,0,0,0,0,0,0
+lib/screens/election_chamber_screen.dart,1975,06ce09cd419a16a1b02d5f6a782235d7872e9581634b29de61e15263ddc504d1,source/config scan,1,0,0,0,0,0
+lib/screens/election_gazette_screen.dart,453,9bef94d84a9c57fead1aab5626fc72ca30c482f67ae09fad4b3c9904eaa69a8f,source/config scan,0,0,0,0,0,0
+lib/screens/events_screen.dart,2437,ebaeea8077989423e21c96a0106f5fc9b4e30b31f0dc8b368c6136dd78160a87,source/config scan,0,0,1,0,0,0
+lib/screens/home_screen.dart,6825,d8d0874f92318ba798c09eddb826685bbd81f2380a41aa4fb545da204602a642,source/config scan; targeted behavioral review,7,0,1,2,12,0
+lib/screens/house_ai_chat_screen.dart,1072,7adb07afa4b15e810f34468dcb82221a700db2ebdda40c87443d04c57234d1fc,source/config scan,0,0,0,0,0,0
+lib/screens/house_arena_screen.dart,1813,0331fddb9cfb866942468dba9f4ecda5ae5678d7b33b88775ae29023b86dda6c,source/config scan; targeted behavioral review,4,0,0,0,2,0
+lib/screens/house_group_screen.dart,845,5f85cca36b2eb920a456f55b1a84c577466795aadf267eaf3def440ea0786430,source/config scan,0,0,0,0,0,0
+lib/screens/house_leaderboard_screen.dart,918,fc98acf9e1f10e8a7bc3ecbf263efe9ec1297b0373c07c79925ccf3b771c24f3,source/config scan,0,0,0,0,2,0
+lib/screens/id_scanner_screen.dart,1438,860f4228fbd0b58417d6904254542a11040b3f552095191fd82c16e619b099de,source/config scan,7,0,0,0,1,0
+lib/screens/live_match_hud_screen.dart,1406,4fe5878d884ad6d571e82dff3c9ae93fe0825179273a08e4f26340bf13faf389,source/config scan,0,0,0,0,0,0
+lib/screens/login_screen.dart,752,21e0219c231a78d5a04a12cb2b32531d8d02a1ed4aeeca332a8b90cbcfca49ea,source/config scan,1,0,0,0,0,0
+lib/screens/merch_store_tab.dart,3304,94f5d3f7dfc8e761aa384e54798f5d6f6760f80abb79f4f5de1c16a513f6e109,source/config scan; targeted behavioral review,9,0,3,16,3,0
+lib/screens/notification_center_screen.dart,542,3f19ac5990efe2c48f4c4648458e6446ed63a14e797b60e9c0411a56e64ff981,source/config scan,0,0,0,0,0,0
+lib/screens/onboarding_screen.dart,742,c5ef446e3ddefe0b3f2484d403439767343cb0b7972e428f29797831055770a0,source/config scan,2,0,0,1,0,0
+lib/screens/school_elections_page.dart,3189,80c030e2e5ba07e15b82120043871298ca530cccf7edcad3142bfc5a62b312f0,source/config scan; targeted behavioral review,24,0,2,0,21,0
+lib/screens/signup_screen.dart,1376,6516442b08243fead9a7524d9998bcef6addb3feaba404fcf09abbad667a8014,source/config scan,0,0,0,0,0,0
+lib/screens/sports_tournament_screen.dart,1768,5d7635bda87b76a6b2cc944d75a99d3c5ce297a21a07dd25d11f21acdc89744c,source/config scan,0,0,0,0,0,0
+lib/screens/student_behavior_evaluation_screen.dart,841,20fd57be1a110990fdabb08e890f5918c1ac1e03f35f008e37c69d760087f818,source/config scan,0,0,0,0,0,0
+lib/screens/teacher_timetable_editor_screen.dart,1746,c51627ff679be0618a45af30b65f782aa0c0adf119daadae7b8e9fa85a5a6a3f,source/config scan; targeted behavioral review,0,0,1,0,0,0
+lib/services/auth_service.dart,9894,f1a8d06692588561cae5742b5dfa7d10591a1ff23c194e28ea282b0796e75a09,source/config scan; targeted behavioral review,82,0,3,131,160,67
+lib/services/chat_service.dart,308,ffad46c77395df6b4523a8aaf4c361c2e5ef9fe8c83ed2f169d2863e4217586f,source/config scan; targeted behavioral review,7,0,0,0,16,0
+lib/services/class_group_service.dart,410,41914050a113b8450be64a4ca4c80a656de84115a5eb67d8460ad443f05028e0,source/config scan; targeted behavioral review,4,0,0,0,14,6
+lib/services/election_security_service.dart,141,82c167132fd3dca9a761a4a5ee42decb074554e24be138c66e3376c62c6a7332,source/config scan; targeted behavioral review,0,0,0,0,0,1
+lib/services/gamification_security_service.dart,492,a291996d96e9c8db39976e5e4f2b3ce04f4c9bb72ec325d62ba0eb0af06037ef,source/config scan; targeted behavioral review,1,0,6,12,0,2
+lib/services/gemini_ai_service.dart,610,1fa44583249ae657289740f9e2b04b1dbf0d502e30605bc0dc6070ec9a30d3bc,source/config scan; targeted behavioral review,7,0,0,2,0,1
+lib/services/hierarchy_service.dart,320,3ef7aedfeece5989bdee5a28206d97e4ddd9f499800918c9eb6657436fda4c15,source/config scan; targeted behavioral review,0,0,0,0,0,0
+lib/services/house_group_service.dart,325,4aa9ea802f025929b0ce8840750979aefb5d8ca578da071b03c0e2f8519f0138,source/config scan; targeted behavioral review,3,0,0,0,12,9
+lib/services/notification_service.dart,725,91ab0fbbeab49ece3919fe3e7b1e7e9599dc31692a484b482cbd7483e4f1b305,source/config scan; targeted behavioral review,1,0,1,0,13,10
+lib/services/pass_document_exporter.dart,177,b897b4806f9d164ab2f1720952008d34403e1b18534bdc7242e4762fb8044521,source/config scan; targeted behavioral review,0,0,0,0,0,0
+lib/services/qr_decoder_service.dart,59,1df0149bfd78d545df6eae015fe09cae501a1977dea0ed68d4fd8e840933e128,source/config scan; targeted behavioral review,2,0,0,0,0,0
+lib/services/sports_security_service.dart,94,e971e9656e9e0097acb82930b0e6e534ef4b4c6540114590985d95c9c6e16344,source/config scan; targeted behavioral review,0,0,0,0,0,1
+lib/services/timetable_service.dart,1068,550173ad630df1fc5f812a9ee1169421d2186cd87e32e9b8aa43efa992fe9110,source/config scan; targeted behavioral review,7,0,9,4,11,13
+lib/services/voucher_security_service.dart,597,cb6c62043296baa36b3d16d8d3e904e6578ef317eeefbe8e5df0ddd05c40ad4a,source/config scan; targeted behavioral review,2,0,1,0,2,0
+lib/theme/app_theme.dart,450,d9b3671a29fe97af79ee9d1c932581f5b94877b9afde509cd54a698c981a587e,source/config scan,2,0,0,2,0,0
+lib/widgets/academic_image.dart,292,7f607379b32c21ca8484109fafaa6a2ca1bee5353737335534e8857bd56d2269,source/config scan; targeted behavioral review,0,0,0,0,0,0
+lib/widgets/account_switcher_modal.dart,956,680b206fa743903d742bc91963b680bcd0fa3b316f09723877c8673712051ca0,source/config scan; targeted behavioral review,0,0,0,0,0,0
+lib/widgets/apple_fitness_badge.dart,905,6856d0f512b5168b2abc6cfb7317307021b826249b9ecb0e295ce8096d403b2c,source/config scan,0,0,0,0,0,0
+lib/widgets/apple_fitness_badges_vault.dart,1381,b4518caeab624d6d63dfbc708903cab825c4e5db0e7d67a23aad832b83b40c23,source/config scan,1,0,0,0,0,0
+lib/widgets/battle_chant_synthesizer.dart,957,5d613163918b590213e6502d1f6baa3ba8d4d494f2c1755b7c80f3a1d980a265,source/config scan,8,0,0,0,0,0
+lib/widgets/camera_capture_dialog.dart,345,19e13a413850fd42f891b72940d587234f1626a3f53f32a63a02077082479dcf,source/config scan; targeted behavioral review,0,0,0,0,0,0
+lib/widgets/confetti_overlay.dart,196,e30ad077870b2bca680c94a7c5a2e209b0b7449c00dba42157d0a81bb3b130b0,source/config scan,0,0,0,0,0,0
+lib/widgets/gamification_cooldown_banner.dart,289,02915d0f7bcf2d3ab3dcd7668dc007647557a0d897c2bc621d32743cddea1d6e,source/config scan,0,0,0,0,0,0
+lib/widgets/house_card.dart,181,52bc8c4abfa5884237ca86ff7b0be105b0d2ffa8846d9e5f3f6d216cbddba561,source/config scan,0,0,0,0,0,0
+lib/widgets/managed_modal_scope.dart,33,27b8023127d1c897dcc1efcc965b5952119796fb006bddd4f5bc7027d95cd222,source/config scan,1,0,0,0,0,0
+lib/widgets/mascot_3d_stage.dart,3897,02b497a46a1c455389b9e4036d3e3c51d7b1e34402c6a5c9e51f1325ccfeb7db,source/config scan,7,0,0,0,0,0
+lib/widgets/pill_selector.dart,131,5f7b0d3522dd578aedce880c3ac8d42150553b83c48d0976089bd907dbb8dac2,source/config scan,0,0,0,0,0,0
+lib/widgets/school_circular_composer.dart,437,a1876f3a6a317696fc2d95f07414e1cc31979bc30ed793ad2f357ef0284b98e5,source/config scan; targeted behavioral review,0,0,0,0,0,0
+lib/widgets/strength_meter.dart,151,a20c2c024220d41419d24f04f1d794f518af3cab4d799530a1bee89209d80d46,source/config scan,0,0,0,0,0,0
+lib/widgets/student_profile_modal.dart,1031,d177b8d61fb3554db8ffb803f3febffc20a2473d45b04f52da0c038c477c043d,source/config scan,2,0,0,0,3,0
+pubspec.lock,1047,5b3bd2e3f91eef018f50374deec3a02b97f5f6681b7408857a90ae428b3953b9,source/config scan,0,0,0,0,0,0
+pubspec.yaml,106,7173232aefe466b975314b04f4683fbfd8c76c945f66800bb439dccd0919c206,source/config scan; targeted behavioral review,0,0,0,0,0,0
+run_windows.bat,10,c73f8b8bab8401feaee50494daa2a39efebe57777c8d3ebe266fdfb2015f10fc,source/config scan; targeted behavioral review,0,0,0,0,0,0
+storage.rules,80,9da0607095db2cca66957a590f844f71b6f44febbec9acea285d3d3f494a5da3,source/config scan; targeted behavioral review,0,0,0,0,0,0
+test/academic_section_auto_assign_test.dart,364,d601275d2717d45b1d3bed6aa3c1d925520ed8f5ed370d449dc24ed1eee4b1f9,test suite inspection/execution,0,0,0,1,0,0
+test/academic_structure_test.dart,460,1e532dae7bc90d5261e0717c967a9833bd846fdb9bcb311d9630e8484603e080,test suite inspection/execution,0,0,0,1,0,8
+test/academics_image_test.dart,217,bb64e0264fa46c0ac371c532282622eda2b544fecb625a4655d6d100125107d1,test suite inspection/execution,0,0,0,0,0,0
+test/academics_security_test.dart,877,16200a9299b54ef023a43cd1e455bf4de9cf8634bb08496757c7a7f6534148f9,test suite inspection/execution,0,0,0,1,0,21
+test/acceptance_matrix_test.dart,195,b061dd0d90b0f1746628163374c0da5679e9304e598654c9e82e31c2d8c9d388,test suite inspection/execution,0,0,0,0,0,0
+test/account_switching_test.dart,101,ca840c0a5eec0dc6216b891f33b4372a8fe489440a50e02733237658edade6e8,test suite inspection/execution,0,0,0,1,0,0
+test/admin_command_center_test.dart,655,726393f0f55c4557be59b41383f9dd757427d5d3b34cf2e180e4f82252a98102,test suite inspection/execution,0,0,0,1,0,8
+test/campus_event_test.dart,678,9fe2c4eb10f3314aeb5daa859a99e91d989389676f4789b1c54e3738e5a3b5ec,test suite inspection/execution,0,0,0,1,0,11
+test/circular_composer_test.dart,365,fb9064d285bdff28aea0f6a1dfc584343c83ca6220f43245bcbda60c088b2072,test suite inspection/execution,0,0,0,1,0,5
+test/class_group_test.dart,866,5d2915b9ed9f9400d69c770ae78d1a767df007f989cd2f57fa208cb655018a6c,test suite inspection/execution,0,0,0,1,0,15
+test/class_timetable_test.dart,255,2225f0acc72e9039c4a0327a78c64c9255ab81eb9b79fcea609a23f19f4bd60b,test suite inspection/execution,0,0,0,0,0,0
+test/dashboard_profile_test.dart,213,ebeb78500c0d3b854ca0c7fae057327c3e3713a6162d2d3eca099bf8d8d0e138,test suite inspection/execution,0,0,0,1,0,2
+test/election_security_test.dart,1319,072c910c03a6ae55b74b3d8eb7f572fc49df1ba869569986be1b681d34d0e0a8,test suite inspection/execution,0,0,0,1,0,0
+test/gamification_security_test.dart,644,e3a09856977346348d72a9359a4f0d7140bbb33832ad3f96d34b995c6d6d53d0,test suite inspection/execution,0,0,0,1,0,0
+test/house_group_test.dart,575,3e8a81c2ed99b0b05a3e8f6ec4d92656d116f07396532880d39c06c8266a7e02,test suite inspection/execution,0,0,0,1,0,11
+test/notification_test.dart,1031,9335821c0b824dff8351da0f97998f171e42f2ff8c5bcdb2a20ca5c0f550a49d,test suite inspection/execution,0,0,0,1,0,16
+test/teacher_timetable_editor_test.dart,535,fce3be255c4a860a22e7162e69ea1cdd93db6a222b553964683ce9990cd4575a,test suite inspection/execution,0,0,0,1,0,4
+test/timetable_engine_test.dart,665,0d48e1c5c435ac41553b1ae9c487584dc5b49f20277ff677fa0b9cb8ab167d65,test suite inspection/execution,0,0,0,1,0,10
+test/timetable_m3_test.dart,864,ae96e4c6b53c872318456eb5ac4f4656a0f3eede4b3f63f88c6055113a85a849,test suite inspection/execution,0,0,0,1,0,6
+test/widget_test.dart,10948,1ff09c5245bb7f5ebd0e7db99d32192bc512b153f0e1603a947e295c7711dc3d,test suite inspection/execution,0,0,0,43,0,15
+tool/audit_async.dart,66,3d812b8ba99cc9d28ef696d680cb433ba3792837950ca73b4302b317a1fe93e3,source/config scan,0,0,0,0,0,0
+tool/blender/generate_mascots.py,603,c84f7943b2e1a19026203bf6f1590cfdd160f11a3e2be3c6bc6052073556b29b,source/config scan,0,0,0,0,0,0
+tool/deep_audit_inventory.py,92,6013e0436fc4d27a677d9f2f462d7749c00f4c913c748e9fc14eadd8e91bf1b6,source/config scan,0,4,0,1,0,3
+tool/generate_icons.dart,67,ad72707d96bcab6d853e6627ba2db220892c5cb1c1b9160212c7faaa0050606f,source/config scan,0,0,0,0,0,0
+tool/probe_known_gaps.cjs,46,a80c75f51099e97089f979ed3fc82dc6c1a6531e121fa5fc7df11ac446b8d174,source/config scan,0,0,0,0,0,0
+web/index.html,46,060e817ea3e53cfb618adcbd1810ebce38cb89ea6383f9eb0e626c04d61fa205,source/config scan; targeted behavioral review,0,0,0,0,0,0
+web/manifest.json,35,98893c7589b54366392c11482e0889afb1a2dabcb069c7ef236f0a4d7895772e,source/config scan,0,0,0,0,0,0
+windows/CMakeLists.txt,108,e17ef883779c20e9ec81ab427ea2c9d263d40d94a245a818447eb99ae93ffd14,source/config scan,0,0,0,0,0,0
+windows/flutter/CMakeLists.txt,109,bd05e3268b2f246bcbafdb778165fe67a7bafdba04eb73599502563a67b8ae7e,source/config scan,0,1,0,0,0,0
+windows/flutter/generated_plugin_registrant.cc,32,d7c2363659311533d70be1f4a9982bcfff6e78aa9d90ebc803443f5fd0f55ded,generated/config scan,0,0,0,0,0,0
+windows/flutter/generated_plugin_registrant.h,15,dbc11635d7b1ba1887adf40df5b83d634e9c3ab0bee34510c71528bb4d73602a,generated/config scan,0,0,0,0,0,0
+windows/flutter/generated_plugins.cmake,31,356cd8a4e8ff0b5a4d7be0a8fdf4ec0a0ff257c24505a9090e48a25c54a7bde4,generated/config scan,0,0,0,0,0,0
+windows/runner/CMakeLists.txt,40,d765fdd05f63ad099e585a2cced0cbff13ec3229b7de68c8681b2107db850089,source/config scan,0,0,0,0,0,0
+windows/runner/Runner.rc,121,17baf1c09ac4d99582725655b6a1b248ddb0f57266e1d874986ed1d0ac054a80,source/config scan,0,0,0,0,0,0
+windows/runner/flutter_window.cpp,72,2b7343a4fe0ed470a5f589fbf9e0975ef4df0b54fd264854e11f12786fdb3f2f,source/config scan,0,0,0,0,0,0
+windows/runner/flutter_window.h,33,0252b804f5da380c7709cbe1daff2b8d18daf6c49d7e6dd43e5af3c99c19f56c,source/config scan,0,0,0,0,0,0
+windows/runner/main.cpp,49,a09ad16078d597e19b837caee1bd77b539a2141d4955b15ced9dda69bb6252e2,source/config scan; targeted behavioral review,0,0,0,0,0,0
+windows/runner/resource.h,16,d0e8bf7835468b4b6b1f8f0747f2e8f25c19841f2df2ac60aaa584ddae3aa7c6,source/config scan,0,0,0,0,0,0
+windows/runner/runner.exe.manifest,14,639a56233fcd8cbcb8bbefcd93e4680ec2664f32d9acfb3d2ec1d8726a96e090,source/config scan,0,0,0,0,0,0
+windows/runner/utils.cpp,65,fbb18524c22593d0ce7869b0733e237be38e668fe045e3023bcf2d0b31784fa3,source/config scan,0,0,0,0,0,0
+windows/runner/utils.h,19,832e246b6758253f89016fb0374b30791242e97ad950d27fc678b3d9feacfdc4,source/config scan,0,0,0,0,0,0
+windows/runner/win32_window.cpp,292,e25ba52d73760bfc52ce0261ab89fcb77dd4987696b26e4ccdc42959f0f5b7f4,source/config scan,0,0,0,0,0,0
+windows/runner/win32_window.h,102,d154cf89ba85f820631a9b5bedacbe64fc5815e428fe6bc5da579ce649f69841,source/config scan,0,0,0,0,0,0

@@ -1067,6 +1067,8 @@ class MascotLoreData {
   final Mesh3D mesh;
   final List<MascotHotspot> hotspots;
 
+  String get houseName => houseId.isNotEmpty ? '${houseId[0].toUpperCase()}${houseId.substring(1)}' : '';
+
   const MascotLoreData({
     required this.houseId,
     required this.name,
@@ -2900,82 +2902,87 @@ class _Mascot3DStageState extends State<Mascot3DStage>
   // 7. POWER ATTRIBUTES RADAR / BARS
   // ===========================================================================
   Widget _buildMascotPowerStats(MascotLoreData mascot) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0F1523),
-        borderRadius: BorderRadius.circular(26),
-        border: Border.all(color: mascot.glowColor.withValues(alpha: 0.18), width: 1.0),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.query_stats_rounded, color: mascot.accentColor, size: 20),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
-                  'Mascot Power Attributes',
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 15,
-                    letterSpacing: -0.2,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          ...mascot.powerStats.entries.map((entry) {
-            final pct = (entry.value * 100).toInt();
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          entry.key,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '$pct / 100',
-                        style: TextStyle(
-                          color: mascot.accentColor,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: LinearProgressIndicator(
-                      value: entry.value,
-                      minHeight: 7,
-                      backgroundColor: Colors.white.withValues(alpha: 0.08),
-                      valueColor: AlwaysStoppedAnimation(mascot.primaryColor),
+    return InkWell(
+      onTap: () => _showMascotAttributeModal(mascot),
+      borderRadius: BorderRadius.circular(26),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(22),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0F1523),
+          borderRadius: BorderRadius.circular(26),
+          border: Border.all(color: mascot.glowColor.withValues(alpha: 0.18), width: 1.0),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.query_stats_rounded, color: mascot.accentColor, size: 20),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Mascot Power Attributes',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 15,
+                      letterSpacing: -0.2,
                     ),
                   ),
-                ],
-              ),
-            );
-          }),
-        ],
+                ),
+                const Icon(Icons.info_outline_rounded, color: Colors.white38, size: 16),
+              ],
+            ),
+            const SizedBox(height: 16),
+            ...mascot.powerStats.entries.map((entry) {
+              final pct = (entry.value * 100).toInt();
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            entry.key,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '$pct / 100',
+                          style: TextStyle(
+                            color: mascot.accentColor,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: LinearProgressIndicator(
+                        value: entry.value,
+                        minHeight: 7,
+                        backgroundColor: Colors.white.withValues(alpha: 0.08),
+                        valueColor: AlwaysStoppedAnimation(mascot.primaryColor),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
       ),
     );
   }
@@ -2984,75 +2991,277 @@ class _Mascot3DStageState extends State<Mascot3DStage>
   // 8. SACRED RELIC OF THE HOUSE ARCHIVES
   // ===========================================================================
   Widget _buildSacredRelicCard(MascotLoreData mascot) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0F1523),
-        borderRadius: BorderRadius.circular(26),
-        border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Colors.amber.withValues(alpha: 0.12),
-            const Color(0xFF131A29),
+    return InkWell(
+      onTap: () => _showRelicLoreModal(mascot),
+      borderRadius: BorderRadius.circular(26),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(22),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0F1523),
+          borderRadius: BorderRadius.circular(26),
+          border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Colors.amber.withValues(alpha: 0.12),
+              const Color(0xFF131A29),
+            ],
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: Colors.amber.withValues(alpha: 0.5)),
+                  ),
+                  child: Icon(mascot.sacredRelicIcon, color: Colors.amberAccent, size: 24),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'SACRED HOUSE RELIC',
+                        style: TextStyle(
+                          color: Colors.amberAccent,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 10,
+                          letterSpacing: 1.0,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        mascot.sacredRelicTitle,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.touch_app_rounded, color: Colors.amberAccent, size: 18),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              mascot.sacredRelicDesc,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.8),
+                fontSize: 13,
+                height: 1.45,
+              ),
+            ),
           ],
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    );
+  }
+
+  void _showMascotAttributeModal(MascotLoreData mascot) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: const BoxDecoration(
+          color: Color(0xFF0F1523),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: Colors.amber.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: Colors.amber.withValues(alpha: 0.5)),
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
                 ),
-                child: Icon(mascot.sacredRelicIcon, color: Colors.amberAccent, size: 24),
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Icon(Icons.query_stats_rounded, color: mascot.accentColor, size: 24),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${mascot.name.toUpperCase()} POWER ARCHIVES',
+                          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: mascot.accentColor),
+                        ),
+                        Text(
+                          '${mascot.houseName.toUpperCase()} House Divine Guardian Lore',
+                          style: const TextStyle(fontSize: 12, color: Colors.white70),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E293B),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: mascot.glowColor.withValues(alpha: 0.3)),
+                ),
+                child: const Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'SACRED HOUSE RELIC',
-                      style: TextStyle(
-                        color: Colors.amberAccent,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 10,
-                        letterSpacing: 1.0,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
                     Text(
-                      mascot.sacredRelicTitle,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 16,
-                      ),
+                      'HOW COMBAT ATTRIBUTES ARE UNLOCKED',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.cyanAccent, letterSpacing: 0.8),
+                    ),
+                    SizedBox(height: 10),
+                    Text(
+                      '• Physical Power & Strength: Elevated by victories in football, basketball, and track tournaments.\n'
+                      '• Arcane Acuity: Heightened through top performance in Brain Blitz trivia and academic report card honours.\n'
+                      '• Swift Agility: Powered by on-time attendance and prompt assignment turn-ins.\n'
+                      '• Guardian Defense: Maintained by pristine disciplinary conduct with zero demerits.',
+                      style: TextStyle(fontSize: 12, height: 1.5, color: Colors.white70),
                     ),
                   ],
                 ),
               ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.flash_on_rounded, size: 20),
+                  label: Text('Channel House Power to ${mascot.name}', style: const TextStyle(fontWeight: FontWeight.w900)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: mascot.primaryColor,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('⚡ Channeled house energy to ${mascot.name}! Power stats surged.'),
+                        backgroundColor: mascot.primaryColor,
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  },
+                ),
+              ),
             ],
           ),
-          const SizedBox(height: 12),
-          Text(
-            mascot.sacredRelicDesc,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.8),
-              fontSize: 13,
-              height: 1.45,
-            ),
+        ),
+      ),
+    );
+  }
+
+  void _showRelicLoreModal(MascotLoreData mascot) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: const BoxDecoration(
+          color: Color(0xFF0F1523),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Icon(mascot.sacredRelicIcon, color: Colors.amberAccent, size: 28),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          mascot.sacredRelicTitle.toUpperCase(),
+                          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: Colors.amberAccent),
+                        ),
+                        Text(
+                          'Sacred Heirloom of ${mascot.houseName.toUpperCase()} House',
+                          style: const TextStyle(fontSize: 12, color: Colors.white70),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E293B),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+                ),
+                child: Text(
+                  mascot.sacredRelicDesc,
+                  style: const TextStyle(fontSize: 13, height: 1.5, color: Colors.white),
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.auto_awesome_rounded, size: 20),
+                  label: const Text('Venerate House Relic (+5 House Spirit)', style: TextStyle(fontWeight: FontWeight.w900)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.amber.shade800,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('✨ Venerated the ${mascot.sacredRelicTitle}! Sacred blessings bestowed on ${mascot.houseName.toUpperCase()}.'),
+                        backgroundColor: Colors.amber.shade800,
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

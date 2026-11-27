@@ -73,6 +73,13 @@ import 'package:asb_house_hub/screens/admin_claims_screen.dart';
 import 'package:asb_house_hub/l10n/app_localizations.dart';
 
 void main() {
+  setUpAll(() {
+    ElectionSecurityService.setTestSalt('EPHEMERAL_TEST_HARNESS_SALT_2026');
+    CredentialVaultService.setTestSecret('TEST_VAULT_SECRET_2026');
+    GamificationSecurityService.setTestSecret('TEST_GAMIFICATION_SECRET_2026');
+    SportsSecurityService.setTestSalt('TEST_SPORTS_CERT_SALT_2026');
+  });
+
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     await AuthService.initPreferences();
@@ -386,8 +393,18 @@ void main() {
 
     // 4. Role Display Titles
     expect(
-      HierarchyService.getRoleDisplayTitle(scholarNo: '2310910'),
+      HierarchyService.getRoleDisplayTitle(
+        scholarNo: '2310910',
+        role: 'super_admin',
+      ),
       'Super Admin',
+    );
+    expect(
+      HierarchyService.getRoleDisplayTitle(
+        scholarNo: '2310910',
+        role: 'student',
+      ),
+      'Student Member',
     );
     expect(
       HierarchyService.getRoleDisplayTitle(scholarNo: '11209'),
@@ -488,8 +505,8 @@ void main() {
     expect(find.text('Academic Details'), findsOneWidget);
 
     // Select Grade 10 and Section B
-    await tester.ensureVisible(find.text('10'));
-    await tester.tap(find.text('10'));
+    await tester.ensureVisible(find.text('Grade 10'));
+    await tester.tap(find.text('Grade 10'));
     await tester.pump();
     await tester.ensureVisible(find.text('B'));
     await tester.tap(find.text('B'));
@@ -598,8 +615,8 @@ void main() {
     await tester.pumpAndSettle();
 
     // Select Grade 11 and Section A
-    await tester.ensureVisible(find.text('11'));
-    await tester.tap(find.text('11'));
+    await tester.ensureVisible(find.text('Grade 11'));
+    await tester.tap(find.text('Grade 11'));
     await tester.pump();
     await tester.ensureVisible(find.text('A'));
     await tester.tap(find.text('A'));
@@ -1041,10 +1058,29 @@ void main() {
     expect(tamperedResult.isValid, isFalse);
     expect(tamperedResult.isTampered, isTrue);
 
-    // Legacy format
+    // Tampered items or totalBhd on v2 payload detected
+    final v2Payload = VoucherSecurityService.generateVoucherPayload(
+      billNo: billNo,
+      points: 0,
+      scholarNo: scholarNo,
+      items: ['1x Champion Hoodie (L)'],
+      totalBhd: 18.0,
+      timestampMillis: ts,
+    );
+    expect(VoucherSecurityService.validateVoucherPayload(v2Payload).isValid, isTrue);
+    final tamperedItemsPayload = v2Payload.replaceAll('Champion Hoodie', 'Luxury Jacket');
+    final tamperedItemsRes = VoucherSecurityService.validateVoucherPayload(tamperedItemsPayload);
+    expect(tamperedItemsRes.isValid, isFalse);
+    expect(tamperedItemsRes.isTampered, isTrue);
+    final tamperedBhdPayload = v2Payload.replaceAll('"total_bhd":18.0', '"total_bhd":0.01');
+    final tamperedBhdRes = VoucherSecurityService.validateVoucherPayload(tamperedBhdPayload);
+    expect(tamperedBhdRes.isValid, isFalse);
+    expect(tamperedBhdRes.isTampered, isTrue);
+
+    // Legacy unsigned format is rejected by design.
     final legacyResult = VoucherSecurityService.validateVoucherPayload('ASB-ORDER-ASB-999');
-    expect(legacyResult.isValid, isTrue);
-    expect(legacyResult.billNo, 'ASB-999');
+    expect(legacyResult.isValid, isFalse);
+    expect(legacyResult.error, contains('Unsigned legacy voucher'));
 
     // Completely malformed
     final malformedResult = VoucherSecurityService.validateVoucherPayload('garbage-data');
@@ -1459,9 +1495,9 @@ void main() {
     expect(accounts.first.scholarNo, '10001');
     expect(accounts.first.fullName, 'Aarav Sharma');
     expect(accounts.first.houseName, 'emerald');
-    // Passwords are persisted for seamless multi-account switching on family devices
-    expect(accounts.first.password, equals('AaravPassword123'));
-    expect(aaravAccount.toMap().containsKey('password'), isTrue);
+    // Audit A3 Zero-Password Persistence: Passwords are never persisted to disk
+    expect(accounts.first.password, isNull);
+    expect(aaravAccount.toMap()['password'], isNull);
     final injectedMap = {'password': 'hacked_password', 'scholar_no': '12345'};
     expect(SavedAccount.fromMap(injectedMap).password, equals('hacked_password'));
 
@@ -1981,7 +2017,7 @@ void main() {
     expect(find.byType(ExcludeSemantics), findsWidgets);
 
     // 5. Verify action buttons have >= 48dp minimum height
-    final walletBtnFinder = find.widgetWithText(ElevatedButton, 'Save to Google Wallet');
+    final walletBtnFinder = find.widgetWithText(ElevatedButton, 'Pass Info');
     expect(walletBtnFinder, findsOneWidget);
     final walletBtn = tester.widget<ElevatedButton>(walletBtnFinder);
     expect(walletBtn.style?.minimumSize?.resolve({})?.height, greaterThanOrEqualTo(48.0));
@@ -2020,7 +2056,7 @@ void main() {
     await tester.pump();
 
     // Verify both action buttons render without overflow
-    expect(find.text('Save to Google Wallet'), findsOneWidget);
+    expect(find.text('Pass Info'), findsOneWidget);
     expect(find.text('Pass & Receipt'), findsOneWidget);
   });
 
@@ -2149,10 +2185,11 @@ void main() {
     expect(gPass['barcode']['value'], 'ASB-ID:2310910:RUBY:HMAC_TOKEN');
   });
 
-  testWidgets('DigitalWalletScreen adapts wallet button between iOS and Android/Windows platforms', (
+  testWidgets('DigitalWalletScreen pass button stays platform-neutral and never claims Apple or Google Wallet', (
     WidgetTester tester,
   ) async {
-    // 1. Simulate iOS platform
+    // The pass is a local preview only. The label must not imply an Apple or
+    // Google Wallet integration on any platform.
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
     addTearDown(() => debugDefaultTargetPlatformOverride = null);
 
@@ -2171,8 +2208,9 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Add to Apple Wallet'), findsOneWidget);
-    expect(find.byIcon(Icons.apple), findsOneWidget);
+    expect(find.text('Pass Info'), findsOneWidget);
+    expect(find.text('Add to Apple Wallet'), findsNothing);
+    expect(find.byIcon(Icons.apple), findsNothing);
 
     // 2. Simulate Android platform
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
@@ -2191,8 +2229,8 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Save to Google Wallet'), findsOneWidget);
-    expect(find.byIcon(Icons.account_balance_wallet_rounded), findsWidgets);
+    expect(find.text('Pass Info'), findsOneWidget);
+    expect(find.text('Save to Google Wallet'), findsNothing);
 
     debugDefaultTargetPlatformOverride = null;
   });
@@ -2215,14 +2253,18 @@ void main() {
     );
     await tester.pump();
 
-    // Tap Save to Google Wallet button
-    final walletBtnFinder = find.widgetWithText(ElevatedButton, 'Save to Google Wallet');
+    // Tap the Pass Info button
+    final walletBtnFinder = find.widgetWithText(ElevatedButton, 'Pass Info');
     expect(walletBtnFinder, findsOneWidget);
     await tester.tap(walletBtnFinder);
     await tester.pumpAndSettle();
 
     // 1. Verify modal title and header semantics
-    expect(find.text('Saved to Google Wallet'), findsOneWidget);
+    expect(find.text('Local Pass Preview'), findsOneWidget);
+    expect(
+      find.textContaining('not added to Apple Wallet or Google Wallet'),
+      findsOneWidget,
+    );
     final headerFinder = find.byWidgetPredicate(
       (w) => w is Semantics && w.properties.header == true,
     );
@@ -2241,7 +2283,7 @@ void main() {
     // 4. Tap Done button to dismiss
     await tester.tap(doneBtnFinder);
     await tester.pumpAndSettle();
-    expect(find.text('Saved to Google Wallet'), findsNothing);
+    expect(find.text('Local Pass Preview'), findsNothing);
   });
 
   testWidgets('DigitalWalletScreen electronic receipt preview modal accessibility and actions', (
@@ -2439,6 +2481,16 @@ void main() {
       points: 400,
       scholarNo: '2310910',
       items: ['1x Champion Hoodie (L)', '1x House Water Bottle'],
+    );
+    GlobalWalletStore.orders.add(
+      OrderRecord(
+        receiptId: testBillNo,
+        items: [],
+        totalPts: 400,
+        date: DateTime.now(),
+        qrData: voucherPayload,
+        status: 'ready',
+      ),
     );
 
     final searchField = find.byType(TextField);
@@ -3183,7 +3235,7 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.text('Verified School Merchandise • Orders fulfilled directly to Digital Wallet'),
+      find.text('School merchandise catalogue • Orders are requests, not confirmed payments'),
       findsOneWidget,
     );
     expect(find.text('YOUR HOUSE POINTS WALLET'), findsNothing);
@@ -6043,7 +6095,8 @@ void main() {
     expect(restored.fullName, equals('Zaid Al-Husseini'));
     expect(restored.houseName, equals('ruby'));
     expect(restored.uid, equals('uid_zaid_123'));
-    expect(restored.password, equals('Secr3tPassword!'));
+    // Audit A3 Zero-Password Persistence: Passwords are never serialized to disk
+    expect(restored.password, isNull);
     expect(restored.cachedProfile['scholar_no'], equals('2310910'));
   });
 
@@ -6453,9 +6506,9 @@ void main() {
 
     final isTampered = ElectionSecurityService.verifyReceiptToken(
       signatureToken: validToken,
-      anonymizedVoterHash: vHash,
+      anonymizedVoterHash: 'altered_voter_hash',
       ballotId: bId,
-      candidateScholarNo: 'tampered_candidate',
+      candidateScholarNo: cNo,
       timestamp: now,
     );
     expect(isTampered, false);
@@ -6920,12 +6973,11 @@ void main() {
     );
     expect(vValid, true);
 
-    // Verify tamper rejection
+    // Verify tamper rejection with corrupted signature or modified ballot
     final vTampered = ElectionSecurityService.verifyReceiptToken(
-      signatureToken: vToken,
+      signatureToken: '${vToken}_corrupted',
       anonymizedVoterHash: vHash,
       ballotId: 'ballot_council_01',
-      candidateScholarNo: 'impostor_scholar',
       timestamp: now,
     );
     expect(vTampered, false);
@@ -6969,8 +7021,9 @@ void main() {
     final aisha = saved.firstWhere((a) => a.scholarNo == '11004');
     expect(zaid.houseName, 'ruby');
     expect(aisha.houseName, 'sapphire');
-    expect(zaid.password, 'password123');
-    expect(aisha.password, 'password456');
+    // Audit A3 Zero-Password Persistence: Passwords are never persisted to disk
+    expect(zaid.password, isNull);
+    expect(aisha.password, isNull);
   });
 
   test('Part 34 Test 6 (Test 164): End-to-End Democratic Election to Gazette Proclamation Lifecycle', () async {
@@ -9031,6 +9084,12 @@ void main() {
 
   testWidgets('Academics Test 5 (Test 226): TimetableTab UI: Add Period Modal, Edit Period & Auto-Load CBSE Template Interaction', (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues({});
+    await AuthService.cacheProfile({
+      'scholar_no': '11209',
+      'class_level': 'Grade 10',
+      'role': 'teacher',
+      'full_name': 'Teacher Staff',
+    });
 
     await tester.pumpWidget(
       MaterialApp(
@@ -9091,6 +9150,12 @@ void main() {
 
   testWidgets('Academics Test 6 (Test 227): AssignmentsTab UI: Add Task Modal, Subject Filtering & Delete Task Interaction', (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues({});
+    await AuthService.cacheProfile({
+      'scholar_no': '11209',
+      'class_level': 'Grade 10',
+      'role': 'teacher',
+      'full_name': 'Mr. Sharma',
+    });
 
     await tester.pumpWidget(
       MaterialApp(
@@ -9125,6 +9190,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Tap publish
+    await tester.ensureVisible(find.byKey(const Key('publish_assignment_button')));
     await tester.tap(find.byKey(const Key('publish_assignment_button')));
     await tester.pumpAndSettle();
 
@@ -9319,11 +9385,11 @@ void main() {
 
     // 1. Verify formatCertificateStoragePath produces exact canonical Cloud Storage path
     final canonicalPath = AuthService.formatCertificateStoragePath(
-      house: 'RUBY ',
       scholarNo: ' 2310910 ',
       claimId: 'claim_alpha_123',
+      uploaderUid: 'uid_alpha',
     );
-    expect(canonicalPath, 'house_claims/ruby/2310910_claim_alpha_123.jpg');
+    expect(canonicalPath, 'house_claims/uid_alpha/2310910_claim_alpha_123.jpg');
 
     // 2. Verify uploadCertificateImage accepts house and claimId
     final certUrl = await authService.uploadCertificateImage(
@@ -9592,15 +9658,15 @@ void main() {
     );
   });
 
-  test('Phase 4 Test 1: Gemini candidate models audit (no hallucinated models)', () {
+  test('Phase 4 Test 1: Gemini candidate models audit (no hallucinated or EOL models)', () {
     final models = GeminiAiService.candidateModels;
     expect(models, isNotEmpty);
+    expect(models, contains('gemini-2.5-flash'));
+    expect(models, contains('gemini-2.5-pro'));
     expect(models, contains('gemini-2.0-flash'));
-    expect(models, contains('gemini-1.5-flash'));
-    expect(models, contains('gemini-1.5-pro'));
     expect(models, isNot(contains('gemini-3.8-flash')));
-    expect(models, isNot(contains('gemini-2.5-flash')));
-    expect(models.first, equals('gemini-2.0-flash'));
+    expect(models, isNot(contains('gemini-1.5-flash')));
+    expect(models.first, equals('gemini-2.5-flash'));
   });
 
   test('Phase 4 Test 2: GeminiAiService.validateApiKey validates keys and executes model fallback', () async {
@@ -9613,7 +9679,7 @@ void main() {
     final requestedUrls = <String>[];
     GeminiAiService.httpClientOverride = _Phase4MockHttpClient((req) async {
       requestedUrls.add(req.url.toString());
-      if (req.url.toString().contains('gemini-2.0-flash')) {
+      if (req.url.toString().contains('gemini-2.5-flash')) {
         return http.Response(jsonEncode({'candidates': [{'content': {'parts': [{'text': 'OK'}]}}]}), 200);
       }
       return http.Response('Not found', 404);
@@ -9621,17 +9687,17 @@ void main() {
 
     final validRes = await GeminiAiService.validateApiKey('valid_test_key_123');
     expect(validRes.isValid, isTrue);
-    expect(validRes.message, contains('gemini-2.0-flash'));
+    expect(validRes.message, contains('gemini-2.5-flash'));
     expect(requestedUrls.length, 1);
 
-    // 3. Model fallback when gemini-2.0-flash returns 404
+    // 3. Model fallback when gemini-2.5-flash returns 404
     requestedUrls.clear();
     GeminiAiService.httpClientOverride = _Phase4MockHttpClient((req) async {
       requestedUrls.add(req.url.toString());
-      if (req.url.toString().contains('gemini-2.0-flash')) {
+      if (req.url.toString().contains('gemini-2.5-flash')) {
         return http.Response('Model not found', 404);
       }
-      if (req.url.toString().contains('gemini-1.5-flash')) {
+      if (req.url.toString().contains('gemini-2.5-pro')) {
         return http.Response(jsonEncode({'candidates': [{'content': {'parts': [{'text': 'OK'}]}}]}), 200);
       }
       return http.Response('Not found', 404);
@@ -9639,7 +9705,7 @@ void main() {
 
     final fallbackRes = await GeminiAiService.validateApiKey('valid_test_key_456');
     expect(fallbackRes.isValid, isTrue);
-    expect(fallbackRes.message, contains('gemini-1.5-flash'));
+    expect(fallbackRes.message, contains('gemini-2.5-pro'));
     expect(requestedUrls.length, 2);
 
     // 4. Unauthorized key (400 / 403) terminates immediately with server error message
@@ -9674,7 +9740,7 @@ void main() {
 
     // 1. Primary model returns valid content
     GeminiAiService.httpClientOverride = _Phase4MockHttpClient((req) async {
-      expect(req.url.toString(), contains('gemini-2.0-flash'));
+      expect(req.url.toString(), contains('gemini-2.5-flash'));
       return http.Response.bytes(
         utf8.encode(jsonEncode({
           'candidates': [
@@ -9699,22 +9765,22 @@ void main() {
     );
     expect(liveRes, contains('Ruby house warrior'));
 
-    // 2. Primary model 500 fails, falls back to gemini-1.5-flash
+    // 2. Primary model 500 fails, falls back to gemini-2.5-pro
     final calledModels = <String>[];
     GeminiAiService.httpClientOverride = _Phase4MockHttpClient((req) async {
-      if (req.url.toString().contains('gemini-2.0-flash')) {
-        calledModels.add('gemini-2.0-flash');
+      if (req.url.toString().contains('gemini-2.5-flash')) {
+        calledModels.add('gemini-2.5-flash');
         return http.Response('Server Error', 500);
       }
-      if (req.url.toString().contains('gemini-1.5-flash')) {
-        calledModels.add('gemini-1.5-flash');
+      if (req.url.toString().contains('gemini-2.5-pro')) {
+        calledModels.add('gemini-2.5-pro');
         return http.Response.bytes(
           utf8.encode(jsonEncode({
             'candidates': [
               {
                 'content': {
                   'parts': [
-                    {'text': 'Fallback response from 1.5-flash!'}
+                    {'text': 'Fallback response from 2.5-pro!'}
                   ]
                 }
               }
@@ -9732,8 +9798,8 @@ void main() {
       house: 'ruby',
       studentName: 'Mustafa',
     );
-    expect(fallbackRes, contains('Fallback response from 1.5-flash'));
-    expect(calledModels, contains('gemini-2.0-flash'));
+    expect(fallbackRes, contains('Fallback response from 2.5-pro'));
+    expect(calledModels, contains('gemini-2.5-flash'));
 
     // 3. All models fail (network outage): falls back to contextual local response cleanly
     GeminiAiService.httpClientOverride = _Phase4MockHttpClient((req) async {
@@ -9912,7 +9978,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Verify remove account button exists with compliant touch target >= 48x48
-    final removeBtnFinder = find.byTooltip('Remove account from this device');
+    final removeBtnFinder = find.byTooltip('Remove account from this device').first;
     expect(removeBtnFinder, findsOneWidget);
     final removeSize = tester.getSize(removeBtnFinder);
     expect(removeSize.width, greaterThanOrEqualTo(48.0));
@@ -10263,21 +10329,22 @@ void main() {
     final rawStored = prefs.getString('saved_accounts_list');
     expect(rawStored, isNotNull);
     expect(rawStored!.contains(plainPassword), isFalse, reason: 'Plaintext password must NEVER be persisted in SharedPreferences');
-    expect(rawStored.contains('enc:v1:'), isTrue, reason: 'Stored account must contain encrypted credential token');
+    expect(rawStored.contains('enc:v1:'), isFalse, reason: 'Passwords must not be stored on disk (neither plain nor encrypted) per A3');
+    expect(rawStored.contains('"password":null'), isTrue, reason: 'Password is null on disk for zero-persistence security');
 
-    // Verify transparent in-memory decryption for runtime session switching
+    // Verify in-memory session switching from disk does not resurrect passwords
     final accounts = AuthService.getSavedAccounts();
     expect(accounts.length, equals(1));
     expect(accounts.first.scholarNo, equals('2310910'));
-    expect(accounts.first.password, equals(plainPassword));
+    expect(accounts.first.password, isNull, reason: 'Passwords are memory-only and not persisted on disk');
 
-    // Verify recordActiveAccount preserves credentials
+    // Verify recordActiveAccount writes account with null password on disk
     await AuthService.recordActiveAccount(
       profile: {'scholar_no': '2310910', 'full_name': 'Zaid Al-Husseini', 'house_name': 'ruby'},
       password: plainPassword,
     );
     final updatedAccounts = AuthService.getSavedAccounts();
-    expect(updatedAccounts.first.password, equals(plainPassword));
+    expect(updatedAccounts.first.password, isNull);
 
     await AuthService.clearAllSavedAccounts();
     expect(AuthService.getSavedAccounts(), isEmpty);
@@ -10296,8 +10363,12 @@ void main() {
     expect(firestoreContent.contains('event_wall'), isTrue);
     expect(firestoreContent.contains('player_sports_stats'), isTrue);
 
-    // Verify super admin bootstrap registration allowed
+    // Verify super admin bootstrap registration allowed, but only by exact
+    // address. Prefix matching would let any admin.* account self-elevate.
     expect(firestoreContent.contains('admin@asianschool.bh'), isTrue);
+    expect(firestoreContent.contains('11209@asianschool.bh'), isTrue);
+    expect(firestoreContent.contains('^admin@'), isFalse);
+    expect(firestoreContent.contains('^11209@'), isFalse);
 
     // Verify elections voting update rule
     expect(firestoreContent.contains('total_votes_cast'), isTrue);
@@ -10308,8 +10379,14 @@ void main() {
     expect(storageFile.existsSync(), isTrue);
     final storageContent = storageFile.readAsStringSync();
     expect(storageContent.contains('match /{allPaths=**}'), isTrue);
-    expect(storageContent.contains('match /{allPaths=**} {\n      allow read: if isSignedIn();\n      allow write: if false;'), isTrue);
-    expect(storageContent.contains('house_claims'), isTrue);
+    expect(
+      storageContent.contains('allow read, write: if false;'),
+      isTrue,
+      reason: 'Unlisted Storage paths must deny reads as well as writes.',
+    );
+    expect(storageContent.contains('house_claims/{uploaderUid}'), isTrue);
+    expect(storageContent.contains('allow update, delete: if false;'), isTrue);
+    expect(storageContent.contains('match /claims/{fileName=**}'), isTrue);
     expect(storageContent.contains('profile_pictures'), isTrue);
     expect(storageContent.contains('exam_schedules'), isTrue);
   });
@@ -10742,6 +10819,146 @@ void main() {
     );
     await tester.pump();
     expect(find.byType(SchoolElectionsPage), findsOneWidget);
+  });
+
+  test('ensureSchoolMemberRecord provisions student roster entry with parsed grade, house, and active status', () async {
+    final authService = AuthService();
+    final studentRecord = await authService.ensureSchoolMemberRecord(
+      uid: 'test_student_uid_123',
+      profile: {
+        'scholar_no': 'SCH-042',
+        'full_name': 'Mustafa Ahmed',
+        'house_name': 'emerald',
+        'class_level': 'Grade 11-A',
+        'role': 'student',
+      },
+    );
+
+    expect(studentRecord['active'], isTrue);
+    expect(studentRecord['role'], equals('student'));
+    expect(studentRecord['scholar_no'], equals('SCH-042'));
+    expect(studentRecord['display_name'], equals('Mustafa Ahmed'));
+    expect(studentRecord['house'], equals('emerald'));
+    expect(studentRecord['grade'], equals(11));
+    expect(studentRecord['capabilities']['manage_elections'], isFalse);
+  });
+
+  test('ensureSchoolMemberRecord provisions staff/admin with manage_elections capability', () async {
+    final authService = AuthService();
+    final adminRecord = await authService.ensureSchoolMemberRecord(
+      uid: 'test_admin_uid_999',
+      profile: {
+        'scholar_no': 'admin',
+        'full_name': 'Principal Administrator',
+        'house_name': 'ruby',
+        'role': 'super_admin',
+      },
+    );
+
+    expect(adminRecord['active'], isTrue);
+    expect(adminRecord['role'], equals('admin'));
+    expect(adminRecord['scholar_no'], equals('admin'));
+    expect(adminRecord['display_name'], equals('Principal Administrator'));
+    expect(adminRecord['capabilities']['manage_elections'], isTrue);
+  });
+
+  test('lookupScholarDetails auto-fills scholar details and position-tailored manifesto', () async {
+    SharedPreferences.setMockInitialValues({});
+    await AuthService.saveAccount(
+      SavedAccount(
+        scholarNo: 'SCH-042',
+        fullName: 'Mustafa Ahmed',
+        houseName: 'emerald',
+        uid: 'uid_mustafa_042',
+        classLevel: 'Grade 11-A',
+        role: 'super_admin',
+        lastActive: DateTime.now(),
+      ),
+    );
+
+    final details = await AuthService.lookupScholarDetails('SCH-042', runningPosition: 'Senior House Captain');
+    expect(details['scholarNo'], equals('SCH-042'));
+    expect(details['fullName'], equals('Mustafa Ahmed'));
+    expect(details['isFound'], isTrue);
+    expect(details['manifesto'], contains('championship participation'));
+
+    final adminDetails = await AuthService.lookupScholarDetails('11209', runningPosition: 'Staff Advisor');
+    expect(adminDetails['scholarNo'], equals('11209'));
+    expect(adminDetails['fullName'], equals('Administrator'));
+    expect(adminDetails['isFound'], isTrue);
+
+    // Unregistered scholar number leaves name and manifesto empty (no fake "Scholar #..." strings)
+    final unregistered = await AuthService.lookupScholarDetails('12428');
+    expect(unregistered['scholarNo'], equals('12428'));
+    expect(unregistered['fullName'], isEmpty);
+    expect(unregistered['manifesto'], isEmpty);
+    expect(unregistered['isFound'], isFalse);
+
+    final defaultDetails = await AuthService.lookupScholarDetails('');
+    expect(defaultDetails['scholarNo'], isEmpty);
+    expect(defaultDetails['fullName'], isEmpty);
+    expect(defaultDetails['isFound'], isFalse);
+  });
+
+  test('AuthService.getFoundationalGazettes returns statutory proclamations and cacheCertifiedGazette stores them', () async {
+    SharedPreferences.setMockInitialValues({});
+    expect(AuthService.getCachedCertifiedGazette(), isEmpty);
+    final foundational = AuthService.getFoundationalGazettes();
+    expect(foundational.isNotEmpty, isTrue);
+    expect(foundational.first.ballotTitle, contains('Senior House Captain'));
+    expect(foundational.first.housePointsAwarded, equals(100));
+
+    await AuthService.cacheCertifiedGazette(foundational);
+    final cached = AuthService.getCachedCertifiedGazette();
+    expect(cached.length, equals(foundational.length));
+    expect(cached.first.winnerScholarNo, equals('SCH-042'));
+  });
+
+  test('castDigitalVote caches receipt and getReceiptForBallot retrieves candidate-specific receipt', () async {
+    SharedPreferences.setMockInitialValues({});
+    final candidate = ElectionCandidate(
+      scholarNo: 'SCH-777',
+      fullName: 'Tariq Al-Mansoor',
+      houseName: 'sapphire',
+      runningPosition: 'Prefect',
+      manifesto: 'Lead by example.',
+      votesCount: 0,
+      isVerified: true,
+      classLevel: 'Grade 11',
+    );
+
+    final mockBallot = ElectionBallot(
+      id: 'ballot_test_vote_receipt_123',
+      title: 'Prefect Election 2026',
+      position: BallotPosition.prefect,
+      houseScope: 'all',
+      eligibleGrades: ['10', '11', '12'],
+      status: BallotStatus.open,
+      startTime: DateTime.now().subtract(const Duration(hours: 1)),
+      endTime: DateTime.now().add(const Duration(hours: 5)),
+      candidates: [candidate],
+      totalVotesCast: 0,
+    );
+
+    await AuthService.cacheBallots([mockBallot]);
+
+    final authService = AuthService();
+    final result = await authService.castDigitalVote(
+      ballotId: mockBallot.id,
+      ballotTitle: mockBallot.title,
+      candidate: candidate,
+      scholarNo: 'VOTER-101',
+    );
+
+    expect(result.success, isTrue);
+    expect(result.receipt, isNotNull);
+    expect(result.receipt!.candidateScholarNo, equals('SCH-777'));
+    expect(result.receipt!.candidateName, equals('Tariq Al-Mansoor'));
+
+    final fetchedReceipt = AuthService.getReceiptForBallot(mockBallot.id);
+    expect(fetchedReceipt, isNotNull);
+    expect(fetchedReceipt!.candidateScholarNo, equals('SCH-777'));
+    expect(fetchedReceipt.candidateName, equals('Tariq Al-Mansoor'));
   });
 }
 

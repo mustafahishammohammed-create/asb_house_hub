@@ -43,16 +43,20 @@ class _CameraCaptureDialogState extends State<CameraCaptureDialog> {
       _controller = controller;
 
       await controller.initialize();
-      if (mounted) {
-        setState(() => _isInitializing = false);
+      if (!mounted) {
+        controller.dispose();
+        _controller = null;
+        return;
       }
+      setState(() => _isInitializing = false);
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isInitializing = false;
-          _errorMessage = _getCameraErrorMessage(e);
-        });
+      if (!mounted) {
+        return;
       }
+      setState(() {
+        _isInitializing = false;
+        _errorMessage = _getCameraErrorMessage(e);
+      });
     }
   }
 
@@ -77,6 +81,7 @@ class _CameraCaptureDialogState extends State<CameraCaptureDialog> {
   @override
   void dispose() {
     _controller?.dispose();
+    _controller = null;
     super.dispose();
   }
 

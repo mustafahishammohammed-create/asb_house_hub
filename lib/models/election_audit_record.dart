@@ -66,9 +66,15 @@ class ElectionAuditRecord {
       return null;
     }
 
+    int safeInt(dynamic v) {
+      if (v == null) return 0;
+      if (v is num) return v.toInt();
+      return int.tryParse(v.toString()) ?? 0;
+    }
+
     Map<String, int> parseMap(dynamic raw) {
       if (raw is Map) {
-        return raw.map((k, v) => MapEntry(k.toString().toLowerCase(), (v as num).toInt()));
+        return raw.map((k, v) => MapEntry(k.toString().toLowerCase(), safeInt(v)));
       }
       return {};
     }
@@ -76,8 +82,8 @@ class ElectionAuditRecord {
     return ElectionAuditRecord(
       ballotId: (map['ballot_id'] ?? '').toString(),
       ballotTitle: (map['ballot_title'] ?? 'Election Audit').toString(),
-      totalEligibleVoters: (map['total_eligible_voters'] as num?)?.toInt() ?? 0,
-      totalVotesCast: (map['total_votes_cast'] as num?)?.toInt() ?? 0,
+      totalEligibleVoters: safeInt(map['total_eligible_voters']),
+      totalVotesCast: safeInt(map['total_votes_cast']),
       houseTurnoutBreakdown: parseMap(map['house_turnout_breakdown']),
       gradeTurnoutBreakdown: parseMap(map['grade_turnout_breakdown']),
       winningCandidateScholarNo: map['winning_candidate_scholar_no']?.toString(),

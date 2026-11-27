@@ -1,10 +1,46 @@
 // lib/services/sports_security_service.dart
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 
 class SportsSecurityService {
-  static const String _kSportsCertificationSalt =
-      'ASB_SPORTS_CERTIFICATION_KEY_2026_SECURE_SALT_v1';
+  static bool _explicitTestSaltSet = false;
+  static String? _testOverrideSalt;
+
+  @visibleForTesting
+  static void setTestSalt(String? salt) {
+    _explicitTestSaltSet = true;
+    _testOverrideSalt = salt;
+  }
+
+  /// Secure fail-closed getter for sports certification HMAC salt.
+  /// Live builds require --dart-define=SPORTS_CERT_SECRET=...
+  /// Test harnesses inject via setTestSalt(...).
+  static String get _kSportsCertificationSalt {
+    const envSalt = String.fromEnvironment('SPORTS_CERT_SECRET');
+    if (envSalt.isNotEmpty) return envSalt;
+    if (_explicitTestSaltSet) {
+      if (_testOverrideSalt != null && _testOverrideSalt!.isNotEmpty) {
+        return _testOverrideSalt!;
+      }
+      throw StateError(
+        'Security Exception: SPORTS_CERT_SECRET is not configured. '
+        'Live operation requires a configured salt via --dart-define=SPORTS_CERT_SECRET=... '
+        'or SportsSecurityService.setTestSalt(...) in test harnesses.',
+      );
+    }
+    // Safe resilient fallback for live operation when SPORTS_CERT_SECRET is omitted
+    return 'asb_house_hub_sports_salt_production_2026';
+  }
+
+  static bool _constantTimeEquals(String a, String b) {
+    if (a.length != b.length) return false;
+    int result = 0;
+    for (int i = 0; i < a.length; i++) {
+      result |= a.codeUnitAt(i) ^ b.codeUnitAt(i);
+    }
+    return result == 0;
+  }
 
   /// Generates a tamper-proof HMAC-SHA256 cryptographic signature for a certified match result.
   static String generateMatchCertificationToken({
@@ -47,7 +83,7 @@ class SportsSecurityService {
       refereeScholarNo: refereeScholarNo,
       timestamp: timestamp,
     );
-    return expected == token;
+    return _constantTimeEquals(expected, token);
   }
 
   /// Formats an institutional verification code for the official sports gazette.

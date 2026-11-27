@@ -179,12 +179,40 @@ class AttendanceSummary {
     required this.excusedDays,
   });
 
-  double get percentage =>
-      totalDays > 0 ? (presentDays / totalDays) * 100 : 100.0;
+  /// Single institutional attendance policy used by every screen and report:
+  /// present and excused days count as attended, and a late day counts as
+  /// half a day. Absences never count. The result is null when no attendance
+  /// has been recorded, so callers must show "No attendance data" rather than
+  /// inventing a 100% baseline.
+  static double? calculateAttendancePercentage({
+    required int totalDays,
+    required int presentDays,
+    required int lateDays,
+    required int excusedDays,
+  }) {
+    if (totalDays <= 0) return null;
+    final attended = presentDays + excusedDays + (lateDays * 0.5);
+    return (attended / totalDays) * 100.0;
+  }
 
-  bool get isMinistryCompliant => percentage >= 75.0;
+  bool get hasData => totalDays > 0;
 
-  bool get isCriticalThreshold => percentage < 80.0;
+  double? get percentage => calculateAttendancePercentage(
+    totalDays: totalDays,
+    presentDays: presentDays,
+    lateDays: lateDays,
+    excusedDays: excusedDays,
+  );
+
+  bool get isMinistryCompliant {
+    final pct = percentage;
+    return pct != null && pct >= 75.0;
+  }
+
+  bool get isCriticalThreshold {
+    final pct = percentage;
+    return pct != null && pct < 80.0;
+  }
 
   factory AttendanceSummary.fromRecords(List<AttendanceRecord> records) {
     if (records.isEmpty) {

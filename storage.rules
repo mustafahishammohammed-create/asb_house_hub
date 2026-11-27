@@ -1,56 +1,142 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    
-    function isSignedIn() {
+
+    function isAuthenticated() {
       return request.auth != null;
     }
-    
+
     function isImage() {
-      return request.resource.contentType.matches('image/.*');
+      return request.resource.contentType in [
+        'image/jpeg', 'image/jpg', 'image/png',
+        'image/webp', 'image/heic', 'image/heif'
+      ];
     }
 
     function isPdf() {
       return request.resource.contentType == 'application/pdf';
     }
-    
+
     function isUnderMaxSize(maxMegabytes) {
       return request.resource.size <= maxMegabytes * 1024 * 1024;
     }
 
-    // House Point Claim Certificates (Images & PDFs up to 10MB)
-    match /house_claims/{house}/{fileName=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && (isImage() || isPdf()) && isUnderMaxSize(10);
+    // Cross-service user lookup. Missing or inactive user/membership docs deny access.
+    function hasUserDoc() {
+      return isAuthenticated() && firestore.exists(
+        /databases/(default)/documents/users/$(request.auth.uid)
+      );
     }
-    
-    // Legacy Claims path (for backward compatibility during migration)
+
+    function userData() {
+      return firestore.get(
+        /databases/(default)/documents/users/$(request.auth.uid)
+      ).data;
+    }
+
+    function isActiveUser() {
+      return hasUserDoc() &&
+        (!('status' in userData()) || userData().status == 'active') &&
+        (!firestore.exists(/databases/(default)/documents/school_members/$(request.auth.uid)) ||
+         firestore.get(/databases/(default)/documents/school_members/$(request.auth.uid)).data.get('active', true) == true);
+    }
+
+    function userRole() {
+      return userData().role;
+    }
+
+    function userScholarNo() {
+      return 'scholar_no' in userData() ? userData().scholar_no : '';
+    }
+
+    function userHouse() {
+      return 'house_name' in userData() ? userData().house_name : '';
+    }
+
+    function isStaffOrAdmin() {
+      return isActiveUser() && (
+        (request.auth.token != null && (
+          ('admin' in request.auth.token && request.auth.token.admin == true) ||
+          ('email' in request.auth.token && request.auth.token.email in ['admin@asianschool.bh', '11209@asianschool.bh'])
+        )) ||
+        ('role' in userData() && userRole() in [
+          'admin', 'super_admin', 'administrator',
+          'teacher', 'faculty', 'principal', 'staff',
+          'faculty_advisor', 'teacher_lead', 'class_teacher', 'subject_teacher'
+        ])
+      );
+    }
+
+    function isLeader() {
+      return isActiveUser() && 'role' in userData() && userRole() in [
+        'captain', 'vice_captain', 'house_captain', 'house_vice_captain',
+        'council', 'head_boy', 'head_girl', 'deputy_head_boy', 'deputy_head_girl',
+        'head_of_activities', 'cultural_secretary', 'sports_captain',
+        'sports_vice_captain', 'sports_lead', 'executive_council',
+        'prefect', 'student_rep', 'grade_prefect'
+      ];
+    }
+
+    // Claim certificates are stored under the uploader's UID, not a
+    // caller-supplied house path. Objects are create-only: a student cannot
+    // overwrite an existing certificate, and reviewers cannot alter evidence.
+    match /house_claims/{uploaderUid}/{fileName=**} {
+      allow read: if isStaffOrAdmin() || isLeader() || (
+        isActiveUser() && request.auth.uid == uploaderUid
+      );
+      allow create: if isActiveUser() &&
+        resource == null &&
+        request.auth.uid == uploaderUid &&
+        (isImage() || isPdf()) &&
+        isUnderMaxSize(10) &&
+        userScholarNo().size() > 0 &&
+        request.resource.name.matches('^house_claims/' + uploaderUid + '/' + userScholarNo() + '_[A-Za-z0-9._-]+$');
+      allow update, delete: if false;
+    }
+
+    // Legacy house-claim objects predate the UID-scoped layout. They remain
+    // readable only to reviewers or the matching scholar prefix; no client can
+    // write or delete them any more.
     match /claims/{fileName=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && (isImage() || isPdf()) && isUnderMaxSize(10);
+      allow read: if isStaffOrAdmin() || isLeader() || (
+        isActiveUser() &&
+        userScholarNo().size() > 0 &&
+        resource.name.matches('^claims/' + userScholarNo() + '_.*')
+      );
+      allow write: if false;
     }
 
     // Student and Staff Profile Photos (Images only, strict owner UID matching, up to 5MB)
     match /profile_pictures/{userId}/{fileName=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && request.auth.uid == userId && isImage() && isUnderMaxSize(5);
+      allow read: if isActiveUser();
+      allow create, update: if isActiveUser() && request.auth.uid == userId && isImage() && isUnderMaxSize(5);
+      allow delete: if isActiveUser() && request.auth.uid == userId;
     }
 
     match /profile_pictures/{userId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && request.auth.uid == userId && isImage() && isUnderMaxSize(5);
+      allow read: if isActiveUser();
+      allow create, update: if isActiveUser() && request.auth.uid == userId && isImage() && isUnderMaxSize(5);
+      allow delete: if isActiveUser() && request.auth.uid == userId;
     }
 
     // Exam Schedules & Academic Resources (Images & PDFs up to 15MB)
     match /exam_schedules/{fileName=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && (isImage() || isPdf()) && isUnderMaxSize(15);
+      allow read: if isActiveUser();
+      allow create, update: if isStaffOrAdmin() && (isImage() || isPdf()) && isUnderMaxSize(15);
+      allow delete: if isStaffOrAdmin();
     }
 
-    // Explicit Default Deny for all other write paths (wildcard write removed for security)
+    // School Circulars & Official Notices (PDFs up to 15MB)
+    match /circulars/{noticeId}/{fileName=**} {
+      allow read: if isActiveUser();
+      allow create, update: if isStaffOrAdmin() && isPdf() && isUnderMaxSize(15);
+      allow delete: if isStaffOrAdmin();
+    }
+
+    // Unlisted paths are denied by default. The previous wildcard read granted
+    // every authenticated account access to any future bucket path by accident.
     match /{allPaths=**} {
-      allow read: if isSignedIn();
-      allow write: if false;
+      allow read, write: if false;
     }
   }
 }

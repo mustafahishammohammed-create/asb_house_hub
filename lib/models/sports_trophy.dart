@@ -104,6 +104,7 @@ class SportsTrophyRecord {
   Map<String, dynamic> toMap() {
     return {
       'trophy_id': trophyId,
+      'title': tournamentTitle,
       'tournament_title': tournamentTitle,
       'sport_type': sportType.name,
       'winning_house': winningHouse.toLowerCase(),
