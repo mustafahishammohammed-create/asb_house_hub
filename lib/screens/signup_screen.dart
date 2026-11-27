@@ -9,14 +9,21 @@ import '../widgets/strength_meter.dart';
 import 'home_screen.dart';
 
 class SignupScreen extends StatefulWidget {
-  const SignupScreen({super.key});
+  final AuthService? authService;
+  final WidgetBuilder? homeBuilder;
+
+  const SignupScreen({
+    super.key,
+    this.authService,
+    this.homeBuilder,
+  });
 
   @override
   State<SignupScreen> createState() => _SignupScreenState();
 }
 
 class _SignupScreenState extends State<SignupScreen> {
-  final _authService = AuthService();
+  late final AuthService _authService = widget.authService ?? AuthService();
 
   // Controllers
   final _nameController = TextEditingController();
@@ -175,23 +182,29 @@ class _SignupScreenState extends State<SignupScreen> {
 
     AuthService.authTransitionInProgress.value = true;
     try {
-      await _authService.signUp(
-        scholarNo: _scholarController.text.trim(),
-        password: _passwordController.text,
-        fullName: _nameController.text.trim(),
-        age: _age,
-        classLevel: _classLevel!,
-        division: _division!,
-        houseName: _houseName!,
-      );
+      await _authService
+          .signUp(
+            scholarNo: _scholarController.text.trim(),
+            password: _passwordController.text,
+            fullName: _nameController.text.trim(),
+            age: _age,
+            classLevel: _classLevel!,
+            division: _division!,
+            houseName: _houseName!,
+          )
+          .timeout(const Duration(seconds: 45));
 
       if (!mounted) return;
 
+      AuthService.authTransitionInProgress.value = false;
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(
-          builder: (_) => HomeScreen(
-            key: ValueKey('home_${DateTime.now().millisecondsSinceEpoch}'),
-          ),
+          builder: widget.homeBuilder ??
+              (_) => HomeScreen(
+                    key: ValueKey(
+                      'home_${DateTime.now().millisecondsSinceEpoch}',
+                    ),
+                  ),
         ),
         (_) => false,
       );

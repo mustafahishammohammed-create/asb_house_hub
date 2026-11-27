@@ -2732,7 +2732,10 @@ class AuthService {
   }
 
   /// Save user profile to local disk cache with robust JSON serialization.
-  static Future<void> cacheProfile(Map<String, dynamic> profile) async {
+  static Future<void> cacheProfile(
+    Map<String, dynamic> profile, {
+    bool syncMemberRecord = true,
+  }) async {
     try {
       _prefs ??= await SharedPreferences.getInstance();
       final house = extractHouse(profile);
@@ -2750,7 +2753,10 @@ class AuthService {
       final sanitized = _sanitizeForJson(profile);
       await _prefs?.setString('cached_user_profile', jsonEncode(sanitized));
       if (scholarNo != null && scholarNo.isNotEmpty) {
-        await recordActiveAccount(profile: profile);
+        await recordActiveAccount(
+          profile: profile,
+          syncMemberRecord: syncMemberRecord,
+        );
       }
     } catch (_) {}
   }
@@ -3939,6 +3945,7 @@ class AuthService {
   static Future<void> recordActiveAccount({
     required Map<String, dynamic> profile,
     String? password,
+    bool syncMemberRecord = true,
   }) async {
     try {
       final scholarNo = (profile['scholar_no'] ?? getCachedScholarNo() ?? '')
@@ -4001,7 +4008,8 @@ class AuthService {
       );
 
       await saveAccount(updated);
-      if (Firebase.apps.isNotEmpty &&
+      if (syncMemberRecord &&
+          Firebase.apps.isNotEmpty &&
           FirebaseAuth.instance.currentUser?.uid == updated.uid) {
         AuthService()
             .ensureSchoolMemberRecord(
@@ -4556,10 +4564,19 @@ class AuthService {
     final email = _scholarToEmail(cleanScholar);
 
     // Step 1 — Create auth user
-    final credential = await _auth.createUserWithEmailAndPassword(
-      email: email,
-      password: password,
-    );
+    final credential = await _auth
+        .createUserWithEmailAndPassword(
+          email: email,
+          password: password,
+        )
+        .timeout(
+          const Duration(seconds: 25),
+          onTimeout: () => throw FirebaseAuthException(
+            code: 'network-request-failed',
+            message:
+                'Registration connection timed out. Please check your internet connection.',
+          ),
+        );
 
     final user = credential.user;
     if (user == null) {
@@ -4591,23 +4608,45 @@ class AuthService {
           .set(profileData)
           .timeout(const Duration(seconds: 15));
     } catch (_) {
-      await user.delete().catchError((_) {});
-      await _auth.signOut().catchError((_) {});
+      await user
+          .delete()
+          .timeout(const Duration(seconds: 5))
+          .catchError((_) {});
+      await _auth
+          .signOut()
+          .timeout(const Duration(seconds: 5))
+          .catchError((_) {});
       rethrow;
     }
 
+    final cachedProfileData = <String, dynamic>{
+      ...profileData,
+      'created_at': DateTime.now().toIso8601String(),
+    };
+    await setCompletedOnboarding(true);
     await clearCache();
     await cacheHouse(cleanHouse);
-    await cacheProfile(profileData);
-    await recordActiveAccount(profile: profileData, password: password);
+    await cacheProfile(cachedProfileData, syncMemberRecord: false);
+    await recordActiveAccount(
+      profile: cachedProfileData,
+      password: password,
+      syncMemberRecord: false,
+    );
 
     // Best-effort Auth display name and election roster sync after profile commit.
-    await user.updateDisplayName(cleanName).catchError((_) {});
-
-    await ensureSchoolMemberRecord(
-      uid: uid,
-      profile: profileData,
-    ).catchError((_) => <String, dynamic>{});
+    // Never block dashboard navigation on secondary RPCs.
+    unawaited(
+      user
+          .updateDisplayName(cleanName)
+          .timeout(const Duration(seconds: 8))
+          .catchError((_) {}),
+    );
+    unawaited(
+      ensureSchoolMemberRecord(
+        uid: uid,
+        profile: cachedProfileData,
+      ).catchError((_) => <String, dynamic>{}),
+    );
 
     return credential;
   }
@@ -4633,7 +4672,8 @@ class AuthService {
         final uDoc = await _firestore
             .collection('users')
             .doc(effectiveUid)
-            .get();
+            .get()
+            .timeout(const Duration(seconds: 6));
         if (uDoc.exists && uDoc.data() != null) {
           prof = Map<String, dynamic>.from(uDoc.data()!);
         }
@@ -4727,7 +4767,9 @@ class AuthService {
           final docRef = _firestore
               .collection('school_members')
               .doc(effectiveUid);
-          await docRef.set(memberRecord, SetOptions(merge: true));
+          await docRef
+              .set(memberRecord, SetOptions(merge: true))
+              .timeout(const Duration(seconds: 8));
         } catch (e) {
           debugPrint('ensureSchoolMemberRecord sync note: $e');
         }

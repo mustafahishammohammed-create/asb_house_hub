@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,6 +9,52 @@ import 'package:asb_house_hub/screens/login_screen.dart';
 import 'package:asb_house_hub/screens/signup_screen.dart';
 import 'package:asb_house_hub/services/auth_service.dart';
 import 'package:asb_house_hub/theme/app_theme.dart';
+
+class _FakeUserCredential implements UserCredential {
+  @override
+  AdditionalUserInfo? get additionalUserInfo => null;
+
+  @override
+  AuthCredential? get credential => null;
+
+  @override
+  User? get user => null;
+}
+
+class _StubAuthService extends AuthService {
+  final Future<UserCredential> Function({
+    required String scholarNo,
+    required String password,
+    required String fullName,
+    required int age,
+    required String classLevel,
+    required String division,
+    required String houseName,
+  }) onSignUp;
+
+  _StubAuthService(this.onSignUp);
+
+  @override
+  Future<UserCredential> signUp({
+    required String scholarNo,
+    required String password,
+    required String fullName,
+    required int age,
+    required String classLevel,
+    required String division,
+    required String houseName,
+  }) {
+    return onSignUp(
+      scholarNo: scholarNo,
+      password: password,
+      fullName: fullName,
+      age: age,
+      classLevel: classLevel,
+      division: division,
+      houseName: houseName,
+    );
+  }
+}
 
 void main() {
   setUpAll(() {
@@ -284,6 +331,137 @@ void main() {
         AuthService.authTransitionInProgress.value = false;
         await tester.pump();
         expect(find.byType(LoginScreen), findsOneWidget);
+      },
+    );
+  });
+
+  group('SignupScreen completion redirect & error recovery', () {
+    Future<void> fillThroughStep3(WidgetTester tester) async {
+      // Step 0: Identity
+      final fields = find.byType(TextFormField);
+      await tester.enterText(fields.at(0), 'Zoya Khan');
+      await tester.enterText(fields.at(1), '25104');
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+
+      // Step 1: Grade 10 + A
+      await tester.ensureVisible(find.text('Grade 10'));
+      await tester.tap(find.text('Grade 10'));
+      await tester.pump();
+      await tester.ensureVisible(find.text('A'));
+      await tester.tap(find.text('A'));
+      await tester.pump();
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+
+      // Step 2: Ruby
+      await tester.ensureVisible(find.text('Ruby'));
+      await tester.tap(find.text('Ruby'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+
+      // Step 3: Matching password
+      final pwFields = find.byType(TextFormField);
+      await tester.enterText(pwFields.at(0), 'StrongPass1!');
+      await tester.enterText(pwFields.at(1), 'StrongPass1!');
+    }
+
+    testWidgets(
+      'Redirects to dashboard and clears authTransitionInProgress after signUp completes',
+      (tester) async {
+        tester.view.physicalSize = const Size(420, 840);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final completer = Completer<UserCredential>();
+        String? capturedScholar;
+        final stubAuth = _StubAuthService(({
+          required scholarNo,
+          required password,
+          required fullName,
+          required age,
+          required classLevel,
+          required division,
+          required houseName,
+        }) {
+          capturedScholar = scholarNo;
+          return completer.future;
+        });
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.lightTheme,
+            home: SignupScreen(
+              authService: stubAuth,
+              homeBuilder: (_) => const Scaffold(
+                body: Center(child: Text('Dashboard Ready')),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await fillThroughStep3(tester);
+        await tester.tap(find.text('Complete Registration'));
+        await tester.pump();
+
+        expect(find.byType(CircularProgressIndicator), findsOneWidget);
+        expect(AuthService.authTransitionInProgress.value, isTrue);
+        expect(capturedScholar, equals('25104'));
+
+        completer.complete(_FakeUserCredential());
+        await tester.pumpAndSettle();
+
+        expect(find.text('Dashboard Ready'), findsOneWidget);
+        expect(find.byType(SignupScreen), findsNothing);
+        expect(AuthService.authTransitionInProgress.value, isFalse);
+      },
+    );
+
+    testWidgets(
+      'Stops loading spinner and shows timeout error when signUp times out',
+      (tester) async {
+        tester.view.physicalSize = const Size(420, 840);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final stubAuth = _StubAuthService(({
+          required scholarNo,
+          required password,
+          required fullName,
+          required age,
+          required classLevel,
+          required division,
+          required houseName,
+        }) async {
+          throw TimeoutException('Simulated network hang');
+        });
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.lightTheme,
+            home: SignupScreen(authService: stubAuth),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await fillThroughStep3(tester);
+        await tester.tap(find.text('Complete Registration'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(CircularProgressIndicator), findsNothing);
+        expect(AuthService.authTransitionInProgress.value, isFalse);
+        expect(
+          find.textContaining('Connection timed out'),
+          findsOneWidget,
+        );
       },
     );
   });
