@@ -55,6 +55,19 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
     String activityTitle,
   ) async {
     if (_processingClaimIds.contains(claimId)) return;
+    final currentScholar =
+        (AuthService.getCachedScholarNo() ?? '').trim().toLowerCase();
+    if (currentScholar.isNotEmpty &&
+        scholarNo.trim().toLowerCase() == currentScholar &&
+        !widget.isSuperAdmin) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Self-approval is blocked: another reviewer must approve your claim.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
     setState(() => _processingClaimIds.add(claimId));
     try {
       await _authService.approveClaim(

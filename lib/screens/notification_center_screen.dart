@@ -459,7 +459,9 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      '${_timeLabel(notification.timestamp)} · ${_categoryLabel(notification.category)}',
+                      notification.senderName.trim().isNotEmpty
+                          ? '${_timeLabel(notification.timestamp)} · ${_categoryLabel(notification.category)} · From ${notification.senderName.trim()}'
+                          : '${_timeLabel(notification.timestamp)} · ${_categoryLabel(notification.category)}',
                       style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w600,

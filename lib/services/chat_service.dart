@@ -304,6 +304,7 @@ class ChatService {
               'is_read': false,
               'type': 'chat_message',
               'room_id': roomId,
+              'sender_id': myUid,
             });
       } catch (_) {}
     }

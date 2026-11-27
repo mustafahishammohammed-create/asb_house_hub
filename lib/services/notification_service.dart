@@ -402,6 +402,12 @@ class NotificationService {
       );
     }
 
+    final effectiveSourceId =
+        sourceId.trim().isNotEmpty ? sourceId.trim() : dedupeKey.trim();
+    final senderName = (AuthService.getCachedProfile()?['full_name'] ?? '')
+        .toString()
+        .trim();
+
     final payload = buildNotificationPayload(
       title: title,
       body: body,
@@ -409,8 +415,10 @@ class NotificationService {
       category: category,
       priority: priority,
       dedupeKey: dedupeKey,
-      sourceId: sourceId,
+      sourceId: effectiveSourceId,
       roomId: roomId,
+      senderId: currentUid,
+      senderName: senderName,
       eventTime: eventTime,
     );
 
@@ -466,6 +474,8 @@ class NotificationService {
     String priority = 'normal',
     String sourceId = '',
     String roomId = '',
+    String senderId = '',
+    String senderName = '',
     DateTime? eventTime,
   }) {
     final cleanTitle = _clip(title.trim(), 100);
@@ -474,9 +484,14 @@ class NotificationService {
       500,
     );
     final cleanDedupe = _clip(dedupeKey.trim(), 200);
-    final cleanSource = _clip(sourceId.trim(), 128);
+    final cleanSource = _clip(
+      sourceId.trim().isNotEmpty ? sourceId.trim() : cleanDedupe,
+      128,
+    );
     final cleanRoom = _clip(roomId.trim(), 128);
     final cleanType = _clip(type.trim(), 50);
+    final cleanSender = _clip(senderId.trim(), 128);
+    final cleanSenderName = _clip(senderName.trim(), 100);
 
     return {
       'title': cleanTitle.isEmpty ? 'ASB Notification' : cleanTitle,
@@ -485,6 +500,8 @@ class NotificationService {
       'type': cleanType.isEmpty ? 'system' : cleanType,
       'category': normalizeNotificationCategory(category),
       'priority': normalizeNotificationPriority(priority),
+      'sender_id': cleanSender,
+      if (cleanSenderName.isNotEmpty) 'sender_name': cleanSenderName,
       if (cleanDedupe.isNotEmpty) 'dedupe_key': cleanDedupe,
       if (cleanSource.isNotEmpty) 'source_id': cleanSource,
       if (cleanRoom.isNotEmpty) 'room_id': cleanRoom,

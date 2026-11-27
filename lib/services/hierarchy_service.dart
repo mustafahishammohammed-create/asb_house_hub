@@ -288,7 +288,6 @@ class HierarchyService {
   }) {
     final sNo = (scholarNo ?? '').trim().toLowerCase();
     if (isSuperAdmin(scholarNo: scholarNo, role: role, fullName: fullName) ||
-        sNo == '2310910' ||
         sNo == '11209' ||
         sNo == 'admin') {
       return 'Super Admin';

@@ -117,7 +117,7 @@ class OrderRecord {
     required this.totalPts,
     required this.date,
     required this.qrData,
-    this.status = 'ready',
+    this.status = 'placed',
     this.claimedAt,
     this.claimedBy,
   });
@@ -525,8 +525,14 @@ class GlobalWalletStore {
         'qr_data': order.qrData,
       };
 
-      if (totalBhd != null) {
-        orderData['total_bhd'] = totalBhd;
+      // Always persist a positive BHD total for new orders. Callers that do
+      // not pass one (for example the one-click purchase path) get the total
+      // derived from the priced cart items instead of a zero-value order that
+      // the security rules reject.
+      final effectiveBhd = totalBhd ??
+          order.items.fold<double>(0.0, (total, item) => total + item.bhdPrice);
+      if (effectiveBhd > 0) {
+        orderData['total_bhd'] = effectiveBhd;
       }
       if (order.claimedAt != null) {
         orderData['claimed_at'] = Timestamp.fromDate(order.claimedAt!);
@@ -863,13 +869,34 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
 
       AppHaptics.success();
       final itemsList = [CartItem(product: product, size: size, qty: safeQty)];
+      final totalBhd = itemsList.fold<double>(
+        0.0,
+        (total, item) => total + item.bhdPrice,
+      );
+      final effectiveScholar =
+          (widget.scholarNo?.trim().isNotEmpty == true)
+              ? widget.scholarNo!.trim()
+              : (AuthService.getCachedScholarNo() ?? '').trim();
+      if (effectiveScholar.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Please sign in with a valid scholar profile before ordering.'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+        return;
+      }
+
       final qrData = VoucherSecurityService.generateVoucherPayload(
         billNo: receiptId,
         points: 0,
-        scholarNo: widget.scholarNo ?? '2310910',
+        scholarNo: effectiveScholar,
         items: itemsList
             .map((i) => '${i.qty}x ${i.product.name} (${i.size})')
             .toList(),
+        totalBhd: totalBhd,
       );
 
       final newOrder = OrderRecord(
@@ -893,6 +920,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
         scholarNo: widget.scholarNo,
         studentName: widget.studentName,
         house: widget.userHouse,
+        totalBhd: totalBhd,
       );
 
       if (!mounted) return;
@@ -2219,17 +2247,33 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                                 final receiptId =
                                     'ASB-${DateTime.now().millisecondsSinceEpoch.toString().substring(6)}';
                                 final itemsList = List<CartItem>.from(cart);
+                                final effectiveScholar =
+                                    (widget.scholarNo?.trim().isNotEmpty == true)
+                                        ? widget.scholarNo!.trim()
+                                        : (AuthService.getCachedScholarNo() ?? '').trim();
+                                if (effectiveScholar.isEmpty) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Please sign in with a valid scholar profile before ordering.'),
+                                        backgroundColor: Colors.redAccent,
+                                      ),
+                                    );
+                                  }
+                                  return;
+                                }
 
                               final qrData = VoucherSecurityService.generateVoucherPayload(
                                 billNo: receiptId,
                                 points: 0,
-                                scholarNo: widget.scholarNo ?? '2310910',
+                                scholarNo: effectiveScholar,
                                 items: itemsList
                                     .map(
                                       (i) =>
                                           '${i.qty}x ${i.product.name} (${i.size})',
                                     )
                                     .toList(),
+                                totalBhd: totalBhd,
                               );
                               final newOrder = OrderRecord(
                                 receiptId: receiptId,

@@ -49,6 +49,8 @@ class AppNotification {
   final String roomId;
   final String dedupeKey;
   final String sourceId;
+  final String senderId;
+  final String senderName;
   final bool isRead;
   final DateTime? timestamp;
 
@@ -62,6 +64,8 @@ class AppNotification {
     this.roomId = '',
     this.dedupeKey = '',
     this.sourceId = '',
+    this.senderId = '',
+    this.senderName = '',
     this.isRead = false,
     this.timestamp,
   })  : category = normalizeNotificationCategory(category),
@@ -70,6 +74,7 @@ class AppNotification {
   bool get isUnread => !isRead;
   bool get isHighPriority => priority == 'high' || priority == 'urgent';
   bool get hasSource => sourceId.trim().isNotEmpty;
+  bool get hasSender => senderId.trim().isNotEmpty || senderName.trim().isNotEmpty;
 
   Map<String, dynamic> toMap() {
     return {
@@ -85,6 +90,8 @@ class AppNotification {
       if (roomId.trim().isNotEmpty) 'room_id': roomId.trim(),
       if (dedupeKey.trim().isNotEmpty) 'dedupe_key': dedupeKey.trim(),
       if (sourceId.trim().isNotEmpty) 'source_id': sourceId.trim(),
+      if (senderId.trim().isNotEmpty) 'sender_id': senderId.trim(),
+      if (senderName.trim().isNotEmpty) 'sender_name': senderName.trim(),
     };
   }
 
@@ -99,6 +106,8 @@ class AppNotification {
       roomId: (data['room_id'] ?? '').toString(),
       dedupeKey: (data['dedupe_key'] ?? '').toString(),
       sourceId: (data['source_id'] ?? '').toString(),
+      senderId: (data['sender_id'] ?? '').toString(),
+      senderName: (data['sender_name'] ?? '').toString(),
       isRead: data['is_read'] == true,
       timestamp: _parseDateTime(data['timestamp']),
     );
@@ -122,6 +131,8 @@ class AppNotification {
     String? roomId,
     String? dedupeKey,
     String? sourceId,
+    String? senderId,
+    String? senderName,
     bool? isRead,
     DateTime? timestamp,
   }) {
@@ -135,6 +146,8 @@ class AppNotification {
       roomId: roomId ?? this.roomId,
       dedupeKey: dedupeKey ?? this.dedupeKey,
       sourceId: sourceId ?? this.sourceId,
+      senderId: senderId ?? this.senderId,
+      senderName: senderName ?? this.senderName,
       isRead: isRead ?? this.isRead,
       timestamp: timestamp ?? this.timestamp,
     );

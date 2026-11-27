@@ -228,6 +228,7 @@ void main() {
         dedupeKey: 'timetable_v1',
         sourceId: 'v1',
         roomId: '11D',
+        senderId: 'publisher_uid',
         eventTime: DateTime(2026, 11, 8, 8),
       );
 
@@ -239,6 +240,7 @@ void main() {
       expect(payload['dedupe_key'], 'timetable_v1');
       expect(payload['source_id'], 'v1');
       expect(payload['room_id'], '11D');
+      expect(payload['sender_id'], 'publisher_uid');
       expect(payload['timestamp'], isA<Object>());
     });
 
@@ -745,11 +747,15 @@ void main() {
         'priority',
         'dedupe_key',
         'source_id',
+        'sender_id',
         'is_read',
       ]) {
         expect(validator, contains("'$field'"));
       }
-      expect(validator, contains("hasRequiredFields(['title', 'body', 'timestamp'])"));
+      expect(
+        validator,
+        contains("hasRequiredFields(['title', 'body', 'timestamp', 'sender_id'])"),
+      );
       expect(validator, contains("['timetable', 'house', 'class', 'chat', 'points', 'system']"));
       expect(validator, contains("['normal', 'high', 'urgent']"));
     });
@@ -769,12 +775,14 @@ void main() {
       final source = rules();
       final start = source.indexOf('match /notifications/{notificationId}');
       expect(start, greaterThanOrEqualTo(0));
-      final end = source.indexOf('allow delete: if isOwner(userId) || isAdmin();', start);
+      final end = source.indexOf('allow delete:', start);
       final block = source.substring(start, end);
       expect(block, contains("'dedupe_key' in resource.data"));
       expect(block, contains("'source_id' in resource.data"));
+      expect(block, contains("'sender_id' in resource.data"));
       expect(block, contains('request.resource.data.dedupe_key == resource.data.dedupe_key'));
       expect(block, contains('request.resource.data.source_id == resource.data.source_id'));
+      expect(block, contains('request.resource.data.sender_id == resource.data.sender_id'));
       expect(block, isNot(contains("'is_read', 'title'")));
     });
 
@@ -784,10 +792,13 @@ void main() {
       expect(start, greaterThanOrEqualTo(0));
       final end = source.indexOf('allow delete:', start);
       final block = source.substring(start, end);
-      expect(block, contains('allow create: if isActiveUser() && isValidNotification(request.resource.data)'));
+      expect(block, contains('allow create: if isActiveUser()'));
+      expect(block, contains('isValidNotification(request.resource.data)'));
+      expect(block, contains('request.resource.data.sender_id == request.auth.uid'));
       expect(block, contains('_hasStaffAdminRole()'));
       expect(block, contains('_hasCouncilRole()'));
       expect(block, contains('_hasCaptainRole()'));
+      expect(block, contains('isNotificationScopeSender(request.resource.data, userId)'));
       expect(block, contains('isOwner(userId)'));
       expect(block, contains("request.resource.data.get('type', '') == 'chat_message'"));
     });

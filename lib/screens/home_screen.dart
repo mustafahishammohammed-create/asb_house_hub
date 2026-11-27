@@ -1193,44 +1193,44 @@ class _HomeScreenState extends State<HomeScreen>
                             final navigator = Navigator.of(context);
 
                             try {
-                              String claimId;
-                              try {
-                                claimId = _firestore.collection('house_claims').doc().id;
-                              } catch (_) {
-                                claimId = 'claim_${DateTime.now().millisecondsSinceEpoch}';
-                              }
-
-                              final certUrl = await _authService
-                                  .uploadCertificateImage(
-                                    fileBytes: selectedImageBytes!,
-                                    scholarNo: scholarNo,
-                                    house: houseName,
-                                    claimId: claimId,
-                                  );
-                              await _authService.submitHouseClaim(
+                              // Create the pending claim before uploading so
+                              // the certificate object always has an
+                              // authoritative owner and a real claim ID.
+                              final claimId = await _authService.submitHouseClaim(
                                 scholarNo: scholarNo,
                                 studentName: studentName,
                                 houseName: houseName,
                                 activityTitle: titleController.text.trim(),
                                 points: selectedPoints,
-                                certUrl: certUrl,
-                                claimId: claimId,
+                                fileBytes: selectedImageBytes!,
                               );
 
-                              // Also post to Live Event Wall pending approval
+                              String certUrl = '';
                               try {
-                                await _firestore.collection('event_wall').add({
-                                  'scholar_no': scholarNo,
-                                  'student_name': studentName,
-                                  'house_name': houseName,
-                                  'class_level': AuthService.getCachedProfile()?['class_level'] ?? 'Senior Tier',
-                                  'caption': titleController.text.trim(),
-                                  'image_url': certUrl,
-                                  'timestamp': FieldValue.serverTimestamp(),
-                                  'status': 'pending',
-                                  'likes': 0,
-                                });
+                                final claimSnap = await _firestore
+                                    .collection('house_claims')
+                                    .doc(claimId)
+                                    .get();
+                                certUrl =
+                                    (claimSnap.data()?['cert_url'] ?? '').toString();
                               } catch (_) {}
+
+                              // Also post to Live Event Wall pending approval
+                              if (certUrl.isNotEmpty) {
+                                try {
+                                  await _firestore.collection('event_wall').add({
+                                    'scholar_no': scholarNo,
+                                    'student_name': studentName,
+                                    'house_name': houseName,
+                                    'class_level': AuthService.getCachedProfile()?['class_level'] ?? 'Senior Tier',
+                                    'caption': titleController.text.trim(),
+                                    'image_url': certUrl,
+                                    'timestamp': FieldValue.serverTimestamp(),
+                                    'status': 'pending',
+                                    'likes': 0,
+                                  });
+                                } catch (_) {}
+                              }
 
                               AppHaptics.success();
                               navigator.pop();
@@ -1621,6 +1621,67 @@ class _HomeScreenState extends State<HomeScreen>
                 ],
               );
             },
+          ),
+        ),
+      );
+    }
+
+    final accountStatus = (_profile?['status'] ?? 'active')
+        .toString()
+        .trim()
+        .toLowerCase();
+    if (!_loading &&
+        (accountStatus == 'suspended' || accountStatus == 'deactivated')) {
+      final isDeactivated = accountStatus == 'deactivated';
+      return Scaffold(
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        body: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isDeactivated
+                          ? Icons.person_off_rounded
+                          : Icons.block_rounded,
+                      size: 56,
+                      color: Colors.redAccent,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      isDeactivated ? 'Account Deactivated' : 'Account Suspended',
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Access for Scholar #$scholarNo is currently $accountStatus. Please contact the school administration.',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withValues(alpha: 0.72),
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton.icon(
+                      onPressed: _handleSignOut,
+                      icon: const Icon(Icons.logout_rounded),
+                      label: const Text('Sign Out'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       );

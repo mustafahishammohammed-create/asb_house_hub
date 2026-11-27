@@ -393,8 +393,18 @@ void main() {
 
     // 4. Role Display Titles
     expect(
-      HierarchyService.getRoleDisplayTitle(scholarNo: '2310910'),
+      HierarchyService.getRoleDisplayTitle(
+        scholarNo: '2310910',
+        role: 'super_admin',
+      ),
       'Super Admin',
+    );
+    expect(
+      HierarchyService.getRoleDisplayTitle(
+        scholarNo: '2310910',
+        role: 'student',
+      ),
+      'Student Member',
     );
     expect(
       HierarchyService.getRoleDisplayTitle(scholarNo: '11209'),
@@ -1047,6 +1057,25 @@ void main() {
     final tamperedResult = VoucherSecurityService.validateVoucherPayload(tamperedPayload);
     expect(tamperedResult.isValid, isFalse);
     expect(tamperedResult.isTampered, isTrue);
+
+    // Tampered items or totalBhd on v2 payload detected
+    final v2Payload = VoucherSecurityService.generateVoucherPayload(
+      billNo: billNo,
+      points: 0,
+      scholarNo: scholarNo,
+      items: ['1x Champion Hoodie (L)'],
+      totalBhd: 18.0,
+      timestampMillis: ts,
+    );
+    expect(VoucherSecurityService.validateVoucherPayload(v2Payload).isValid, isTrue);
+    final tamperedItemsPayload = v2Payload.replaceAll('Champion Hoodie', 'Luxury Jacket');
+    final tamperedItemsRes = VoucherSecurityService.validateVoucherPayload(tamperedItemsPayload);
+    expect(tamperedItemsRes.isValid, isFalse);
+    expect(tamperedItemsRes.isTampered, isTrue);
+    final tamperedBhdPayload = v2Payload.replaceAll('"total_bhd":18.0', '"total_bhd":0.01');
+    final tamperedBhdRes = VoucherSecurityService.validateVoucherPayload(tamperedBhdPayload);
+    expect(tamperedBhdRes.isValid, isFalse);
+    expect(tamperedBhdRes.isTampered, isTrue);
 
     // Legacy unsigned format is rejected by design.
     final legacyResult = VoucherSecurityService.validateVoucherPayload('ASB-ORDER-ASB-999');
@@ -2452,6 +2481,16 @@ void main() {
       points: 400,
       scholarNo: '2310910',
       items: ['1x Champion Hoodie (L)', '1x House Water Bottle'],
+    );
+    GlobalWalletStore.orders.add(
+      OrderRecord(
+        receiptId: testBillNo,
+        items: [],
+        totalPts: 400,
+        date: DateTime.now(),
+        qrData: voucherPayload,
+        status: 'ready',
+      ),
     );
 
     final searchField = find.byType(TextField);
@@ -9346,11 +9385,11 @@ void main() {
 
     // 1. Verify formatCertificateStoragePath produces exact canonical Cloud Storage path
     final canonicalPath = AuthService.formatCertificateStoragePath(
-      house: 'RUBY ',
       scholarNo: ' 2310910 ',
       claimId: 'claim_alpha_123',
+      uploaderUid: 'uid_alpha',
     );
-    expect(canonicalPath, 'house_claims/ruby/2310910_claim_alpha_123.jpg');
+    expect(canonicalPath, 'house_claims/uid_alpha/2310910_claim_alpha_123.jpg');
 
     // 2. Verify uploadCertificateImage accepts house and claimId
     final certUrl = await authService.uploadCertificateImage(
@@ -10340,8 +10379,14 @@ void main() {
     expect(storageFile.existsSync(), isTrue);
     final storageContent = storageFile.readAsStringSync();
     expect(storageContent.contains('match /{allPaths=**}'), isTrue);
-    expect(storageContent.contains('match /{allPaths=**} {\n      allow read: if isSignedIn();\n      allow write: if false;'), isTrue);
-    expect(storageContent.contains('house_claims'), isTrue);
+    expect(
+      storageContent.contains('allow read, write: if false;'),
+      isTrue,
+      reason: 'Unlisted Storage paths must deny reads as well as writes.',
+    );
+    expect(storageContent.contains('house_claims/{uploaderUid}'), isTrue);
+    expect(storageContent.contains('allow update, delete: if false;'), isTrue);
+    expect(storageContent.contains('match /claims/{fileName=**}'), isTrue);
     expect(storageContent.contains('profile_pictures'), isTrue);
     expect(storageContent.contains('exam_schedules'), isTrue);
   });

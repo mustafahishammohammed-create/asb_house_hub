@@ -359,16 +359,16 @@
 <div class="cover-meta"><p><strong>Prepared for:</strong> The Administration, The Asian School, Bahrain</p>
 <p><strong>Prepared by:</strong> Mustafa Hisham</p>
 <p><strong>Application version:</strong> 1.0.1 (Build 2)</p>
-<p><strong>Date:</strong> 26 November 2026</p>
+<p><strong>Date:</strong> 27 November 2026</p>
 <p><strong>Document status:</strong> Submission for administrative review — not a production release approval</p></div>
-<div class="release-alert"><strong>Current release position: not cleared for production.</strong> The 26 November 2026 audit found 23 critical/high and 21 medium/low findings still open. No live school data should be entered.</div>
+<div class="release-alert"><strong>Current release position: not cleared for production.</strong> Batch 1 local security remediations and commits <code>2e54a9a..13b791c</code> closed key client, rules, and schema gaps locally, but live Cloud Functions (Firebase Blaze), Storage activation, server-owned scoring/catalog authority, App Check, FCM, and enrollment roster binding remain open. No live school data should be entered.</div>
 <blockquote>
-<p><strong>Purpose of this document.</strong> This catalogue documents what each module of ASB House Hub contains, who can use it, its current release status, and the audit findings that block production use. It describes the application and the 26 November 2026 audit outcome; it is not a production approval.</p>
+<p><strong>Purpose of this document.</strong> This catalogue documents what each module of ASB House Hub contains, who can use it, its current release status, and the open audit and deployment gates that block production use. It reflects the 27 November 2026 codebase state (including Batch 1 local security remediations); it is not a production approval.</p>
 </blockquote>
 </div></div>
 <div class="toc-section"><h2 class="toc-title">Contents</h2>
-<p class="toc-intro">This catalogue is a release-readiness review, not a production approval. It documents the application module by module, then covers roles, student capabilities, the 26 November 2026 audit findings, release gates, deployment, and the conditional pilot.</p>
-<div class="toc-stats"><div><strong>16</strong><span>Application modules</span></div><div><strong>28</strong><span>Purpose-built screens</span></div><div><strong>23</strong><span>Critical/high findings</span></div><div><strong>685</strong><span>Automated tests passing</span></div></div>
+<p class="toc-intro">This catalogue is a release-readiness review, not a production approval. It documents the application module by module, then covers roles, student capabilities, security remediations and remaining open gates, deployment readiness, and the conditional pilot.</p>
+<div class="toc-stats"><div><strong>16</strong><span>Application modules</span></div><div><strong>28</strong><span>Purpose-built screens</span></div><div><strong>710</strong><span>Automated tests passing</span></div><div><strong>28</strong><span>Emulator tests passing</span></div></div>
 <div class="toc-legend"><span class="legend-label">Status labels:</span><span class="badge gated">GATED</span><span class="badge pilot">PILOT</span><span class="badge activation">ACTIVATION</span><span class="badge roadmap">ROADMAP</span><span class="legend-note">READY is the target state; no module is currently assigned.</span></div>
 <ol class="toc">
 <li>Executive summary</li>
@@ -388,23 +388,23 @@
 <li>Appendix: module summary</li>
 </ol></div>
 <h2>1. Executive summary</h2>
-<p>ASB House Hub is a Flutter application for academic information, house points, events, communication, recognition, and administration. It contains <strong>16 modules</strong> and <strong>28 screens</strong>, with role-based access for students, teachers, captains and council members, and administrators.</p>
+<p>ASB House Hub is a Flutter application for academic information, house points, events, communication, recognition, and administration. It contains <strong>16 modules</strong> and <strong>28 screens</strong> across <strong>84 Dart source files</strong>, with role-based access for students, teachers, captains and council members, and administrators.</p>
 <p>Students at The Asian School, Bahrain do not bring mobile phones to school. Student-facing features are provided for use outside school hours on a personal device, subject to school and family policy. Staff features — attendance, scanning, approvals, event management, and academic administration — run on school-authorised devices.</p>
 <blockquote>
-<p><strong>Current release position: not cleared for production.</strong> The deep code audit of 26 November 2026 found <strong>23 critical/high findings</strong> and <strong>21 medium/low findings</strong> still open. Identity binding, authorization, local credential storage, authoritative scoring and orders, and backend deployment require remediation. No Cloud Functions are deployed, and live rules, indexes, Storage, and production data were not verified. The build is suitable for code review and synthetic-data demonstration only. No live student, staff, medical, payment, or election data should be entered.</p>
+<p><strong>Current release position: not cleared for production.</strong> Following the deep code audit of 26 November 2026, substantial local remediations (<code>2e54a9a..13b791c</code> plus the Batch 1 security patch) closed key client and rules gaps around suspension enforcement, cache isolation, role parity, notification sender scoping, claim self-approval, bounded store pricing and HMAC-SHA256 voucher binding, Storage ownership, chat creation and photo attachments, trophy schema, scannable vector QR PDF exports, fail-closed release startup, Android signing, and iOS deployment targets. However, <strong>no Cloud Functions are deployed</strong> (the project remains on the Firebase Spark plan without Blaze billing), Cloud Storage is not initialized live, Batch 1 <code>firestore.rules</code>, <code>storage.rules</code>, and <code>firestore.indexes.json</code> are not yet pushed live, and server-side authority (points ledger, sports scoring, election tallies, store catalog, enrollment roster binding, App Check, FCM, and AI proxy) remains open. The build is suitable for code review and synthetic-data demonstration only. No live student, staff, medical, payment, or election data should be entered.</p>
 </blockquote>
-<p>The app is designed around five goals; the audit found that several are not yet fully enforced:</p>
+<p>The app is designed around five goals:</p>
 <ul>
-<li><strong>Role-aware access.</strong> What a user can see and do is intended to follow their school role and placement.</li>
-<li><strong>One account per scholar.</strong> Students, teachers, captains, council members, and administrators use a single sign-in.</li>
+<li><strong>Role-aware access.</strong> What a user can see and do follows their school role and placement across unified client and Firestore/Storage role definitions.</li>
+<li><strong>One account per scholar.</strong> Students, teachers, captains, council members, and administrators use a single sign-in with clean cache isolation between sessions.</li>
 <li><strong>Visible house records.</strong> Points, contributors, standings, badges, and recognition are stored and reviewable.</li>
-<li><strong>Staff-controlled workflows.</strong> Claims, conduct, elections, events, and approvals follow defined staff permissions.</li>
-<li><strong>Truthful status reporting.</strong> Sample data, previews, and services that are not active are labelled as such.</li>
+<li><strong>Staff-controlled workflows.</strong> Claims, conduct, elections, events, and approvals follow defined staff permissions and fail closed when suspended or missing data.</li>
+<li><strong>Truthful status reporting.</strong> Sample data, pilot engagement widgets (such as Spirit Reactor), and services requiring Blaze activation are labelled as such.</li>
 </ul>
-<p>The current build implements academic, house, event, communication, recognition, and administration workflows at different levels of maturity. Capabilities that depend on school IT services — background push notifications, large-file storage, live server-verified elections, the library backend, and online payments — are marked <span class="badge activation">ACTIVATION</span>. Modules with open release-blocking findings are marked <span class="badge gated">GATED</span> and are not approved for live use.</p>
-<p>Verification completed: <strong>685 automated tests passing</strong>, a clean static analysis run, <strong>13 rules and election emulator tests</strong>, and successful <strong>Windows and web release builds</strong>. These results do not clear the release. Android and iOS release builds, Storage emulator tests, physical-device testing, accessibility certification, and deployed integration tests were not completed.</p>
+<p>Capabilities that depend on school IT and Firebase Blaze services — background push notifications, live Cloud Storage uploads and OCR certificate checks, server-verified elections, the transactional library backend, server-side AI proxy, and any future payment integration — are marked <span class="badge activation">ACTIVATION</span>. Modules with remaining server-authority, roster, or deployment blockers are marked <span class="badge gated">GATED</span> and are not approved for live use.</p>
+<p>Verification completed after the final Batch 1 code and rules edits: <strong>710 of 710 automated Flutter tests passing</strong> across 22 test files, a clean <code>flutter analyze --no-pub</code> run, <strong>28 of 28 Firestore and Storage Emulator tests passing</strong>, and <strong>3 Cloud Functions JS syntax checks</strong> passing. (Release builds for Android APK, Windows, and Web were previously verified at commit <code>13b791c</code>, prior to Batch 1 rules/service edits.) Live Cloud Function deployment, live Blaze Storage activation, iOS macOS/Xcode archiving, physical mobile device testing on the latest patch, accessibility certification, and deployed integration tests remain incomplete.</p>
 <blockquote>
-<p><strong>Recommended next step:</strong> approve a closed, synthetic-data technical review and the remediation plan in Section 10. Do not approve a live pilot until gates G1–G3 are closed and verified. The first remediation batch should address identity binding, suspension enforcement, notification and claim authorization, order pricing, and Storage ownership.</p>
+<p><strong>Recommended next step:</strong> approve a closed, synthetic-data technical review and complete the remaining backend deployment gates (G1–G3) once Firebase Blaze provisioning and school IT sponsorship are confirmed. Do not approve a live pilot until updated <code>firestore.rules</code>, <code>storage.rules</code>, indexes, Cloud Functions, App Check, and server-owned authority are deployed and verified.</p>
 </blockquote>
 <h2>2. The app at a glance</h2>
 <table class="long-table">
@@ -460,15 +460,15 @@
 </tr>
 <tr>
 <td><strong>Current release position</strong></td>
-<td><strong>Not cleared for production</strong> — 23 critical/high findings open (26 November 2026 audit)</td>
+<td><strong>Not cleared for production</strong> — Batch 1 &amp; <code>2e54a9a..13b791c</code> local fixes verified; Spark/Blaze backend deployment, server authority (G2/G3), and accepted bootstrap governance (O01) remain open</td>
 </tr>
 <tr>
 <td><strong>Deployment state</strong></td>
-<td>Local build only; no Cloud Functions deployed; live rules, indexes, and Storage not verified</td>
+<td>Rules updated locally (prior <code>firestore.rules</code> pushed at <code>13b791c</code>; Batch 1 <code>firestore.rules</code>, <code>storage.rules</code>, and <code>firestore.indexes.json</code> pending deploy); no Cloud Functions or Storage bucket active live (Spark plan)</td>
 </tr>
 <tr>
 <td><strong>Quality evidence</strong></td>
-<td>685 automated tests passing; 13 rules/election emulator tests; static analysis clean; Windows and web release builds pass</td>
+<td>710/710 Flutter tests passing; 28/28 Firestore + Storage Emulator tests passing; static analysis clean; 3 backend JS checks clean; GitHub Actions CI configured</td>
 </tr>
 <tr>
 <td><strong>Release</strong></td>
@@ -476,13 +476,13 @@
 </tr>
 </tbody></table>
 <h3>Core design principles</h3>
-<p>The app is designed around these principles. Section 10 records where the current build does not yet meet them.</p>
+<p>The app is designed around these principles. Sections 9 and 10 record both the controls enforced locally and where server-side authority still remains to be deployed.</p>
 <ol>
 <li><strong>Student-first clarity.</strong> Important information is reachable in a few taps, with plain-language labels and clear empty states.</li>
-<li><strong>Role-aware by design.</strong> What a user can see and do is intended to follow their school role and placement.</li>
-<li><strong>Truthful interfaces.</strong> The app does not label a sample, preview, or unverified item as live or paid.</li>
-<li><strong>Fail closed on missing data.</strong> Academic and points actions are intended to stop rather than silently using another class, house, or scholar.</li>
-<li><strong>Auditability.</strong> Points, conduct, claims, elections, and administrative actions are intended to leave a reviewable record.</li>
+<li><strong>Role-aware by design.</strong> What a user can see and do follows their school role and verified placement.</li>
+<li><strong>Truthful interfaces.</strong> The app does not label a sample, preview, interactive toy, or unverified request as live, official, or paid.</li>
+<li><strong>Fail closed on missing data or errors.</strong> Release startup fails closed on Firebase initialization error (O36), live voucher claims reject unverified orders (O22), and missing class, house, or scholar data stops privileged writes.</li>
+<li><strong>Auditability.</strong> Points, conduct, claims, elections, and administrative actions leave a reviewable record.</li>
 </ol>
 <h3>Device policy and access</h3>
 <p>Students at The Asian School, Bahrain do not bring mobile phones to school. Student-facing features are for use outside school hours on a personal device, subject to school and family policy.</p>
@@ -502,7 +502,7 @@
 </tr>
 <tr>
 <td><strong>House system</strong></td>
-<td>House points ledger, contributor records, standings, badges, House Arena, and house group.</td>
+<td>House points ledger, contributor records, standings, badges, House Arena (including visual Spirit Reactor), and house group chat.</td>
 </tr>
 <tr>
 <td><strong>Student leadership</strong></td>
@@ -514,11 +514,11 @@
 </tr>
 <tr>
 <td><strong>Communication</strong></td>
-<td>Direct messages, class groups, and house groups restricted to participants.</td>
+<td>Direct messages, class groups, and house groups restricted to participants, with room creation and photo attachments enabled in rules.</td>
 </tr>
 <tr>
 <td><strong>Recognition</strong></td>
-<td>Claim submission with evidence, staff review, point award, and notification.</td>
+<td>Claim submission with evidence, non-self-approvable staff/captain review, point award, and sender-attributed notification.</td>
 </tr>
 <tr>
 <td><strong>Events</strong></td>
@@ -526,7 +526,7 @@
 </tr>
 <tr>
 <td><strong>Data controls</strong></td>
-<td>Protected profile fields, role-aware rules, and missing-data guards; see Section 10 for open authorization gaps.</td>
+<td>Protected profile fields, centralized suspension checks across UI/Auth/Firestore/Storage, cache isolation across switches, and missing-data guards.</td>
 </tr>
 </tbody></table>
 <h2>4. How to read the release status</h2>
@@ -540,15 +540,15 @@
 </thead>
 <tbody><tr>
 <td><span class="badge gated">GATED</span></td>
-<td>Implemented and locally tested, but one or more open audit findings block release. No live school data.</td>
+<td>Implemented and locally tested, but one or more open server-authority, deployment, or governance findings block production release. No live school data.</td>
 </tr>
 <tr>
 <td><span class="badge pilot">PILOT</span></td>
-<td>Interactive demonstration using sample, local, or manual data. Not authoritative.</td>
+<td>Interactive demonstration using sample, local, or engagement data. Not authoritative.</td>
 </tr>
 <tr>
 <td><span class="badge activation">ACTIVATION</span></td>
-<td>The app-side experience is built. A required school IT service is not deployed.</td>
+<td>The app-side experience is built. A required school IT / Firebase Blaze service is not yet deployed.</td>
 </tr>
 <tr>
 <td><span class="badge roadmap">ROADMAP</span></td>
@@ -556,11 +556,11 @@
 </tr>
 <tr>
 <td><span class="badge ready">READY</span></td>
-<td>Target state: implemented, locally tested, and no open release-blocking finding. <strong>Not assigned to any module as of 26 November 2026.</strong></td>
+<td>Target state: implemented, locally tested, deployed, and no open release-blocking finding. <strong>Not assigned to any module as of 27 November 2026.</strong></td>
 </tr>
 </tbody></table>
 <blockquote>
-<p><strong>Release note.</strong> No module is production-cleared. The 26 November 2026 audit found 23 critical/high and 21 medium/low findings. Section 10 summarises the themes and the five gates that must close before a live pilot. The companion deep audit records the full findings and evidence.</p>
+<p><strong>Release note.</strong> No module is production-cleared. While major local authorization, suspension, schema, and platform bugs identified in the 26 November 2026 audit have been closed in code and emulator tests, backend deployment (G3), server-owned authority (G2), and governance sign-off (O01, O02) keep production gates open. The companion <a href="../audits/ASB_HOUSE_HUB_DEEP_AUDIT_2026-11-26.md">deep audit</a> records the original baseline findings and probes.</p>
 </blockquote>
 <h2 class="page-break">5. Complete feature catalogue</h2>
 <h3>5.1 Identity, onboarding, and account access</h3>
@@ -568,18 +568,15 @@
 <p><strong>Features</strong></p>
 <ul>
 <li><strong>Branded first-run onboarding</strong> introduces the app, the house system, and the main student services.</li>
-<li><strong>Scholar-number sign-in</strong> lets students use their school number and password without exposing an internal email format.</li>
+<li><strong>Scholar-number sign-in and signup</strong> let students register and sign in with bounded timeouts, rollback safety, and non-blocking post-commit sync (<code>13b791c</code>).</li>
 <li><strong>Password reset by scholar number</strong> sends reset instructions through the school&#39;s Firebase Authentication setup.</li>
-<li><strong>Saved accounts</strong> let shared-device users return to an existing profile, with <strong>verified re-authentication</strong> before a live account switch.</li>
-<li><strong>Student registration</strong> captures full name, age, class, division, and house, and writes an unverified student profile for staff review.</li>
-<li><strong>Reserved administrator identity protection</strong> blocks self-registration of the protected school-administrator identifier.</li>
-<li><strong>Role-aware routing</strong> sends students, staff, and administrators to the correct experience after sign-in.</li>
-<li><strong>Profile and house caching</strong> keeps the interface coherent when the device briefly loses connectivity.</li>
-<li><strong>Theme preference persistence</strong> remembers the user&#39;s light or dark choice.</li>
-<li><strong>Protected profile fields</strong> prevent a student from rewriting their role, points, scholar number, house, grade, class, or verification status after creation; scholar ownership itself is not yet verified (O02).</li>
+<li><strong>Saved accounts</strong> let shared-device users return to an existing profile, with verified re-authentication, full scoped cache scrubbing (<code>clearCache()</code>), and fresh live-role preference (fixing O05 and O06).</li>
+<li><strong>Centralized suspension enforcement</strong> blocks suspended or deactivated users at <code>signIn()</code>, <code>switchAccount()</code>, <code>HomeScreen</code> lock view, Firestore rules, and Storage <code>isActiveUser()</code> (O04).</li>
+<li><strong>Unified role definitions</strong> align <code>&#39;administrator&#39;</code> super-admin recognition and <code>&#39;teacher&#39;</code> membership mapping across <code>AuthService</code> and <code>firestore.rules</code> without hardcoded scholar display escalation (O44).</li>
+<li><strong>Fail-closed release startup</strong> refuses silent demo fallback if Firebase fails to initialize in release mode (O36).</li>
 </ul>
-<p><strong>Status:</strong> <span class="badge gated">GATED</span> — the account and onboarding UI is built, but the identity model is not release-safe.</p>
-<blockquote class="audit-note"><p><strong>Audit note.</strong> Critical: an unverified token carrying the protected administrator email can obtain administrative access without a profile (O01); a new account can claim another student&#39;s scholar number and read that student&#39;s record (O02). High: suspension is not enforced consistently (O04), saved-account switching can restore stale roles (O05), and cached records are not fully cleared between accounts (O06). Do not use live accounts.</p>
+<p><strong>Status:</strong> <span class="badge gated">GATED</span> — local suspension, role parity, cache scrubbing, and signup reliability are fixed and tested, but bootstrap admin governance (O01) and pre-seeded enrollment roster binding (O02) remain open.</p>
+<blockquote class="audit-note"><p><strong>Audit note.</strong> <strong>Closed locally:</strong> O04 suspension bypass, O05 stale saved-account role escalation, O06 cross-account cache leakage, O36 release startup fallback, and O44 role-contract divergence. <strong>Open:</strong> O01 accepted <code>11209/admin</code> bootstrap exception (retained until named governance phase) and O02 lack of a server-enforced pre-seeded school enrollment roster binding scholar signups.</p>
 </blockquote>
 <h3>5.2 Home dashboard and navigation</h3>
 <p><strong>Purpose:</strong> Provide the app&#39;s main entry point for the dashboard, store, standings, profile, notices, and service navigation.</p>
@@ -587,35 +584,30 @@
 <ul>
 <li><strong>Four primary tabs:</strong> Dashboard, Store, Standings, and Profile.</li>
 <li><strong>Role-aware navigation drawer</strong> exposes academics, claims, events, elections, sports, notifications, scanner, AI assistant, library, and administration tools only where appropriate.</li>
+<li><strong>Suspended-account lockout gate</strong> replaces dashboard navigation with a locked notice and sign-out action if a signed-in profile is suspended or deactivated.</li>
 <li><strong>House-coloured greeting</strong> with the student&#39;s name, house, points, and current standing.</li>
-<li><strong>Service cards</strong> for the major modules, each with a clear label and status.</li>
-<li><strong>Notice ticker and notice feed</strong> for school-wide announcements.</li>
-<li><strong>Event Wall preview</strong> highlights recent campus activity.</li>
-<li><strong>Unread notification badges</strong> keep attention on new items without interrupting the user.</li>
+<li><strong>Service cards, notice ticker, and Event Wall preview</strong> highlight active campus modules and announcements.</li>
+<li><strong>Unread notification badges</strong> keep attention on new items with sender attribution.</li>
 <li><strong>Student profile modal</strong> gives a quick view of identity, house, class, points, and recognition.</li>
-<li><strong>Cached dashboard states</strong> keep the home screen useful when live data is temporarily unavailable.</li>
-<li><strong>Consistent empty and error states</strong> explain what is missing instead of showing blank panels.</li>
+<li><strong>Cached dashboard states</strong> stay scoped to the active account and clear on switch/sign-out.</li>
 </ul>
-<p><strong>Status:</strong> <span class="badge gated">GATED</span> — the dashboard renders, but it depends on identity and notice feeds that are not release-safe.</p>
-<blockquote class="audit-note"><p><strong>Audit note.</strong> Dashboard composition is locally tested. Sign-in is blocked by O01 and O02; notice content is not authenticated (O07); Firebase initialization can fall back to demo behaviour on failure (O36). Use synthetic data only.</p>
+<p><strong>Status:</strong> <span class="badge gated">GATED</span> — dashboard layout and sender-scoped feeds are hardened locally, but live sign-in enrollment binding (O02) and live rules deployment (G3) remain pending.</p>
+<blockquote class="audit-note"><p><strong>Audit note.</strong> <strong>Closed locally:</strong> O36 fail-closed startup, O04 suspension lockout, O06 scoped dashboard caches, and O07 sender-scoped in-app notifications. <strong>Open:</strong> O01/O02 identity governance and push notification activation (O43).</p>
 </blockquote>
 <h3>5.3 Houses, standings, and spirit</h3>
 <p><strong>Purpose:</strong> Provide house points, contributors, standings, badges, spirit screens, and house groups.</p>
 <p><strong>Features</strong></p>
 <ul>
 <li><strong>Four houses</strong> — Ruby, Sapphire, Emerald, and Topaz — each with its own colour and emblem.</li>
-<li><strong>House points ledger</strong> records earned points by house.</li>
-<li><strong>Contributor records</strong> show which scholars earned points and why.</li>
+<li><strong>House points ledger &amp; contributor records</strong> display points and scholar attribution.</li>
 <li><strong>Standings screen</strong> presents total points, category points, sports points, podium placement, and top contributors.</li>
-<li><strong>House Arena</strong> with a spirit gauge, spirit reactor, blitz quiz, cup oracle, badge vault, and honours.</li>
-<li><strong>Badges</strong> for participation and achievement.</li>
-<li><strong>3D mascot stage</strong> for each house.</li>
-<li><strong>House-specific battle chant synthesiser.</strong></li>
-<li><strong>Confetti and celebration effects</strong> for points, badges, and house milestones.</li>
+<li><strong>House Arena</strong> includes the Spirit Gauge, <strong>Spirit Reactor</strong>, Blitz Quiz, Cup Oracle, Badge Vault, and Honours. The Spirit Reactor provides interactive particle shockwaves, haptic pulse, and house chant feedback purely as a visual/engagement experience — it does <strong>not</strong> award official house points or modify standings.</li>
+<li><strong>Badges and confetti effects</strong> celebrate participation and achievement.</li>
+<li><strong>3D mascot stage and battle chant synthesiser</strong> for each house.</li>
 <li><strong>House group chat</strong> gives each house a private coordination space.</li>
 </ul>
-<p><strong>Status:</strong> <span class="badge gated">GATED</span> — display and house-group UI are built; the points ledger is not authoritative. The quiz, cup oracle, and spirit animations are <span class="badge pilot">PILOT</span> engagement experiences.</p>
-<blockquote class="audit-note"><p><strong>Audit note.</strong> Award writes are not atomic or idempotent (O14, O15); house, contributor, and user totals can diverge. Conduct revocation does not consistently reverse totals (O17), and a first demerit can produce a negative contributor value rejected by the schema (O18). Treat standings as display-only until the award ledger is server-owned.</p>
+<p><strong>Status:</strong> <span class="badge gated">GATED</span> — display, engagement widgets, and house-group UI are built; the points ledger is not yet server-authoritative. The Spirit Reactor, Blitz Quiz, and Cup Oracle are <span class="badge pilot">PILOT</span> engagement experiences that carry zero effect on official house totals.</p>
+<blockquote class="audit-note"><p><strong>Audit note.</strong> Client-initiated award writes are still not server-owned (O14, O15); conduct revocation ordering (O17) and the first-demerit negative contributor edge (O18) remain open until migrated to Blaze Cloud Functions. Treat standings as display-only until the award ledger is server-owned.</p>
 </blockquote>
 <h3>5.4 Academics</h3>
 <p><strong>Purpose:</strong> Provide student academic information and staff academic tools in one module.</p>
@@ -630,67 +622,37 @@
 <h4>Timetable</h4>
 <ul>
 <li><strong>Student timetable view</strong> by day and period, with subject, teacher, room, and timing.</li>
-<li><strong>Teacher timetable editor</strong> for creating and updating periods.</li>
-<li><strong>Cross-class conflict preflight</strong> warns about teacher or room double-booking before publishing.</li>
-<li><strong>Timetable approval workflow</strong> supports editing permissions, approval, and rejection.</li>
-<li><strong>Timetable images and circulars</strong> can be attached to academic records.</li>
+<li><strong>Teacher timetable editor</strong> for creating and updating periods, with conflict preflight and approval workflow.</li>
+<li><strong>Timetable images and circulars</strong> attached to academic records.</li>
 </ul>
-<h4>Homework and assignments</h4>
+<h4>Homework, exams, and report cards</h4>
 <ul>
-<li><strong>Assignment publishing</strong> with title, description, subject, due date, and reference image.</li>
-<li><strong>Student submission workflow</strong> with pending, submitted, and graded states.</li>
-<li><strong>Grading and merit awards</strong> with role verification and reviewer-attributed point crediting, subject to the scoring gate.</li>
-<li><strong>Submission tracking per scholar</strong> so one student&#39;s status does not overwrite another&#39;s.</li>
-<li><strong>Due-date countdown and filters</strong> by subject and status.</li>
+<li><strong>Assignments &amp; submissions</strong> tracked per scholar with grading and merit awards.</li>
+<li><strong>Exam schedule</strong> with hall and desk allocation and syllabus revision vault.</li>
+<li><strong>Term report cards</strong> with GPA, academic-year isolation, honours summaries, and PDF export.</li>
 </ul>
-<h4>Exams</h4>
+<h4>Attendance, leave, and circulars</h4>
 <ul>
-<li><strong>Exam schedule</strong> with paper, subject, date, time, hall, and desk allocation.</li>
-<li><strong>Syllabus revision vault</strong> for topic checklists and revision guidance.</li>
-<li><strong>Exam hall and desk allocation</strong> shown with each exam record.</li>
-<li><strong>Exam-in-progress indicators</strong> and academic image attachments.</li>
+<li><strong>Daily and period-level attendance</strong> using <code>present + excused + 0.5 × late</code> and the CBSE 75% indicator.</li>
+<li><strong>Medical leave queue</strong> with admin review and clear non-conversion policy.</li>
+<li><strong>School circular composer &amp; class group chat</strong> tied to verified class placement.</li>
 </ul>
-<h4>Report cards</h4>
-<ul>
-<li><strong>Term report cards</strong> with subject breakdown, marks, percentages, and overall GPA.</li>
-<li><strong>Honours and merit summaries</strong> for academic distinction.</li>
-<li><strong>PDF export</strong> for sharing and printing.</li>
-<li><strong>Year-aware report-card records</strong> keep terms from different academic years distinct.</li>
-</ul>
-<h4>Attendance and leave</h4>
-<ul>
-<li><strong>Daily attendance</strong> with present, absent, and late states.</li>
-<li><strong>Period-level attendance breakdown</strong> for partial-day records.</li>
-<li><strong>One shared attendance policy</strong> across the app: <code>present + excused + 0.5 × late</code>.</li>
-<li><strong>CBSE 75% compliance indicator</strong> with an explicit &quot;No attendance data&quot; state instead of a misleading 100%.</li>
-<li><strong>Medical leave requests</strong> with reason, dates, supporting document, and admin review.</li>
-<li><strong>Leave policy clarity:</strong> approved leave does not silently convert an absence into attendance.</li>
-</ul>
-<h4>Circulars and class communication</h4>
-<ul>
-<li><strong>School circular composer</strong> with title, body, audience, PDF attachment, and publish action.</li>
-<li><strong>Base64 fallback</strong> for smaller attachments when Cloud Storage is not yet enabled.</li>
-<li><strong>Class group chat</strong> tied to verified class placement.</li>
-</ul>
-<p><strong>Status:</strong> <span class="badge gated">GATED</span> — timetable, homework, exams, report cards, attendance, leave, and circulars are built; honours, promotion, and concurrent timetable edits are not release-safe.</p>
-<blockquote class="audit-note"><p><strong>Audit note.</strong> Honours eligibility is client-derived (O16); promotion is sequential and partially applied on failure (O31); timetable conflict checks are read/check/write (O30); large inline attachments can exceed Firestore&#39;s document limit (O34); malformed records can fail a whole stream (O35). Large PDF attachments also require <span class="badge activation">ACTIVATION</span> of Cloud Storage.</p>
+<p><strong>Status:</strong> <span class="badge gated">GATED</span> — core academic screens, attendance policy, report cards, and query limits work locally; server-side honours/promotion authority and live Storage attachments remain gated.</p>
+<blockquote class="audit-note"><p><strong>Audit note.</strong> <strong>Closed locally:</strong> Query limits on academic listeners, unified <code>&#39;teacher&#39;</code> role mapping, and O42 committed <code>firestore.indexes.json</code> covering <code>medical_leaves</code>, <code>users</code>, <code>timetable_versions</code>, and <code>timetable_audit</code>. <strong>Open:</strong> Client-derived honours eligibility (O16), sequential promotion batch risk (O31), timetable read/check/write concurrency (O30), inline attachment size limits without Storage (O34), and malformed-record stream isolation (O35). Large PDF attachments require <span class="badge activation">ACTIVATION</span> of Cloud Storage.</p>
 </blockquote>
 <h3>5.5 Claims and recognition</h3>
 <p><strong>Purpose:</strong> Record student achievement and conduct with evidence, review, points, and notifications.</p>
 <p><strong>Features</strong></p>
 <ul>
 <li><strong>Claim submission</strong> with activity title, requested points, house, and supporting certificate image or PDF.</li>
-<li><strong>Evidence upload</strong> to Cloud Storage with an inline Base64 fallback for small files.</li>
-<li><strong>Review queue</strong> for administrators, council members, and authorised house captains.</li>
-<li><strong>Approve or reject</strong> with a reason, point award, and automatic student notification.</li>
-<li><strong>Approved-claims gallery</strong> with certificate preview.</li>
-<li><strong>Immutable claim identity</strong> — the activity, points, house, and evidence cannot be rewritten after submission.</li>
-<li><strong>AI review metadata</strong> fields for status, confidence, markers, and summary when the Storage trigger is enabled.</li>
-<li><strong>Student conduct records</strong> for merit and demerit entries with reasons, point ranges, evaluator identity, and revocation.</li>
-<li><strong>Conduct notifications</strong> keep students informed of recognition or correction.</li>
+<li><strong>Strict Storage evidence path</strong> enforces immutable create-only uploads scoped to <code>house_claims/{uid}/{scholarNo}_...</code> with safe raster/PDF MIME checks (O09).</li>
+<li><strong>Non-self-approvable review queue</strong> prevents submitters or captains from approving their own scholar claim in rules, <code>AuthService.approveClaim</code>, and UI, while scoping captains to their own house (O08).</li>
+<li><strong>Approve or reject</strong> with reason, point award, and sender-attributed student notification.</li>
+<li><strong>Approved-claims gallery</strong> with certificate preview and immutable claim identity.</li>
+<li><strong>Student conduct records</strong> for merit and demerit entries with evaluator identity and revocation history.</li>
 </ul>
-<p><strong>Status:</strong> <span class="badge gated">GATED</span> — the claim and conduct UI is built, but claim trust and point posting are not release-safe.</p>
-<blockquote class="audit-note"><p><strong>Audit note.</strong> Claim creation accepts caller-supplied AI verification metadata, <code>auto_validated</code>, and a different house (O08). Storage access is broad, claim filenames are overwritable, and identity is derived from filenames (O09). Point awards are not atomic or idempotent (O14, O15). AI-assisted verification remains <span class="badge activation">ACTIVATION</span> and is not a signature check.</p>
+<p><strong>Status:</strong> <span class="badge gated">GATED</span> — claim ownership, MIME security, house scoping, and self-approval blocks are enforced in Batch 1; server-owned atomic points ledger (O14/O15) and Blaze Storage OCR triggers remain pending.</p>
+<blockquote class="audit-note"><p><strong>Audit note.</strong> <strong>Closed locally:</strong> O08 self-approval, caller-forged <code>ocr_keywords</code>/<code>file_path</code>/<code>ai_verified</code> fields, and cross-house captain reads; O09 Storage MIME whitelist (blocking SVG XSS), <code>resource == null</code> overwrite prevention, and matching <code>verifyCertificateSignature</code> trigger path parsing (<code>parts[1]</code> = UID). <strong>Open:</strong> O14/O15/O17 server-side points/conduct atomicity and Blaze Storage + OCR Cloud Function activation (G3).</p>
 </blockquote>
 <h3>5.6 Campus events</h3>
 <p><strong>Purpose:</strong> Manage staff-created events, audience eligibility, student RSVPs, and an event wall.</p>
@@ -698,202 +660,135 @@
 <ul>
 <li><strong>Staff event composer</strong> with draft, preview, publish, edit, and cancel actions.</li>
 <li><strong>Audience targeting</strong> by whole school, individual house, or grade range.</li>
-<li><strong>Student event feed</strong> showing published events that match the student&#39;s eligibility.</li>
-<li><strong>Event detail view</strong> with venue, time, category, description, and organiser.</li>
+<li><strong>Student event feed and detail view</strong> with venue, time, category, description, and organiser.</li>
 <li><strong>RSVP registration</strong> with one response per student and live attendee counts.</li>
 <li><strong>Event Wall</strong> for images, captions, and campus highlights.</li>
-<li><strong>Sample event mode</strong> for training and demonstrations without touching live data.</li>
-<li><strong>Rules-enforced published, house, author, and cancellation checks</strong>; grade eligibility still trusts caller fields (O33).</li>
+<li><strong>Sample event mode</strong> for training and demonstrations.</li>
 </ul>
-<p><strong>Status:</strong> <span class="badge gated">GATED</span> — event lifecycle and RSVP are built; eligibility trusts caller profile fields.</p>
-<blockquote class="audit-note"><p><strong>Audit note.</strong> An account without a grade or profile can register for a senior-only event (O33). Event creation, house scope, and cancellation are rules-enforced, but attendee identity and eligibility need server-derived values before live use.</p>
+<p><strong>Status:</strong> <span class="badge gated">GATED</span> — event creation, cancellation, and index definitions are hardened; caller-supplied profile grade eligibility (O33) still requires trusted server/roster enforcement.</p>
+<blockquote class="audit-note"><p><strong>Audit note.</strong> Rules enforce published state, house scope, author checks, and cancellation (O42 index added for <code>events</code>), while grade-restricted RSVP eligibility (O33) still depends on profile grade fields until bound to trusted roster metadata (O02).</p>
 </blockquote>
 <h3>5.7 Notifications</h3>
 <p><strong>Purpose:</strong> Deliver in-app notices and alerts with read state, priority, and per-category counts.</p>
 <p><strong>Features</strong></p>
 <ul>
-<li><strong>In-app notification centre</strong> with categories, priority, and timestamps.</li>
-<li><strong>Read and unread states</strong>, per-category unread totals, and a dashboard badge.</li>
-<li><strong>Mark all as read</strong> and <strong>clear all</strong> actions.</li>
-<li><strong>Deterministic deduplication</strong> so retries do not create duplicate alerts.</li>
-<li><strong>Fan-out for school notices, timetable changes, house and class announcements, chat alerts, and points awards.</strong></li>
-<li><strong>High-priority styling</strong> for urgent items.</li>
-<li><strong>Admin notice publishing</strong> from the dashboard and administration tools.</li>
+<li><strong>In-app notification centre</strong> with categories, priority, timestamps, and <code>From &lt;senderName&gt;</code> attribution when supplied.</li>
+<li><strong>Read/unread states, mark all as read, and clear all actions.</strong></li>
+<li><strong>Deterministic deduplication</strong> via <code>source_id</code> (falling back to <code>dedupeKey</code>) so retries update deterministically without duplicate alerts.</li>
+<li><strong>Scoped notification rules</strong> bind <code>isNotificationScopeSender</code> to verified target memberships, lock <code>chat_message</code> to <code>category == &#39;chat&#39;</code> and <code>priority == &#39;normal&#39;</code>, house-scope captains, and forbid captains/council from spoofing <code>account_status</code> or <code>role_assigned</code> alerts (O07).</li>
+<li><strong>Suspended users blocked</strong> from mutating or deleting notifications (O04).</li>
 </ul>
-<p><strong>Status:</strong> <span class="badge gated">GATED</span> — in-app delivery works; notice authenticity is not enforced.</p>
-<blockquote class="audit-note"><p><strong>Audit note.</strong> Any signed-in user can create official-looking notifications for another user (O07); refresh and control messages carry equivalent risk. Background push is <span class="badge activation">ACTIVATION</span> and has no client token lifecycle or backend delivery (O43). Do not treat in-app notices as official until sender authorization is fixed.</p>
+<p><strong>Status:</strong> <span class="badge gated">GATED</span> — in-app sender scoping and anti-spoofing rules are hardened and tested in Batch 1; server Cloud Function fan-out and background FCM push (O43) remain <span class="badge activation">ACTIVATION</span>.</p>
+<blockquote class="audit-note"><p><strong>Audit note.</strong> <strong>Closed locally:</strong> O07 arbitrary cross-user notification spoofing and privilege-escalation category/type forgery; O04 suspended user updates. <strong>Open:</strong> O43 background FCM token lifecycle/delivery (<span class="badge activation">ACTIVATION</span> pending Blaze/Functions) and deployment of updated Batch 1 <code>firestore.rules</code>.</p>
 </blockquote>
 <h3>5.8 Chat and groups</h3>
 <p><strong>Purpose:</strong> Provide participant-only direct messages, class groups, and house groups.</p>
 <p><strong>Features</strong></p>
 <ul>
-<li><strong>Direct messages</strong> between students and authorised staff or council members.</li>
-<li><strong>Deterministic conversation rooms</strong> so the same two users always reach the same thread.</li>
-<li><strong>Class group chats</strong> for verified class placements.</li>
-<li><strong>House group chats</strong> for house coordination.</li>
-<li><strong>Unread counters and read receipts.</strong></li>
-<li><strong>Pinned and hidden conversation moderation</strong> for staff.</li>
-<li><strong>Chat-linked notifications</strong> for new messages.</li>
-<li><strong>Participant-only access</strong> enforced by Firestore rules.</li>
-<li><strong>Honest privacy labelling</strong> — the app describes conversations as private to participants, not as end-to-end encrypted.</li>
+<li><strong>Direct messages</strong> between students and authorised peers/staff, with deterministic conversation rooms.</li>
+<li><strong>New room creation &amp; photo attachments</strong> fixed in <code>firestore.rules</code> and <code>ChatService</code> (<code>attachment_url</code> supported up to 9000 chars, bounded stream limits applied) (O27, O28).</li>
+<li><strong>Class and house group chats</strong> scoped to verified members.</li>
+<li><strong>Unread counters, read receipts, and pinned/hidden moderation</strong> for staff.</li>
+<li><strong>Honest privacy labelling</strong> — conversations are described as private to participants, not end-to-end encrypted.</li>
 </ul>
-<p><strong>Status:</strong> <span class="badge gated">GATED</span> — participant-only reads are hardened, but chat creation and photo messages are blocked by current rules.</p>
-<blockquote class="audit-note"><p><strong>Audit note.</strong> New direct-chat creation is denied because the room read precedes creation (O27). Photo messages are rejected because <code>attachment_url</code> is not in the rule whitelist (O28). Peer authorization and missing-profile role fallbacks remain client-side (O29). Existing text threads are the only chat path verified.</p>
+<p><strong>Status:</strong> <span class="badge gated">GATED</span> — room creation, photo attachments, stream limits, and peer rules are repaired (<code>84446a1</code> / <code>a0800af</code>), pending live rule deployment (G3) and server-verified roster binding (O29).</p>
+<blockquote class="audit-note"><p><strong>Audit note.</strong> <strong>Closed locally:</strong> O27 new DM creation path, O28 <code>attachment_url</code> photo schema acceptance, and <code>ChatService</code> stream query bounds. <strong>Open:</strong> Server-backed peer role validation (O29) remains aligned with O02 roster verification and requires Batch 1/post-<code>13b791c</code> rule parity live.</p>
 </blockquote>
 <h3>5.9 Sports and trophies</h3>
 <p><strong>Purpose:</strong> Record fixtures, match events, tournaments, trophies, and player statistics.</p>
 <p><strong>Features</strong></p>
 <ul>
-<li><strong>Fixture scheduling</strong> with sport, house, venue, date, and time.</li>
-<li><strong>Live match HUD</strong> with score events, match timer, MVP selection, and player statistics.</li>
-<li><strong>Tournament brackets</strong> and championship progression.</li>
-<li><strong>Trophy cabinet</strong> with championship and runner-up records.</li>
-<li><strong>Victory certificates</strong> exported as PDF.</li>
-<li><strong>House points integration</strong> for winners and accolades.</li>
-<li><strong>Sports certification tokens</strong> for staff-operated scoring and verification.</li>
-<li><strong>Sport-specific statistics</strong> for players and teams.</li>
+<li><strong>Fixture scheduling, live match HUD, tournament brackets, victory PDF certificates, and trophy cabinet.</strong></li>
+<li><strong>Aligned trophy schema</strong> reconciles <code>SportsTrophy</code> <code>tournament_title</code> with Firestore <code>title</code> requirements (O19).</li>
+<li><strong>House points integration and sports certification tokens.</strong></li>
 </ul>
-<p><strong>Status:</strong> <span class="badge gated">GATED</span> — fixture and match UI is built; trophy and score writes are not release-safe.</p>
-<blockquote class="audit-note"><p><strong>Audit note.</strong> The trophy payload sends <code>tournament_title</code> where rules require <code>title</code>, so the current model fails even for an administrator (O19). Score updates use stale absolute values and can lose concurrent changes (O20); broad catches can report local success after a live failure. Server-side match authority remains <span class="badge roadmap">ROADMAP</span>.</p>
+<p><strong>Status:</strong> <span class="badge gated">GATED</span> — trophy payload compatibility is repaired (O19); concurrent score updates (O20) and server match authority remain open.</p>
+<blockquote class="audit-note"><p><strong>Audit note.</strong> <strong>Closed locally:</strong> O19 trophy creation schema mismatch (<code>title</code> / <code>tournament_title</code>). <strong>Open:</strong> O20 concurrent live score updates still rely on client writes without a server-authoritative scoring Cloud Function (<span class="badge roadmap">ROADMAP</span> / G2).</p>
 </blockquote>
 <h3>5.10 Elections and student leadership</h3>
 <p><strong>Purpose:</strong> Provide an election workspace, eligibility rules, voting, participation receipts, audit records, and certified results.</p>
 <p><strong>Features</strong></p>
 <ul>
-<li><strong>Election workspace</strong> with draft creation, candidate management, publish, close, certify, cancel, and delete-draft actions.</li>
+<li><strong>Election workspace</strong> for drafts, candidates, publish, close, certify, cancel, and delete-draft actions.</li>
 <li><strong>Leadership roles</strong> including House Captain, House Vice-Captain, Head Boy, Head Girl, Class Prefect, Sports Captain, and Cultural Secretary.</li>
-<li><strong>House and grade eligibility</strong> so the right students stand for and vote in the right elections.</li>
-<li><strong>One scholar, one vote</strong> enforced by a server-side transaction when the election service is enabled.</li>
-<li><strong>Participation receipts</strong> let a student confirm that their vote was recorded without revealing the choice.</li>
-<li><strong>Audit log</strong> for election actions and integrity checks.</li>
-<li><strong>Certified results gazette</strong> for official proclamations.</li>
-<li><strong>Winner recognition</strong> with house points and a published outcome.</li>
-<li><strong>Admin and council management tools</strong> for the full election lifecycle.</li>
+<li><strong>Server-transactional one-scholar-one-vote &amp; fail-closed UI</strong> — <code>SchoolElectionsPage</code> fails closed when Cloud Functions (Blaze) are unavailable rather than faking live tallies (<code>d471029</code>).</li>
+<li><strong>Participation receipts, audit log, and certified results gazette.</strong></li>
 </ul>
-<p><strong>Status:</strong> <span class="badge activation">ACTIVATION</span> — the management, voting, receipt, audit, and gazette experiences are built, but live voting is intentionally disabled until school IT deploys and verifies the server-side election service. This prevents unverified tallies from being presented as official results.</p>
+<p><strong>Status:</strong> <span class="badge activation">ACTIVATION</span> — management, UI fail-closed guards, and <code>functions/elections-v2.js</code> callable code exist, but live voting cannot run until school IT enables Firebase Blaze and deploys + verifies the election Cloud Functions.</p>
 <p><strong>Device note:</strong> Election voting is not live. Any activated voting would require a school-approved device or supervised kiosk.</p>
-<blockquote class="audit-note"><p><strong>Audit note.</strong> No Cloud Functions are deployed (O11). The backend contains privileged direct-write fallbacks, rules still permit lifecycle mutation outside the service (O10), and the audit UI path does not match the backend path (O12). A legacy direct-vote path remains and is denied by hardened rules. Election signing secrets are embedded in the client (O23). Live voting must remain disabled.</p>
+<blockquote class="audit-note"><p><strong>Open (O10–O12, O23):</strong> No Cloud Functions are deployed (O11); legacy lifecycle rules (O10), audit UI/backend path alignment (O12), and moving signing secrets off the client (O23) must complete alongside Blaze deployment.</p>
 </blockquote>
 <h3>5.11 School store and orders</h3>
 <p><strong>Purpose:</strong> Provide a merchandise catalogue, cart, order request, order history, and staff-recorded collection status.</p>
 <p><strong>Features</strong></p>
 <ul>
-<li><strong>Ten-item merchandise catalogue</strong> with house variants and BHD prices.</li>
-<li><strong>Product detail sheet</strong> with size, quantity, and house selection.</li>
-<li><strong>Cart and favourites</strong> with local persistence.</li>
-<li><strong>Checkout and order creation</strong> with student identity, items, total, and collection status.</li>
-<li><strong>Order history</strong> with claim status.</li>
-<li><strong>QR collection pass</strong> for each order.</li>
-<li><strong>Staff scanner claim flow</strong> that records who collected an order and when.</li>
-<li><strong>Truthful payment labelling</strong> — orders are presented as requests pending office confirmation, not as completed payments.</li>
+<li><strong>Ten-item internal merchandise catalogue</strong> with house variants and BHD prices. <strong>No external e-commerce website, print-on-demand service (e.g., Printify), or online payment gateway is connected</strong> — the store is strictly an internal Firestore order-request workflow handled offline by the school office.</li>
+<li><strong>Cart customisation before checkout:</strong> Shoppers can open the cart, change item size/variant options, adjust quantities (<code>+</code> / <code>-</code>), or remove items before submitting a request. Once submitted, an order request is immutable; staff record verification and collection handover.</li>
+<li><strong>Bounded order pricing integrity</strong> enforces <code>total_bhd &gt; 0 &amp;&amp; total_bhd &lt;= 10000</code>, <code>total_pts == 0</code>, <code>total_price &gt;= total_bhd</code>, and immutable financial/item fields on updates in <code>firestore.rules</code> (O21).</li>
+<li><strong>True HMAC-SHA256 <code>v2.0</code> voucher tokens</strong> bind order ID, scholar number, full <code>items</code> digest, and <code>total_bhd</code> in <code>VoucherSecurityService</code> (without client hardcoded fallbacks).</li>
+<li><strong>Verified-only fulfillment:</strong> Live claims via <code>claimStoreVoucher</code> and <code>IdScannerScreen</code> reject unverified <code>&#39;placed&#39;</code>/<code>&#39;pending&#39;</code> orders (requiring <code>&#39;verified&#39;</code> or <code>&#39;ready&#39;</code> status) and do not fall back to local cache when live Firestore records are missing (O22).</li>
 </ul>
-<p><strong>Status:</strong> <span class="badge gated">GATED</span> — catalogue and cart are demo-ready; order creation and fulfillment are not trustworthy.</p>
-<blockquote class="audit-note"><p><strong>Audit note.</strong> A student can create an order marked verified with arbitrary items and a zero price (O21). Voucher redemption is read-then-update and can double-fulfill (O22). Signing secrets are in the client and do not cover all item contents (O23). Orders are display requests only; do not accept payment or release goods based on the app.</p>
+<p><strong>Status:</strong> <span class="badge gated">GATED</span> — cart customization, bounded order pricing, HMAC-SHA256 voucher binding, and verified-only claim checks are implemented in Batch 1; full server-side catalog pricing and key removal from the client (O23) require Blaze Cloud Functions.</p>
+<blockquote class="audit-note"><p><strong>Audit note.</strong> <strong>Closed locally:</strong> O21 zero-price/unbounded order creation, O22 unverified order claim fallback &amp; double-state mismatch in scanner, and weak v1 voucher binding. <strong>Open:</strong> O23 removing the HMAC secret from client binaries in favour of a Cloud Function signer/verifier and server-side product price lookup. Orders remain unverified office requests — not online payments.</p>
 </blockquote>
-<p><strong>Collection note:</strong> Orders are requests, not payments. Collection is managed by the school office; the app records the request and claim status only.</p>
 <h3>5.12 Digital passes and documents</h3>
-<p><strong>Purpose:</strong> Provide pass and receipt previews with PDF export.</p>
+<p><strong>Purpose:</strong> Provide pass and receipt previews with scannable PDF export.</p>
 <p><strong>Features</strong></p>
 <ul>
 <li><strong>Three pass tabs:</strong> Store Passes, Campus ID, and Fee Receipts.</li>
-<li><strong>Campus ID card</strong> with scholar number, house, class, points, and access tier.</li>
-<li><strong>QR identity pass</strong> for in-app, staff-assisted verification; exported PDFs do not yet contain a scannable QR.</li>
-<li><strong>Store order passes</strong> linked to order records.</li>
-<li><strong>Fee receipt view</strong> clearly labelled as a sample and not linked to a billing system.</li>
-<li><strong>PDF export</strong> for passes and receipts, with known QR, font, and sharing limitations.</li>
-<li><strong>Local pass preview</strong> that explains the pass stays inside ASB House Hub.</li>
+<li><strong>Campus ID card and QR pass</strong> displaying scholar number, house, class, points, and access tier.</li>
+<li><strong>Scannable vector QR PDF export</strong> powered by <code>QrPainter</code> in <code>PassDocumentExporter</code> (O24, replacing the earlier text-only PDF payload).</li>
+<li><strong>Sample fee receipt view</strong> clearly labelled as a non-billing sample.</li>
 </ul>
-<p><strong>Status:</strong> <span class="badge pilot">PILOT</span> — preview and limited PDF export work; the export is not a scannable pass.</p>
-<blockquote class="audit-note"><p><strong>Audit note.</strong> PDF export renders text payloads rather than a scannable QR and lacks robust pagination, Unicode fonts, sharing, and web delivery; mobile output is temporary (O24). In-app QR display works, but the signing secret is client-held (O23). Apple Wallet, Google Wallet, NFC, and live fee billing are not claimed and remain <span class="badge roadmap">ROADMAP</span>.</p>
+<p><strong>Status:</strong> <span class="badge pilot">PILOT</span> — previews and vector QR PDF export (O24) are implemented locally, while server-held signing secrets (O23), live billing integration, and Apple/Google Wallet or NFC (<span class="badge roadmap">ROADMAP</span>) are not implemented.</p>
+<blockquote class="audit-note"><p><strong>Audit note.</strong> <strong>Closed locally:</strong> O24 vector QR rendering in exported PDF passes. <strong>Open:</strong> O23 client-embedded signing secret (requires server callable verification), plus platform sharing/web polish where applicable. The pass is an app preview, not a school-issued ID or campus-entry credential.</p>
 </blockquote>
-<p><strong>Policy note:</strong> The digital pass is an app preview and PDF export. It is not a school-issued ID and is not required for campus entry.</p>
 <h3>5.13 ID scanning and behaviour evaluation</h3>
 <p><strong>Purpose:</strong> Provide staff-operated scanning, student lookup, voucher validation, and conduct recording.</p>
 <p><strong>Features</strong></p>
 <ul>
-<li><strong>Staff-operated scanner</strong> on supported devices.</li>
-<li><strong>Camera scanning</strong> on supported mobile devices.</li>
-<li><strong>Image upload and decoding</strong> when a live camera is unavailable.</li>
-<li><strong>Manual scholar-number lookup</strong> as a reliable fallback.</li>
-<li><strong>Student pass validation</strong> with QR signature checking.</li>
-<li><strong>Order and voucher validation</strong> with staff claim confirmation.</li>
-<li><strong>Behaviour evaluation screen</strong> for merit and demerit entries.</li>
-<li><strong>Structured reasons and point ranges</strong> from 1 to 100.</li>
-<li><strong>Evaluator identity and record revocation</strong> for accountability.</li>
-<li><strong>Conduct notifications</strong> to the affected student.</li>
+<li><strong>Staff-operated camera scanner, image upload decoding, and manual scholar-number fallback.</strong></li>
+<li><strong>Student pass validation and order/voucher verification</strong> requiring live Firestore <code>&#39;verified&#39;</code> or <code>&#39;ready&#39;</code> order status before marking claimed in UI (O22).</li>
+<li><strong>Behaviour evaluation screen</strong> for merit/demerit entries (1–100 points) with structured reasons, evaluator identity, and revocation.</li>
 </ul>
-<p><strong>Status:</strong> <span class="badge gated">GATED</span> — staff scanning and conduct UI is built; storage ownership and voucher signing are not release-safe.</p>
-<blockquote class="audit-note"><p><strong>Audit note.</strong> Storage rules allow broad authenticated access, claim filenames are overwritable, identity is derived from filenames, and processing is not idempotent (O09). Voucher and pass signing secrets are in the client (O23). Conduct revocation can delete before reversing totals (O17). The scanner is a staff tool; student QR passes are not a school ID or campus-entry requirement.</p>
+<p><strong>Status:</strong> <span class="badge gated">GATED</span> — scanner claim state synchronization (O22) and Storage claim evidence rules (O09) are tightened in Batch 1; server-side voucher signing (O23) and atomic conduct revocation (O17) remain open.</p>
+<blockquote class="audit-note"><p><strong>Audit note.</strong> <strong>Closed locally:</strong> O09 Storage claim path/MIME protections and O22 live-verified voucher state checks. <strong>Open:</strong> O23 server voucher verification and O17 atomic conduct reversal (G2).</p>
 </blockquote>
-<p><strong>Device note:</strong> The scanner is a staff tool. Student QR passes can be exported to PDF for printing.</p>
 <h3>5.14 Library</h3>
 <p><strong>Purpose:</strong> Provide a library portal with loan cards, renewal preview, and local cache while the backend service is prepared.</p>
 <p><strong>Features</strong></p>
 <ul>
-<li><strong>Library portal</strong> from the home screen.</li>
-<li><strong>Borrowed-book cards</strong> with due-day counters and renewal counts.</li>
-<li><strong>Renewal action</strong> that extends the displayed loan period.</li>
-<li><strong>Local cache</strong> so the portal remains available between sessions.</li>
-<li><strong>Server-side library service</strong> authored for transactional checkout, return, and renewal against library holdings.</li>
+<li><strong>Library portal, borrowed-book cards, due-day counters, renewal preview, and local cache.</strong></li>
+<li><strong>Authored server-side library module (<code>functions/library-v2.js</code>)</strong> prepared for transactional checkout, return, and renewal once Blaze is enabled.</li>
 </ul>
-<p><strong>Status:</strong> <span class="badge pilot">PILOT</span> — the portal uses sample and legacy loan data; no end-to-end lending.</p>
-<blockquote class="audit-note"><p><strong>Audit note.</strong> The UI retains sample and legacy loan paths while <code>functions/library-v2.js</code> uses a separate v2 schema. Missing v2 read rules, catalog provisioning, and a connected UI prevent an end-to-end lending system (O13). The transactional backend requires <span class="badge activation">ACTIVATION</span>. Student access is outside school hours under the device policy.</p>
+<p><strong>Status:</strong> <span class="badge pilot">PILOT</span> — the portal still displays sample/legacy loan data; end-to-end backend lending requires Blaze <span class="badge activation">ACTIVATION</span>.</p>
+<blockquote class="audit-note"><p><strong>Audit note.</strong> Missing live v2 Firestore rules, catalog seeding, and connected UI against <code>functions/library-v2.js</code> remain open (O13), gated on Blaze deployment (O11). Student access is outside school hours.</p>
 </blockquote>
 <h3>5.15 House AI assistant</h3>
 <p><strong>Purpose:</strong> Provide an optional AI chat with house-aware prompts, Gemini integration, and local fallback guidance.</p>
 <p><strong>Features</strong></p>
 <ul>
-<li><strong>House AI chat screen</strong> with house-aware styling and suggested prompts.</li>
-<li><strong>Prompt shortcuts</strong> for timetable, attendance, homework, house rank, sports, exams, and the battle chant.</li>
-<li><strong>Gemini integration</strong> using a school-provided or user-entered API key.</li>
-<li><strong>Local fallback guidance</strong> when no key is configured or the network is unavailable.</li>
-<li><strong>API-key settings and connection status</strong> visible to the user.</li>
-<li><strong>Academic context</strong> drawn from the same attendance, timetable, and house data as the rest of the app.</li>
+<li><strong>House AI chat screen</strong> with house-aware styling and quick prompt shortcuts.</li>
+<li><strong>Updated Gemini <code>2.5</code> integration</strong> using <code>gemini-2.5-flash</code>, <code>gemini-2.5-pro</code>, and <code>gemini-2.0-flash</code> with <code>x-goog-api-key</code> HTTP header authentication (removing query-string key exposure, O25).</li>
+<li><strong>Local fallback guidance</strong> when no key is configured or offline.</li>
 </ul>
-<p><strong>Status:</strong> <span class="badge pilot">PILOT</span> — optional AI chat with local fallback; not approved for real student data.</p>
-<blockquote class="audit-note"><p><strong>Audit note.</strong> Fallback model IDs are deprecated (O25). API keys are persisted locally and placed in request URLs; context can include synthetic scholar and grade values (O26). A school-provided server-side proxy is required before real use. Student access is outside school hours under the device policy.</p>
+<p><strong>Status:</strong> <span class="badge pilot">PILOT</span> — uses current Gemini 2.5 models with header auth (O25), but remains client-keyed and unapproved for real student data (O26).</p>
+<blockquote class="audit-note"><p><strong>Audit note.</strong> <strong>Closed locally:</strong> O25 deprecated model IDs and URL query-parameter API key exposure. <strong>Open (O26):</strong> API keys still persist locally via <code>SharedPreferences</code>, and a server-side Gemini Cloud Function proxy is required before entering real student/academic context (G3/G4).</p>
 </blockquote>
 <h3>5.16 Administration and governance</h3>
 <p><strong>Purpose:</strong> Provide administration tools for academics, recognition, communication, events, and student leadership.</p>
 <p><strong>Features</strong></p>
-<h4>Academic administration</h4>
 <ul>
-<li><strong>Class and section creation.</strong></li>
-<li><strong>Roster placement verification.</strong></li>
-<li><strong>Student promotion.</strong></li>
-<li><strong>Timetable approval and rejection.</strong></li>
-<li><strong>House, status, and transfer controls.</strong></li>
-<li><strong>Administrative audit log.</strong></li>
+<li><strong>Academic administration:</strong> Class creation, placement verification, promotion, timetable approval/rejection, house/status/transfer controls, and audit log.</li>
+<li><strong>Claims and conduct administration:</strong> Pending claims queue (blocking self-approval), medical leave queue, approved-claims gallery, roster management, and conduct records.</li>
+<li><strong>Communication, events, elections, and sports management.</strong></li>
+<li><strong>Unified governance checks:</strong> Single role contract aligning <code>&#39;administrator&#39;</code> across <code>AuthService</code> and Firestore (O44), unified teacher mapping in <code>school_members</code>, fail-closed missing-data guards, and per-device local vault protection (<code>84446a1</code>).</li>
 </ul>
-<h4>Claims and conduct administration</h4>
-<ul>
-<li><strong>Pending claims queue</strong> with evidence review.</li>
-<li><strong>Medical leave queue</strong> with approval, rejection, and remarks.</li>
-<li><strong>Approved-claims gallery.</strong></li>
-<li><strong>Roster management and role assignment.</strong></li>
-<li><strong>Student conduct records</strong> with revocation history.</li>
-</ul>
-<h4>Communication and campus life</h4>
-<ul>
-<li><strong>Notice and circular composer</strong> with audience targeting and publish action.</li>
-<li><strong>Campus event lifecycle management.</strong></li>
-<li><strong>Election management, audit, and gazette tools.</strong></li>
-<li><strong>Sports fixture, result, and trophy administration.</strong></li>
-</ul>
-<h4>Governance and access control</h4>
-<ul>
-<li><strong>Role-aware hierarchy</strong> for super administrators, senior administrators, faculty, captains, council members, and students.</li>
-<li><strong>Rules-level authorisation</strong> for administrative collections.</li>
-<li><strong>Protected profile fields after creation</strong> and roster self-provisioning checks; scholar ownership remains open (O02).</li>
-<li><strong>Audited points and conduct changes.</strong></li>
-<li><strong>Fail-closed academic and points writes</strong> when class, house, or scholar data is missing.</li>
-<li><strong>Separate staff and student experiences</strong> from the same app.</li>
-</ul>
-<p><strong>Status:</strong> <span class="badge gated">GATED</span> — administration UI is built; authority and record integrity are not release-safe.</p>
-<blockquote class="audit-note"><p><strong>Audit note.</strong> Administrative authority still depends on the accepted bootstrap exception (O01) and scholar self-provisioning (O02). Suspension is not enforced centrally (O04); role definitions differ across hierarchy, Firestore, Storage, and membership provisioning (O44). Promotion is partial (O31); election fallbacks remain (O10). Named administrator accounts, MFA, and server-side roster authority are <span class="badge roadmap">ROADMAP</span>.</p>
+<p><strong>Status:</strong> <span class="badge gated">GATED</span> — UI and Batch 1 authorization/role-parity protections are built locally; bootstrap admin governance (O01), trusted enrollment roster provisioning (O02), and Cloud Function authority (G2/G3) remain open.</p>
+<blockquote class="audit-note"><p><strong>Audit note.</strong> <strong>Closed locally:</strong> O04 suspension enforcement, O05/O06 cache &amp; stale-role isolation, O08 self-approval guard, O44 role-contract alignment, and <code>84446a1</code> per-device vault key. <strong>Open:</strong> O01 accepted <code>11209/admin</code> bootstrap exception, O02 enrollment roster binding, O10 election Cloud Function transition, and O31 atomic promotion batches. Named administrator accounts, MFA, and server-side roster authority remain <span class="badge roadmap">ROADMAP</span>.</p>
 </blockquote>
 <h2>6. Role-based experience</h2>
-<p>The matrix describes intended permissions. The audit found role definitions differ across layers (O44), suspension is not centrally enforced (O04), and scholar identity is not bound to a trusted roster (O02). Treat the matrix as a design target, not verified production access control.</p>
+<p>The matrix describes intended permissions backed by unified <code>AuthService</code>, Firestore, and Storage role contracts (O44) and central suspension checks (O04). Until live rules/Functions deployment (G3) and trusted enrollment roster binding (O02) close, treat this as a pre-deployment target rather than verified live production access control.</p>
 <table class="long-table">
 <thead>
 <tr>
@@ -940,10 +835,10 @@
 <td align="center">✓</td>
 </tr>
 <tr>
-<td>Review and approve claims</td>
+<td>Review and approve claims (non-self only)</td>
 <td align="center">—</td>
 <td align="center">✓</td>
-<td align="center">✓</td>
+<td align="center">House-scoped</td>
 <td align="center">✓</td>
 </tr>
 <tr>
@@ -1010,7 +905,7 @@
 <td align="center">✓</td>
 </tr>
 <tr>
-<td>View or export own pass</td>
+<td>View or export own scannable QR pass</td>
 <td align="center">✓</td>
 <td align="center">✓</td>
 <td align="center">✓</td>
@@ -1031,303 +926,182 @@
 <td align="center">✓</td>
 </tr>
 </tbody></table>
-<p><em>Student access to the app is outside school hours. Election voting is not live and would require a school-approved device or supervised kiosk if activated. Scoped means the action is limited to the user&#39;s house, class, or delegated capability.</em></p>
+<p><em>Student access to the app is outside school hours. Election voting is not live and would require a school-approved device or supervised kiosk if activated. Scoped means the action is limited to the user&#39;s house, class, or delegated capability; self-approval of claims is blocked across all roles.</em></p>
 <h2 class="page-break">7. Student-facing capabilities</h2>
-<p>Student accounts provide the following implemented functions. They are available outside school hours on a personal device, subject to school and family policy. This is not a production service; several paths are blocked by the audit findings noted below.</p>
+<p>Student accounts provide the following implemented functions outside school hours on a personal device, subject to school and family policy. No path is production-cleared until G1–G3 close live.</p>
 <h3>Account and profile</h3>
 <ul>
-<li>Branded onboarding.</li>
-<li>Scholar-number sign-in and password reset.</li>
-<li>Saved accounts with re-authentication before a live account switch.</li>
-<li>Profile view with house, class, points, and recognition.</li>
-<li>Light and dark theme preference.</li>
+<li>Branded onboarding, scholar-number sign-in/signup with bounded timeout handling, and password reset.</li>
+<li>Saved accounts with re-authentication and full cache scrub across account switches.</li>
+<li>Profile view with house, class, points, recognition, and light/dark theme preference.</li>
 </ul>
 <h3>Academics</h3>
 <ul>
-<li>Timetable by day and period.</li>
-<li>Homework list, submission, and status.</li>
-<li>Exam schedule, hall and desk allocation, and revision checklist.</li>
-<li>Term report cards with GPA, honours, and PDF export.</li>
-<li>Attendance record and CBSE 75% indicator.</li>
-<li>Medical leave request with supporting document.</li>
-<li>Circulars and class group.</li>
+<li>Timetable by day and period; homework list, submission, and status.</li>
+<li>Exam schedule, hall/desk allocation, and syllabus revision checklist.</li>
+<li>Term report cards with GPA, honours, and PDF export; attendance record and CBSE 75% indicator.</li>
+<li>Medical leave request with supporting document; circulars and class group.</li>
 </ul>
-<h3>Houses</h3>
+<h3>Houses, recognition, and events</h3>
 <ul>
-<li>House points, standing, contributor list, and badges.</li>
-<li>House Arena and house group.</li>
+<li>House points, standing, contributor list, badges, House Arena (with interactive Spirit Reactor), and house group chat.</li>
+<li>Claim submission with evidence, non-self-approvable status tracking, sender-attributed notifications, and own conduct record.</li>
+<li>Event feed, RSVP, event wall, direct messages, and class/house groups (including room creation and photo attachments).</li>
 </ul>
-<h3>Recognition and conduct</h3>
+<h3>Services &amp; known limits</h3>
 <ul>
-<li>Claim submission with supporting evidence.</li>
-<li>Claim status and approved-claims gallery.</li>
-<li>Notifications for points and conduct decisions.</li>
-<li>Own conduct record.</li>
-</ul>
-<h3>Events and communication</h3>
-<ul>
-<li>Event feed, RSVP, and event wall.</li>
-<li>Direct messages, class groups, and house groups.</li>
-</ul>
-<h3>Services</h3>
-<ul>
-<li>Merchandise catalogue, cart, order request, and order status.</li>
-<li>Pass and receipt preview with PDF export.</li>
-<li>Library portal with sample data in the pilot.</li>
-<li>Optional AI assistant.</li>
-<li>Election screens where the server service is activated; not live today.</li>
-</ul>
-<h3>Known limits</h3>
-<ul>
-<li>New direct-chat creation and photo messages are rejected by current rules (O27, O28).</li>
-<li>Pass PDF export is text-based and not a scannable QR; web export is unsupported (O24).</li>
-<li>Order totals are not server-verified (O21).</li>
-<li>AI keys are stored locally and are not approved for real student data (O26).</li>
-<li>Election screens are not live.</li>
-<li>No module is production-cleared as of 26 November 2026.</li>
-</ul>
-<h3>Not provided</h3>
-<ul>
-<li>No campus-entry pass.</li>
-<li>No in-app payment.</li>
-<li>No live election result.</li>
-<li>No official library transaction during the pilot.</li>
-<li>No Apple Wallet, Google Wallet, or NFC support.</li>
+<li>Internal merchandise catalogue with cart customisation (size, quantity, removal), office order requests, and order status.</li>
+<li>Pass and receipt preview with vector QR PDF export; library portal (<span class="badge pilot">PILOT</span> sample loans); optional Gemini 2.5 AI assistant.</li>
+<li><strong>Known limits:</strong> Order totals rely on client price inputs until server catalog validation (O23); AI keys persist locally without a server proxy (O26); election voting (O11) and library backend (O13) require Blaze Cloud Functions; grade-restricted event eligibility (O33) awaits trusted roster binding (O02); no module is production-cleared as of 27 November 2026.</li>
+<li><strong>Not provided:</strong> No external store/Printify integration, no online payment, no campus-entry pass, no live election results, no Apple Wallet / Google Wallet / NFC support.</li>
 </ul>
 <h2 class="page-break">8. Design, accessibility, and platform support</h2>
-<h3>Visual design</h3>
+<h3>Visual design &amp; accessibility (implemented, not certified)</h3>
 <ul>
-<li><strong>House-led colour system</strong> across screens.</li>
-<li><strong>Light and dark themes.</strong></li>
-<li><strong>Cards, badges, and status pills</strong> for status and information.</li>
-<li><strong>Motion</strong> for celebrations, transitions, and progress indicators.</li>
-<li><strong>School branding and house mascots.</strong></li>
-<li><strong>Responsive layouts</strong> for mobile screens, desktop windows, and web.</li>
+<li>House-led colour system, light and dark themes, structured cards/badges, celebratory motion, school branding, 3D house mascots, and responsive desktop/mobile/web layouts.</li>
+<li>Semantic labels, minimum 48 dp touch targets, large-font checks, keyboard/focus navigation, clean empty/loading/error states without raw stack traces, and non-colour-only status indicators.</li>
+<li>Accessibility has not yet been certified with assistive technology, and localization/RTL coverage (O41) remains incomplete.</li>
 </ul>
-<h3>Accessibility (implemented, not certified)</h3>
-<ul>
-<li><strong>Semantic labels</strong> for key controls, tabs, cards, and status indicators.</li>
-<li><strong>Minimum 48 dp touch targets</strong> for primary actions.</li>
-<li><strong>Large-font checks</strong> for critical action rows.</li>
-<li><strong>Keyboard and focus support</strong> for desktop and web use.</li>
-<li><strong>Clear empty, loading, and error states</strong> instead of silent failure.</li>
-<li><strong>No raw exception text</strong> exposed to students in the global error screen.</li>
-<li><strong>Reduced reliance on colour alone</strong> for important status information.</li>
-</ul>
-<p>Accessibility has not been certified or tested with assistive technology. Localization and RTL coverage are incomplete (O41).</p>
 <h3>Supported platforms</h3>
 <table>
 <thead>
 <tr>
 <th>Platform</th>
 <th>Support</th>
+<th>Current verification note</th>
 </tr>
 </thead>
 <tbody><tr>
 <td><strong>Android</strong></td>
-<td>Student access outside school hours; staff scanner and notification centre on supported devices</td>
+<td>Student access outside school hours; staff scanner and notification centre</td>
+<td>Release keystore signing (<code>android/key.properties</code>) and ProGuard deferred-component fixes landed (<code>9cfd7f0</code>, <code>d471029</code>); release APK previously built at <code>13b791c</code> before Batch 1 edits; physical device test pending after final edits</td>
 </tr>
 <tr>
 <td><strong>iOS</strong></td>
-<td>Student access outside school hours; staff scanner and notification centre on supported devices</td>
+<td>Student access outside school hours; staff scanner and notification centre</td>
+<td>Deployment target raised to <code>15.0</code> (<code>d471029</code>); release build requires macOS/Xcode (O38)</td>
 </tr>
 <tr>
 <td><strong>Windows</strong></td>
 <td>Desktop access to the app</td>
+<td>Release build previously verified at <code>13b791c</code> before Batch 1 edits</td>
 </tr>
 <tr>
 <td><strong>Web</strong></td>
 <td>Browser access to the app</td>
+<td>Release build previously verified at <code>13b791c</code> before Batch 1 edits</td>
 </tr>
 </tbody></table>
-<p>Platform support describes where the app can run. Student access remains outside school hours.</p>
-<p>Windows and web release builds pass. Android and iOS release builds were not produced; Android release configuration still uses debug signing and the iOS deployment target is below the installed FlutterFire pod requirements (O38). Camera, notifications, and scanning therefore remain unverified on physical mobile devices.</p>
 <h2 class="page-break">9. Security design and open findings</h2>
-<p>The code applies a <strong>role-aware, least-privilege</strong> model, but the 26 November 2026 audit found critical and high-severity gaps. This section describes the intended controls and the audit position. It is not a security assurance.</p>
+<p>This section reflects the 27 November 2026 security posture across locally verified Batch 1 controls and remaining backend/governance gaps.</p>
 <table class="long-table">
 <thead>
 <tr>
 <th>Area</th>
-<th>Implemented control</th>
-<th>Audit position</th>
+<th>Implemented control (through Batch 1)</th>
+<th>Remaining open audit position</th>
 </tr>
 </thead>
 <tbody><tr>
 <td><strong>Identity</strong></td>
-<td>Firebase Authentication; protected administrator identifier; re-authentication before account switching.</td>
-<td><strong>Critical:</strong> unverified bootstrap administrator path (O01); scholar numbers are not bound to a trusted roster (O02). <strong>High:</strong> suspension (O04), stale roles (O05), cache isolation (O06).</td>
+<td>Re-authentication before switching, full <code>clearCache()</code> scrub (O06), live-role preference (O05), central UI/Auth/Firestore/Storage suspension (O04), unified role parity (O44), fail-closed release startup (O36), bounded signup timeouts (<code>13b791c</code>).</td>
+<td><strong>Accepted exception:</strong> <code>11209/admin</code> bootstrap path (O01). <strong>Open:</strong> pre-seeded enrollment roster binding (O02).</td>
 </tr>
 <tr>
 <td><strong>Authorization</strong></td>
-<td>Role-based rules for students, faculty, captains, council, and administrators.</td>
-<td><strong>High:</strong> forged notifications (O07); caller-supplied claim verification (O08); role definitions differ across layers (O44).</td>
+<td>Sender-scoped <code>isNotificationScopeSender</code> + anti-spoof category/type bounds (O07), house-scoped captain claim reads, blocked <code>ocr_keywords</code>/<code>file_path</code>/<code>ai_verified</code> injection, and self-approval block (O08).</td>
+<td>Authoritative server fan-out for notices/OCR and live push delivery (O43).</td>
 </tr>
 <tr>
 <td><strong>Storage</strong></td>
-<td>Staff and administrator write restrictions for exam schedules and circulars.</td>
-<td><strong>High:</strong> broad authenticated reads, overwritable claim filenames, filename-derived identity, non-idempotent processing (O09).</td>
+<td>Raster/PDF MIME whitelist blocking SVG XSS, expanded <code>isLeader()</code>, <code>resource == null</code> + strict <code>house_claims/{uid}/{scholarNo}_...</code> path regex, split create/update vs delete, aligned <code>verifyCertificateSignature</code> trigger, <strong>Storage Emulator tested (28/28)</strong>.</td>
+<td>Cloud Storage bucket not activated on Spark plan; rules and OCR trigger await Blaze deployment (G3).</td>
 </tr>
 <tr>
 <td><strong>Elections</strong></td>
-<td>Direct client writes to counts and participation are denied.</td>
-<td><strong>High:</strong> no deployed service (O11); privileged backend fallbacks (O10); legacy vote path and client signing secret (O23). <strong>Medium:</strong> audit path mismatch and batch limit (O12).</td>
+<td>Direct client tallies denied; UI fails closed when Cloud Functions are unavailable (<code>d471029</code>).</td>
+<td>No deployed Cloud Functions (O11); legacy lifecycle rules (O10), audit path mismatch (O12), and client secret (O23) await Blaze deploy.</td>
 </tr>
 <tr>
 <td><strong>Scoring and conduct</strong></td>
-<td>Points, contributors, and conduct entries carry reviewer identity.</td>
-<td><strong>High:</strong> non-atomic and non-idempotent awards (O14, O15); client-derived honours (O16); incomplete revocation (O17). <strong>Medium:</strong> negative contributor edge case (O18).</td>
+<td>Points/conduct carry reviewer identity; self-approval on claims blocked; sports trophy schema aligned (O19).</td>
+<td>Non-atomic client point awards (O14, O15), client honours (O16), revocation order (O17), negative contributor edge (O18), concurrent sports scoring (O20).</td>
 </tr>
 <tr>
 <td><strong>Orders and vouchers</strong></td>
-<td>Unsigned legacy order payloads are rejected; orders are labelled requests.</td>
-<td><strong>High:</strong> zero-price verified orders (O21); double redemption (O22); client signing secret and incomplete payload binding (O23).</td>
+<td>Bounded positive BHD pricing &amp; immutable order financial fields (O21), HMAC-SHA256 <code>v2.0</code> tokens binding items + BHD total, live <code>&#39;verified&#39;</code>/<code>&#39;ready&#39;</code>-only scanner claims without cache fallback (O22).</td>
+<td>Client-embedded HMAC signing secret and lack of server-side product catalog validation (O23).</td>
 </tr>
 <tr>
-<td><strong>Sports and timetable</strong></td>
-<td>Fixture, score, trophy, and approval workflows are built.</td>
-<td><strong>High:</strong> trophy schema mismatch (O19); lost concurrent score updates (O20). <strong>Medium:</strong> timetable conflict race (O30).</td>
+<td><strong>Passes, AI &amp; platform</strong></td>
+<td>Vector QR PDF export (O24), Gemini 2.5 models + <code>x-goog-api-key</code> header (O25), per-device local vault key (<code>84446a1</code>), Android release signing + iOS 15.0 target (O38), <code>firestore.indexes.json</code> (O42), CI pipeline.</td>
+<td>User AI keys persisted locally (O26), no App Check (O37), no iOS macOS build (O38), no Blaze server AI proxy.</td>
 </tr>
 <tr>
-<td><strong>Chat</strong></td>
-<td>Participant-only room and message reads; read receipts require participation.</td>
-<td><strong>Medium:</strong> new-room creation denied (O27); photo message schema rejected (O28); peer policy client-side (O29).</td>
-</tr>
-<tr>
-<td><strong>Platform</strong></td>
-<td>Firebase Authentication, Firestore, and Storage integration.</td>
-<td><strong>High:</strong> implicit demo fallback on initialization failure (O36); no App Check client (O37); debug signing and iOS target (O38).</td>
+<td><strong>Chat, events &amp; academics</strong></td>
+<td>Participant-only reads/receipts, new DM creation + <code>attachment_url</code> photo schema + query limits (O27, O28).</td>
+<td>Peer policy roster binding (O29), event grade roster binding (O33), timetable concurrency (O30), atomic promotion (O31), inline Base64 size cap (O34), malformed-doc isolation (O35), localization (O41).</td>
 </tr>
 </tbody></table>
-<h3>Privacy posture</h3>
+<h3>Privacy posture &amp; what is not claimed</h3>
 <ul>
-<li>Chat is described as <strong>private to participants</strong>, not as end-to-end encrypted.</li>
-<li>Fee receipts are clearly labelled as samples and are not presented as paid billing records.</li>
-<li>Store orders are labelled as unverified requests until the school confirms payment.</li>
-<li>Digital passes are local previews and are not presented as Apple Wallet, Google Wallet, NFC credentials, or a campus-entry requirement.</li>
-<li>Library loans are labelled as sample data during the pilot.</li>
-<li>AI keys and prompts are not approved for real student data (O26).</li>
-<li>Student access is outside school hours.</li>
-</ul>
-<h3>What is not claimed</h3>
-<ul>
-<li>No production security certification, penetration test, or accessibility certification.</li>
-<li>No end-to-end encryption.</li>
-<li>No official election result.</li>
-<li>No payment, wallet, NFC, or campus-entry credential.</li>
-<li>No claim that passing tests close the audit findings.</li>
+<li>Chat is <strong>private to participants</strong>, not end-to-end encrypted; fee receipts are samples; store orders are offline office requests (no external website or payment gateway); Spirit Reactor is a visual pilot element with zero point impact; digital passes are app/PDF previews (not Apple/Google Wallet, NFC, or campus entry IDs); AI assistant keys/prompts remain unapproved for real student data (O26).</li>
+<li>No claim is made of production security certification, penetration testing, accessibility certification, or live Blaze Cloud Function deployment.</li>
 </ul>
 <h2>10. Audit results, quality, and release gates</h2>
 <h3>Current release decision</h3>
-<p><strong>Not cleared for production.</strong> The deep code audit dated 26 November 2026 covered baseline <code>9d0a559</code> and produced local repair commit <code>0beb87b</code> on branch <code>mustafa1</code>. It repaired 12 independently reproducible faults locally (F01–F12), but <strong>23 critical/high findings</strong> and <strong>21 medium/low findings</strong> remain open. No Cloud Functions are deployed. Live Firestore rules, indexes, Storage, billing, and production data were not verified. The build is suitable for code review and synthetic-data demonstration only.</p>
-<blockquote>
-<p><strong>Release rule.</strong> No live student, staff, medical, payment, or election data should be entered until gates G1–G3 are closed and independently verified. Passing analysis, tests, and desktop builds do not make this a production release.</p>
-</blockquote>
+<p><strong>Not cleared for production.</strong> Since the 26 November 2026 deep audit (<code>9d0a559</code>/<code>0beb87b</code>), eight engineering commits (<code>2e54a9a..13b791c</code>) plus the Batch 1 local security remediation fixed identity suspension/cache isolation/role parity (O04–O06, O44), notification spoofing (O07), claim self-approval (O08), Storage path/MIME ownership and trigger alignment (O09), order price bounds and live verified-only voucher claims (O21, O22), chat room/photo rules (O27, O28), trophy schema (O19), scannable vector QR PDFs (O24), Gemini 2.5 header auth (O25), fail-closed release startup (O36), Android signing / iOS 15.0 (O38), committed indexes (O42), and CI automation.</p>
+<p>However, <strong>Firebase Cloud Functions (requiring Blaze) are not deployed</strong>, <strong>Cloud Storage is not active live</strong>, <strong>Batch 1 rules updates are not yet deployed over the prior <code>13b791c</code> live ruleset</strong>, and <strong>server-owned points/sports/catalog/election authority</strong> remains open.</p>
 <h3>Verification results</h3>
 <table class="long-table">
 <thead>
 <tr>
 <th>Check</th>
 <th>Result</th>
+<th>Notes / Scope</th>
 </tr>
 </thead>
 <tbody><tr>
-<td>Flutter static analysis</td>
-<td>No issues</td>
+<td>Flutter static analysis (<code>flutter analyze --no-pub</code>)</td>
+<td><strong>No issues</strong></td>
+<td>Verified after final Batch 1 edits</td>
 </tr>
 <tr>
-<td>Flutter test suite</td>
-<td><strong>685 of 685 passing</strong></td>
+<td>Flutter automated test suite (<code>flutter test --no-pub</code>)</td>
+<td><strong>710 of 710 passing</strong></td>
+<td>22 test files, verified after final Batch 1 edits</td>
 </tr>
 <tr>
-<td>Firestore rules and election handler emulator suite</td>
-<td><strong>13 of 13 passing</strong></td>
+<td>Firestore + Storage Emulator security suite</td>
+<td><strong>28 of 28 passing</strong></td>
+<td><code>functions/test/security.test.js</code> (<code>--only firestore,storage</code>), verified after Batch 1 edits</td>
 </tr>
 <tr>
-<td>Backend JavaScript syntax</td>
-<td>3 modules pass</td>
+<td>Backend JavaScript syntax (<code>index.js</code>, <code>elections-v2.js</code>, <code>library-v2.js</code>)</td>
+<td><strong>3 of 3 passing</strong></td>
+<td><code>npm run check</code> (<code>node --check</code>), host Node; CI pins Node 22</td>
 </tr>
 <tr>
-<td>Windows release build</td>
-<td>Pass</td>
+<td>GitHub Actions CI workflow (<code>.github/workflows/ci.yml</code>)</td>
+<td><strong>Configured</strong></td>
+<td>Runs <code>flutter analyze</code>, <code>flutter test</code>, and Firestore+Storage emulator tests</td>
 </tr>
 <tr>
-<td>Web release build</td>
-<td>Pass; CupertinoIcons font warning remains</td>
+<td>Live Firestore rules</td>
+<td><strong>Stale vs local</strong></td>
+<td>Prior ruleset deployed at <code>13b791c</code>; Batch 1 <code>firestore.rules</code> hardenings await deploy</td>
 </tr>
 <tr>
-<td>npm dependency audit</td>
-<td>10 moderate, 0 high, 0 critical (including development dependencies)</td>
+<td>Live Cloud Functions &amp; Cloud Storage</td>
+<td><strong>None deployed / inactive</strong></td>
+<td>Blocked on Firebase Blaze billing &amp; IT provisioning</td>
 </tr>
 <tr>
-<td>Live Cloud Functions</td>
-<td><strong>None deployed</strong></td>
-</tr>
-<tr>
-<td>Android and iOS release builds</td>
-<td>Not produced</td>
-</tr>
-<tr>
-<td>Storage, App Check, and deployed integration tests</td>
-<td>Not completed</td>
+<td>Release binaries (Android APK, Windows, Web)</td>
+<td><strong>Not rebuilt post-Batch 1</strong></td>
+<td>Previously built cleanly at <code>13b791c</code> (with <code>key.properties</code> signing); iOS release build requires macOS</td>
 </tr>
 </tbody></table>
-<p><strong>Verification limits.</strong> No physical-device testing, accessibility certification, penetration test, Storage emulator suite, or deployed HTTP/Auth/App Check integration test was completed. Backend tests ran on host Node 24; deployment is pinned to Node 22, whose parity is unverified. Flutter dependency inspection found 71 outdated entries; no current advisory, retracted, or discontinued flags were observed, but outdated is not the same as safe.</p>
-<h3>Remaining findings by theme</h3>
-<table class="long-table">
-<thead>
-<tr>
-<th>Theme</th>
-<th>References</th>
-<th>Release effect</th>
-</tr>
-</thead>
-<tbody><tr>
-<td>Identity and account access</td>
-<td>O01–O06, O44</td>
-<td>Critical administrator bootstrap and scholar impersonation; suspension, stale roles, cache isolation.</td>
-</tr>
-<tr>
-<td>Trusted notifications, claims, and files</td>
-<td>O07–O09</td>
-<td>Forged notices; self-asserted claim verification; broad Storage access and overwritable evidence.</td>
-</tr>
-<tr>
-<td>Authoritative scoring and conduct</td>
-<td>O14–O18</td>
-<td>Non-atomic awards; no idempotency; honours and revocation inconsistencies.</td>
-</tr>
-<tr>
-<td>Elections</td>
-<td>O10–O12, O23</td>
-<td>No deployed service; privileged fallbacks; legacy vote path; path mismatch; client secret.</td>
-</tr>
-<tr>
-<td>Orders, vouchers, and passes</td>
-<td>O21–O24</td>
-<td>Zero-price orders; double redemption; client signing secret; non-scannable PDF export.</td>
-</tr>
-<tr>
-<td>Sports and timetable</td>
-<td>O19, O20, O30</td>
-<td>Trophy schema mismatch; lost concurrent updates; timetable reservation race.</td>
-</tr>
-<tr>
-<td>Client and platform security</td>
-<td>O03, O23, O25, O26, O36–O38</td>
-<td>Embedded secrets; local AI keys; implicit demo fallback; debug signing; iOS target mismatch.</td>
-</tr>
-<tr>
-<td>Chat, events, and data limits</td>
-<td>O27–O29, O32–O35, O40, O41</td>
-<td>Broken chat paths; event eligibility; pagination and document-size limits; malformed decoding; accessibility and localization.</td>
-</tr>
-<tr>
-<td>Backend and operations</td>
-<td>O11–O13, O37, O39, O42, O43</td>
-<td>No Functions, Storage setup, App Check, index manifest, FCM delivery, or complete CI gate.</td>
-</tr>
-</tbody></table>
-<p>The companion <a href="ASB_HOUSE_HUB_DEEP_AUDIT_2026-11-26.md">deep audit</a> records each finding, source entry point, severity, evidence, and required follow-up. Synthetic probes confirmed several authorization gaps and also rejected legitimate chat, photo-message, and trophy payloads; the probe results are diagnostic, not passing security assertions.</p>
 <h3>Release gates</h3>
 <table>
 <thead>
@@ -1340,65 +1114,63 @@
 </thead>
 <tbody><tr>
 <td><strong>G1 — Identity and access</strong></td>
-<td>O01–O06, O44</td>
-<td>Remove the bootstrap bypass; bind scholar identity to a trusted enrollment roster; enforce suspension centrally; purge scoped caches; publish one role contract.</td>
-<td><strong>OPEN</strong></td>
+<td>O01, O02, O04–O06, O44</td>
+<td>O04–O06, O44 closed locally; <strong>remaining:</strong> bind scholar identity to a pre-seeded school enrollment roster (O02) and resolve accepted bootstrap exception (O01) in governance phase.</td>
+<td><strong>PARTIAL (OPEN)</strong></td>
 </tr>
 <tr>
 <td><strong>G2 — Trusted records</strong></td>
-<td>O07–O11, O14–O23</td>
-<td>Server-own notification, claim, Storage, award, order, voucher, and election authority; make transitions atomic and idempotent; remove local-success fallbacks.</td>
+<td>O07–O23, O30, O31</td>
+<td>O07–O09, O19, O21–O22 hardened locally; <strong>remaining:</strong> server-own points/conduct (O14–O18), sports scoring (O20), elections (O10–O12), store catalog &amp; remove client HMAC secret (O23), atomic timetable/promotion (O30, O31).</td>
 <td><strong>OPEN</strong></td>
 </tr>
 <tr>
 <td><strong>G3 — Backend deployment</strong></td>
 <td>O11–O13, O25, O37, O42, O43</td>
-<td>Deploy Functions on Node 22 and verify parity; initialize Storage; publish rules and indexes; stage App Check; verify FCM; run live integration tests.</td>
+<td>O42 indexes &amp; CI emulator gate created; <strong>remaining:</strong> enable Blaze, deploy Functions on Node 22 (O11), activate Storage bucket, push Batch 1 <code>firestore.rules</code> + <code>storage.rules</code> + indexes, stage App Check (O37), verify FCM (O43).</td>
 <td><strong>OPEN</strong></td>
 </tr>
 <tr>
 <td><strong>G4 — Client and platform</strong></td>
-<td>O03, O23–O26, O36–O38</td>
-<td>Move secrets to platform-backed storage; remove embedded signing keys; configure release signing and iOS targets; complete export and sharing or withdraw the claim.</td>
-<td><strong>OPEN</strong></td>
+<td>O23–O26, O36–O38</td>
+<td>O24 vector QR, O25 Gemini 2.5, O36 fail-closed startup, O38 Android signing &amp; iOS 15.0 closed locally; <strong>remaining:</strong> rebuild after Batch 1, macOS iOS release build, physical device test, move AI key to server proxy / secure keystore (O26), remove client HMAC key (O23).</td>
+<td><strong>PARTIAL (OPEN)</strong></td>
 </tr>
 <tr>
 <td><strong>G5 — Verification and operations</strong></td>
-<td>O32–O35, O39–O41, O44</td>
-<td>Add pagination and aggregate limits; isolate corrupt records; run emulator and transport tests in CI; complete accessibility and localization review; add monitoring, backups, and dependency review.</td>
+<td>O32–O35, O39–O41</td>
+<td>O39 CI emulator/Flutter pipeline added &amp; query limits applied; <strong>remaining:</strong> hard pagination/aggregate caps (O32), roster-backed event/chat eligibility (O29, O33), corrupt-record isolation (O35), accessibility certification &amp; localization/RTL (O41), monitoring &amp; backups.</td>
 <td><strong>OPEN</strong></td>
 </tr>
 </tbody></table>
-<h3>What the audit does not change</h3>
-<p>The feature inventory in Section 5 remains useful for review: it shows what has been built. The audit changes the release decision, not the description of the screens. A module marked <span class="badge gated">GATED</span> may be demonstrated with synthetic data, but it is not approved for live school data.</p>
 <h2>11. Deployment readiness and phased rollout</h2>
 <h3>Current deployment state</h3>
 <table class="long-table">
 <thead>
 <tr>
 <th>Component</th>
-<th>State</th>
+<th>State as of 27 November 2026</th>
 </tr>
 </thead>
 <tbody><tr>
 <td>Cloud Functions</td>
-<td><strong>None deployed</strong> (read-only inventory)</td>
+<td><strong>None deployed</strong> (3 modules authored locally; requires Blaze)</td>
 </tr>
 <tr>
 <td>Firestore rules</td>
-<td>Hardened locally; not published or verified live</td>
+<td>Hardened through Batch 1 locally and emulator-tested (<strong>28/28</strong>); live project still runs prior <code>13b791c</code> ruleset until redeployed</td>
 </tr>
 <tr>
 <td>Storage</td>
-<td>Bucket not initialized; rules not emulator-tested</td>
+<td>Rules hardened and <strong>emulator-tested</strong> in Batch 1; live Cloud Storage bucket awaits Blaze initialization</td>
 </tr>
 <tr>
 <td>Indexes</td>
-<td>No committed manifest (O42)</td>
+<td><code>firestore.indexes.json</code> committed locally (O42); pending live deploy</td>
 </tr>
 <tr>
 <td>App Check</td>
-<td>No client integration (O37)</td>
+<td>No client or backend enforcement (O37)</td>
 </tr>
 <tr>
 <td>Push delivery</td>
@@ -1406,79 +1178,23 @@
 </tr>
 <tr>
 <td>Payments</td>
-<td>Not enabled</td>
+<td>Not enabled; store is an internal office request flow</td>
 </tr>
 <tr>
-<td>Android and iOS release builds</td>
-<td>Not produced; signing and target issues open (O38)</td>
+<td>Release builds</td>
+<td>Android keystore signing (<code>key.properties</code>), ProGuard fix, and iOS 15.0 target configured locally; APK/Windows/Web verified at <code>13b791c</code>; iOS archive requires macOS</td>
 </tr>
 </tbody></table>
-<h3>Stage 0 — Current: local build and synthetic demonstration</h3>
-<p><strong>Goal:</strong> Review the feature set and reproduce audit findings without live data.</p>
-<p><strong>Allowed:</strong> local builds, synthetic emulator data, code review, and a UI walkthrough.</p>
-<p><strong>Not allowed:</strong> live student, staff, medical, payment, or election data; production deployment; official notices or results.</p>
-<h3>Stage 1 — Remediation and closed evaluation (G1–G2)</h3>
-<p><strong>Goal:</strong> Close the identity and trusted-record gates.</p>
-<p><strong>Work:</strong> identity binding, suspension enforcement, cache isolation, notification and claim authorization, Storage ownership, atomic scoring, order and voucher authority, election fallback removal, and chat, sports, and timetable schema fixes.</p>
-<p><strong>Exit:</strong> adversarial emulator tests pass; no critical/high finding remains open; the administration reviews the evidence.</p>
-<h3>Stage 2 — Backend deployment and verification (G3)</h3>
-<p><strong>Goal:</strong> Make the hardened model operational.</p>
-<p><strong>Work:</strong> deploy Functions on Node 22; initialize Storage; publish rules and indexes; stage App Check; configure FCM; run live integration tests; confirm monitoring and backups.</p>
-<p><strong>Exit:</strong> the live environment is verified with synthetic accounts; callable services respond; rules, indexes, and Storage are confirmed.</p>
-<h3>Stage 3 — Supervised pilot (conditional)</h3>
-<p><strong>Goal:</strong> Validate staff workflows and out-of-school student access with a representative group. This stage may begin only after G1–G3 are closed and verified.</p>
-<p><strong>Included:</strong> identity, dashboard, academics, houses, claims, events, in-app notifications, chat, staff scanner, digital pass previews, and administration consoles.</p>
-<p><strong>Device policy:</strong> student participation is outside school hours; staff use school-authorised devices.</p>
-<p><strong>School IT actions:</strong></p>
-<ol>
-<li>Confirm administrator and staff accounts under the approved role contract.</li>
-<li>Seed the pilot roster, classes, timetable, and house allocations.</li>
-<li>Confirm the deployed rules, Functions, Storage, and indexes remain verified.</li>
-<li>Provide a named IT contact and an administrative sponsor.</li>
-</ol>
-<p><strong>Success looks like:</strong> staff can publish and review records; students can access their academic and house information outside school hours; the administration can review participation data without manual spreadsheets.</p>
-<h3>Stage 4 — Activated services and scale (G4–G5)</h3>
-<p><strong>Goal:</strong> Strengthen client, verification, and operational assurance, then enable optional services.</p>
-<table>
-<thead>
-<tr>
-<th>Capability</th>
-<th>Dependency</th>
-</tr>
-</thead>
-<tbody><tr>
-<td>Large circular and claim attachments</td>
-<td>Firebase Cloud Storage bucket</td>
-</tr>
-<tr>
-<td>Live server-verified elections on school-approved devices</td>
-<td>Deployed election Cloud Function</td>
-</tr>
-<tr>
-<td>Library checkout, return, and renewal</td>
-<td>Deployed library Cloud Function</td>
-</tr>
-<tr>
-<td>Background push notifications</td>
-<td>Firebase Cloud Messaging</td>
-</tr>
-<tr>
-<td>Online merchandise payment</td>
-<td>Approved payment gateway</td>
-</tr>
-<tr>
-<td>Secure AI proxy</td>
-<td>Server-side Gemini proxy</td>
-</tr>
-<tr>
-<td>Server-authoritative notifications</td>
-<td>Cloud Function fan-out</td>
-</tr>
-</tbody></table>
-<p><strong>Scale work:</strong> release signing and iOS targets, platform-backed secret storage, App Check enforcement, pagination and aggregate limits, accessibility and localization review, CI with emulator and transport tests, monitoring, backups, and dependency review.</p>
+<h3>Phased rollout</h3>
+<ul>
+<li><strong>Stage 0 — Current (Local Hardened &amp; Synthetic Demo):</strong> 710 Flutter tests + 28 Firestore/Storage emulator tests pass locally; Batch 1 security fixes verified. Allowed for code review, emulator demos, and administrative walkthroughs with synthetic data only.</li>
+<li><strong>Stage 1 — Remaining G1–G2 Server Authority:</strong> Close server-owned points/sports/catalog/election authority (O10, O14–O18, O20, O23) and pre-seeded enrollment roster binding (O02).</li>
+<li><strong>Stage 2 — Blaze Deployment &amp; Live Verification (G3):</strong> Provision Firebase Blaze, deploy Batch 1 <code>firestore.rules</code>, <code>storage.rules</code>, <code>firestore.indexes.json</code>, and Cloud Functions on Node 22, activate Storage &amp; FCM (O43), and stage App Check (O37).</li>
+<li><strong>Stage 3 — Conditional Supervised Pilot:</strong> Requires G1–G3 live verification and senior leadership sign-off for one grade and one house (students outside school hours, staff on authorised devices).</li>
+<li><strong>Stage 4 — Activated Services &amp; Scale (G4–G5):</strong> Server AI proxy (O26), official library lending (O13), optional official kiosk elections, iOS release build on macOS, assistive-technology accessibility certification, and localization/RTL review (O41).</li>
+</ul>
 <h2>12. Proposed pilot and success measures (conditional)</h2>
-<p>A live pilot is <strong>conditional on gates G1–G3</strong>. Until those gates close, only a closed, synthetic-data walkthrough is proposed. No student or staff should use the app with live school records before then.</p>
-<h3>Pilot shape</h3>
+<p>A live pilot remains <strong>conditional on closing and verifying G1–G3 live</strong>.</p>
 <table class="long-table">
 <thead>
 <tr>
@@ -1488,82 +1204,22 @@
 </thead>
 <tbody><tr>
 <td><strong>Prerequisites</strong></td>
-<td>G1–G3 closed and verified; no critical/high finding open; administration sign-off</td>
+<td>G1–G3 closed and verified on live Firebase (Blaze/Functions/Storage/updated rules); administration sign-off</td>
 </tr>
 <tr>
-<td><strong>Duration</strong></td>
-<td>Four school weeks</td>
-</tr>
-<tr>
-<td><strong>Participants</strong></td>
-<td>One grade and one house, plus the staff who support them</td>
+<td><strong>Duration &amp; scope</strong></td>
+<td>Four school weeks — one grade and one house, plus supporting staff</td>
 </tr>
 <tr>
 <td><strong>Device policy</strong></td>
-<td>Student participation is outside school hours; staff use school-authorised devices.</td>
+<td>Students outside school hours; staff on school-authorised devices</td>
 </tr>
 <tr>
-<td><strong>Administrative sponsor</strong></td>
-<td>A member of senior leadership</td>
-</tr>
-<tr>
-<td><strong>Technical contact</strong></td>
-<td>School IT or the app maintainer</td>
-</tr>
-<tr>
-<td><strong>Training</strong></td>
-<td>One staff orientation session and written student/family guidance; no device use during school hours</td>
-</tr>
-<tr>
-<td><strong>Support</strong></td>
-<td>In-app guidance, a shared feedback form, and a weekly review</td>
+<td><strong>Target metrics</strong></td>
+<td>≥70% weekly active pilot students; ≥90% timetable/homework viewers; ≥50 claims reviewed (&lt;2 days median); ≥80% RSVP conversion; ≥95% attendance visibility; &lt;2%/week support requests; ≥4/5 satisfaction</td>
 </tr>
 </tbody></table>
-<h3>Suggested success measures</h3>
-<table class="long-table">
-<thead>
-<tr>
-<th>Measure</th>
-<th>Target</th>
-</tr>
-</thead>
-<tbody><tr>
-<td>Weekly active students in the pilot group (outside school hours)</td>
-<td>70% or higher</td>
-</tr>
-<tr>
-<td>Students viewing timetable or homework each week (outside school hours)</td>
-<td>90% or higher</td>
-</tr>
-<tr>
-<td>Claims submitted and reviewed</td>
-<td>At least 50 with a median review time under 2 school days</td>
-</tr>
-<tr>
-<td>Event RSVP conversion</td>
-<td>80% of eligible students respond to at least one event</td>
-</tr>
-<tr>
-<td>Attendance visibility</td>
-<td>95% of pilot students can access a current attendance record</td>
-</tr>
-<tr>
-<td>Support requests</td>
-<td>Fewer than 2% of pilot users per week</td>
-</tr>
-<tr>
-<td>Student satisfaction</td>
-<td>4 out of 5 or higher</td>
-</tr>
-<tr>
-<td>Staff satisfaction</td>
-<td>4 out of 5 or higher</td>
-</tr>
-</tbody></table>
-<h3>Decision gate</h3>
-<p>At the end of the pilot, the administration reviews out-of-school usage, feedback, support load, and the Stage 4 activation checklist. A wider rollout is recommended only after the pilot targets are met and gates G4–G5 are closed.</p>
 <h2>13. Product roadmap</h2>
-<p>The roadmap starts with the audit gates. Feature additions follow only after the release-blocking work is complete.</p>
 <table class="long-table">
 <thead>
 <tr>
@@ -1573,103 +1229,55 @@
 </tr>
 </thead>
 <tbody><tr>
-<td>1</td>
-<td>Remove the bootstrap bypass; bind scholar identity to a trusted roster; enforce suspension; purge scoped caches</td>
-<td>G1</td>
-</tr>
-<tr>
-<td>2</td>
-<td>Server-own notifications, claims, Storage, awards, orders, vouchers, and election authority; make transitions atomic and idempotent</td>
-<td>G2</td>
-</tr>
-<tr>
-<td>3</td>
-<td>Align chat, sports, timetable, honours, promotion, and conduct schemas; remove local-success fallbacks</td>
-<td>G2</td>
-</tr>
-<tr>
-<td>4</td>
-<td>Deploy Functions on Node 22; initialize Storage; publish rules and indexes; stage App Check; verify FCM</td>
+<td align="center">1</td>
+<td>Deploy updated Batch 1 <code>firestore.rules</code>, <code>storage.rules</code>, and <code>firestore.indexes.json</code> once target environment is ready</td>
 <td>G3</td>
 </tr>
 <tr>
-<td>5</td>
-<td>Configure Android release signing and iOS deployment targets; move secrets to platform-backed storage; complete pass export and sharing</td>
-<td>G4</td>
+<td align="center">2</td>
+<td>Bind new scholar registrations to a trusted school enrollment roster (O02) and resolve accepted bootstrap admin exception (O01)</td>
+<td>G1 / Governance</td>
 </tr>
 <tr>
-<td>6</td>
-<td>Add pagination, aggregate document limits, corrupt-record isolation, and error reporting</td>
+<td align="center">3</td>
+<td>Enable Blaze and deploy Cloud Functions on Node 22: authoritative points/conduct ledger (O14–O18), live sports scoring (O20), election callable (O10–O12), store catalog &amp; server voucher signing (O23), library v2 (O13), and AI proxy (O26)</td>
+<td>G2 / G3</td>
+</tr>
+<tr>
+<td align="center">4</td>
+<td>Initialize Cloud Storage bucket, stage App Check (O37), and enable FCM background notifications (O43)</td>
+<td>G3</td>
+</tr>
+<tr>
+<td align="center">5</td>
+<td>Complete atomic timetable/promotion hardening (O30, O31), pagination/corrupt-doc isolation (O32, O35), and rebuild/test Android/iOS physical release packages on macOS &amp; Android (O38)</td>
+<td>G4 / G5</td>
+</tr>
+<tr>
+<td align="center">6</td>
+<td>Complete assistive-technology accessibility certification, localization/RTL (O41), monitoring, and backup drills</td>
 <td>G5</td>
 </tr>
 <tr>
-<td>7</td>
-<td>Add emulator and transport tests to CI; complete accessibility and localization review</td>
-<td>G5</td>
-</tr>
-<tr>
-<td>8</td>
-<td>Add monitoring, backups, recovery testing, budget alerts, and dependency review</td>
-<td>G5</td>
-</tr>
-<tr>
-<td>9</td>
-<td>Run the conditional supervised pilot for one grade and one house</td>
-<td>After G1–G3</td>
-</tr>
-<tr>
-<td>10</td>
-<td>Deploy the library service and replace sample loans</td>
-<td>After pilot</td>
-</tr>
-<tr>
-<td>11</td>
-<td>Enable background push notifications and a secure AI proxy</td>
-<td>After pilot</td>
-</tr>
-<tr>
-<td>12</td>
-<td>Add online payment or an official pay-at-office flow</td>
-<td>After pilot</td>
-</tr>
-<tr>
-<td>13</td>
-<td>Introduce named administrator accounts, MFA, and server-side roster authority</td>
-<td>Governance phase</td>
-</tr>
-<tr>
-<td>14</td>
-<td>Enable official elections on school-approved devices, if adopted</td>
-<td>Election service verified</td>
+<td align="center">7</td>
+<td>Run conditional 4-week supervised pilot, then activate Library, AI proxy, and optional kiosk elections</td>
+<td>Post-G1–G3</td>
 </tr>
 </tbody></table>
 <h2>14. Submission pack and approval request</h2>
 <h3>Documents in this submission</h3>
 <ol>
-<li><strong>ASB House Hub — Feature Catalogue &amp; Release Readiness Review</strong> (this document)</li>
-<li><strong>Deep Code Audit, 26 November 2026</strong> — 12 local repairs (F01–F12), 44 open findings (O01–O44), evidence, and synthetic probe results</li>
-<li><strong>Source code</strong> — Flutter application, Firebase rules, Cloud Functions, and automated tests</li>
-<li><strong>Verification summary</strong> — static analysis, 685 automated tests, 13 emulator tests, Windows and web builds, and dependency audit</li>
-<li><strong>Release gate and remediation plan</strong> — the gates and staged rollout described in Sections 10 and 11</li>
+<li><strong>ASB House Hub — Feature Catalogue &amp; Release Readiness Review</strong> (this document, updated 27 November 2026)</li>
+<li><strong>Deep Code Audit, 26 November 2026</strong> — <a href="../audits/ASB_HOUSE_HUB_DEEP_AUDIT_2026-11-26.md">docs/audits/ASB_HOUSE_HUB_DEEP_AUDIT_2026-11-26.md</a></li>
+<li><strong>Source code &amp; CI</strong> — Flutter app (84 Dart files), Firebase rules (<code>firestore.rules</code>, <code>storage.rules</code>, <code>firestore.indexes.json</code>), Cloud Functions (3 Node 22 modules), and GitHub Actions CI (<code>.github/workflows/ci.yml</code>)</li>
+<li><strong>Verification summary</strong> — <code>flutter analyze</code> clean, <strong>710/710</strong> Flutter tests passing, <strong>28/28</strong> Firestore + Storage Emulator security tests passing, <strong>3/3</strong> Cloud Functions JS checks clean</li>
 </ol>
 <h3>Approval requested</h3>
-<p>The administration is invited to:</p>
 <ol>
-<li><strong>Note the current release position:</strong> the application is not approved for production or live school data.</li>
-<li><strong>Approve a closed, synthetic-data technical walkthrough</strong> for code review and feature demonstration.</li>
-<li><strong>Nominate an administrative sponsor and a technical contact.</strong></li>
-<li><strong>Approve the remediation plan and gate reviews</strong> in Section 10.</li>
-<li><strong>Authorize school IT to prepare deployment only after G1 and G2 close.</strong> No live pilot should begin until G1–G3 are verified.</li>
+<li><strong>Note the current release position:</strong> Batch 1 security hardenings are verified locally, but live server deployment (Blaze Functions/Storage) and identity roster governance keep production clearance <strong>OPEN</strong>.</li>
+<li><strong>Approve a closed, synthetic-data technical walkthrough</strong> for code and UI review.</li>
+<li><strong>Confirm administrative sponsorship, school IT contact, and Firebase Blaze readiness policy</strong> before deploying Stage 2 services.</li>
 </ol>
-<h3>What the school receives</h3>
-<ul>
-<li>The application and its automated test suite.</li>
-<li>A feature catalogue that states what is built, what is gated, and what needs activation.</li>
-<li>The deep audit, including reproducible evidence and known-gap probes.</li>
-<li>A release gate plan with explicit exit criteria.</li>
-<li>A conditional pilot framework with measurable success criteria.</li>
-<li>A roadmap that starts with remediation, not feature expansion.</li>
-</ul>
 <h2>15. Appendix: module summary</h2>
 <table class="long-table appendix-table">
 <thead>
@@ -1677,107 +1285,107 @@
 <th>#</th>
 <th>Module</th>
 <th>Primary users</th>
-<th>Status and open references</th>
+<th>Status and notes (as of 27 November 2026)</th>
 </tr>
 </thead>
 <tbody><tr>
 <td>1</td>
 <td>Identity, onboarding, and account access</td>
 <td>All</td>
-<td><span class="badge gated">GATED</span> — O01–O06, O44</td>
+<td><span class="badge gated">GATED</span> — O04–O06, O36, O44 fixed locally; O01 accepted exception, O02 roster binding open</td>
 </tr>
 <tr>
 <td>2</td>
 <td>Home dashboard and navigation</td>
 <td>All</td>
-<td><span class="badge gated">GATED</span> — O01, O02, O07, O36</td>
+<td><span class="badge gated">GATED</span> — Startup/suspension/cache hardened locally; depends on O01/O02 and O43</td>
 </tr>
 <tr>
 <td>3</td>
 <td>Houses, standings, and spirit</td>
 <td>Students, staff</td>
-<td><span class="badge gated">GATED</span> — O14–O18</td>
+<td><span class="badge gated">GATED</span> (<span class="badge pilot">PILOT</span> widgets) — Spirit Reactor is visual-only; points ledger awaits server authority (O14–O18)</td>
 </tr>
 <tr>
 <td>4</td>
 <td>Academics</td>
 <td>Students, teachers, admin</td>
-<td><span class="badge gated">GATED</span> — O16, O30, O31, O34, O35</td>
+<td><span class="badge gated">GATED</span> — Role/index updates landed (O42); O16, O30, O31, O34, O35 open</td>
 </tr>
 <tr>
 <td>5</td>
 <td>Claims and recognition</td>
 <td>Students, staff, captains</td>
-<td><span class="badge gated">GATED</span> — O08, O09, O14–O18</td>
+<td><span class="badge gated">GATED</span> — O08, O09 fixed locally; server ledger (O14–O18) &amp; Storage deploy pending</td>
 </tr>
 <tr>
 <td>6</td>
 <td>Campus events</td>
 <td>All</td>
-<td><span class="badge gated">GATED</span> — O33</td>
+<td><span class="badge gated">GATED</span> — <code>events</code> index landed; grade eligibility (O33) awaits trusted roster (O02)</td>
 </tr>
 <tr>
 <td>7</td>
 <td>Notifications</td>
 <td>All</td>
-<td><span class="badge gated">GATED</span> — O07, O43</td>
+<td><span class="badge gated">GATED</span> — Sender scoping &amp; anti-spoof fixed (O07); FCM push (O43) &amp; rule deploy pending</td>
 </tr>
 <tr>
 <td>8</td>
 <td>Chat and groups</td>
 <td>Students, staff</td>
-<td><span class="badge gated">GATED</span> — O27–O29</td>
+<td><span class="badge gated">GATED</span> — Room creation (O27), photo schema (O28), stream limits fixed locally; O29 roster link open</td>
 </tr>
 <tr>
 <td>9</td>
 <td>Sports and trophies</td>
 <td>Students, staff</td>
-<td><span class="badge gated">GATED</span> — O19, O20</td>
+<td><span class="badge gated">GATED</span> — Trophy schema (O19) fixed; live scoring concurrency (O20) open</td>
 </tr>
 <tr>
 <td>10</td>
 <td>Elections and student leadership</td>
 <td>Students, council, admin</td>
-<td><span class="badge activation">ACTIVATION</span> — O10–O12, O23</td>
+<td><span class="badge activation">ACTIVATION</span> — UI fails closed cleanly; Functions (O11), lifecycle (O10), path (O12), secret (O23) open</td>
 </tr>
 <tr>
 <td>11</td>
 <td>School store and orders</td>
 <td>Students, admin</td>
-<td><span class="badge gated">GATED</span> — O21–O23</td>
+<td><span class="badge gated">GATED</span> — Internal catalogue + cart editing + price bounds (O21) &amp; HMAC-SHA256 claim checks (O22) fixed; server catalog/key removal (O23) open; no external site</td>
 </tr>
 <tr>
 <td>12</td>
 <td>Digital passes and documents</td>
 <td>Students, staff</td>
-<td><span class="badge pilot">PILOT</span> — O23, O24</td>
+<td><span class="badge pilot">PILOT</span> — Vector QR PDF export (O24) implemented; server signing (O23) &amp; Wallet/NFC roadmap</td>
 </tr>
 <tr>
 <td>13</td>
 <td>ID scanning and behaviour evaluation</td>
 <td>Staff, captains</td>
-<td><span class="badge gated">GATED</span> — O09, O17, O23</td>
+<td><span class="badge gated">GATED</span> — O09, O22 fixed locally; O17 atomic revocation &amp; O23 server key open</td>
 </tr>
 <tr>
 <td>14</td>
 <td>Library</td>
 <td>Students</td>
-<td><span class="badge pilot">PILOT</span> — O13</td>
+<td><span class="badge pilot">PILOT</span> — Sample UI active; <code>library-v2.js</code> (O13) awaits Blaze deploy</td>
 </tr>
 <tr>
 <td>15</td>
 <td>House AI assistant</td>
 <td>Students</td>
-<td><span class="badge pilot">PILOT</span> — O25, O26</td>
+<td><span class="badge pilot">PILOT</span> — Gemini 2.5 + header auth (O25) implemented; server proxy (O26) open</td>
 </tr>
 <tr>
 <td>16</td>
 <td>Administration and governance</td>
 <td>Administrators</td>
-<td><span class="badge gated">GATED</span> — O01, O02, O04, O10, O31, O44</td>
+<td><span class="badge gated">GATED</span> — O04–O06, O08, O44 fixed; O01, O02, O10, O31 open</td>
 </tr>
 </tbody></table>
-<p><strong>No module is production-cleared as of 26 November 2026.</strong> <span class="badge ready">READY</span> is the target state and is not currently assigned.</p>
+<p><strong>No module is production-cleared as of 27 November 2026.</strong> <span class="badge ready">READY</span> is the target state and is not currently assigned.</p>
 <p><em>Prepared for the Administration of The Asian School, Bahrain.</em></p>
 <p><em>ASB House Hub · Version 1.0.1 (Build 2) · November 2026</em></p>
 

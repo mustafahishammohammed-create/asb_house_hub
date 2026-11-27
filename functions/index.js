@@ -30,7 +30,8 @@ exports.verifyCertificateSignature = onObjectFinalized(async (event) => {
   const filePath = event.data.name || "";
   const bucketName = event.data.bucket;
 
-  // 1. Path Filtering: Target only uploads inside house_claims/{houseName}/{fileName}
+  // 1. Path Filtering: Target uploads under house_claims/{uploaderUid}/{fileName}
+  // (also accepts legacy house_claims/{houseName}/{fileName} paths)
   if (!filePath.startsWith("house_claims/")) {
     console.log(`[Skip] Upload not in house_claims directory: ${filePath}`);
     return null;
@@ -42,7 +43,7 @@ exports.verifyCertificateSignature = onObjectFinalized(async (event) => {
     return null;
   }
 
-  const houseName = parts[1].toLowerCase().trim();
+  const folderSegment = parts[1].trim();
   const rawFileName = parts.slice(2).join("/"); // Expected format: scholarNo_claimId.jpg (e.g., 123456_abc123.jpg)
   const fileName = rawFileName.split("/").pop() || rawFileName;
 
@@ -78,8 +79,13 @@ exports.verifyCertificateSignature = onObjectFinalized(async (event) => {
     console.warn(`[Skip] Scholar mismatch on claim "${claimId}" (object=${scholarNo}, doc=${existing.scholar_no || ""})`);
     return null;
   }
-  if (String(existing.house_name || "").toLowerCase().trim() !== houseName) {
-    console.warn(`[Skip] House mismatch on claim "${claimId}" (object=${houseName}, doc=${existing.house_name || ""})`);
+  const houseName = String(existing.house_name || "").toLowerCase().trim();
+  const expectedUid = String(existing.uid || existing.uploader_uid || "").trim();
+  const isLegacyHouseFolder =
+    ["ruby", "sapphire", "emerald", "topaz"].includes(folderSegment.toLowerCase()) &&
+    folderSegment.toLowerCase() === houseName;
+  if (!isLegacyHouseFolder && expectedUid && folderSegment !== expectedUid) {
+    console.warn(`[Skip] Uploader UID mismatch on claim "${claimId}" (object=${folderSegment}, doc=${expectedUid})`);
     return null;
   }
   if (generation && existing.ai_generation === generation) {

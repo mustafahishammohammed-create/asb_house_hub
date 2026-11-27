@@ -202,6 +202,9 @@ class _LoginScreenState extends State<LoginScreen> {
         error.contains('invalid-login-credentials')) {
       return 'Incorrect scholar number or password.';
     }
+    if (error.contains('user-disabled') || error.contains('suspended') || error.contains('deactivated')) {
+      return 'Your account has been suspended or deactivated. Please contact the school administrator.';
+    }
     if (error.contains('too-many-requests')) {
       return 'Too many attempts. Please try again later.';
     }

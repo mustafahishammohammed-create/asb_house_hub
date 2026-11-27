@@ -3715,24 +3715,58 @@ class AuthService {
     }
   }
 
-  /// Clear all cached profile and house preference.
-  static Future<void> clearCache() async {
+  /// Clear all cached profile, house preference, and scoped session caches.
+  static Future<void> clearCache({bool preservePublicCampusData = false}) async {
     try {
       _prefs ??= await SharedPreferences.getInstance();
-      await _prefs?.remove('cached_house_name');
-      await _prefs?.remove('cached_user_profile');
-      await _prefs?.remove('cached_scholar_no');
-      await _prefs?.remove('cached_uid');
-      await _prefs?.remove(_kCachedStandingsKey);
-      await _prefs?.remove(_kCachedAssignmentsDefaultKey);
-      await _prefs?.remove(_kCachedTimetableDefaultKey);
-      await _prefs?.remove(_kCachedExamsDefaultKey);
-      await _prefs?.remove(_kCachedReportCardsDefaultKey);
-      await _prefs?.remove(_kCachedAttendanceDefaultKey);
-      await _prefs?.remove(_kCachedEventsKey);
-      await _prefs?.remove(_kCachedBallotsKey);
-      await _prefs?.remove(_kCachedVoteReceiptsKey);
-      await _prefs?.remove(_kCachedAcademicClassesKey);
+      for (final key in [
+        'cached_house_name',
+        'cached_user_profile',
+        'cached_scholar_no',
+        'cached_uid',
+        _kCachedStandingsKey,
+        _kCachedAssignmentsDefaultKey,
+        _kCachedTimetableDefaultKey,
+        _kCachedExamsDefaultKey,
+        _kCachedReportCardsDefaultKey,
+        _kCachedAttendanceDefaultKey,
+        if (!preservePublicCampusData) _kCachedEventsKey,
+        if (!preservePublicCampusData) _kCachedBallotsKey,
+        if (!preservePublicCampusData) _kCachedDraftsKey,
+        _kCachedVoteReceiptsKey,
+        if (!preservePublicCampusData) _kCachedAcademicClassesKey,
+        _kCachedMedicalLeavesKey,
+        _kCachedNoticesKey,
+        _kCachedGazetteKey,
+        _kCachedSportsFixturesKey,
+        _kCachedPlayerSportsStatsKey,
+        _kCachedSportsTrophiesKey,
+        _kCachedVerifiedPlacementsKey,
+        _kLocalEventRegistrationsKey,
+        'asb_library_loans_cache',
+        'asb_ai_chat_history',
+        'house_standings_cached',
+      ]) {
+        await _prefs?.remove(key);
+      }
+      final dynamicKeys = (_prefs?.getKeys() ?? const <String>{}).where(
+        (k) =>
+            k.startsWith('cached_timetable_') ||
+            k.startsWith('cached_assignments_') ||
+            k.startsWith('cached_exams_') ||
+            k.startsWith('cached_report_cards_') ||
+            k.startsWith('cached_attendance_') ||
+            k.startsWith('cached_student_contribution_') ||
+            k.startsWith('cached_election_audit_') ||
+            k.startsWith('cached_match_events_') ||
+            k.startsWith('registered_campus_events_') ||
+            k.startsWith('cached_notices_') ||
+            k.startsWith('notifications_') ||
+            k.startsWith('saved_wallet_'),
+      ).toList();
+      for (final key in dynamicKeys) {
+        await _prefs?.remove(key);
+      }
       GlobalWalletStore.resetSession();
     } catch (_) {}
   }
@@ -4063,21 +4097,7 @@ class AuthService {
         );
       }
     } else {
-      _prefs ??= await SharedPreferences.getInstance();
-      for (final key in const [
-        'cached_profile',
-        'cached_scholar_no',
-        'cached_uid',
-        'cached_house',
-        'cached_class_placements',
-        'cached_notifications',
-        'cached_student_conduct',
-        'cached_pending_claims',
-        'cached_attendance',
-        'cached_report_cards',
-      ]) {
-        await _prefs?.remove(key);
-      }
+      await clearCache(preservePublicCampusData: true);
     }
 
     // Step 2: Swap local storage session cache atomically, preferring any
@@ -4104,9 +4124,20 @@ class AuthService {
       await cacheHouse(resolvedHouse);
     }
 
-    final prof = Map<String, dynamic>.from(account.cachedProfile);
-    if (freshLiveProf != null) {
-      prof.addAll(freshLiveProf);
+    final prof = freshLiveProf != null
+        ? Map<String, dynamic>.from(freshLiveProf)
+        : Map<String, dynamic>.from(account.cachedProfile);
+    final resolvedStatus =
+        (prof['status'] ?? 'active').toString().trim().toLowerCase();
+    if (_isFirebaseLive &&
+        (resolvedStatus == 'suspended' || resolvedStatus == 'deactivated')) {
+      await _auth.signOut().catchError((_) {});
+      await clearCache();
+      throw FirebaseAuthException(
+        code: 'user-disabled',
+        message:
+            'Your account has been $resolvedStatus. Please contact the school administrator.',
+      );
     }
     prof['scholar_no'] = resolvedScholar;
     if (prof['role'] == null || prof['role'].toString().isEmpty) {
@@ -4430,6 +4461,20 @@ class AuthService {
         debugPrint('Error retrieving live user profile on signIn: $e');
       }
 
+      final liveStatus = (liveProfile?['status'] ?? 'active')
+          .toString()
+          .trim()
+          .toLowerCase();
+      if (liveStatus == 'suspended' || liveStatus == 'deactivated') {
+        await _auth.signOut().catchError((_) {});
+        await clearCache();
+        throw FirebaseAuthException(
+          code: 'user-disabled',
+          message:
+              'Your account has been $liveStatus. Please contact the school administrator.',
+        );
+      }
+
       final inferred = inferHouseFromScholarNo(cleanScholar);
       // Do not invent a house when the authoritative profile has none. An
       // empty value surfaces as "unassigned" instead of silently placing the
@@ -4698,20 +4743,26 @@ class AuthService {
             .toLowerCase();
     final roleRaw = (prof['role'] ?? 'student').toString().trim().toLowerCase();
 
-    final isStaffOrAdmin =
+    final isSuperAdminRole =
         roleRaw == 'admin' ||
         roleRaw == 'super_admin' ||
+        roleRaw == 'administrator' ||
+        scholarNo.toLowerCase() == 'admin' ||
+        scholarNo == '11209' ||
+        HierarchyService.isSuperAdmin(scholarNo: scholarNo, role: roleRaw);
+    final isStaffOrAdmin =
+        isSuperAdminRole ||
         roleRaw == 'teacher' ||
         roleRaw == 'faculty' ||
         roleRaw == 'principal' ||
         roleRaw == 'staff' ||
-        scholarNo.toLowerCase() == 'admin' ||
-        scholarNo == '11209' ||
-        HierarchyService.isSuperAdmin(scholarNo: scholarNo, role: roleRaw) ||
         HierarchyService.isTeacherOrFaculty(
           scholarNo: scholarNo,
           role: roleRaw,
         );
+    final isActiveStatus =
+        (prof['status'] ?? 'active').toString().trim().toLowerCase() ==
+        'active';
 
     const validHouses = ['ruby', 'sapphire', 'emerald', 'topaz'];
     final hasValidHouse = validHouses.contains(houseRaw);
@@ -4742,8 +4793,10 @@ class AuthService {
     }
 
     final memberRecord = <String, dynamic>{
-      'active': true,
-      'role': isStaffOrAdmin ? 'admin' : 'student',
+      'active': isActiveStatus,
+      'role': isSuperAdminRole
+          ? 'admin'
+          : (isStaffOrAdmin ? 'teacher' : 'student'),
       'scholar_no': scholarNo.isNotEmpty
           ? scholarNo
           : (isStaffOrAdmin ? 'admin' : ''),
@@ -4835,44 +4888,47 @@ class AuthService {
             .toString()
             .trim();
 
-        // Check if device has locally verified placement for this user/scholar
-        final localSaved = getSavedAccounts();
-        for (final acc in localSaved) {
-          final accSNo = acc.scholarNo.trim().toLowerCase();
-          final targetSNo = docScholar.toLowerCase();
-          final parsedAcc = int.tryParse(accSNo);
-          final parsedTarget = int.tryParse(targetSNo);
-          final match =
-              accSNo == targetSNo ||
-              acc.uid.trim() == uid ||
-              (parsedAcc != null &&
-                  parsedTarget != null &&
-                  parsedAcc == parsedTarget);
-          if (match && acc.cachedProfile['class_verified'] == true) {
-            data['class_verified'] = true;
-            if (acc.cachedProfile['class_id'] != null) {
-              data['class_id'] = acc.cachedProfile['class_id'];
+        // Only apply local verified placement fallbacks when the server doc
+        // omits class verification state and Firebase is not authoritative.
+        if (!_isFirebaseLive) {
+          final localSaved = getSavedAccounts();
+          for (final acc in localSaved) {
+            final accSNo = acc.scholarNo.trim().toLowerCase();
+            final targetSNo = docScholar.toLowerCase();
+            final parsedAcc = int.tryParse(accSNo);
+            final parsedTarget = int.tryParse(targetSNo);
+            final match =
+                accSNo == targetSNo ||
+                acc.uid.trim() == uid ||
+                (parsedAcc != null &&
+                    parsedTarget != null &&
+                    parsedAcc == parsedTarget);
+            if (match && acc.cachedProfile['class_verified'] == true) {
+              data['class_verified'] = true;
+              if (acc.cachedProfile['class_id'] != null) {
+                data['class_id'] = acc.cachedProfile['class_id'];
+              }
+              if (acc.classLevel != null) data['class_level'] = acc.classLevel;
+              if (acc.division != null) data['division'] = acc.division;
+              break;
             }
-            if (acc.classLevel != null) data['class_level'] = acc.classLevel;
-            if (acc.division != null) data['division'] = acc.division;
-            break;
           }
-        }
 
-        final placements = getVerifiedClassPlacements();
-        final sKey = docScholar.toLowerCase();
-        final uKey = uid.toLowerCase();
-        final placement = placements[sKey] ?? placements[uKey];
-        if (placement != null && placement['class_verified'] == true) {
-          data['class_verified'] = true;
-          if (placement['class_id'] != null) {
-            data['class_id'] = placement['class_id'];
-          }
-          if (placement['class_level'] != null) {
-            data['class_level'] = placement['class_level'];
-          }
-          if (placement['division'] != null) {
-            data['division'] = placement['division'];
+          final placements = getVerifiedClassPlacements();
+          final sKey = docScholar.toLowerCase();
+          final uKey = uid.toLowerCase();
+          final placement = placements[sKey] ?? placements[uKey];
+          if (placement != null && placement['class_verified'] == true) {
+            data['class_verified'] = true;
+            if (placement['class_id'] != null) {
+              data['class_id'] = placement['class_id'];
+            }
+            if (placement['class_level'] != null) {
+              data['class_level'] = placement['class_level'];
+            }
+            if (placement['division'] != null) {
+              data['division'] = placement['division'];
+            }
           }
         }
 
@@ -4881,43 +4937,13 @@ class AuthService {
             .trim()
             .toLowerCase();
 
-        // Enforce super_admin role for verified administrators
+        // Enforce super_admin role for verified bootstrap administrators only.
+        // Do not let client-side admin_roster lookups override authoritative server roles.
         if (HierarchyService.isSuperAdmin(
           scholarNo: docScholar,
           role: currentRole,
         )) {
           data['role'] = 'super_admin';
-          if (currentRole != 'super_admin') {
-            doc.reference.update({'role': 'super_admin'}).catchError((_) {});
-          }
-        } else if (docScholar.isNotEmpty &&
-            (currentRole.isEmpty || currentRole == 'student')) {
-          try {
-            final rosterSnap = await _firestore
-                .collection('admin_roster')
-                .where('scholar_no', isEqualTo: docScholar)
-                .limit(1)
-                .get()
-                .timeout(
-                  const Duration(seconds: 4),
-                  onTimeout: () => throw Exception('Roster timeout'),
-                );
-            if (rosterSnap.docs.isNotEmpty) {
-              final slotData = rosterSnap.docs.first.data();
-              final rosterRole = (slotData['role'] ?? '').toString();
-              if (rosterRole.isNotEmpty) {
-                data['role'] = rosterRole;
-                doc.reference.update({'role': rosterRole}).catchError((_) {});
-              }
-              final rosterHouse = extractHouse(slotData);
-              if (rosterHouse != null && extractHouse(data) == null) {
-                data['house_name'] = rosterHouse;
-                doc.reference
-                    .update({'house_name': rosterHouse})
-                    .catchError((_) {});
-              }
-            }
-          } catch (_) {}
         }
         final h = extractHouse(data);
         if (h != null && h.isNotEmpty) {
@@ -4995,26 +5021,32 @@ class AuthService {
   }
 
   /// Canonical format for certificate storage in Cloud Storage.
-  /// Enforces: house_claims/{house}/{scholarNo}_{claimId}.jpg
+  /// Enforces: house_claims/{uploaderUid}/{scholarNo}_{claimId}.jpg
+  ///
+  /// The uploader UID is part of the path so Storage rules can bind every
+  /// object to one account. The house is retained in the Firestore claim, not
+  /// in the object path, so a house transfer cannot expose another house's
+  /// certificate folder.
   static String formatCertificateStoragePath({
-    required String house,
     required String scholarNo,
     required String claimId,
+    required String uploaderUid,
   }) {
-    final cleanHouse = house.trim().toLowerCase().isNotEmpty
-        ? house.trim().toLowerCase()
-        : 'general';
+    final cleanUid =
+        uploaderUid.trim().replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '');
+    final owner = cleanUid.isNotEmpty ? cleanUid : 'unknown';
     final cleanScholar = scholarNo.trim().replaceAll('_', '').isNotEmpty
         ? scholarNo.trim().replaceAll('_', '')
         : 'scholar';
     final cleanClaimId = claimId.trim().isNotEmpty
         ? claimId.trim()
         : 'claim_${DateTime.now().millisecondsSinceEpoch}';
-    return 'house_claims/$cleanHouse/${cleanScholar}_$cleanClaimId.jpg';
+    return 'house_claims/$owner/${cleanScholar}_$cleanClaimId.jpg';
   }
 
   /// Upload certificate with cloud storage and fallback Base64 data URI.
-  /// Enforces storage path: house_claims/{house}/{scholarNo}_{claimId}.jpg
+  /// Enforces storage path:
+  /// house_claims/{uploaderUid}/{scholarNo}_{claimId}.jpg
   Future<String> uploadCertificateImage({
     required Uint8List fileBytes,
     required String scholarNo,
@@ -5024,9 +5056,6 @@ class AuthService {
     final cleanScholar = scholarNo.trim().replaceAll('_', '').isNotEmpty
         ? scholarNo.trim().replaceAll('_', '')
         : 'scholar';
-    final cleanHouse = (house != null && house.trim().isNotEmpty)
-        ? house.trim().toLowerCase()
-        : (getCachedHouse() ?? 'general').toLowerCase();
 
     String effectiveClaimId = (claimId != null && claimId.trim().isNotEmpty)
         ? claimId.trim()
@@ -5038,10 +5067,11 @@ class AuthService {
         effectiveClaimId = 'claim_${DateTime.now().millisecondsSinceEpoch}';
       }
     }
+    final uploaderUid = currentUser?.uid ?? getCachedUid() ?? '';
     final storagePath = formatCertificateStoragePath(
-      house: cleanHouse,
       scholarNo: cleanScholar,
       claimId: effectiveClaimId,
+      uploaderUid: uploaderUid,
     );
 
     // On Windows desktop, use direct Firebase Storage REST upload to ensure GCS objects are created
@@ -5271,9 +5301,19 @@ class AuthService {
 
         final claimData = claimSnap.data() ?? {};
         final curStatus = (claimData['status'] ?? '').toString().toLowerCase();
-        if (curStatus == 'approved') {
-          // Already approved - abort duplicate credit
+        if (curStatus != 'pending') {
+          // Only pending claims can be decided once
           return;
+        }
+
+        final callerScholar = (getCachedScholarNo() ?? '').trim().toLowerCase();
+        final claimScholar =
+            (claimData['scholar_no'] ?? scholarNo ?? '').toString().trim();
+        if (callerScholar.isNotEmpty &&
+            claimScholar.toLowerCase() == callerScholar) {
+          throw Exception(
+            'Self-approval is not permitted. Another reviewer must verify this claim.',
+          );
         }
 
         // Authoritative values from server document
@@ -5282,9 +5322,7 @@ class AuthService {
             .toLowerCase()
             .trim();
         authPoints = (claimData['points'] as num?)?.toInt() ?? points;
-        authScholar = (claimData['scholar_no'] ?? scholarNo ?? '')
-            .toString()
-            .trim();
+        authScholar = claimScholar;
         authStudentName =
             (claimData['student_name'] ?? studentName ?? 'Scholar $authScholar')
                 .toString()
@@ -5388,6 +5426,7 @@ class AuthService {
             'timestamp': FieldValue.serverTimestamp(),
             'is_read': false,
             'type': 'claim_approved',
+            'sender_id': currentUser?.uid ?? '',
           });
         }
       } catch (_) {}
@@ -5449,6 +5488,7 @@ class AuthService {
             'timestamp': FieldValue.serverTimestamp(),
             'is_read': false,
             'type': 'claim_rejected',
+            'sender_id': currentUser?.uid ?? '',
           });
         }
       } catch (_) {}
@@ -5496,6 +5536,7 @@ class AuthService {
           'timestamp': FieldValue.serverTimestamp(),
           'is_read': false,
           'type': 'role_assigned',
+          'sender_id': currentUser?.uid ?? '',
         });
         return true;
       }
@@ -5583,6 +5624,7 @@ class AuthService {
           'timestamp': FieldValue.serverTimestamp(),
           'is_read': false,
           'type': 'role_assigned',
+          'sender_id': currentUser?.uid ?? '',
         });
       }
       return true;
@@ -5635,6 +5677,7 @@ class AuthService {
           'timestamp': FieldValue.serverTimestamp(),
           'is_read': false,
           'type': 'role_revoked',
+          'sender_id': currentUser?.uid ?? '',
         });
       }
       return true;
@@ -5766,6 +5809,7 @@ class AuthService {
           'timestamp': FieldValue.serverTimestamp(),
           'is_read': false,
           'type': 'conduct_record',
+          'sender_id': currentUser?.uid ?? '',
         });
       }
     } catch (_) {}
@@ -8933,6 +8977,7 @@ class AuthService {
     'staff',
     'admin',
     'super_admin',
+    'administrator',
     'faculty_advisor',
     'teacher_lead',
     'class_teacher',
@@ -9676,6 +9721,7 @@ class AuthService {
             'timestamp': FieldValue.serverTimestamp(),
             'is_read': false,
             'type': 'academic_promotion',
+            'sender_id': currentUser?.uid ?? '',
           });
         }
         try {
@@ -9855,6 +9901,7 @@ class AuthService {
             'timestamp': FieldValue.serverTimestamp(),
             'is_read': false,
             'type': notificationType,
+            'sender_id': currentUser?.uid ?? '',
           });
         } catch (e) {
           debugPrint(

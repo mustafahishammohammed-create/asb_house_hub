@@ -358,7 +358,7 @@ void main() {
       final circularBlock = storage.substring(
         storage.indexOf('match /circulars/{noticeId}/{fileName=**}'),
       );
-      expect(circularBlock, contains('allow read: if isSignedIn();'));
+      expect(circularBlock, contains('allow read: if isActiveUser();'));
       expect(circularBlock, contains('isPdf() && isUnderMaxSize(15)'));
     });
   });

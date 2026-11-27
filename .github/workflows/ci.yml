@@ -33,4 +33,4 @@ jobs:
           java-version: '21'
       - run: npm --prefix functions ci
       - run: npm --prefix functions run check
-      - run: npx --yes firebase-tools emulators:exec --project demo-asb-audit --config firebase.audit.json --only firestore "node --test functions/test/security.test.js"
+      - run: npx --yes firebase-tools emulators:exec --project demo-asb-audit --config firebase.audit.json --only firestore,storage "node --test functions/test/security.test.js"
