@@ -20,22 +20,29 @@ void main() async {
     return Material(
       color: Colors.transparent,
       child: Center(
-        child: Padding(
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 420),
+          margin: const EdgeInsets.all(16),
           padding: const EdgeInsets.all(16),
-          child: Column(
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E293B),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.amber.withValues(alpha: 0.45)),
+          ),
+          child: const Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 36),
-              const SizedBox(height: 8),
-              const Text(
+              Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 36),
+              SizedBox(height: 8),
+              Text(
                 'Something went wrong displaying this view.',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white70),
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 4),
-              const Text(
+              SizedBox(height: 4),
+              Text(
                 'Please retry, or contact the school administrator if this persists.',
-                style: TextStyle(fontSize: 11, color: Colors.white38),
+                style: TextStyle(fontSize: 11, color: Colors.white70),
                 textAlign: TextAlign.center,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,

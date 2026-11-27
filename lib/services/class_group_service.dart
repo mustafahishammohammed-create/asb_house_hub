@@ -50,7 +50,15 @@ class ClassGroupService {
     return (AuthService.getCachedProfile()?['uid'] ?? '').toString().trim();
   }
 
-  Map<String, dynamic>? get currentProfile => AuthService.getCachedProfile();
+  Map<String, dynamic>? get currentProfile {
+    final cached = AuthService.getCachedProfile();
+    if (cached == null) return null;
+    final uid = currentUserId;
+    if (uid.isEmpty || (cached['uid'] ?? '').toString().trim().isNotEmpty) {
+      return cached;
+    }
+    return <String, dynamic>{...cached, 'uid': uid};
+  }
 
   String get myClassId => ClassGroupAccess.resolveClassId(currentProfile);
 
@@ -188,8 +196,9 @@ class ClassGroupService {
     final uid = currentUserId;
     if (uid.isEmpty) return false;
 
-    var profile = currentProfile;
-    if (profile == null) return false;
+    final baseProfile = currentProfile;
+    if (baseProfile == null) return false;
+    Map<String, dynamic> profile = Map<String, dynamic>.from(baseProfile);
 
     try {
       // Prefer the live profile for the sender name/role, falling back to the
@@ -204,6 +213,7 @@ class ClassGroupService {
           profile = {...profile, ...?userDoc.data()};
         }
       } catch (_) {}
+      profile = {...profile, 'uid': uid};
 
       final cls = await _resolveAcademicClass(id);
       if (!ClassGroupAccess.canSend(profile, id, cls)) return false;
@@ -235,12 +245,12 @@ class ClassGroupService {
       });
 
       // Keep the group summary fresh without making the message dependent on
-      // it. Creating the header is restricted to the class teacher/senior admin.
-      try {
-        final groupRef = _firestore.collection('class_groups').doc(id);
-        final groupSnap = await groupRef.get();
-        if (!groupSnap.exists) {
-          if (ClassGroupAccess.canModerate(profile, id, cls)) {
+      // it. Creating and updating the header is restricted to class moderators.
+      if (ClassGroupAccess.canModerate(profile, id, cls)) {
+        try {
+          final groupRef = _firestore.collection('class_groups').doc(id);
+          final groupSnap = await groupRef.get();
+          if (!groupSnap.exists) {
             final now = DateTime.now();
             await groupRef.set(
               ClassGroup.defaultsFor(id)
@@ -248,17 +258,18 @@ class ClassGroupService {
                   .toMap(),
             );
           }
-        }
-        if (groupSnap.exists ||
-            ClassGroupAccess.canModerate(profile, id, cls)) {
+          final rawLastMessage =
+              cleanText.isEmpty ? 'Photo attachment' : cleanText;
+          final boundedLastMessage = rawLastMessage.length > 500
+              ? rawLastMessage.substring(0, 500)
+              : rawLastMessage;
           await groupRef.update({
-            'last_message':
-                cleanText.isEmpty ? 'Photo attachment' : cleanText,
+            'last_message': boundedLastMessage,
             'last_message_at': timestamp,
             'updated_at': timestamp,
           });
-        }
-      } catch (_) {}
+        } catch (_) {}
+      }
 
       // M6/test 62: only announcement-category messages fan out. The message is
       // already committed, so a notification failure never reverses the send.

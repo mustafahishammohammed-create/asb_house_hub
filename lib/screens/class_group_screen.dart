@@ -621,8 +621,19 @@ class _ClassGroupScreenState extends State<ClassGroupScreen> {
     return StreamBuilder<List<ClassGroupMessage>>(
       stream: _messagesStream,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError && !snapshot.hasData) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                'Unable to load class feed right now.',
+                style: TextStyle(color: isDark ? Colors.white60 : Colors.grey[700]),
+              ),
+            ),
+          );
         }
 
         final all = snapshot.data ?? const <ClassGroupMessage>[];
@@ -634,7 +645,11 @@ class _ClassGroupScreenState extends State<ClassGroupScreen> {
             return false;
           }
           return true;
-        }).toList();
+        }).toList()
+          ..sort((a, b) {
+            if (a.isPinned != b.isPinned) return a.isPinned ? -1 : 1;
+            return 0;
+          });
 
         if (visible.isEmpty) {
           return Center(
@@ -948,7 +963,7 @@ class _ClassGroupScreenState extends State<ClassGroupScreen> {
                     IconButton(
                       key: const Key('class_group_remove_attachment'),
                       tooltip: 'Remove attachment',
-                      onPressed: () => setState(() => _pendingAttachment = ''),
+                      onPressed: _isSending ? null : () => setState(() => _pendingAttachment = ''),
                       icon: const Icon(Icons.close_rounded, size: 16),
                     ),
                   ],
@@ -966,6 +981,7 @@ class _ClassGroupScreenState extends State<ClassGroupScreen> {
                   child: TextField(
                     key: const Key('class_group_message_field'),
                     controller: _messageController,
+                    enabled: !_isSending,
                     textInputAction: TextInputAction.send,
                     textCapitalization: TextCapitalization.sentences,
                     onSubmitted: (_) => _send(),

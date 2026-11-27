@@ -13,6 +13,7 @@ class CameraCaptureDialog extends StatefulWidget {
 class _CameraCaptureDialogState extends State<CameraCaptureDialog> {
   CameraController? _controller;
   bool _isInitializing = true;
+  bool _isCapturing = false;
   String? _errorMessage;
 
   @override
@@ -44,12 +45,14 @@ class _CameraCaptureDialogState extends State<CameraCaptureDialog> {
 
       await controller.initialize();
       if (!mounted) {
-        controller.dispose();
+        await controller.dispose();
         _controller = null;
         return;
       }
       setState(() => _isInitializing = false);
     } catch (e) {
+      await _controller?.dispose();
+      _controller = null;
       if (!mounted) {
         return;
       }
@@ -87,8 +90,11 @@ class _CameraCaptureDialogState extends State<CameraCaptureDialog> {
 
   Future<void> _takePhoto() async {
     final controller = _controller;
-    if (controller == null || !controller.value.isInitialized) return;
+    if (_isCapturing || controller == null || !controller.value.isInitialized) {
+      return;
+    }
 
+    setState(() => _isCapturing = true);
     try {
       final file = await controller.takePicture();
       final bytes = await file.readAsBytes();
@@ -97,6 +103,7 @@ class _CameraCaptureDialogState extends State<CameraCaptureDialog> {
       }
     } catch (e) {
       if (mounted) {
+        setState(() => _isCapturing = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to take photo: $e'),
@@ -210,24 +217,22 @@ class _CameraCaptureDialogState extends State<CameraCaptureDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Row(
-                  children: [
-                    Icon(
-                      Icons.camera_alt_rounded,
-                      color: Colors.blue,
-                      size: 26,
+                const Icon(
+                  Icons.camera_alt_rounded,
+                  color: Colors.blue,
+                  size: 26,
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text(
+                    'Live Camera Capture',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 18,
                     ),
-                    SizedBox(width: 10),
-                    Text(
-                      'Live Camera Capture',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 18,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
                 Semantics(
                   button: true,
@@ -267,11 +272,11 @@ class _CameraCaptureDialogState extends State<CameraCaptureDialog> {
                       borderRadius: BorderRadius.circular(18),
                     ),
                   ),
-                  onPressed: _takePhoto,
+                  onPressed: _isCapturing ? null : _takePhoto,
                   icon: const Icon(Icons.camera_rounded, size: 24),
-                  label: const Text(
-                    'Capture Photo',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                  label: Text(
+                    _isCapturing ? 'Capturing...' : 'Capture Photo',
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
                   ),
                 ),
               )
@@ -292,9 +297,11 @@ class _CameraCaptureDialogState extends State<CameraCaptureDialog> {
                       ),
                       onPressed: _pickFromFile,
                       icon: const Icon(Icons.folder_open_rounded),
-                      label: const Text(
-                        'Browse Image from Computer',
-                        style: TextStyle(
+                      label: Text(
+                        (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows)
+                            ? 'Browse Image from Computer'
+                            : 'Choose Image from Gallery',
+                        style: const TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 15,
                         ),

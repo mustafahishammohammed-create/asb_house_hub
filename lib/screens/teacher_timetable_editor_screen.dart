@@ -1501,7 +1501,7 @@ class _TeacherTimetableEditorScreenState
             AcademicImageUploadField(
               value: controller.imageUrl.isEmpty ? null : controller.imageUrl,
               label: 'Period Attachment / Board Photo',
-              onChanged: (url) => controller.imageUrl = url ?? '',
+              onChanged: (url) => setState(() => controller.imageUrl = url ?? ''),
             ),
           ],
         ),

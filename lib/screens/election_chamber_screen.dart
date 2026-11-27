@@ -719,9 +719,13 @@ class _ElectionChamberScreenState extends State<ElectionChamberScreen> {
                       ),
                     ),
                     const SizedBox(width: 6),
-                    Text(
-                      '#${candidate.scholarNo} • ${candidate.classLevel}',
-                      style: const TextStyle(color: Colors.grey, fontSize: 11),
+                    Flexible(
+                      child: Text(
+                        '#${candidate.scholarNo} • ${candidate.classLevel}',
+                        style: const TextStyle(color: Colors.grey, fontSize: 11),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ],
                 ),

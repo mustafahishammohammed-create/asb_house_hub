@@ -1337,6 +1337,7 @@ class _AppleFitnessBadgeModalState extends State<_AppleFitnessBadgeModal>
                       ),
                       onPressed: b.unlocked
                           ? () async {
+                              final messenger = ScaffoldMessenger.of(context);
                               Navigator.pop(context);
                               final shareText = '🏆 Official ASB House Hub Honour Award\n'
                                   'Award: ${b.title}\n'
@@ -1352,19 +1353,17 @@ class _AppleFitnessBadgeModalState extends State<_AppleFitnessBadgeModal>
                                 totalInfo: 'Official House Distinction Verified',
                                 qrData: 'ASB-HONOUR-${b.id}-${widget.scholarNo}',
                               );
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      pdfRes.success
-                                          ? '🛡️ ${b.title} certificate copied to clipboard & exported to PDF (${pdfRes.filePath})!'
-                                          : '🛡️ ${b.title} award details copied to clipboard!',
-                                    ),
-                                    backgroundColor: Colors.green,
-                                    duration: const Duration(seconds: 4),
+                              messenger.showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    pdfRes.success
+                                        ? '🛡️ ${b.title} certificate copied to clipboard & exported to PDF (${pdfRes.filePath})!'
+                                        : '🛡️ ${b.title} award details copied to clipboard!',
                                   ),
-                                );
-                              }
+                                  backgroundColor: Colors.green,
+                                  duration: const Duration(seconds: 4),
+                                ),
+                              );
                             }
                           : null,
                     ),

@@ -595,17 +595,28 @@ class VoucherSecurityService {
       // Verify against local wallet store before claiming
       final localMatch = GlobalWalletStore.orders.where((o) => o.receiptId == cleanBill);
       if (localMatch.isNotEmpty) {
+        final order = localMatch.first;
+        if (order.isClaimed) {
+          return (
+            success: false,
+            alreadyClaimed: true,
+            claimedBy: order.claimedBy,
+            claimedAt: order.claimedAt,
+            message: 'Voucher #$cleanBill has already been claimed locally.',
+          );
+        }
+        final claimedAt = DateTime.now();
         await GlobalWalletStore.markOrderClaimed(
           cleanBill,
           claimedBy: evaluatorName,
-          claimedAt: DateTime.now(),
+          claimedAt: claimedAt,
         );
 
         return (
           success: true,
           alreadyClaimed: false,
           claimedBy: evaluatorName,
-          claimedAt: DateTime.now(),
+          claimedAt: claimedAt,
           message: 'Voucher #$cleanBill verified locally (offline fulfillment).',
         );
       }

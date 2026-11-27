@@ -89,8 +89,14 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     } catch (_) {
       user = null;
     }
-    final inferredHouse = (user != null ? AuthService.inferHouseFromUser(user) : null) ?? 'emerald';
-    final inferredName = user?.displayName ?? 'Student';
+    final cachedProfile = AuthService.getCachedProfile();
+    final inferredHouse =
+        (user != null ? AuthService.inferHouseFromUser(user) : null) ??
+            AuthService.extractHouse(cachedProfile) ??
+            'emerald';
+    final inferredName = user?.displayName ??
+        cachedProfile?['full_name']?.toString() ??
+        'Student';
 
     if (cat == 'timetable' || type.startsWith('timetable')) {
       Navigator.push(
@@ -172,6 +178,34 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
           builder: (_) => const AcademicsScreen(initialTab: 'circulars'),
         ),
       );
+    } else if (cat == 'exam' || type.startsWith('exam')) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const AcademicsScreen(initialTab: 'exams'),
+        ),
+      );
+    } else if (cat == 'homework' || cat == 'assignment' || type.startsWith('homework')) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const AcademicsScreen(initialTab: 'homework'),
+        ),
+      );
+    } else if (cat == 'attendance' || type.startsWith('attendance')) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const AcademicsScreen(initialTab: 'attendance'),
+        ),
+      );
+    } else if (cat == 'report_card' || cat == 'grades' || type.startsWith('report')) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const AcademicsScreen(initialTab: 'reports'),
+        ),
+      );
     }
   }
 
@@ -239,8 +273,33 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
       body: StreamBuilder<List<AppNotification>>(
         stream: _stream,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+          if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError && !snapshot.hasData) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.notifications_paused_rounded, size: 48, color: Colors.orangeAccent),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Could not load notifications right now.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: () => setState(() {}),
+                      icon: const Icon(Icons.refresh_rounded, size: 18),
+                      label: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
+            );
           }
           final notifications = snapshot.data ?? const <AppNotification>[];
           final unread = AppNotification.unreadCount(notifications);

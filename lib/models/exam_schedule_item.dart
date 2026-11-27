@@ -50,9 +50,11 @@ class ExamScheduleItem implements Comparable<ExamScheduleItem> {
   bool isUrgent([DateTime? now]) {
     final target = now ?? DateTime.now();
     if (isInProgress(target) || isConcluded(target)) return false;
-    if (target.isAfter(examDateTime)) return false;
+    if (target.isAfter(examDateTime) || target.isAtSameMomentAs(examDateTime)) {
+      return false;
+    }
     final diff = examDateTime.difference(target);
-    return diff.inHours < 24 && diff.inMinutes > 0;
+    return diff > Duration.zero && diff.inHours < 24;
   }
 
   /// Duration until exam begins.
@@ -82,10 +84,14 @@ class ExamScheduleItem implements Comparable<ExamScheduleItem> {
       return 'Starts in ${mins > 0 ? mins : 1}m';
     } else if (diff.inHours < 24) {
       return 'Starts in ${diff.inHours} hours';
-    } else if (diff.inDays == 1) {
-      return 'Starts Tomorrow';
     } else {
-      return 'Starts in ${diff.inDays} days';
+      final targetDay = DateTime(target.year, target.month, target.day);
+      final examDay = DateTime(examDateTime.year, examDateTime.month, examDateTime.day);
+      final calendarDays = examDay.difference(targetDay).inDays;
+      if (calendarDays <= 1) {
+        return 'Starts Tomorrow';
+      }
+      return 'Starts in $calendarDays days';
     }
   }
 
@@ -111,6 +117,7 @@ class ExamScheduleItem implements Comparable<ExamScheduleItem> {
     DateTime parseDate(dynamic val, DateTime fallback) {
       if (val is Timestamp) return val.toDate();
       if (val is DateTime) return val;
+      if (val is int) return DateTime.fromMillisecondsSinceEpoch(val);
       if (val is String && val.isNotEmpty) {
         return DateTime.tryParse(val) ?? fallback;
       }

@@ -65,21 +65,31 @@ void showAcademicImagePreview(BuildContext context, String imageUrl, String titl
                         final res = await http.get(Uri.parse(imageUrl));
                         if (res.statusCode == 200) {
                           bytes = res.bodyBytes;
+                        } else {
+                          throw Exception('Download failed (HTTP ${res.statusCode})');
                         }
                       }
-                      if (bytes != null) {
-                        final fileName = 'ASB_Image_${DateTime.now().millisecondsSinceEpoch}.jpg';
-                        final targetDir = io.Directory.systemTemp.path;
-                        final file = io.File('$targetDir${io.Platform.pathSeparator}$fileName');
-                        await file.writeAsBytes(bytes, flush: true);
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('✓ Image saved: ${file.path}'),
-                              backgroundColor: Colors.green,
-                            ),
-                          );
-                        }
+                      if (bytes.isEmpty) {
+                        throw Exception('Empty image data');
+                      }
+                      final fileName = 'ASB_Image_${DateTime.now().millisecondsSinceEpoch}.jpg';
+                      final home = io.Platform.environment['USERPROFILE'] ??
+                          io.Platform.environment['HOME'];
+                      final downloadsDir = (home != null && home.isNotEmpty)
+                          ? io.Directory('$home${io.Platform.pathSeparator}Downloads')
+                          : null;
+                      final targetDir = (downloadsDir != null && downloadsDir.existsSync())
+                          ? downloadsDir.path
+                          : io.Directory.systemTemp.path;
+                      final file = io.File('$targetDir${io.Platform.pathSeparator}$fileName');
+                      await file.writeAsBytes(bytes, flush: true);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('✓ Image saved: ${file.path}'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
                       }
                     } catch (e) {
                       if (context.mounted) {
@@ -148,12 +158,22 @@ class AcademicImageUploadField extends StatelessWidget {
     try {
       final xfile = await ImagePicker().pickImage(
         source: source,
-        imageQuality: 80,
-        maxWidth: 1200,
+        imageQuality: 72,
+        maxWidth: 960,
       );
       if (xfile != null) {
         final bytes = await xfile.readAsBytes();
-        onChanged('data:image/jpeg;base64,${base64Encode(bytes)}');
+        final encoded = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+        if (!context.mounted) return;
+        if (encoded.length > 900000) {
+          ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+            const SnackBar(
+              content: Text('Image is too large for upload (max ~650 KB). Please pick a smaller image.'),
+            ),
+          );
+          return;
+        }
+        onChanged(encoded);
       }
     } catch (e) {
       if (context.mounted) {

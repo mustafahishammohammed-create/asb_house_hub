@@ -685,14 +685,9 @@ class _AddSiblingModalState extends State<AddSiblingModal> {
         bottom: MediaQuery.of(context).viewInsets.bottom + 24,
       ),
       child: SingleChildScrollView(
-        child: CallbackShortcuts(
-          bindings: {
-            const SingleActivator(LogicalKeyboardKey.enter): _submitSiblingForm,
-            const SingleActivator(LogicalKeyboardKey.numpadEnter): _submitSiblingForm,
-          },
-          child: Form(
-            key: _formKey,
-            child: Column(
+        child: Form(
+          key: _formKey,
+          child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -862,53 +857,59 @@ class _AddSiblingModalState extends State<AddSiblingModal> {
                   ),
                 ],
                 const SizedBox(height: 16),
-                TextFormField(
-                  controller: _passwordController,
-                  obscureText: _obscurePassword,
-                  textInputAction: TextInputAction.done,
-                  onFieldSubmitted: (_) => _submitSiblingForm(),
-                  decoration: InputDecoration(
-                    labelText: 'Sibling Password',
-                    prefixIcon: Icon(
-                      Icons.lock_outline_rounded,
-                      color: previewColor,
-                    ),
-                    suffixIcon: Semantics(
-                      button: true,
-                      label: _obscurePassword ? 'Show password' : 'Hide password',
-                      child: IconButton(
-                        icon: Icon(
-                          _obscurePassword
-                              ? Icons.visibility_outlined
-                              : Icons.visibility_off_outlined,
-                          color: Colors.grey,
+                CallbackShortcuts(
+                  bindings: {
+                    const SingleActivator(LogicalKeyboardKey.enter): _submitSiblingForm,
+                    const SingleActivator(LogicalKeyboardKey.numpadEnter): _submitSiblingForm,
+                  },
+                  child: TextFormField(
+                    controller: _passwordController,
+                    obscureText: _obscurePassword,
+                    textInputAction: TextInputAction.done,
+                    onFieldSubmitted: (_) => _submitSiblingForm(),
+                    decoration: InputDecoration(
+                      labelText: 'Sibling Password',
+                      prefixIcon: Icon(
+                        Icons.lock_outline_rounded,
+                        color: previewColor,
+                      ),
+                      suffixIcon: Semantics(
+                        button: true,
+                        label: _obscurePassword ? 'Show password' : 'Hide password',
+                        child: IconButton(
+                          icon: Icon(
+                            _obscurePassword
+                                ? Icons.visibility_outlined
+                                : Icons.visibility_off_outlined,
+                            color: Colors.grey,
+                          ),
+                          tooltip: _obscurePassword ? 'Show password' : 'Hide password',
+                          onPressed: () {
+                            setState(() {
+                              _obscurePassword = !_obscurePassword;
+                            });
+                          },
                         ),
-                        tooltip: _obscurePassword ? 'Show password' : 'Hide password',
-                        onPressed: () {
-                          setState(() {
-                            _obscurePassword = !_obscurePassword;
-                          });
-                        },
+                      ),
+                      filled: true,
+                      fillColor: isDark
+                          ? const Color(0xFF1E293B)
+                          : const Color(0xFFF8FAFC),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(color: previewColor, width: 2),
                       ),
                     ),
-                    filled: true,
-                    fillColor: isDark
-                        ? const Color(0xFF1E293B)
-                        : const Color(0xFFF8FAFC),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(color: previewColor, width: 2),
-                    ),
+                    validator: (val) {
+                      if (val == null || val.trim().isEmpty) {
+                        return 'Please enter password.';
+                      }
+                      return null;
+                    },
                   ),
-                  validator: (val) {
-                    if (val == null || val.trim().isEmpty) {
-                      return 'Please enter password.';
-                    }
-                    return null;
-                  },
                 ),
                 const SizedBox(height: 24),
                 ElevatedButton(
@@ -950,7 +951,6 @@ class _AddSiblingModalState extends State<AddSiblingModal> {
             ),
           ),
         ),
-      ),
-    );
+      );
   }
 }

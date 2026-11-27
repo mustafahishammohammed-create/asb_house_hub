@@ -72,7 +72,14 @@ class _EventsScreenState extends State<EventsScreen> {
         ),
       );
     }
-    if (mounted) setState(() {});
+      if (mounted) {
+        _eventsStream = _authService.getEventsStream(
+          house: widget.userHouse,
+          includeDrafts: _isStaff,
+          gradeIndex: _viewerGrade,
+        );
+        setState(() {});
+      }
   }
 
   void _showMessage(String message, {bool error = false}) {
@@ -727,7 +734,10 @@ class _EventsScreenState extends State<EventsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Container(
                           padding: const EdgeInsets.symmetric(
@@ -751,8 +761,7 @@ class _EventsScreenState extends State<EventsScreen> {
                         if (AuthService.normalizeCampusHouse(
                               event.houseScope,
                             ) !=
-                            'all') ...[
-                          const SizedBox(width: 8),
+                            'all')
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 8,
@@ -775,9 +784,7 @@ class _EventsScreenState extends State<EventsScreen> {
                               ),
                             ),
                           ),
-                        ],
-                        if (!event.targetsAllGrades) ...[
-                          const SizedBox(width: 8),
+                        if (!event.targetsAllGrades)
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 8,
@@ -796,11 +803,8 @@ class _EventsScreenState extends State<EventsScreen> {
                               ),
                             ),
                           ),
-                        ],
-                        const Spacer(),
                         _buildStatusBadge(event, now),
-                        if (event.pointsMultiplier > 1.0) ...[
-                          const SizedBox(width: 6),
+                        if (event.pointsMultiplier > 1.0)
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 8,
@@ -820,7 +824,6 @@ class _EventsScreenState extends State<EventsScreen> {
                               ),
                             ),
                           ),
-                        ],
                       ],
                     ),
                     const SizedBox(height: 10),
@@ -1725,17 +1728,22 @@ class _EventsScreenState extends State<EventsScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setModalState) {
           Future<DateTime?> pickDateTime(DateTime initial) async {
+            final minDate = DateTime(now.year - 1);
+            final maxDate = DateTime(now.year + 3);
+            final clampedInitial = initial.isBefore(minDate)
+                ? minDate
+                : (initial.isAfter(maxDate) ? maxDate : initial);
             final date = await showDatePicker(
               context: ctx,
-              initialDate: initial,
-              firstDate: DateTime(now.year - 1),
-              lastDate: DateTime(now.year + 3),
+              initialDate: clampedInitial,
+              firstDate: minDate,
+              lastDate: maxDate,
             );
             if (date == null) return null;
             if (!ctx.mounted) return null;
             final time = await showTimePicker(
               context: ctx,
-              initialTime: TimeOfDay.fromDateTime(initial),
+              initialTime: TimeOfDay.fromDateTime(clampedInitial),
             );
             if (time == null) return null;
             return DateTime(
@@ -1793,7 +1801,7 @@ class _EventsScreenState extends State<EventsScreen> {
             final ok = existing == null
                 ? await _authService.createCampusEvent(draftEvent)
                 : await _authService.updateCampusEvent(draftEvent);
-            if (!mounted) return;
+            if (!ctx.mounted) return;
             setModalState(() => saving = false);
             if (!ok) {
               _showMessage(
@@ -2264,7 +2272,7 @@ class _EventsScreenState extends State<EventsScreen> {
                           ),
                           onPressed: () async {
                             final picked = await pickDateTime(startTime);
-                            if (picked == null) return;
+                            if (picked == null || !ctx.mounted) return;
                             setModalState(() {
                               startTime = picked;
                               if (!endTime.isAfter(startTime)) {
@@ -2302,7 +2310,7 @@ class _EventsScreenState extends State<EventsScreen> {
                           ),
                           onPressed: () async {
                             final picked = await pickDateTime(endTime);
-                            if (picked == null) return;
+                            if (picked == null || !ctx.mounted) return;
                             setModalState(() => endTime = picked);
                           },
                         ),
@@ -2437,6 +2445,11 @@ class _EventsScreenState extends State<EventsScreen> {
           );
         },
       ),
-    );
+    ).whenComplete(() {
+      titleController.dispose();
+      venueController.dispose();
+      descController.dispose();
+      pointsController.dispose();
+    });
   }
 }

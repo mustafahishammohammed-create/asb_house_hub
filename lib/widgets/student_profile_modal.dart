@@ -212,8 +212,17 @@ class _StudentProfileModalState extends State<StudentProfileModal>
                     runSpacing: 8,
                     children: [5, 10, 15, 25, 50].map((pts) {
                       final isSel = selectedPoints == pts;
+                      final isDarkDlg = Theme.of(dialogCtx).brightness == Brightness.dark;
                       return ChoiceChip(
-                        label: Text('+$pts PTS', style: TextStyle(fontWeight: FontWeight.w800, color: isSel ? Colors.white : Colors.green[800])),
+                        label: Text(
+                          '+$pts PTS',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: isSel
+                                ? Colors.white
+                                : (isDarkDlg ? Colors.greenAccent : Colors.green[800]),
+                          ),
+                        ),
                         selected: isSel,
                         selectedColor: Colors.green[600],
                         backgroundColor: Colors.green.withValues(alpha: 0.1),
@@ -280,33 +289,44 @@ class _StudentProfileModalState extends State<StudentProfileModal>
                   final reason = reasonController.text.trim().isEmpty
                       ? 'Commendable House Contribution'
                       : reasonController.text.trim();
+                  final targetScholar = (_dynamicScholarNo ?? '').trim().isNotEmpty
+                      ? _dynamicScholarNo!.trim()
+                      : widget.scholarNo;
                   Navigator.pop(ctx);
 
                   setState(() => _isProcessingAction = true);
                   final adminProfile = AuthService.getCachedProfile();
                   final reviewer = adminProfile?['full_name']?.toString() ?? 'Faculty Lead';
 
-                  await _authService.recordStudentConduct(
-                    scholarNo: widget.scholarNo,
-                    studentName: widget.studentName,
-                    houseName: widget.houseName,
-                    type: 'merit',
-                    points: selectedPoints,
-                    reason: reason,
-                    teacherName: reviewer,
-                    classLevel: widget.classLevel ?? 'Senior',
-                  );
-
-                  if (mounted) {
-                    setState(() => _isProcessingAction = false);
+                  try {
+                    await _authService.recordStudentConduct(
+                      scholarNo: targetScholar,
+                      studentName: widget.studentName,
+                      houseName: widget.houseName,
+                      type: 'merit',
+                      points: selectedPoints,
+                      reason: reason,
+                      teacherName: reviewer,
+                      classLevel: widget.classLevel ?? 'Senior',
+                    );
+                    parentMessenger.showSnackBar(
+                      SnackBar(
+                        content: Text('Awarded +$selectedPoints PTS to ${widget.studentName} (${widget.houseName.toUpperCase()})!'),
+                        backgroundColor: Colors.green[700],
+                      ),
+                    );
+                  } catch (e) {
+                    parentMessenger.showSnackBar(
+                      SnackBar(
+                        content: Text('Failed to award merits: $e'),
+                        backgroundColor: Colors.redAccent,
+                      ),
+                    );
+                  } finally {
+                    if (mounted) {
+                      setState(() => _isProcessingAction = false);
+                    }
                   }
-
-                  parentMessenger.showSnackBar(
-                    SnackBar(
-                      content: Text('Awarded +$selectedPoints PTS to ${widget.studentName} (${widget.houseName.toUpperCase()})!'),
-                      backgroundColor: Colors.green[700],
-                    ),
-                  );
                 },
               ),
             ],
@@ -385,8 +405,17 @@ class _StudentProfileModalState extends State<StudentProfileModal>
                     runSpacing: 8,
                     children: [5, 10, 15, 25].map((pts) {
                       final isSel = selectedPoints == pts;
+                      final isDarkDlg = Theme.of(dialogCtx).brightness == Brightness.dark;
                       return ChoiceChip(
-                        label: Text('-$pts PTS', style: TextStyle(fontWeight: FontWeight.w800, color: isSel ? Colors.white : Colors.red[800])),
+                        label: Text(
+                          '-$pts PTS',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: isSel
+                                ? Colors.white
+                                : (isDarkDlg ? Colors.redAccent : Colors.red[800]),
+                          ),
+                        ),
                         selected: isSel,
                         selectedColor: Colors.redAccent,
                         backgroundColor: Colors.red.withValues(alpha: 0.1),
@@ -453,33 +482,44 @@ class _StudentProfileModalState extends State<StudentProfileModal>
                   final reason = reasonController.text.trim().isEmpty
                       ? 'Conduct Infraction'
                       : reasonController.text.trim();
+                  final targetScholar = (_dynamicScholarNo ?? '').trim().isNotEmpty
+                      ? _dynamicScholarNo!.trim()
+                      : widget.scholarNo;
                   Navigator.pop(ctx);
 
                   setState(() => _isProcessingAction = true);
                   final adminProfile = AuthService.getCachedProfile();
                   final reviewer = adminProfile?['full_name']?.toString() ?? 'Faculty Lead';
 
-                  await _authService.recordStudentConduct(
-                    scholarNo: widget.scholarNo,
-                    studentName: widget.studentName,
-                    houseName: widget.houseName,
-                    type: 'demerit',
-                    points: selectedPoints,
-                    reason: reason,
-                    teacherName: reviewer,
-                    classLevel: widget.classLevel ?? 'Senior',
-                  );
-
-                  if (mounted) {
-                    setState(() => _isProcessingAction = false);
+                  try {
+                    await _authService.recordStudentConduct(
+                      scholarNo: targetScholar,
+                      studentName: widget.studentName,
+                      houseName: widget.houseName,
+                      type: 'demerit',
+                      points: selectedPoints,
+                      reason: reason,
+                      teacherName: reviewer,
+                      classLevel: widget.classLevel ?? 'Senior',
+                    );
+                    parentMessenger.showSnackBar(
+                      SnackBar(
+                        content: Text('Issued -$selectedPoints PTS Demerit to ${widget.studentName} (${widget.houseName.toUpperCase()}).'),
+                        backgroundColor: Colors.red[700],
+                      ),
+                    );
+                  } catch (e) {
+                    parentMessenger.showSnackBar(
+                      SnackBar(
+                        content: Text('Failed to issue demerit: $e'),
+                        backgroundColor: Colors.redAccent,
+                      ),
+                    );
+                  } finally {
+                    if (mounted) {
+                      setState(() => _isProcessingAction = false);
+                    }
                   }
-
-                  parentMessenger.showSnackBar(
-                    SnackBar(
-                      content: Text('Issued -$selectedPoints PTS Demerit to ${widget.studentName} (${widget.houseName.toUpperCase()}).'),
-                      backgroundColor: Colors.red[700],
-                    ),
-                  );
                 },
               ),
             ],
@@ -491,15 +531,20 @@ class _StudentProfileModalState extends State<StudentProfileModal>
 }
 
   void _openDirectChat(BuildContext context) async {
+    if (_isProcessingAction) return;
+    setState(() => _isProcessingAction = true);
+    final targetScholar = (_dynamicScholarNo ?? '').trim().isNotEmpty
+        ? _dynamicScholarNo!.trim()
+        : widget.scholarNo;
     final currentUid = AuthService.getCachedProfile()?['uid']?.toString() ?? '';
     final myHouse = AuthService.getCachedHouse() ?? 'ruby';
 
     // Find student UID if possible
-    String otherUid = 'student_${widget.scholarNo}';
+    String otherUid = 'student_$targetScholar';
     try {
       final snap = await FirebaseFirestore.instance
           .collection('users')
-          .where('scholar_no', isEqualTo: widget.scholarNo)
+          .where('scholar_no', isEqualTo: targetScholar)
           .limit(1)
           .get()
           .timeout(const Duration(seconds: 3));
@@ -511,6 +556,9 @@ class _StudentProfileModalState extends State<StudentProfileModal>
     final uids = [currentUid.isNotEmpty ? currentUid : 'admin', otherUid]..sort();
     final roomId = '${uids[0]}_${uids[1]}';
 
+    if (mounted) {
+      setState(() => _isProcessingAction = false);
+    }
     if (!context.mounted) return;
     Navigator.pop(context); // Close bottom sheet
     Navigator.push(
@@ -519,7 +567,7 @@ class _StudentProfileModalState extends State<StudentProfileModal>
         builder: (_) => ChatRoomScreen(
           roomId: roomId,
           otherUserName: widget.studentName,
-          otherUserRole: 'Scholar #${widget.scholarNo}',
+          otherUserRole: 'Scholar #$targetScholar',
           otherUserId: otherUid,
           otherUserHouse: widget.houseName,
           myUserHouse: myHouse,
@@ -959,11 +1007,13 @@ class _StudentProfileModalState extends State<StudentProfileModal>
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      isMerit ? '+$pts PTS' : '$pts PTS',
+                      isMerit ? '+$pts PTS' : '-$pts PTS',
                       style: TextStyle(
                         fontWeight: FontWeight.w900,
                         fontSize: 12,
-                        color: isMerit ? Colors.green[800] : Colors.redAccent,
+                        color: isMerit
+                            ? (isDark ? Colors.greenAccent : Colors.green[800])
+                            : Colors.redAccent,
                       ),
                     ),
                   ),

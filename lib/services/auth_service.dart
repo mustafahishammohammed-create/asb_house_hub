@@ -1904,9 +1904,7 @@ class AuthService {
             .map((doc) => ExamScheduleItem.fromFirestore(doc))
             .toList();
         exams.sort();
-        if (exams.isNotEmpty) {
-          cacheExamSchedule(exams, classLevel: cLevel, subject: subject);
-        }
+        cacheExamSchedule(exams, classLevel: cLevel, subject: subject);
         return exams;
       });
     } catch (_) {
@@ -2008,35 +2006,95 @@ class AuthService {
     }
 
     // 2. Always update local write-through memory cache for affected grades
-    final userClass =
-        getCachedProfile()?['class_level']?.toString() ?? 'Grade 10';
     for (final grade in targetGrades) {
-      if (userClass.toLowerCase().contains(grade.toLowerCase())) {
-        final item = ExamScheduleItem(
-          id: examId,
-          subject: cleanSubject,
-          paperTitle: paperTitle.trim().isNotEmpty
-              ? paperTitle.trim()
-              : '$cleanSubject Examination',
-          examDateTime: examDateTime,
-          durationMinutes: durationMinutes,
-          examHall: examHall.trim().isNotEmpty
-              ? examHall.trim()
-              : 'Main Examination Hall',
-          seatRow: seatRow.trim().isNotEmpty
-              ? seatRow.trim()
-              : 'General Seating',
-          syllabusTopics: syllabusTopics,
-          readingMaterials: readingMaterials,
-          maxMarks: maxMarks,
-          classLevel: grade,
-          imageUrl: imageUrl,
-        );
-        final existing = getCachedExamSchedule(classLevel: grade);
-        final updated = [item, ...existing.where((e) => e.id != item.id)];
-        cacheExamSchedule(updated, classLevel: grade);
+      final item = ExamScheduleItem(
+        id: examId,
+        subject: cleanSubject,
+        paperTitle: paperTitle.trim().isNotEmpty
+            ? paperTitle.trim()
+            : '$cleanSubject Examination',
+        examDateTime: examDateTime,
+        durationMinutes: durationMinutes,
+        examHall: examHall.trim().isNotEmpty
+            ? examHall.trim()
+            : 'Main Examination Hall',
+        seatRow: seatRow.trim().isNotEmpty
+            ? seatRow.trim()
+            : 'General Seating',
+        syllabusTopics: syllabusTopics,
+        readingMaterials: readingMaterials,
+        maxMarks: maxMarks,
+        classLevel: grade,
+        imageUrl: imageUrl,
+      );
+      final existing = getCachedExamSchedule(classLevel: grade);
+      final updated = [item, ...existing.where((e) => e.id != item.id)]..sort();
+      cacheExamSchedule(updated, classLevel: grade);
+    }
+  }
+
+  /// Update an existing mid-term exam schedule entry for its target class level.
+  Future<void> updateExamScheduleItem(ExamScheduleItem item) async {
+    final cLevel = item.classLevel.trim().isNotEmpty
+        ? item.classLevel.trim()
+        : (getCachedProfile()?['class_level']?.toString() ?? 'Grade 10');
+    final normalized = item.copyWith(classLevel: cLevel);
+
+    if (_isFirebaseLive) {
+      try {
+        if (firestoreFailureSimulated != null) {
+          throw firestoreFailureSimulated!;
+        }
+        await _firestore
+            .collection('classes')
+            .doc(cLevel)
+            .collection('midterm_exams')
+            .doc(normalized.id)
+            .set(normalized.toMap(), SetOptions(merge: true));
+      } catch (e) {
+        if (!_isNoAppException(e)) {
+          debugPrint('Firestore updateExamScheduleItem failed: $e');
+          rethrow;
+        }
       }
     }
+
+    final existing = getCachedExamSchedule(classLevel: cLevel);
+    final updated = [normalized, ...existing.where((e) => e.id != normalized.id)]..sort();
+    cacheExamSchedule(updated, classLevel: cLevel);
+  }
+
+  /// Delete a mid-term exam schedule entry for its target class level.
+  Future<void> deleteExamScheduleItem({
+    required String examId,
+    required String classLevel,
+  }) async {
+    final cLevel = classLevel.trim().isNotEmpty
+        ? classLevel.trim()
+        : (getCachedProfile()?['class_level']?.toString() ?? 'Grade 10');
+
+    if (_isFirebaseLive) {
+      try {
+        if (firestoreFailureSimulated != null) {
+          throw firestoreFailureSimulated!;
+        }
+        await _firestore
+            .collection('classes')
+            .doc(cLevel)
+            .collection('midterm_exams')
+            .doc(examId)
+            .delete();
+      } catch (e) {
+        if (!_isNoAppException(e)) {
+          debugPrint('Firestore deleteExamScheduleItem failed: $e');
+          rethrow;
+        }
+      }
+    }
+
+    final existing = getCachedExamSchedule(classLevel: cLevel);
+    final updated = existing.where((e) => e.id != examId).toList();
+    cacheExamSchedule(updated, classLevel: cLevel);
   }
 
   static const String _kCachedReportCardsPrefix = 'cached_report_cards_';
@@ -2181,14 +2239,21 @@ class AuthService {
             }
             return cards;
           })
-          .handleError((error) {
-            debugPrint('Report cards stream error: $error');
-            return getCachedReportCards(
-              classLevel: cLevel,
-              scholarNo: sNo,
-              termName: effectiveTerm,
-            );
-          });
+          .transform(
+            StreamTransformer<List<AcademicReportCard>,
+                List<AcademicReportCard>>.fromHandlers(
+              handleError: (error, stackTrace, sink) {
+                debugPrint('Report cards stream error: $error');
+                sink.add(
+                  getCachedReportCards(
+                    classLevel: cLevel,
+                    scholarNo: sNo,
+                    termName: effectiveTerm,
+                  ),
+                );
+              },
+            ),
+          );
     } catch (_) {
       return Stream.value(
         getCachedReportCards(
@@ -4964,27 +5029,28 @@ class AuthService {
         : null;
 
     try {
-      // 1. Try local Firestore cache or quick server read with 3s fallback
+      // 1. Prefer live server read so suspensions/role changes apply immediately,
+      // falling back to local Firestore cache only if offline or timed out.
       DocumentSnapshot<Map<String, dynamic>>? doc;
       try {
         doc = await _firestore
             .collection('users')
             .doc(uid)
-            .get(const GetOptions(source: Source.cache));
-      } catch (_) {}
-
-      if (doc == null || !doc.exists) {
-        doc = await _firestore
-            .collection('users')
-            .doc(uid)
-            .get()
+            .get(const GetOptions(source: Source.server))
             .timeout(
-              const Duration(seconds: 3),
+              const Duration(seconds: 6),
               onTimeout: () => throw Exception('Firestore timeout'),
             );
+      } catch (_) {
+        try {
+          doc = await _firestore
+              .collection('users')
+              .doc(uid)
+              .get(const GetOptions(source: Source.cache));
+        } catch (_) {}
       }
 
-      if (doc.exists && doc.data() != null) {
+      if (doc != null && doc.exists && doc.data() != null) {
         final data = Map<String, dynamic>.from(doc.data()!);
         data['uid'] = uid;
         // Backfill the numeric grade used by campus-event targeting. Older
@@ -5381,11 +5447,15 @@ class AuthService {
 
   /// Stream approved claims for Admin and Council gallery view (bounded).
   Stream<QuerySnapshot> getApprovedClaimsStream({int limit = 150}) {
-    return _firestore
-        .collection('house_claims')
-        .where('status', isEqualTo: 'approved')
-        .limit(limit)
-        .snapshots();
+    try {
+      return _firestore
+          .collection('house_claims')
+          .where('status', isEqualTo: 'approved')
+          .limit(limit)
+          .snapshots();
+    } catch (_) {
+      return const Stream.empty();
+    }
   }
 
   /// Approve claim and add points to house standings, student contributor totals, and user profile.
@@ -8948,10 +9018,15 @@ class AuthService {
             cacheMedicalLeaves(list);
             return list;
           })
-          .handleError((e) {
-            debugPrint('Medical leaves stream error: $e');
-            return getCachedMedicalLeaves(scholarNo: scholarNo);
-          });
+          .transform(
+            StreamTransformer<List<MedicalLeaveRequest>,
+                List<MedicalLeaveRequest>>.fromHandlers(
+              handleError: (e, stackTrace, sink) {
+                debugPrint('Medical leaves stream error: $e');
+                sink.add(getCachedMedicalLeaves(scholarNo: scholarNo));
+              },
+            ),
+          );
     } catch (_) {
       return Stream.value(getCachedMedicalLeaves(scholarNo: scholarNo));
     }

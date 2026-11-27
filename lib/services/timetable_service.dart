@@ -794,10 +794,17 @@ class TimetableService {
           }
           return getCachedActiveVersion(classId, dayOfWeek, targetDate);
         })
-        .handleError((error) {
-          debugPrint('getActiveTimetableStream error: $error, falling back to cache');
-          return getCachedActiveVersion(classId, dayOfWeek, targetDate);
-        });
+        .transform(
+          StreamTransformer<ClassTimetableVersion?,
+              ClassTimetableVersion?>.fromHandlers(
+            handleError: (error, stackTrace, sink) {
+              debugPrint(
+                'getActiveTimetableStream error: $error, falling back to cache',
+              );
+              sink.add(getCachedActiveVersion(classId, dayOfWeek, targetDate));
+            },
+          ),
+        );
   }
 
   /// Stream of all versions (drafts, submitted, published, rejected) for a day schedule.
@@ -819,10 +826,17 @@ class TimetableService {
           cacheVersions(classId, dayOfWeek, versions);
           return versions;
         })
-        .handleError((error) {
-          debugPrint('getTimetableHistoryStream error: $error, falling back to cache');
-          return getCachedVersions(classId, dayOfWeek);
-        });
+        .transform(
+          StreamTransformer<List<ClassTimetableVersion>,
+              List<ClassTimetableVersion>>.fromHandlers(
+            handleError: (error, stackTrace, sink) {
+              debugPrint(
+                'getTimetableHistoryStream error: $error, falling back to cache',
+              );
+              sink.add(getCachedVersions(classId, dayOfWeek));
+            },
+          ),
+        );
   }
 
   /// Returns all cached submitted timetable versions across classes (offline / test mode).
@@ -830,10 +844,12 @@ class TimetableService {
     final prefs = _safePrefs;
     if (prefs == null) return <ClassTimetableVersion>[];
     final all = <ClassTimetableVersion>[];
-    final targetClass = classId?.trim();
+    final targetClass = classId?.trim().toUpperCase();
     for (final key in prefs.getKeys()) {
       if (key.startsWith('timetable_history_')) {
-        if (targetClass != null && targetClass.isNotEmpty && !key.contains(targetClass)) {
+        if (targetClass != null &&
+            targetClass.isNotEmpty &&
+            !key.toUpperCase().contains(targetClass)) {
           continue;
         }
         List<String>? raw;
@@ -944,10 +960,12 @@ class TimetableService {
     final prefs = _safePrefs;
     if (prefs == null) return <Map<String, dynamic>>[];
     final all = <Map<String, dynamic>>[];
-    final targetClass = classId?.trim();
+    final targetClass = classId?.trim().toUpperCase();
     for (final key in prefs.getKeys()) {
       if (key.startsWith('timetable_audit_')) {
-        if (targetClass != null && targetClass.isNotEmpty && !key.contains(targetClass)) {
+        if (targetClass != null &&
+            targetClass.isNotEmpty &&
+            !key.toUpperCase().contains(targetClass)) {
           continue;
         }
         List<String>? raw;
@@ -1009,10 +1027,17 @@ class TimetableService {
           });
           return list;
         })
-        .handleError((error) {
-          debugPrint('getTimetableAuditStream error: $error, falling back to cache');
-          return getCachedAudits(classId);
-        })
+        .transform(
+          StreamTransformer<List<Map<String, dynamic>>,
+              List<Map<String, dynamic>>>.fromHandlers(
+            handleError: (error, stackTrace, sink) {
+              debugPrint(
+                'getTimetableAuditStream error: $error, falling back to cache',
+              );
+              sink.add(getCachedAudits(classId));
+            },
+          ),
+        )
         .asBroadcastStream();
   }
 

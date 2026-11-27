@@ -23,6 +23,9 @@ class _HouseLeaderboardScreenState extends State<HouseLeaderboardScreen> {
   late String _selectedHouse;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  Stream<DocumentSnapshot>? _housePointsStream;
+  late Stream<DocumentSnapshot> _captainStream;
+  late Stream<QuerySnapshot> _contributorsStream;
 
   final List<String> _houses = ['Ruby', 'Emerald', 'Sapphire', 'Topaz'];
 
@@ -51,6 +54,28 @@ class _HouseLeaderboardScreenState extends State<HouseLeaderboardScreen> {
     _selectedHouse = widget.initialHouse.isNotEmpty
         ? '${widget.initialHouse[0].toUpperCase()}${widget.initialHouse.substring(1).toLowerCase()}'
         : 'Ruby';
+    _initStreams();
+  }
+
+  void _initStreams() {
+    try {
+      _housePointsStream = FirebaseFirestore.instance
+          .collection('house_points')
+          .doc(_selectedHouse.toLowerCase())
+          .snapshots();
+    } catch (_) {
+      _housePointsStream = null;
+    }
+    _captainStream = _authService.getHouseCaptainStream(_selectedHouse);
+    _contributorsStream = _authService.getHouseContributorsStream(_selectedHouse);
+  }
+
+  void _selectHouse(String house) {
+    if (_selectedHouse == house) return;
+    setState(() {
+      _selectedHouse = house;
+      _initStreams();
+    });
   }
 
   @override
@@ -106,7 +131,7 @@ class _HouseLeaderboardScreenState extends State<HouseLeaderboardScreen> {
                       excludeSemantics: true,
                       label: '$h House Leaderboard',
                       child: InkWell(
-                        onTap: () => setState(() => _selectedHouse = h),
+                        onTap: () => _selectHouse(h),
                         borderRadius: BorderRadius.circular(16),
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(minHeight: 48, minWidth: 48),
@@ -214,16 +239,7 @@ class _HouseLeaderboardScreenState extends State<HouseLeaderboardScreen> {
                               ),
                             ),
                             StreamBuilder<DocumentSnapshot>(
-                              stream: () {
-                                try {
-                                  return FirebaseFirestore.instance
-                                      .collection('house_points')
-                                      .doc(_selectedHouse.toLowerCase())
-                                      .snapshots();
-                                } catch (_) {
-                                  return null;
-                                }
-                              }(),
+                              stream: _housePointsStream,
                               builder: (context, snap) {
                                 final cachedPts = AuthService.getCachedPointsForHouse(_selectedHouse);
                                 final isLive = snap.hasData && snap.data!.exists;
@@ -287,7 +303,7 @@ class _HouseLeaderboardScreenState extends State<HouseLeaderboardScreen> {
                         ),
                         const SizedBox(height: 4),
                         StreamBuilder<DocumentSnapshot>(
-                          stream: _authService.getHouseCaptainStream(_selectedHouse),
+                          stream: _captainStream,
                           builder: (context, capSnap) {
                             String captainName = 'Pending Appointment';
                             if (capSnap.hasData && capSnap.data!.exists) {
@@ -540,13 +556,27 @@ class _HouseLeaderboardScreenState extends State<HouseLeaderboardScreen> {
 
                   // Contributor Stream & Podium
                   StreamBuilder<QuerySnapshot>(
-                    stream: _authService.getHouseContributorsStream(_selectedHouse),
+                    stream: _contributorsStream,
                     builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
+                      if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
                         return const Center(
                           child: Padding(
                             padding: EdgeInsets.all(32),
                             child: CircularProgressIndicator(),
+                          ),
+                        );
+                      }
+                      if (snapshot.hasError && !snapshot.hasData) {
+                        return Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Text(
+                              'Could not load $_selectedHouse contributors right now.',
+                              style: TextStyle(
+                                color: isDark ? Colors.white60 : Colors.grey[700],
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           ),
                         );
                       }

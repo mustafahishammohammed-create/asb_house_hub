@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -135,10 +136,15 @@ class NotificationService {
           .map((snapshot) => snapshot.docs
               .map((doc) => AppNotification.fromFirestore(doc))
               .toList())
-          .handleError((Object error) {
-        debugPrint('Notification stream error: $error');
-        return <AppNotification>[];
-      });
+          .transform(
+            StreamTransformer<List<AppNotification>,
+                List<AppNotification>>.fromHandlers(
+              handleError: (Object error, StackTrace stackTrace, sink) {
+                debugPrint('Notification stream error: $error');
+                sink.add(const <AppNotification>[]);
+              },
+            ),
+          );
     } catch (e) {
       debugPrint('Notification stream unavailable: $e');
       return Stream.value(const <AppNotification>[]);

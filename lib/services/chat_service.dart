@@ -94,7 +94,9 @@ class ChatService {
 
     // Fetch other user profile if possible
     String resolvedOtherName = otherUserName;
+    String rawOtherRole = otherUserRole;
     String resolvedOtherRole = otherUserRole;
+    String resolvedOtherScholar = '';
     String resolvedOtherHouse = otherUserHouse ?? 'ruby';
     try {
       final otherDoc = await _firestore
@@ -111,6 +113,10 @@ class ChatService {
         }
         final odScholar = od['scholar_no']?.toString();
         final odRole = od['role']?.toString();
+        resolvedOtherScholar = odScholar ?? '';
+        if (odRole != null && odRole.trim().isNotEmpty) {
+          rawOtherRole = odRole;
+        }
         resolvedOtherRole = HierarchyService.getRoleDisplayTitle(
           scholarNo: odScholar,
           role: odRole,
@@ -134,7 +140,9 @@ class ChatService {
 
     // Security Rule: Students cannot chat with other students! At least one participant must be council/admin.
     final amICouncil = isCouncilOrAdminRole(myRole, myName, myScholar);
-    final isOtherCouncil = isCouncilOrAdminRole(resolvedOtherRole, resolvedOtherName);
+    final isOtherCouncil =
+        isCouncilOrAdminRole(rawOtherRole, resolvedOtherName, resolvedOtherScholar) ||
+            isCouncilOrAdminRole(resolvedOtherRole, resolvedOtherName, resolvedOtherScholar);
     if (!amICouncil && !isOtherCouncil) {
       throw Exception(
         'Access Denied: Students are not allowed to chat with other students. You can only message Council Members or Teachers.',
@@ -219,16 +227,21 @@ class ChatService {
           .where('is_read', isEqualTo: false)
           .get();
 
-      final batch = _firestore.batch();
-      for (var doc in unreadQuery.docs) {
-        if (doc.data()['sender_id'] != myUid) {
+      final incoming = unreadQuery.docs
+          .where((doc) => doc.data()['sender_id'] != myUid)
+          .toList();
+      for (var i = 0; i < incoming.length; i += 450) {
+        final batch = _firestore.batch();
+        final chunk = incoming.sublist(
+          i,
+          i + 450 > incoming.length ? incoming.length : i + 450,
+        );
+        for (final doc in chunk) {
           batch.update(doc.reference, {
             'is_read': true,
             'read_at': FieldValue.serverTimestamp(),
           });
         }
-      }
-      if (unreadQuery.docs.isNotEmpty) {
         await batch.commit();
       }
     } catch (_) {}
@@ -303,6 +316,7 @@ class ChatService {
               'timestamp': timestamp,
               'is_read': false,
               'type': 'chat_message',
+              'category': 'chat',
               'room_id': roomId,
               'sender_id': myUid,
             });

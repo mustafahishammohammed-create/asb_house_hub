@@ -2408,9 +2408,28 @@ void main() {
     expect(GlobalWalletStore.orders.first.isClaimed, isTrue);
     expect(GlobalWalletStore.orders.first.claimedBy, 'Mr. Teacher');
 
-    // 2. Test claimStoreVoucher fallback pipeline
-    final claimResult = await VoucherSecurityService.claimStoreVoucher(
+    // 2. Test claimStoreVoucher rejects already-claimed voucher in offline fallback
+    final duplicateResult = await VoucherSecurityService.claimStoreVoucher(
       billNo: 'TEST-REC-8899',
+      evaluatorName: 'Lead Evaluator',
+    );
+    expect(duplicateResult.success, isFalse);
+    expect(duplicateResult.alreadyClaimed, isTrue);
+    expect(duplicateResult.claimedBy, 'Mr. Teacher');
+
+    // 3. Test claimStoreVoucher succeeds for an unclaimed voucher offline
+    GlobalWalletStore.orders.add(
+      OrderRecord(
+        receiptId: 'TEST-REC-8899-FRESH',
+        items: [],
+        totalPts: 150,
+        date: DateTime.now(),
+        qrData: 'mock_qr_fresh',
+        status: 'ready',
+      ),
+    );
+    final claimResult = await VoucherSecurityService.claimStoreVoucher(
+      billNo: 'TEST-REC-8899-FRESH',
       evaluatorName: 'Lead Evaluator',
     );
     expect(claimResult.success, isTrue);
@@ -5309,6 +5328,14 @@ void main() {
   });
 
   testWidgets('Part 26 Test 5 (Test 113): Report Card Live Region & Academic Honours Semantics', (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await AuthService.cacheProfile({
+      'scholar_no': 'ASB-2024-8841',
+      'full_name': 'Aarav Patel',
+      'house': 'ruby',
+      'class_level': 'Grade 10',
+      'role': 'student',
+    });
     final distinctionCard = AcademicReportCard(
       id: 'rc_distinction_1',
       scholarNo: 'ASB-2024-8841',
@@ -5331,6 +5358,11 @@ void main() {
       ],
       publishedAt: DateTime(2026, 10, 1),
       isMeritClaimed: false,
+    );
+    await AuthService.cacheReportCards(
+      [distinctionCard],
+      classLevel: 'Grade 10',
+      scholarNo: 'ASB-2024-8841',
     );
 
     await tester.pumpWidget(
@@ -5398,6 +5430,11 @@ void main() {
       ],
       publishedAt: DateTime(2026, 10, 1),
       isMeritClaimed: false,
+    );
+    await AuthService.cacheReportCards(
+      [stressCard],
+      classLevel: 'Grade 10',
+      scholarNo: 'ASB-2024-8841',
     );
 
     final testSizes = [const Size(1200, 1000), const Size(400, 1000)];

@@ -33,11 +33,14 @@ class _LiveMatchHudScreenState extends State<LiveMatchHudScreen> {
   late int _remainingSeconds;
   bool _isTimerRunning = false;
   bool _isPeriodTimeFinished = false;
+  late Stream<List<LiveMatchEvent>> _commentaryStream;
 
   @override
   void initState() {
     super.initState();
     _currentFixture = widget.fixture;
+    _commentaryStream =
+        _authService.getLiveMatchEventsStream(_currentFixture.fixtureId);
     final periods = LiveMatchClock.getPeriodsForSport(_currentFixture.sportType);
     _activePeriod = periods.isNotEmpty ? periods.first : '1st Half';
     final defaultMins = LiveMatchClock.getDefaultDurationMinutes(
@@ -293,6 +296,15 @@ class _LiveMatchHudScreenState extends State<LiveMatchHudScreen> {
           venue: _currentFixture.venue,
           scheduledAt: _currentFixture.scheduledAt,
           status: MatchStatus.live,
+          mvpScholarNo: _currentFixture.mvpScholarNo,
+          mvpName: _currentFixture.mvpName,
+          isCertified: _currentFixture.isCertified,
+          certifiedBy: _currentFixture.certifiedBy,
+          refereeScholarNo: _currentFixture.refereeScholarNo,
+          certifiedAt: _currentFixture.certifiedAt,
+          certificationToken: _currentFixture.certificationToken,
+          fairPlayRating: _currentFixture.fairPlayRating,
+          refereeNotes: _currentFixture.refereeNotes,
         );
       });
     }
@@ -432,6 +444,7 @@ class _LiveMatchHudScreenState extends State<LiveMatchHudScreen> {
                           ),
                         ),
                         onPressed: () async {
+                          final notesValue = notesController.text.trim();
                           Navigator.pop(ctx);
                           final res = await _authService.certifyMatchResult(
                             fixture: _currentFixture,
@@ -441,7 +454,7 @@ class _LiveMatchHudScreenState extends State<LiveMatchHudScreen> {
                             finalScoreA: _currentFixture.scoreA,
                             finalScoreB: _currentFixture.scoreB,
                             fairPlayRating: selectedRating,
-                            refereeNotes: notesController.text.trim(),
+                            refereeNotes: notesValue,
                           );
 
                           if (res.success && mounted) {
@@ -457,13 +470,15 @@ class _LiveMatchHudScreenState extends State<LiveMatchHudScreen> {
                                 venue: _currentFixture.venue,
                                 scheduledAt: _currentFixture.scheduledAt,
                                 status: MatchStatus.completed,
+                                mvpScholarNo: _currentFixture.mvpScholarNo,
+                                mvpName: _currentFixture.mvpName,
                                 isCertified: true,
                                 certifiedBy: refereeName,
                                 refereeScholarNo: refereeScholar,
                                 certifiedAt: DateTime.now(),
                                 certificationToken: res.token,
                                 fairPlayRating: selectedRating,
-                                refereeNotes: notesController.text.trim(),
+                                refereeNotes: notesValue,
                               );
                             });
                           } else if (mounted) {
@@ -629,15 +644,16 @@ class _LiveMatchHudScreenState extends State<LiveMatchHudScreen> {
                           ),
                         ),
                         onPressed: () async {
-                          if (scholarController.text.trim().isEmpty ||
-                              nameController.text.trim().isEmpty) {
+                          final mvpScholarValue = scholarController.text.trim();
+                          final mvpNameValue = nameController.text.trim();
+                          if (mvpScholarValue.isEmpty || mvpNameValue.isEmpty) {
                             return;
                           }
                           Navigator.pop(ctx);
                           final success = await _authService.awardMatchMvp(
                             fixtureId: _currentFixture.fixtureId,
-                            scholarNo: scholarController.text.trim(),
-                            studentName: nameController.text.trim(),
+                            scholarNo: mvpScholarValue,
+                            studentName: mvpNameValue,
                             houseName: selectedHouse,
                             sportType: _currentFixture.sportType,
                           );
@@ -655,8 +671,8 @@ class _LiveMatchHudScreenState extends State<LiveMatchHudScreen> {
                                 venue: _currentFixture.venue,
                                 scheduledAt: _currentFixture.scheduledAt,
                                 status: _currentFixture.status,
-                                mvpScholarNo: scholarController.text.trim(),
-                                mvpName: nameController.text.trim(),
+                                mvpScholarNo: mvpScholarValue,
+                                mvpName: mvpNameValue,
                                 isCertified: _currentFixture.isCertified,
                                 certifiedBy: _currentFixture.certifiedBy,
                                 refereeScholarNo: _currentFixture.refereeScholarNo,
@@ -784,72 +800,92 @@ class _LiveMatchHudScreenState extends State<LiveMatchHudScreen> {
         ),
       ),
       body: SafeArea(
-        child: Column(
-          children: [
-            // 1. Digital Scoreboard HUD
-            _buildScoreboardCard(colA, colB),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final topSections = <Widget>[
+              // 1. Digital Scoreboard HUD
+              _buildScoreboardCard(colA, colB),
 
-            // 2. Period Selector & Interactive Clock HUD
-            _buildPeriodAndTimerHUD(isDark, periods),
+              // 2. Period Selector & Interactive Clock HUD
+              _buildPeriodAndTimerHUD(isDark, periods),
 
-            // 3. MVP Banner (if awarded)
-            if (_currentFixture.mvpName != null)
-              _buildMvpBanner(),
+              // 3. MVP Banner (if awarded)
+              if (_currentFixture.mvpName != null) _buildMvpBanner(),
 
-            // 4. Certified Banner or Captain Scoring Controls
-            if (_currentFixture.isCertified)
-              _buildCertificationBanner()
-            else if (_canScore) ...[
-              _buildScoringControls(colA, colB),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                child: Row(
+              // 4. Certified Banner or Captain Scoring Controls
+              if (_currentFixture.isCertified)
+                _buildCertificationBanner()
+              else if (_canScore) ...[
+                _buildScoringControls(colA, colB),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.star_rounded, size: 16),
+                          label: const Text(
+                            'Nominate MVP',
+                            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.orangeAccent,
+                            side: const BorderSide(color: Colors.orangeAccent),
+                            minimumSize: const Size(0, 48),
+                          ),
+                          onPressed: _showMvpNominationModal,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.gavel_rounded, size: 16),
+                          label: const Text(
+                            'Certify & End Match',
+                            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.amber,
+                            side: const BorderSide(color: Colors.amber),
+                            minimumSize: const Size(0, 48),
+                          ),
+                          onPressed: _showCertificationDialog,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
+              const Divider(height: 1),
+            ];
+
+            if (constraints.maxHeight < 640) {
+              return SingleChildScrollView(
+                child: Column(
                   children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        icon: const Icon(Icons.star_rounded, size: 16),
-                        label: const Text(
-                          'Nominate MVP',
-                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.orangeAccent,
-                          side: const BorderSide(color: Colors.orangeAccent),
-                          minimumSize: const Size(0, 48),
-                        ),
-                        onPressed: _showMvpNominationModal,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        icon: const Icon(Icons.gavel_rounded, size: 16),
-                        label: const Text(
-                          'Certify & End Match',
-                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.amber,
-                          side: const BorderSide(color: Colors.amber),
-                          minimumSize: const Size(0, 48),
-                        ),
-                        onPressed: _showCertificationDialog,
-                      ),
+                    ...topSections,
+                    SizedBox(
+                      height: 260,
+                      child: _buildCommentaryTicker(),
                     ),
                   ],
                 ),
-              ),
-            ],
+              );
+            }
 
-            const Divider(height: 1),
-
-            // 5. Live Commentary Ticker with Screen Reader liveRegion
-            Expanded(
-              child: _buildCommentaryTicker(),
-            ),
-          ],
+            return Column(
+              children: [
+                ...topSections,
+                // 5. Live Commentary Ticker with Screen Reader liveRegion
+                Expanded(
+                  child: _buildCommentaryTicker(),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -1336,9 +1372,20 @@ class _LiveMatchHudScreenState extends State<LiveMatchHudScreen> {
     final cached = AuthService.getCachedLiveMatchEvents(_currentFixture.fixtureId);
 
     return StreamBuilder<List<LiveMatchEvent>>(
-      stream: _authService.getLiveMatchEventsStream(_currentFixture.fixtureId),
+      stream: _commentaryStream,
       initialData: cached,
       builder: (context, snapshot) {
+        if (snapshot.hasError && (snapshot.data == null || snapshot.data!.isEmpty)) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'Unable to load live commentary feed.',
+                style: TextStyle(color: Colors.grey[600], fontSize: 13),
+              ),
+            ),
+          );
+        }
         final events = snapshot.data ?? [];
 
         return Semantics(

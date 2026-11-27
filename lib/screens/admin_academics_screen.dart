@@ -1258,6 +1258,7 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
+                      isExpanded: true,
                       key: ValueKey('ind_${classes.map((c) => c.classId).join("_")}_$individualTarget'),
                       initialValue: (individualTarget != null && classes.any((c) => c.classId == individualTarget))
                           ? individualTarget
@@ -1278,7 +1279,7 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
-                        onPressed: (_promotingIndividual || _individualTargetClassId == null)
+                        onPressed: (_promotingIndividual || individualTarget == null)
                             ? null
                             : () async {
                                 final sNo = _individualScholarNoController.text.trim();
@@ -1289,7 +1290,7 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                                 setState(() => _promotingIndividual = true);
                                 final ok = await _authService.promoteScholar(
                                   scholarNo: sNo,
-                                  targetClassId: _individualTargetClassId!,
+                                  targetClassId: individualTarget,
                                 );
                                 if (!mounted) return;
                                 setState(() => _promotingIndividual = false);
@@ -1415,22 +1416,23 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                       style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
                     ),
                     const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
+                    Wrap(
+                      alignment: WrapAlignment.end,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 8,
+                      runSpacing: 8,
                       children: [
                         TextButton.icon(
                           onPressed: () => _previewSubmittedTimetable(v),
                           icon: const Icon(Icons.visibility_rounded, size: 18),
                           label: const Text('Preview'),
                         ),
-                        const Spacer(),
                         OutlinedButton.icon(
                           onPressed: () => _rejectSubmittedTimetable(v),
                           icon: const Icon(Icons.close_rounded, size: 18),
                           label: const Text('Reject'),
                           style: OutlinedButton.styleFrom(foregroundColor: scheme.error),
                         ),
-                        const SizedBox(width: 8),
                         FilledButton.icon(
                           onPressed: () => _approveSubmittedTimetable(v),
                           icon: const Icon(Icons.check_rounded, size: 18),
@@ -1871,6 +1873,7 @@ class _TransferDialogState extends State<_TransferDialog> {
                 ? _selected
                 : available.first.classId;
             return DropdownButtonFormField<String>(
+              isExpanded: true,
               key: ValueKey('transfer_$validSelected'),
               initialValue: validSelected,
               decoration: const InputDecoration(
@@ -1895,11 +1898,20 @@ class _TransferDialogState extends State<_TransferDialog> {
           onPressed: () => Navigator.pop(context),
           child: const Text('Cancel'),
         ),
-        FilledButton(
-          onPressed: _selected == null
-              ? null
-              : () => Navigator.pop(context, _selected),
-          child: const Text('Transfer'),
+        Builder(
+          builder: (context) {
+            final classes = AuthService.getCachedAcademicClasses().where((c) => c.active).toList();
+            final available = classes.where((c) => c.classId != widget.currentClassId).toList();
+            final effectiveTarget = (_selected != null && available.any((c) => c.classId == _selected))
+                ? _selected
+                : (available.isNotEmpty ? available.first.classId : null);
+            return FilledButton(
+              onPressed: effectiveTarget == null
+                  ? null
+                  : () => Navigator.pop(context, effectiveTarget),
+              child: const Text('Transfer'),
+            );
+          },
         ),
       ],
     );

@@ -629,6 +629,7 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
   }
 
   Widget _buildArenaNavPills(Color houseColor) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final tabs = [
       {'icon': Icons.bolt_rounded, 'label': 'Spirit Reactor'},
       {'icon': Icons.psychology_rounded, 'label': 'Brain Blitz'},
@@ -680,10 +681,18 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
                             duration: const Duration(milliseconds: 200),
                             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                             decoration: BoxDecoration(
-                              color: isSel ? houseColor : Colors.white.withValues(alpha: 0.06),
+                              color: isSel
+                                  ? houseColor
+                                  : (isDark
+                                      ? Colors.white.withValues(alpha: 0.06)
+                                      : const Color(0xFFE2E8F0)),
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(
-                                color: isSel ? houseColor : Colors.white.withValues(alpha: 0.12),
+                                color: isSel
+                                    ? houseColor
+                                    : (isDark
+                                        ? Colors.white.withValues(alpha: 0.12)
+                                        : const Color(0xFFCBD5E1)),
                               ),
                               boxShadow: isSel
                                   ? [
@@ -700,13 +709,17 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
                                 Icon(
                                   tabs[index]['icon'] as IconData,
                                   size: 16,
-                                  color: isSel ? Colors.white : Colors.white70,
+                                  color: isSel
+                                      ? Colors.white
+                                      : (isDark ? Colors.white70 : const Color(0xFF334155)),
                                 ),
                                 const SizedBox(width: 6),
                                 Text(
                                   tabLabel,
                                   style: TextStyle(
-                                    color: isSel ? Colors.white : Colors.white70,
+                                    color: isSel
+                                        ? Colors.white
+                                        : (isDark ? Colors.white70 : const Color(0xFF1E293B)),
                                     fontWeight: isSel ? FontWeight.w900 : FontWeight.w600,
                                     fontSize: 12,
                                   ),
@@ -747,6 +760,15 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
   // TAB 1: SPIRIT REACTOR (Interactive Energy Tap Clash)
   // ===========================================================================
   Widget _buildSpiritReactorTab(HouseMascot mascot, Color houseColor) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final subTextColor = isDark ? Colors.white60 : const Color(0xFF475569);
+    final chipBg = isDark
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.white.withValues(alpha: 0.9);
+    final chipBorder = isDark
+        ? Colors.white.withValues(alpha: 0.15)
+        : Colors.black.withValues(alpha: 0.08);
+    final chipTextColor = isDark ? Colors.white : const Color(0xFF0F172A);
     final totalSpirit = _rubySpirit + _sapphireSpirit + _emeraldSpirit + _topazSpirit;
     final maxSpirit = totalSpirit > 0 ? totalSpirit : 1.0;
 
@@ -874,8 +896,9 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
           const SizedBox(height: 6),
           Text(
             'Continuous rapid tapping unlocks Overdrive Multipliers (Up to 10x!)',
+            textAlign: TextAlign.center,
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.6),
+              color: subTextColor,
               fontSize: 11,
             ),
           ),
@@ -984,21 +1007,24 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.08),
+              color: chipBg,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+              border: Border.all(color: chipBorder),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Icon(Icons.offline_bolt_rounded, color: Colors.amber, size: 20),
                 const SizedBox(width: 8),
-                Text(
-                  'Your Session Surge: +${_localTapCount * _comboMultiplier} Energy Taps',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 13,
+                Flexible(
+                  child: Text(
+                    'Your Session Surge: +${_localTapCount * _comboMultiplier} Energy Taps',
+                    style: TextStyle(
+                      color: chipTextColor,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],
@@ -1265,94 +1291,109 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
   // TAB 2: DAILY BRAIN BLITZ (House Trivia Speed Showdown)
   // ===========================================================================
   Widget _buildBrainBlitzTab(Color houseColor) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final titleColor = isDark ? Colors.white : const Color(0xFF0F172A);
+    final bodyColor = isDark
+        ? Colors.white.withValues(alpha: 0.72)
+        : const Color(0xFF475569);
+    final scoreColor = isDark ? Colors.greenAccent : const Color(0xFF047857);
+
     if (!_blitzActive && !_blitzFinished) {
-      return Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: houseColor.withValues(alpha: 0.15),
-                shape: BoxShape.circle,
-                border: Border.all(color: houseColor.withValues(alpha: 0.4), width: 2),
+      return Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: houseColor.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: houseColor.withValues(alpha: 0.4), width: 2),
+                ),
+                child: Icon(Icons.psychology_rounded, size: 64, color: houseColor),
               ),
-              child: Icon(Icons.psychology_rounded, size: 64, color: houseColor),
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              'Daily Scholastic Brain Blitz',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w900,
-                fontSize: 22,
+              const SizedBox(height: 20),
+              Text(
+                'Daily Scholastic Brain Blitz',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: titleColor,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 22,
+                ),
               ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'Challenge your intellect in a 5-question speed trial. Earn direct House Points and Merits for ${widget.userHouse.toUpperCase()}!',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.7),
-                fontSize: 13,
-                height: 1.4,
+              const SizedBox(height: 10),
+              Text(
+                'Challenge your intellect in a 5-question speed trial. Earn direct House Points and Merits for ${widget.userHouse.toUpperCase()}!',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: bodyColor,
+                  fontSize: 13,
+                  height: 1.4,
+                ),
               ),
-            ),
-            const SizedBox(height: 28),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.play_arrow_rounded, size: 24),
-              label: const Text(
-                'ENTER SHOWDOWN (15s PER QUESTION)',
-                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
+              const SizedBox(height: 28),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.play_arrow_rounded, size: 24),
+                label: const Text(
+                  'ENTER SHOWDOWN (15s PER QUESTION)',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: houseColor,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                  elevation: 6,
+                ),
+                onPressed: _startBrainBlitz,
               ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: houseColor,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                elevation: 6,
-              ),
-              onPressed: _startBrainBlitz,
-            ),
-          ],
+            ],
+          ),
         ),
       );
     }
 
     if (_blitzFinished) {
-      return Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: Colors.amber.withValues(alpha: 0.15),
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.amber, width: 2),
+      final creditedScore = _blitzScore.clamp(0, 50);
+      return Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.amber, width: 2),
+                ),
+                child: const Icon(Icons.emoji_events_rounded, size: 64, color: Colors.amber),
               ),
-              child: const Icon(Icons.emoji_events_rounded, size: 64, color: Colors.amber),
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              'Blitz Completed!',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w900,
-                fontSize: 24,
+              const SizedBox(height: 20),
+              Text(
+                'Blitz Completed!',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: titleColor,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 24,
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'You scored $_blitzScore / 100 Points for ${widget.userHouse.toUpperCase()}!',
-              style: const TextStyle(
-                color: Colors.greenAccent,
-                fontWeight: FontWeight.w900,
-                fontSize: 16,
+              const SizedBox(height: 8),
+              Text(
+                'Quiz Score: $_blitzScore • Credited +$creditedScore / 50 Max PTS to ${widget.userHouse.toUpperCase()}!',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: scoreColor,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 15,
+                ),
               ),
-            ),
             if (_blitzIsDemo) ...[
               const SizedBox(height: 8),
               Container(
@@ -1384,6 +1425,7 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
               onPressed: _startBrainBlitz,
             ),
           ],
+        ),
         ),
       );
     }
@@ -1632,57 +1674,67 @@ class _HouseArenaScreenState extends State<HouseArenaScreen>
           const SizedBox(height: 24),
 
           // Probability Radial Card
-          Center(
-            child: Column(
-              children: [
-                Stack(
-                  alignment: Alignment.center,
+          Builder(
+            builder: (context) {
+              final isDark = Theme.of(context).brightness == Brightness.dark;
+              final probColor = winProb > 60
+                  ? (isDark ? Colors.greenAccent : const Color(0xFF047857))
+                  : (winProb > 40 ? Colors.amber[700]! : Colors.redAccent);
+              return Center(
+                child: Column(
                   children: [
-                    SizedBox(
-                      width: 140,
-                      height: 140,
-                      child: CircularProgressIndicator(
-                        value: winProb / 100.0,
-                        strokeWidth: 12,
-                        backgroundColor: Colors.white12,
-                        valueColor: AlwaysStoppedAnimation(
-                          winProb > 60 ? Colors.greenAccent : (winProb > 40 ? Colors.amber : Colors.redAccent),
-                        ),
-                      ),
-                    ),
-                    Column(
+                    Stack(
+                      alignment: Alignment.center,
                       children: [
-                        Text(
-                          '${winProb.toStringAsFixed(1)}%',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 26,
+                        SizedBox(
+                          width: 140,
+                          height: 140,
+                          child: CircularProgressIndicator(
+                            value: winProb / 100.0,
+                            strokeWidth: 12,
+                            backgroundColor: isDark
+                                ? Colors.white12
+                                : Colors.black.withValues(alpha: 0.08),
+                            valueColor: AlwaysStoppedAnimation(probColor),
                           ),
                         ),
-                        const Text(
-                          'WIN PROBABILITY',
-                          style: TextStyle(
-                            color: Colors.white54,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w800,
-                          ),
+                        Column(
+                          children: [
+                            Text(
+                              '${winProb.toStringAsFixed(1)}%',
+                              style: TextStyle(
+                                color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                fontWeight: FontWeight.w900,
+                                fontSize: 26,
+                              ),
+                            ),
+                            Text(
+                              'WIN PROBABILITY',
+                              style: TextStyle(
+                                color: isDark ? Colors.white54 : const Color(0xFF64748B),
+                                fontSize: 9,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
+                    const SizedBox(height: 8),
+                    Text(
+                      winProb > 60 ? '🏆 Favorited for Annual Cup' : '⚡ Contender Surge Needed',
+                      style: TextStyle(
+                        color: winProb > 60
+                            ? (isDark ? Colors.greenAccent : const Color(0xFF047857))
+                            : (isDark ? Colors.amberAccent : const Color(0xFFB45309)),
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                      ),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  winProb > 60 ? '🏆 Favorited for Annual Cup' : '⚡ Contender Surge Needed',
-                  style: TextStyle(
-                    color: winProb > 60 ? Colors.greenAccent : Colors.amberAccent,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
+              );
+            },
           ),
           const SizedBox(height: 24),
 

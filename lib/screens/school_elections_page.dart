@@ -1544,7 +1544,14 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
                               .map((g) => DropdownMenuItem(value: g, child: Text('Grade $g')))
                               .toList(),
                           onChanged: (v) {
-                            if (v != null) setDlgState(() => minGrade = v);
+                            if (v != null) {
+                              setDlgState(() {
+                                minGrade = v;
+                                if (maxGrade < minGrade) {
+                                  maxGrade = minGrade;
+                                }
+                              });
+                            }
                           },
                         ),
                       ),
@@ -1562,7 +1569,14 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
                               .map((g) => DropdownMenuItem(value: g, child: Text('Grade $g')))
                               .toList(),
                           onChanged: (v) {
-                            if (v != null) setDlgState(() => maxGrade = v);
+                            if (v != null) {
+                              setDlgState(() {
+                                maxGrade = v;
+                                if (minGrade > maxGrade) {
+                                  minGrade = maxGrade;
+                                }
+                              });
+                            }
                           },
                         ),
                       ),
@@ -1711,7 +1725,7 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
                 });
               }
             } catch (_) {
-              if (currentReqId == lookupRequestId) {
+              if (ctx.mounted && currentReqId == lookupRequestId) {
                 setDlgState(() => isLookingUp = false);
               }
             }
@@ -1891,17 +1905,29 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
   }
 
   Future<void> checkReceipt(String id, {String? candidateId, String? candidateScholar, String? candidateName}) async {
-    final result = await call(
-      candidateId == null ? 'receipt' : 'vote',
-      id,
-      candidateId == null
-          ? <String, dynamic>{}
-          : <String, dynamic>{
-              'candidateId': candidateId,
-              if (candidateScholar != null) ...{'candidateScholar': candidateScholar},
-              if (candidateName != null) ...{'candidateName': candidateName},
-            },
-    );
+    late final Map<String, dynamic> result;
+    try {
+      result = await call(
+        candidateId == null ? 'receipt' : 'vote',
+        id,
+        candidateId == null
+            ? <String, dynamic>{}
+            : <String, dynamic>{
+                'candidateId': candidateId,
+                if (candidateScholar != null) ...{'candidateScholar': candidateScholar},
+                if (candidateName != null) ...{'candidateName': candidateName},
+              },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
     if (!mounted) return;
     final receipt = result['receipt'] as String?;
     if (receipt != null) {
@@ -2575,8 +2601,8 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
                           ? 'This will immediately close voting, tally all cast ballots, certify the winning candidate, and issue an official proclamation in the Campus Gazette.'
                           : 'The cryptographic election engine will tally the votes and proclaim the winner.';
                       if (await confirm(title, desc) && mounted) {
-                        await run(() async => call('certify', doc.id));
-                        if (mounted) {
+                        final ok = await run(() async => call('certify', doc.id));
+                        if (ok && mounted) {
                           _tabController?.animateTo(_isManager ? 2 : 1);
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
@@ -2697,8 +2723,11 @@ class _ElectionDeskState extends State<_ElectionDesk> with TickerProviderStateMi
             );
           }
         }
+        final certifiedPollsWithResult = certifiedPolls
+            .where((cp) => cp.data()['result'] is Map && (cp.data()['result'] as Map).isNotEmpty)
+            .toList();
         final uniqueProclamations = allProclamations
-            .where((pr) => !certifiedPolls.any((cp) => cp.id == pr.ballotId))
+            .where((pr) => !certifiedPollsWithResult.any((cp) => cp.id == pr.ballotId))
             .toList();
         final totalCertified = certifiedPolls.length + uniqueProclamations.length;
         final isDark = Theme.of(context).brightness == Brightness.dark;

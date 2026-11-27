@@ -314,8 +314,12 @@ ${liveContext ?? ''}
           'https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent',
         );
 
+        final normalizedHistory = conversationHistory
+            .skipWhile((m) => m['role'] != 'user')
+            .toList();
+
         final contents = [
-          ...conversationHistory.map((m) {
+          ...normalizedHistory.map((m) {
             final role = m['role'] == 'user' ? 'user' : 'model';
             return {
               'role': role,

@@ -24,7 +24,7 @@ class HouseColors {
   static const Color emeraldAccent = Color(0xFF95DE64);
 
   static const Color topaz = Color(0xFFB45309);
-  static const Color topazDark = Color(0xFFB45309);
+  static const Color topazDark = Color(0xFF92400E);
   static const Color topazLight = Color(0xFFFEF3C7);
   static const Color topazGlow = Color(0xFFFFC107);
   static const Color topazAccent = Color(0xFFFFD666);

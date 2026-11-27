@@ -60,10 +60,11 @@ class HouseGroupService {
   /// configured (widget tests) rather than throwing.
   Stream<DocumentSnapshot> getHouseGroupStream(String houseId) {
     try {
-      if (!AuthService.isFirebaseLive || currentUserId.isEmpty) {
+      final id = houseId.trim().toLowerCase();
+      if (id.isEmpty || !AuthService.isFirebaseLive || currentUserId.isEmpty) {
         return const Stream.empty();
       }
-      return _firestore.collection('house_groups').doc(houseId).snapshots();
+      return _firestore.collection('house_groups').doc(id).snapshots();
     } catch (_) {
       return const Stream.empty();
     }
@@ -72,15 +73,16 @@ class HouseGroupService {
   /// Newest-first message stream, capped to keep Spark reads bounded.
   Stream<List<HouseGroupMessage>> getHouseMessagesStream(String houseId) {
     try {
-      if (!AuthService.isFirebaseLive || currentUserId.isEmpty) {
+      final id = houseId.trim().toLowerCase();
+      if (id.isEmpty || !AuthService.isFirebaseLive || currentUserId.isEmpty) {
         return const Stream.empty();
       }
-      if (!HouseGroupAccess.canView(currentProfile, houseId)) {
+      if (!HouseGroupAccess.canView(currentProfile, id)) {
         return const Stream.empty();
       }
       return _firestore
           .collection('house_groups')
-          .doc(houseId)
+          .doc(id)
           .collection('messages')
           .orderBy('timestamp', descending: true)
           .limit(200)
@@ -199,8 +201,13 @@ class HouseGroupService {
                 .toMap(),
           );
         }
+        final rawLastMessage =
+            cleanText.isEmpty ? 'Photo attachment' : cleanText;
+        final boundedLastMessage = rawLastMessage.length > 500
+            ? rawLastMessage.substring(0, 500)
+            : rawLastMessage;
         await groupRef.update({
-          'last_message': cleanText.isEmpty ? 'Photo attachment' : cleanText,
+          'last_message': boundedLastMessage,
           'last_message_at': timestamp,
           'updated_at': timestamp,
         });

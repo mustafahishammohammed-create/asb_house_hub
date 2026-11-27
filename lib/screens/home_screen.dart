@@ -284,12 +284,17 @@ class _HomeScreenState extends State<HomeScreen>
     },
   ];
 
-  static const String _kLibraryLoansPrefKey = 'asb_library_loans_cache';
+  String _libraryLoansPrefKey() {
+    final sNo = (_profile?['scholar_no'] ?? AuthService.getCachedScholarNo() ?? 'guest')
+        .toString()
+        .trim();
+    return 'asb_library_loans_cache_${sNo.isEmpty ? 'guest' : sNo}';
+  }
 
   Future<void> _loadLibraryLoans() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_kLibraryLoansPrefKey);
+      final raw = prefs.getString(_libraryLoansPrefKey());
       if (raw != null && raw.isNotEmpty) {
         final decoded = jsonDecode(raw) as List<dynamic>;
         if (mounted && decoded.isNotEmpty) {
@@ -312,7 +317,7 @@ class _HomeScreenState extends State<HomeScreen>
     try {
       final prefs = await SharedPreferences.getInstance();
       final jsonStr = jsonEncode(_borrowedBooks);
-      await prefs.setString(_kLibraryLoansPrefKey, jsonStr);
+      await prefs.setString(_libraryLoansPrefKey(), jsonStr);
 
       final curUser = _authService.currentUser;
       final firestore = _safeFirestore;
@@ -1302,7 +1307,9 @@ class _HomeScreenState extends State<HomeScreen>
                               }
 
                               AppHaptics.success();
-                              navigator.pop();
+                              if (context.mounted) {
+                                navigator.pop();
+                              }
                               messenger.showSnackBar(
                                 SnackBar(
                                   content: const Text(
@@ -2230,9 +2237,11 @@ class _HomeScreenState extends State<HomeScreen>
             IconButton(
               padding: const EdgeInsets.all(8),
               constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-              icon: const Icon(
+              icon: Icon(
                 Icons.school_rounded,
-                color: Colors.tealAccent,
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? Colors.tealAccent
+                    : const Color(0xFF0F766E),
                 size: 24,
               ),
               tooltip: '🏛️ Campus Academics (Timetable, HW, Exams, Reports, Attendance)',
@@ -2578,15 +2587,17 @@ class _HomeScreenState extends State<HomeScreen>
             ),
             if (isSelected) ...[
               const SizedBox(width: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  color: color,
-                  fontSize: 13,
+              Flexible(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: color,
+                    fontSize: 13,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
             ],
           ],
@@ -5557,7 +5568,7 @@ class _HomeScreenState extends State<HomeScreen>
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
-                            isMerit ? '+$pts' : '$pts',
+                            isMerit ? '+$pts' : '-$pts',
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w900,
@@ -6797,6 +6808,9 @@ class _HomeScreenState extends State<HomeScreen>
                     '💳 Digital Wallet & Passes',
                     color,
                     () {
+                      final cls = _profile?['class_level']?.toString() ?? '--';
+                      final div = _profile?['division']?.toString() ?? '';
+                      final rStr = _profile?['role']?.toString() ?? '';
                       Navigator.pop(context);
                       Navigator.push(
                         context,
@@ -6806,7 +6820,9 @@ class _HomeScreenState extends State<HomeScreen>
                             userHouse: house,
                             scholarNo: scholarNo,
                             isAdmin: isAdmin,
+                            classLevel: cls != '--' ? '$cls $div'.trim() : 'Grade 11-D',
                             canScanQr: isCouncilOrTeacher,
+                            userRole: rStr.isNotEmpty ? rStr : (isAdmin ? 'Council' : 'Student'),
                             initialIndex: 0,
                           ),
                         ),
@@ -6818,6 +6834,9 @@ class _HomeScreenState extends State<HomeScreen>
                     'Digital ID Card',
                     color,
                     () {
+                      final cls = _profile?['class_level']?.toString() ?? '--';
+                      final div = _profile?['division']?.toString() ?? '';
+                      final rStr = _profile?['role']?.toString() ?? '';
                       Navigator.pop(context);
                       Navigator.push(
                         context,
@@ -6827,7 +6846,9 @@ class _HomeScreenState extends State<HomeScreen>
                             userHouse: house,
                             scholarNo: scholarNo,
                             isAdmin: isAdmin,
+                            classLevel: cls != '--' ? '$cls $div'.trim() : 'Grade 11-D',
                             canScanQr: isCouncilOrTeacher,
+                            userRole: rStr.isNotEmpty ? rStr : (isAdmin ? 'Council' : 'Student'),
                             initialIndex: 1,
                           ),
                         ),
@@ -6855,7 +6876,9 @@ class _HomeScreenState extends State<HomeScreen>
                   _buildDrawerTile(
                     Icons.school_rounded,
                     '🏛️ Campus Academics (Timetable, HW, Exams)',
-                    Colors.tealAccent,
+                    Theme.of(context).brightness == Brightness.dark
+                        ? Colors.tealAccent
+                        : const Color(0xFF0F766E),
                     () {
                       Navigator.pop(context);
                       Navigator.push(
@@ -6873,7 +6896,9 @@ class _HomeScreenState extends State<HomeScreen>
                   _buildDrawerTile(
                     Icons.fact_check_rounded,
                     '📋 Attendance Registry & Leave Pass',
-                    Colors.greenAccent,
+                    Theme.of(context).brightness == Brightness.dark
+                        ? Colors.greenAccent
+                        : const Color(0xFF047857),
                     () {
                       Navigator.pop(context);
                       Navigator.push(
@@ -7123,9 +7148,11 @@ class _HomeScreenState extends State<HomeScreen>
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    _buildProfileStat('Academic Standing', standingDisplay),
-                    _buildProfileStat('Grade / Class', gradeDisplay),
-                    _buildProfileStat('Attendance', attendanceDisplay),
+                    Expanded(child: _buildProfileStat('Academic Standing', standingDisplay)),
+                    const SizedBox(width: 8),
+                    Expanded(child: _buildProfileStat('Grade / Class', gradeDisplay)),
+                    const SizedBox(width: 8),
+                    Expanded(child: _buildProfileStat('Attendance', attendanceDisplay)),
                   ],
                 ),
               ),
@@ -7191,13 +7218,23 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _buildProfileStat(String label, String value) {
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Text(
           value,
-          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
+          textAlign: TextAlign.center,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
         ),
         const SizedBox(height: 2),
-        Text(label, style: const TextStyle(color: Colors.grey, fontSize: 11)),
+        Text(
+          label,
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: Colors.grey, fontSize: 11),
+        ),
       ],
     );
   }
@@ -7350,8 +7387,10 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  void _showAppSettingsModal(Color color) {
-    bool soundEffects = true;
+  Future<void> _showAppSettingsModal(Color color) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    bool soundEffects = prefs.getBool('asb_sound_effects_enabled') ?? true;
     bool darkTheme = AppThemeController.isDarkMode(context);
 
     showModalBottomSheet(
@@ -7408,7 +7447,10 @@ class _HomeScreenState extends State<HomeScreen>
                   ),
                   value: soundEffects,
                   activeThumbColor: color,
-                  onChanged: (v) => setModalState(() => soundEffects = v),
+                  onChanged: (v) async {
+                    setModalState(() => soundEffects = v);
+                    await prefs.setBool('asb_sound_effects_enabled', v);
+                  },
                 ),
                 SwitchListTile(
                   title: const Text(

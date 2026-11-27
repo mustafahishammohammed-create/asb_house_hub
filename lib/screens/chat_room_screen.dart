@@ -168,8 +168,6 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
 
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
-  late AnimationController _pulseController;
-  late Animation<double> _pulseAnimation;
 
   StreamSubscription<DocumentSnapshot>? _roomSubscription;
   String? _lastReadMessageId;
@@ -228,14 +226,6 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
       curve: Curves.easeOutCubic,
     );
     _fadeController.forward();
-
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 4),
-    )..repeat(reverse: true);
-    _pulseAnimation = Tween<double>(begin: 0.88, end: 1.0).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
-    );
 
     try {
       _chatService.markRoomAsRead(widget.roomId);
@@ -404,12 +394,21 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
     );
     if (!mounted || source == null) return;
     try {
-      final picked = await picker.pickImage(source: source, maxWidth: 1024, imageQuality: 80);
+      final picked = await picker.pickImage(source: source, maxWidth: 800, imageQuality: 70);
       if (picked != null) {
         final bytes = await picked.readAsBytes();
+        final encoded = 'data:image/jpeg;base64,${base64Encode(bytes)}';
         if (!mounted) return;
+        if (encoded.length > 900000) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Image is too large for Firestore (max ~650 KB). Please pick a smaller image.'),
+            ),
+          );
+          return;
+        }
         setState(() {
-          _pendingAttachment = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+          _pendingAttachment = encoded;
         });
       }
     } catch (e) {
@@ -472,7 +471,6 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
   void dispose() {
     _roomSubscription?.cancel();
     _fadeController.dispose();
-    _pulseController.dispose();
     _focusNode.dispose();
     _msgController.dispose();
     _scrollController.dispose();
@@ -632,14 +630,11 @@ class _ChatRoomScreenState extends State<ChatRoomScreen>
           Positioned.fill(
             child: FadeTransition(
               opacity: _fadeAnimation,
-              child: FadeTransition(
-                opacity: _pulseAnimation,
-                child: DualHouseWallpaper(
-                  senderHouse: _myHouse,
-                  recipientHouse: _otherHouse,
-                  isDark: isDark,
-                  pulseValue: 1.0,
-                ),
+              child: DualHouseWallpaper(
+                senderHouse: _myHouse,
+                recipientHouse: _otherHouse,
+                isDark: isDark,
+                pulseValue: 1.0,
               ),
             ),
           ),

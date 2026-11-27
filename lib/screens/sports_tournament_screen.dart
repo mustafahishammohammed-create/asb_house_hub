@@ -435,6 +435,7 @@ class _SportsTournamentScreenState extends State<SportsTournamentScreen>
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: DataTable(
+                showCheckboxColumn: false,
                 columnSpacing: 16,
                 headingRowHeight: 44,
                 columns: const [
@@ -730,9 +731,9 @@ class _SportsTournamentScreenState extends State<SportsTournamentScreen>
                           if (f.mvpName != null && f.mvpName!.isNotEmpty) {
                             StudentProfileModal.show(
                               context,
-                              scholarNo: '',
+                              scholarNo: (f.mvpScholarNo ?? '').trim(),
                               studentName: f.mvpName!,
-                              houseName: f.houseA,
+                              houseName: f.scoreB > f.scoreA ? f.houseB : f.houseA,
                             );
                           }
                         },
@@ -1268,10 +1269,12 @@ class _SportsTournamentScreenState extends State<SportsTournamentScreen>
                       child: ElevatedButton(
                         onPressed: () async {
                           final count = int.tryParse(statCountController.text) ?? 1;
+                          final scholarNoValue = scholarController.text;
+                          final studentNameValue = nameController.text;
                           Navigator.of(ctx).pop();
                           final success = await _authService.awardPlayerAccoladeCustom(
-                            scholarNo: scholarController.text,
-                            studentName: nameController.text,
+                            scholarNo: scholarNoValue,
+                            studentName: studentNameValue,
                             houseName: selectedHouse,
                             sportType: selectedSport,
                             accoladeType: selectedAccolade,
@@ -1286,7 +1289,7 @@ class _SportsTournamentScreenState extends State<SportsTournamentScreen>
                           if (success) {
                             parentMessenger.showSnackBar(
                               SnackBar(
-                                content: Text('Awarded ${selectedAccolade.title} to ${nameController.text} (+25 PTS)!'),
+                                content: Text('Awarded ${selectedAccolade.title} to $studentNameValue (+25 PTS)!'),
                                 backgroundColor: Colors.amber[800],
                               ),
                             );
@@ -1452,6 +1455,8 @@ class _SportsTournamentScreenState extends State<SportsTournamentScreen>
                             );
                             return;
                           }
+                          final tournamentTitleValue = titleController.text;
+                          final mvpNameValue = mvpController.text;
                           Navigator.of(ctx).pop();
                           final profile = AuthService.getCachedProfile();
                           final adminName = (profile?['full_name'] ?? 'Sports Master').toString();
@@ -1459,13 +1464,13 @@ class _SportsTournamentScreenState extends State<SportsTournamentScreen>
                           final adminRole = (profile?['role'] ?? 'captain').toString();
 
                           final res = await _authService.awardChampionshipTrophyAndPoints(
-                            tournamentTitle: titleController.text,
+                            tournamentTitle: tournamentTitleValue,
                             sportType: selectedSport,
                             winningHouse: winningHouse,
                             runnerUpHouse: runnerUpHouse,
                             pointsAwarded: 100,
                             runnerUpPoints: 50,
-                            mvpName: mvpController.text,
+                            mvpName: mvpNameValue,
                             commissionerName: adminName,
                             adminScholarNo: adminScholar,
                             adminRole: adminRole,
@@ -1475,7 +1480,7 @@ class _SportsTournamentScreenState extends State<SportsTournamentScreen>
                             setState(() {});
                             parentMessenger.showSnackBar(
                               SnackBar(
-                                content: Text('🏆 ${winningHouse.toUpperCase()} crowned ${titleController.text} Champions (+100 PTS)!'),
+                                content: Text('🏆 ${winningHouse.toUpperCase()} crowned $tournamentTitleValue Champions (+100 PTS)!'),
                                 backgroundColor: Colors.amber[800],
                               ),
                             );

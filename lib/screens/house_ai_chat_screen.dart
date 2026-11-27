@@ -737,7 +737,9 @@ class _HouseAiChatScreenState extends State<HouseAiChatScreen> {
                         height: 6,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: _hasApiKey ? Colors.greenAccent : Colors.orangeAccent,
+                          color: _hasApiKey
+                              ? (isDark ? Colors.greenAccent : const Color(0xFF059669))
+                              : (isDark ? Colors.orangeAccent : const Color(0xFFD97706)),
                         ),
                       ),
                       const SizedBox(width: 4),
@@ -748,7 +750,9 @@ class _HouseAiChatScreenState extends State<HouseAiChatScreen> {
                               : '${widget.userHouse.toUpperCase()} • Offline',
                           style: TextStyle(
                             fontSize: 9,
-                            color: _hasApiKey ? Colors.greenAccent : houseColor,
+                            color: _hasApiKey
+                                ? (isDark ? Colors.greenAccent : const Color(0xFF047857))
+                                : houseColor,
                             fontWeight: FontWeight.w700,
                           ),
                           overflow: TextOverflow.ellipsis,
@@ -769,7 +773,9 @@ class _HouseAiChatScreenState extends State<HouseAiChatScreen> {
             icon: Icon(
               Icons.vpn_key_rounded,
               size: 20,
-              color: _hasApiKey ? Colors.greenAccent : null,
+              color: _hasApiKey
+                  ? (isDark ? Colors.greenAccent : const Color(0xFF047857))
+                  : null,
             ),
             tooltip: _hasApiKey ? 'Gemini API Key Active' : 'Configure Gemini API Key',
             onPressed: _showApiKeyModal,
@@ -781,8 +787,8 @@ class _HouseAiChatScreenState extends State<HouseAiChatScreen> {
             onPressed: () {
               setState(() {
                 _messages.clear();
-                _addInitialGreeting();
               });
+              _addInitialGreeting();
             },
           ),
         ],

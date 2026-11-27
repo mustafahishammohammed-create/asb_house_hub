@@ -95,6 +95,7 @@ class _IdScannerScreenState extends State<IdScannerScreen>
     }
 
     try {
+      final previous = _scannerController;
       _scannerController = MobileScannerController(
         detectionSpeed: DetectionSpeed.noDuplicates,
         facing: CameraFacing.back,
@@ -109,9 +110,11 @@ class _IdScannerScreenState extends State<IdScannerScreen>
           BarcodeFormat.dataMatrix,
         ],
       );
+      previous?.dispose();
       if (mounted) {
         setState(() {
           _isCameraInitializing = false;
+          _cameraErrorMessage = null;
         });
       }
     } catch (e) {
@@ -257,6 +260,10 @@ class _IdScannerScreenState extends State<IdScannerScreen>
 
     if (!mounted) return;
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final claimedColor = isDark ? Colors.amberAccent : const Color(0xFFB45309);
+    final validColor = isDark ? Colors.greenAccent : const Color(0xFF047857);
+
     await showDialog(
       context: context,
       barrierDismissible: false,
@@ -296,22 +303,22 @@ class _IdScannerScreenState extends State<IdScannerScreen>
                       margin: const EdgeInsets.only(bottom: 14),
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.amber.withValues(alpha: 0.15),
+                        color: claimedColor.withValues(alpha: 0.14),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.amberAccent.withValues(alpha: 0.5)),
+                        border: Border.all(color: claimedColor.withValues(alpha: 0.45)),
                       ),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Icon(Icons.warning_amber_rounded, color: Colors.amberAccent, size: 24),
+                          Icon(Icons.warning_amber_rounded, color: claimedColor, size: 24),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
                               '⚠️ Previously Claimed by ${currentClaimedBy ?? "Staff"}'
                               '${currentClaimedAt != null ? " on ${currentClaimedAt!.toLocal().toString().split('.').first}" : ""}',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontWeight: FontWeight.bold,
-                                color: Colors.amberAccent,
+                                color: claimedColor,
                                 fontSize: 13,
                               ),
                             ),
@@ -324,20 +331,20 @@ class _IdScannerScreenState extends State<IdScannerScreen>
                       margin: const EdgeInsets.only(bottom: 14),
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.green.withValues(alpha: 0.12),
+                        color: validColor.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.greenAccent.withValues(alpha: 0.4)),
+                        border: Border.all(color: validColor.withValues(alpha: 0.4)),
                       ),
-                      child: const Row(
+                      child: Row(
                         children: [
-                          Icon(Icons.inventory_2_outlined, color: Colors.greenAccent, size: 22),
-                          SizedBox(width: 10),
+                          Icon(Icons.inventory_2_outlined, color: validColor, size: 22),
+                          const SizedBox(width: 10),
                           Expanded(
                             child: Text(
                               'Valid Store Voucher. Ready for handover and fulfillment.',
                               style: TextStyle(
                                 fontWeight: FontWeight.w600,
-                                color: Colors.greenAccent,
+                                color: validColor,
                                 fontSize: 12.5,
                               ),
                             ),
@@ -403,6 +410,7 @@ class _IdScannerScreenState extends State<IdScannerScreen>
                                   claimedAt: result.claimedAt,
                                 );
                               }
+                              if (!dialogCtx.mounted) return;
                               setDialogState(() {
                                 isClaiming = false;
                                 if (result.success || result.alreadyClaimed) {
@@ -452,8 +460,8 @@ class _IdScannerScreenState extends State<IdScannerScreen>
     );
   }
 
-  void _showTamperedVoucherDialog(VoucherValidationResult voucher) {
-    showDialog(
+  Future<void> _showTamperedVoucherDialog(VoucherValidationResult voucher) async {
+    await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -461,7 +469,12 @@ class _IdScannerScreenState extends State<IdScannerScreen>
           children: [
             Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 28),
             SizedBox(width: 8),
-            Text('Tampered Voucher', style: TextStyle(fontWeight: FontWeight.w900)),
+            Expanded(
+              child: Text(
+                'Tampered Voucher',
+                style: TextStyle(fontWeight: FontWeight.w900),
+              ),
+            ),
           ],
         ),
         content: Text(
@@ -488,53 +501,59 @@ class _IdScannerScreenState extends State<IdScannerScreen>
     } catch (_) {}
   }
 
-  void _showTamperedPassDialog(StudentPassValidationResult pass) {
+  Future<void> _showTamperedPassDialog(StudentPassValidationResult pass) async {
     try {
       _scannerController?.stop();
     } catch (_) {}
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
-          children: [
-            Icon(Icons.gpp_bad_rounded, color: Colors.redAccent, size: 28),
-            SizedBox(width: 8),
-            Text('Tampered Student Pass', style: TextStyle(fontWeight: FontWeight.w900)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Security Alert: ${pass.error ?? "Invalid digital signature. This student pass has been modified or forged."}',
-              style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.redAccent),
-            ),
-            const SizedBox(height: 12),
-            if (pass.scholarNo != null && pass.scholarNo!.isNotEmpty)
-              Text('Scholar #: ${pass.scholarNo}', style: const TextStyle(fontWeight: FontWeight.bold)),
-            if (pass.studentName != null && pass.studentName!.isNotEmpty)
-              Text('Student Name: ${pass.studentName}'),
-            if (pass.houseName != null && pass.houseName!.isNotEmpty)
-              Text('Claimed House: ${pass.houseName}'),
-            if (pass.classLevel != null && pass.classLevel!.isNotEmpty)
-              Text('Class Level: ${pass.classLevel}'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              try {
-                _scannerController?.start();
-              } catch (_) {}
-            },
-            child: const Text('Dismiss'),
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Row(
+            children: [
+              Icon(Icons.gpp_bad_rounded, color: Colors.redAccent, size: 28),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Tampered Student Pass',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
-    );
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Security Alert: ${pass.error ?? "Invalid digital signature. This student pass has been modified or forged."}',
+                style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.redAccent),
+              ),
+              const SizedBox(height: 12),
+              if (pass.scholarNo != null && pass.scholarNo!.isNotEmpty)
+                Text('Scholar #: ${pass.scholarNo}', style: const TextStyle(fontWeight: FontWeight.bold)),
+              if (pass.studentName != null && pass.studentName!.isNotEmpty)
+                Text('Student Name: ${pass.studentName}'),
+              if (pass.houseName != null && pass.houseName!.isNotEmpty)
+                Text('Claimed House: ${pass.houseName}'),
+              if (pass.classLevel != null && pass.classLevel!.isNotEmpty)
+                Text('Class Level: ${pass.classLevel}'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Dismiss'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      try {
+        _scannerController?.start();
+      } catch (_) {}
+    }
   }
 
   Future<void> _resolveStudentAndNavigate(
@@ -677,7 +696,7 @@ class _IdScannerScreenState extends State<IdScannerScreen>
           return;
         } else if (pass.isTampered) {
           if (!mounted) return;
-          _showTamperedPassDialog(pass);
+          await _showTamperedPassDialog(pass);
           return;
         }
 
@@ -689,25 +708,25 @@ class _IdScannerScreenState extends State<IdScannerScreen>
           return;
         } else if (voucher.isTampered) {
           if (!mounted) return;
-          _showTamperedVoucherDialog(voucher);
+          await _showTamperedVoucherDialog(voucher);
           return;
         }
 
-        // C. Generic or legacy student JSON fallback
+        // C. Legacy student JSON fallback: never trust unverified caller metadata;
+        // only resolve the scholar number against Firestore / verified directory.
         try {
           final decoded = jsonDecode(trimmed);
           if (decoded is Map) {
             final data = Map<String, dynamic>.from(decoded);
+            final looksLikeVoucher = data.containsKey('billNo') ||
+                data.containsKey('bill_no') ||
+                data.containsKey('orderId') ||
+                data['type']?.toString().toLowerCase() == 'voucher';
             final scholar = (data['scholar_no'] ?? data['scholarNo'] ?? data['scholar_id'] ?? data['scholarId'] ?? '')
                 .toString()
                 .trim();
-            if (scholar.isNotEmpty) {
-              await _navigateToEvaluation(
-                scholarNo: scholar,
-                studentName: (data['name'] ?? data['studentName'] ?? data['full_name'] ?? 'Student').toString().trim(),
-                houseName: AuthService.extractHouse(data) ?? (data['house_name'] ?? data['house'] ?? 'Ruby').toString().trim(),
-                classLevel: (data['class'] ?? data['classLevel'] ?? 'Grade 11').toString().trim(),
-              );
+            if (!looksLikeVoucher && scholar.isNotEmpty) {
+              await _resolveStudentAndNavigate(scholar);
               return;
             }
           }
@@ -721,7 +740,7 @@ class _IdScannerScreenState extends State<IdScannerScreen>
           return;
         } else if (voucher.isTampered) {
           if (!mounted) return;
-          _showTamperedVoucherDialog(voucher);
+          await _showTamperedVoucherDialog(voucher);
           return;
         }
       }
@@ -1152,47 +1171,46 @@ class _IdScannerScreenState extends State<IdScannerScreen>
               ),
             ),
 
-            // Decorative Laser Sweep (Excluded from Screen Reader)
-            ExcludeSemantics(
-              child: AnimatedBuilder(
-                animation: _laserAnimation,
-                builder: (context, child) {
-                  return Positioned(
-                    top: 36 + (_laserAnimation.value * 300),
-                    left: 36,
-                    right: 36,
-                    child: Container(
-                      height: 3,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: _isProcessingScan
-                              ? [
-                                  Colors.transparent,
-                                  Colors.amberAccent,
-                                  Colors.yellowAccent,
-                                  Colors.amberAccent,
-                                  Colors.transparent,
-                                ]
-                              : [
-                                  Colors.transparent,
-                                  Colors.cyanAccent,
-                                  Colors.greenAccent,
-                                  Colors.cyanAccent,
-                                  Colors.transparent,
-                                ],
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: (_isProcessingScan ? Colors.amberAccent : Colors.cyanAccent)
-                                .withValues(alpha: 0.8),
-                            blurRadius: 8,
-                            spreadRadius: 2,
-                          ),
-                        ],
-                      ),
+            // Decorative Laser Sweep (Positioned is direct Stack descendant inside AnimatedBuilder)
+            AnimatedBuilder(
+              animation: _laserAnimation,
+              builder: (context, child) {
+                return Positioned(
+                  top: 36 + (_laserAnimation.value * 300),
+                  left: 36,
+                  right: 36,
+                  child: ExcludeSemantics(child: child!),
+                );
+              },
+              child: Container(
+                height: 3,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: _isProcessingScan
+                        ? [
+                            Colors.transparent,
+                            Colors.amberAccent,
+                            Colors.yellowAccent,
+                            Colors.amberAccent,
+                            Colors.transparent,
+                          ]
+                        : [
+                            Colors.transparent,
+                            Colors.cyanAccent,
+                            Colors.greenAccent,
+                            Colors.cyanAccent,
+                            Colors.transparent,
+                          ],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: (_isProcessingScan ? Colors.amberAccent : Colors.cyanAccent)
+                          .withValues(alpha: 0.8),
+                      blurRadius: 8,
+                      spreadRadius: 2,
                     ),
-                  );
-                },
+                  ],
+                ),
               ),
             ),
 
@@ -1305,9 +1323,11 @@ class _IdScannerScreenState extends State<IdScannerScreen>
                     ),
                   ),
                   onChanged: (_) {
-                    if (_searchErrorMessage != null) {
-                      setState(() => _searchErrorMessage = null);
-                    }
+                    setState(() {
+                      if (_searchErrorMessage != null) {
+                        _searchErrorMessage = null;
+                      }
+                    });
                   },
                   onSubmitted: (_) => _handleManualLookup(),
                 ),
@@ -1392,7 +1412,9 @@ class _IdScannerScreenState extends State<IdScannerScreen>
                           children: [
                             _buildGuidanceBanner(),
                             const SizedBox(height: 20),
-                            _buildDesktopQrDropzone(context, isDark),
+                            _hasMobileCamera
+                                ? _buildMobileViewfinder()
+                                : _buildDesktopQrDropzone(context, isDark),
                           ],
                         ),
                       ),

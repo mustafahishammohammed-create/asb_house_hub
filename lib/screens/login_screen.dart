@@ -40,11 +40,21 @@ class _LoginScreenState extends State<LoginScreen> {
         builder: (ctx) => StatefulBuilder(
           builder: (ctx, setDialogState) => AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: const Row(
+            title: Row(
               children: [
-                Icon(Icons.lock_reset_rounded, color: Color(0xFF1E3A8A)),
-                SizedBox(width: 10),
-                Text('Reset Password', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                Icon(
+                  Icons.lock_reset_rounded,
+                  color: Theme.of(ctx).brightness == Brightness.dark
+                      ? const Color(0xFF93C5FD)
+                      : const Color(0xFF1E3A8A),
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text(
+                    'Reset Password',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                  ),
+                ),
               ],
             ),
             content: Column(
@@ -550,67 +560,71 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
 
-                      // Input Fields (Enter submits when focused inside inputs)
-                      CallbackShortcuts(
-                        bindings: {
-                          const SingleActivator(LogicalKeyboardKey.enter): _handleLogin,
-                          const SingleActivator(LogicalKeyboardKey.numpadEnter): _handleLogin,
-                        },
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            if (!_isAdminLogin)
-                              TextFormField(
-                                controller: _scholarController,
-                                keyboardType: TextInputType.number,
-                                textInputAction: TextInputAction.next,
-                                onFieldSubmitted: (_) {
-                                  if (_passwordController.text.trim().isNotEmpty) {
-                                    _handleLogin();
-                                  }
-                                },
-                                inputFormatters: [
-                                  FilteringTextInputFormatter.digitsOnly,
-                                  LengthLimitingTextInputFormatter(6),
-                                ],
-                                decoration: const InputDecoration(
-                                  labelText: 'Scholar Number',
-                                  prefixIcon: Icon(Icons.badge_rounded),
-                                ),
-                                validator: (v) {
-                                  if (v == null || v.isEmpty) {
-                                    return 'Enter your scholar number';
-                                  }
-                                  if (v.length < 5) {
-                                    return 'Must be 5–6 digits';
-                                  }
-                                  return null;
-                                },
-                              )
-                            else
-                              TextFormField(
-                                controller: _scholarController,
-                                textInputAction: TextInputAction.next,
-                                onFieldSubmitted: (_) {
-                                  if (_passwordController.text.trim().isNotEmpty) {
-                                    _handleLogin();
-                                  }
-                                },
-                                decoration: const InputDecoration(
-                                  labelText: 'Scholar Number / Admin ID',
-                                  prefixIcon: Icon(Icons.admin_panel_settings_rounded),
-                                ),
-                                validator: (v) {
-                                  if (v == null || v.trim().isEmpty) {
-                                    return 'Enter scholar number or ID';
-                                  }
-                                  return null;
-                                },
-                              ),
-                            const SizedBox(height: 18),
-
-                            // Password
+                      // Input Fields (Enter on ID advances to Password unless filled; Enter on Password submits)
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (!_isAdminLogin)
                             TextFormField(
+                              controller: _scholarController,
+                              keyboardType: TextInputType.number,
+                              textInputAction: TextInputAction.next,
+                              onFieldSubmitted: (_) {
+                                if (_passwordController.text.trim().isNotEmpty) {
+                                  _handleLogin();
+                                } else {
+                                  FocusScope.of(context).nextFocus();
+                                }
+                              },
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                                LengthLimitingTextInputFormatter(6),
+                              ],
+                              decoration: const InputDecoration(
+                                labelText: 'Scholar Number',
+                                prefixIcon: Icon(Icons.badge_rounded),
+                              ),
+                              validator: (v) {
+                                if (v == null || v.isEmpty) {
+                                  return 'Enter your scholar number';
+                                }
+                                if (v.length < 5) {
+                                  return 'Must be 5–6 digits';
+                                }
+                                return null;
+                              },
+                            )
+                          else
+                            TextFormField(
+                              controller: _scholarController,
+                              textInputAction: TextInputAction.next,
+                              onFieldSubmitted: (_) {
+                                if (_passwordController.text.trim().isNotEmpty) {
+                                  _handleLogin();
+                                } else {
+                                  FocusScope.of(context).nextFocus();
+                                }
+                              },
+                              decoration: const InputDecoration(
+                                labelText: 'Scholar Number / Admin ID',
+                                prefixIcon: Icon(Icons.admin_panel_settings_rounded),
+                              ),
+                              validator: (v) {
+                                if (v == null || v.trim().isEmpty) {
+                                  return 'Enter scholar number or ID';
+                                }
+                                return null;
+                              },
+                            ),
+                          const SizedBox(height: 18),
+
+                          // Password
+                          CallbackShortcuts(
+                            bindings: {
+                              const SingleActivator(LogicalKeyboardKey.enter): _handleLogin,
+                              const SingleActivator(LogicalKeyboardKey.numpadEnter): _handleLogin,
+                            },
+                            child: TextFormField(
                               controller: _passwordController,
                               obscureText: _obscurePassword,
                               textInputAction: TextInputAction.done,
@@ -641,8 +655,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                 return null;
                               },
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     const SizedBox(height: 8),
 

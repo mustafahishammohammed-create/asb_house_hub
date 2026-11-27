@@ -264,13 +264,18 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
         children: [
           // Banner: Shows Scanner controls for Council/Faculty, or Student Identity Pass for Students
           if (_canScanQr)
-            Container(
+            Builder(
+              builder: (context) {
+                final isDark = Theme.of(context).brightness == Brightness.dark;
+                final titleColor = isDark ? Colors.white : const Color(0xFF0F172A);
+                final subtitleColor = isDark ? Colors.white70 : const Color(0xFF475569);
+                return Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    Colors.blue.withValues(alpha: 0.2),
-                    Colors.indigo.withValues(alpha: 0.1),
+                    Colors.blue.withValues(alpha: isDark ? 0.2 : 0.12),
+                    Colors.indigo.withValues(alpha: isDark ? 0.1 : 0.06),
                   ],
                 ),
                 borderRadius: BorderRadius.circular(20),
@@ -326,11 +331,11 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
                               ),
                             ),
                             const SizedBox(width: 14),
-                            const Expanded(
+                            Expanded(
                               child: Text(
                                 'Faculty & Council Scanner',
                                 style: TextStyle(
-                                  color: Colors.white,
+                                  color: titleColor,
                                   fontWeight: FontWeight.w900,
                                   fontSize: 14,
                                 ),
@@ -339,10 +344,10 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
                           ],
                         ),
                         const SizedBox(height: 8),
-                        const Text(
+                        Text(
                           'Scan student QR to award merits or deduct demerits.',
                           style: TextStyle(
-                            color: Colors.white70,
+                            color: subtitleColor,
                             fontSize: 11,
                           ),
                         ),
@@ -370,14 +375,14 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
                         ),
                       ),
                       const SizedBox(width: 14),
-                      const Expanded(
+                      Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
                               'Faculty & Council Scanner',
                               style: TextStyle(
-                                color: Colors.white,
+                                color: titleColor,
                                 fontWeight: FontWeight.w900,
                                 fontSize: 14,
                               ),
@@ -385,7 +390,7 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
                             Text(
                               'Scan student QR to award merits or deduct demerits.',
                               style: TextStyle(
-                                color: Colors.white70,
+                                color: subtitleColor,
                                 fontSize: 11,
                               ),
                             ),
@@ -398,15 +403,22 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
                   );
                 },
               ),
+            );
+              },
             )
           else
-            Container(
+            Builder(
+              builder: (context) {
+                final isDark = Theme.of(context).brightness == Brightness.dark;
+                final titleColor = isDark ? Colors.white : const Color(0xFF0F172A);
+                final subtitleColor = isDark ? Colors.white70 : const Color(0xFF475569);
+                return Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    houseColor.withValues(alpha: 0.2),
-                    const Color(0xFF1F2937).withValues(alpha: 0.6),
+                    houseColor.withValues(alpha: isDark ? 0.2 : 0.14),
+                    (isDark ? const Color(0xFF1F2937) : Colors.white).withValues(alpha: 0.8),
                   ],
                 ),
                 borderRadius: BorderRadius.circular(20),
@@ -427,14 +439,14 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
                     ),
                   ),
                   const SizedBox(width: 14),
-                  const Expanded(
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           'Official Student Identity Card',
                           style: TextStyle(
-                            color: Colors.white,
+                            color: titleColor,
                             fontWeight: FontWeight.w900,
                             fontSize: 14,
                           ),
@@ -442,7 +454,7 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
                         Text(
                           'Present your verified QR pass to Teachers or Council to track merits.',
                           style: TextStyle(
-                            color: Colors.white70,
+                            color: subtitleColor,
                             fontSize: 11,
                           ),
                         ),
@@ -451,6 +463,8 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
                   ),
                 ],
               ),
+            );
+              },
             ),
           const SizedBox(height: 20),
 
@@ -1709,25 +1723,29 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
                               borderRadius: BorderRadius.circular(12),
                             ),
                           ),
-                          onPressed: () async {
+                          onPressed: () {
                             Navigator.pop(ctx);
-                            final res = await PassDocumentExporter.exportPass(
+                            PassDocumentExporter.exportPass(
                               title: title,
                               subtitle: subtitle,
                               details: details,
                               totalInfo: totalInfo,
                               qrData: qrData.isNotEmpty ? qrData : 'ASB-PASS-VERIFIED',
+                            ).then((res) {
+                              if (!res.success && context.mounted) {
+                                _dispatchAccessibleFeedback(
+                                  context,
+                                  'Print export error: ${res.error}',
+                                  icon: '⚠️',
+                                );
+                              }
+                            });
+                            final printMsg = _getPlatformPrintMessage();
+                            _dispatchAccessibleFeedback(
+                              context,
+                              '$printMsg Saved PDF copy to Downloads.',
+                              icon: '🖨️',
                             );
-                            if (context.mounted) {
-                              final printMsg = _getPlatformPrintMessage();
-                              _dispatchAccessibleFeedback(
-                                context,
-                                res.success
-                                    ? '$printMsg Saved PDF copy to: ${res.filePath}'
-                                    : 'Print export error: ${res.error}',
-                                icon: '🖨️',
-                              );
-                            }
                           },
                         );
 
@@ -1743,7 +1761,7 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
                               borderRadius: BorderRadius.circular(12),
                             ),
                           ),
-                          onPressed: () async {
+                          onPressed: () {
                             Navigator.pop(ctx);
                             // Asynchronously writes compliant PDF bytes to disk
                             PassDocumentExporter.exportPassToDisk(
@@ -1752,7 +1770,15 @@ class _DigitalWalletScreenState extends State<DigitalWalletScreen>
                               details: details,
                               totalInfo: totalInfo,
                               qrData: qrData.isNotEmpty ? qrData : 'ASB-PASS-VERIFIED',
-                            );
+                            ).then((res) {
+                              if (!res.success && context.mounted) {
+                                _dispatchAccessibleFeedback(
+                                  context,
+                                  'Export error: ${res.error}',
+                                  icon: '⚠️',
+                                );
+                              }
+                            });
                             _dispatchAccessibleFeedback(
                               context,
                               'Exported high-resolution PDF pass to Downloads.',

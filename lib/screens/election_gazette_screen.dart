@@ -294,15 +294,19 @@ class _ElectionGazetteScreenState extends State<ElectionGazetteScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => Container(
+        constraints: const BoxConstraints(maxWidth: 640),
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF0F172A) : Colors.white,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+        child: SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
             Center(
               child: Container(
                 width: 40,
@@ -360,7 +364,15 @@ class _ElectionGazetteScreenState extends State<ElectionGazetteScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text('Winner:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                      Text('${item.winnerName} (#${item.winnerScholarNo})', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          '${item.winnerName} (#${item.winnerScholarNo})',
+                          textAlign: TextAlign.end,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -368,7 +380,15 @@ class _ElectionGazetteScreenState extends State<ElectionGazetteScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text('House:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                      Text(item.winnerHouse.toUpperCase(), style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: houseColor)),
+                      const SizedBox(width: 12),
+                      Flexible(
+                        child: Text(
+                          item.winnerHouse.toUpperCase(),
+                          textAlign: TextAlign.end,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: houseColor),
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -376,7 +396,15 @@ class _ElectionGazetteScreenState extends State<ElectionGazetteScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text('Total Certified Votes:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                      Text('${item.totalVotesReceived} Votes', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13)),
+                      const SizedBox(width: 12),
+                      Flexible(
+                        child: Text(
+                          '${item.totalVotesReceived} Votes',
+                          textAlign: TextAlign.end,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -384,7 +412,15 @@ class _ElectionGazetteScreenState extends State<ElectionGazetteScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text('Victory Margin:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                      Text('+${item.victoryMarginVotes} Votes', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: Colors.green)),
+                      const SizedBox(width: 12),
+                      Flexible(
+                        child: Text(
+                          '+${item.victoryMarginVotes} Votes',
+                          textAlign: TextAlign.end,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: Colors.green),
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -392,7 +428,15 @@ class _ElectionGazetteScreenState extends State<ElectionGazetteScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text('Certified By:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                      Text(item.commissionerName, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          item.commissionerName,
+                          textAlign: TextAlign.end,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -446,6 +490,8 @@ class _ElectionGazetteScreenState extends State<ElectionGazetteScreen> {
               ],
             ),
           ],
+        ),
+          ),
         ),
       ),
     );

@@ -900,6 +900,11 @@ class _AppleBadgePainter extends CustomPainter {
         oldDelegate.tiltX != tiltX ||
         oldDelegate.tiltY != tiltY ||
         oldDelegate.isBack != isBack ||
-        oldDelegate.badge.unlocked != badge.unlocked;
+        oldDelegate.badge.unlocked != badge.unlocked ||
+        oldDelegate.badge.progress != badge.progress ||
+        oldDelegate.badge.title != badge.title ||
+        oldDelegate.recipientName != recipientName ||
+        oldDelegate.scholarNo != scholarNo ||
+        oldDelegate.houseName != houseName;
   }
 }

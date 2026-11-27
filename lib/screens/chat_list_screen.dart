@@ -310,8 +310,19 @@ class _ChatListScreenState extends State<ChatListScreen>
           StreamBuilder<QuerySnapshot>(
             stream: _chatService.getMyChatsStream(),
             builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
+              if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
                 return const Center(child: CircularProgressIndicator());
+              }
+              if (snapshot.hasError && !snapshot.hasData) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'Unable to load conversations right now.',
+                      style: TextStyle(color: Colors.grey[600], fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                );
               }
               if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                 return Center(
@@ -410,16 +421,6 @@ class _ChatListScreenState extends State<ChatListScreen>
                     name: otherName,
                     house: otherHouse,
                   );
-
-                  // Self-heal participant_houses if missing in Firestore chat room doc
-                  if (!housesMap.containsKey(otherUid) || !housesMap.containsKey(myUid)) {
-                    try {
-                      docs[index].reference.update({
-                        'participant_houses.$myUid': myHouse,
-                        'participant_houses.$otherUid': otherHouse,
-                      }).catchError((_) {});
-                    } catch (_) {}
-                  }
 
                   final lastMsg =
                       data['last_message']?.toString() ?? 'Chat started';
@@ -649,8 +650,19 @@ class _ChatListScreenState extends State<ChatListScreen>
           StreamBuilder<QuerySnapshot>(
             stream: _chatService.getAllUsersStream(),
             builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
+              if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
                 return const Center(child: CircularProgressIndicator());
+              }
+              if (snapshot.hasError && !snapshot.hasData) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'Unable to load conversations right now.',
+                      style: TextStyle(color: Colors.grey[600], fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                );
               }
               if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                 return const Center(child: Text('No registered users found.'));

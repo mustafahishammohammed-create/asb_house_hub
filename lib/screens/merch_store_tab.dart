@@ -915,13 +915,24 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
           GlobalWalletStore.orders.add(newOrder);
         }
       });
-      await GlobalWalletStore.addAndPersistOrder(
-        newOrder,
-        scholarNo: widget.scholarNo,
-        studentName: widget.studentName,
-        house: widget.userHouse,
-        totalBhd: totalBhd,
-      );
+      try {
+        await GlobalWalletStore.addAndPersistOrder(
+          newOrder,
+          scholarNo: widget.scholarNo,
+          studentName: widget.studentName,
+          house: widget.userHouse,
+          totalBhd: totalBhd,
+        );
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not complete order: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+        return;
+      }
 
       if (!mounted) return;
       _showDigitalWalletPass(newOrder);
@@ -1391,17 +1402,22 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                                           vertical: 4,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: Colors.green.withValues(
-                                            alpha: 0.15,
-                                          ),
+                                          color: (order.isClaimed
+                                                  ? Colors.blueGrey
+                                                  : Colors.green)
+                                              .withValues(alpha: 0.15),
                                           borderRadius: BorderRadius.circular(
                                             10,
                                           ),
                                         ),
-                                        child: const Text(
-                                          'READY AT STORE 🟢',
+                                        child: Text(
+                                          order.isClaimed
+                                              ? 'CLAIMED'
+                                              : 'READY AT STORE',
                                           style: TextStyle(
-                                            color: Colors.green,
+                                            color: order.isClaimed
+                                                ? Colors.blueGrey
+                                                : Colors.green[700],
                                             fontWeight: FontWeight.w800,
                                             fontSize: 10,
                                           ),
@@ -1449,7 +1465,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                                         label: const FittedBox(
                                           fit: BoxFit.scaleDown,
                                           child: Text(
-                                            'View Pass ',
+                                            'View Pass',
                                             style: TextStyle(
                                               fontWeight: FontWeight.w800,
                                               fontSize: 12,
@@ -1587,6 +1603,13 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                                   height: 320,
                                   child: const Center(
                                     child: CircularProgressIndicator(),
+                                  ),
+                                ),
+                                errorWidget: (context, url, error) => Container(
+                                  color: Colors.grey.withValues(alpha: 0.12),
+                                  height: 320,
+                                  child: const Center(
+                                    child: Icon(Icons.broken_image_rounded, size: 42, color: Colors.grey),
                                   ),
                                 ),
                               ),
@@ -1958,7 +1981,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                           label: const FittedBox(
                             fit: BoxFit.scaleDown,
                             child: Text(
-                              'Buy & Save to Wallet ',
+                              'Buy & Save to Wallet',
                               style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w900,
@@ -2077,6 +2100,12 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                                     width: 70,
                                     height: 70,
                                     fit: BoxFit.cover,
+                                    errorWidget: (context, url, error) => Container(
+                                      width: 70,
+                                      height: 70,
+                                      color: Colors.grey.withValues(alpha: 0.12),
+                                      child: const Icon(Icons.broken_image_rounded, color: Colors.grey),
+                                    ),
                                   ),
                                 ),
                                 const SizedBox(width: 14),
@@ -2339,7 +2368,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                               ),
                             ),
                             child: const Text(
-                              'Confirm Order & Open Wallet Pass ',
+                              'Confirm Order & Open Wallet Pass',
                               style: TextStyle(
                                 fontSize: 17,
                                 fontWeight: FontWeight.w800,
@@ -2489,7 +2518,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                           const SizedBox(width: 8),
                           Flexible(
                             child: Text(
-                              'Passes (${GlobalWalletStore.orders.length}) ',
+                              'Passes (${GlobalWalletStore.orders.length})',
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w900,
@@ -2865,6 +2894,13 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                               height: 240,
                               width: double.infinity,
                               fit: BoxFit.cover,
+                              errorWidget: (context, url, error) => Container(
+                                height: 240,
+                                color: Colors.grey.withValues(alpha: 0.12),
+                                child: const Center(
+                                  child: Icon(Icons.broken_image_rounded, size: 40, color: Colors.grey),
+                                ),
+                              ),
                             ),
                           ),
                           Positioned(
@@ -3034,7 +3070,7 @@ class _MerchStoreTabState extends State<MerchStoreTab> {
                                           label: const FittedBox(
                                             fit: BoxFit.scaleDown,
                                             child: Text(
-                                              'Buy to Wallet ',
+                                              'Buy to Wallet',
                                               style: TextStyle(
                                                 fontWeight: FontWeight.w800,
                                               ),
@@ -3207,6 +3243,12 @@ class _MerchCardState extends State<_MerchCard> {
                         placeholder: (context, url) => Container(
                           color: Colors.grey.withValues(alpha: 0.1),
                         ),
+                        errorWidget: (context, url, error) => Container(
+                          color: Colors.grey.withValues(alpha: 0.12),
+                          child: const Center(
+                            child: Icon(Icons.broken_image_rounded, color: Colors.grey),
+                          ),
+                        ),
                       ),
                       Positioned(
                         top: 10,
@@ -3344,7 +3386,7 @@ class _MerchCardState extends State<_MerchCard> {
                                     ),
                                     SizedBox(width: 4),
                                     Text(
-                                      'To Wallet ',
+                                      'To Wallet',
                                       style: TextStyle(
                                         color: Colors.white,
                                         fontWeight: FontWeight.w800,

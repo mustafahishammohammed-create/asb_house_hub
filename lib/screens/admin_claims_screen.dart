@@ -2569,8 +2569,16 @@ class _EditRosterSlotDialogState extends State<EditRosterSlotDialog> {
 
       if (!mounted) return;
       Navigator.pop(context);
-    } catch (_) {
-      if (mounted) setState(() => _isSaving = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isSaving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to update roster slot: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
     }
   }
 
@@ -2579,7 +2587,9 @@ class _EditRosterSlotDialogState extends State<EditRosterSlotDialog> {
     setState(() => _isSaving = true);
 
     try {
-      final oldScholar = _scholarCtrl.text.trim();
+      final storedScholar = (widget.data['scholar_no'] ?? '').toString().trim();
+      final oldScholar =
+          storedScholar.isNotEmpty ? storedScholar : _scholarCtrl.text.trim();
       await widget.authService.revokeUserRole(
         scholarNo: oldScholar,
         slotId: widget.docId,
@@ -2593,8 +2603,16 @@ class _EditRosterSlotDialogState extends State<EditRosterSlotDialog> {
           backgroundColor: Colors.orange,
         ),
       );
-    } catch (_) {
-      if (mounted) setState(() => _isSaving = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isSaving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to vacate roster slot: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
     }
   }
 
@@ -2661,7 +2679,8 @@ class _EditRosterSlotDialogState extends State<EditRosterSlotDialog> {
         ),
       ),
       actions: [
-        if (_scholarCtrl.text.isNotEmpty)
+        if (((widget.data['scholar_no'] ?? '').toString().trim()).isNotEmpty ||
+            _scholarCtrl.text.trim().isNotEmpty)
           TextButton.icon(
             style: TextButton.styleFrom(foregroundColor: Colors.red),
             onPressed: _isSaving ? null : _handleVacate,

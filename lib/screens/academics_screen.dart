@@ -39,6 +39,14 @@ const List<String> kAcademicSubjects = [
   'Chemistry',
   'Computer Science',
   'English',
+  'Biology',
+  'Social Studies',
+  'Hindi',
+  'Arabic',
+  'French',
+  'Business Studies',
+  'Economics',
+  'Accountancy',
 ];
 
 /// Full Academics Screen with Quint-Segment Tab Switcher for Class Timetable,
@@ -230,41 +238,51 @@ class _AcademicsScreenState extends State<AcademicsScreen> {
         backgroundColor: Colors.transparent,
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(56),
-          child: _buildResponsiveAcademicTabs(isDark),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 960),
+              child: _buildResponsiveAcademicTabs(isDark),
+            ),
+          ),
         ),
       ),
-      body: _activeTab == 'timetable'
-          ? TimetableTab(
-              classLevel: effectiveClass,
-              initialDay: widget.initialDay,
-              mockNow: widget.mockNow,
-              initialPeriods: widget.initialPeriods,
-            )
-          : (_activeTab == 'homework'
-              ? AssignmentsTab(
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 960),
+          child: _activeTab == 'timetable'
+              ? TimetableTab(
                   classLevel: effectiveClass,
-                  selectedSubject: widget.selectedSubject,
+                  initialDay: widget.initialDay,
                   mockNow: widget.mockNow,
-                  initialAssignments: widget.initialAssignments,
+                  initialPeriods: widget.initialPeriods,
                 )
-              : (_activeTab == 'exams'
-                  ? ExamsTab(
+              : (_activeTab == 'homework'
+                  ? AssignmentsTab(
                       classLevel: effectiveClass,
                       selectedSubject: widget.selectedSubject,
                       mockNow: widget.mockNow,
-                      initialExams: widget.initialExams,
+                      initialAssignments: widget.initialAssignments,
                     )
-                  : (_activeTab == 'reports'
-                      ? ReportCardTab(
+                  : (_activeTab == 'exams'
+                      ? ExamsTab(
                           classLevel: effectiveClass,
-                          scholarNo: widget.scholarNo,
-                          initialReportCards: widget.initialReportCards,
+                          selectedSubject: widget.selectedSubject,
+                          mockNow: widget.mockNow,
+                          initialExams: widget.initialExams,
                         )
-                      : AcademicAttendanceTab(
-                          classLevel: effectiveClass,
-                          scholarNo: widget.scholarNo,
-                          initialAttendance: widget.initialAttendance,
-                        )))),
+                      : (_activeTab == 'reports'
+                          ? ReportCardTab(
+                              classLevel: effectiveClass,
+                              scholarNo: widget.scholarNo,
+                              initialReportCards: widget.initialReportCards,
+                            )
+                          : AcademicAttendanceTab(
+                              classLevel: effectiveClass,
+                              scholarNo: widget.scholarNo,
+                              initialAttendance: widget.initialAttendance,
+                            )))),
+        ),
+      ),
     );
   }
 }
@@ -405,9 +423,16 @@ class _TimetableTabState extends State<TimetableTab> {
     final isTeacherOrAdmin = HierarchyService.isTeacherOrFaculty(role: role, scholarNo: scholarNo) ||
         HierarchyService.isSuperAdmin(role: role, scholarNo: scholarNo);
 
-    final rawClassId = profile?['class_id']?.toString().trim() ?? '';
-    final parsedClass = AcademicStructure.parseClassId(rawClassId) ?? AcademicStructure.parseClassId(_effectiveClass);
-    final canonicalClassId = rawClassId.isNotEmpty ? rawClassId : (parsedClass != null ? AcademicStructure.classIdFrom(parsedClass.$1, parsedClass.$2) : '');
+    final rawClassId = widget.classLevel == null
+        ? (profile?['class_id']?.toString().trim() ?? '')
+        : '';
+    final parsedClass = AcademicStructure.parseClassId(rawClassId) ??
+        AcademicStructure.parseClassId(_effectiveClass);
+    final canonicalClassId = rawClassId.isNotEmpty
+        ? rawClassId
+        : (parsedClass != null
+            ? AcademicStructure.classIdFrom(parsedClass.$1, parsedClass.$2)
+            : '');
 
     final editableClasses = <AcademicClass>[];
     if (isTeacherOrAdmin) {
@@ -2534,7 +2559,8 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
   }
 
   void _cycleAssignmentStatus(AcademicAssignment assignment) {
-    var nextStatus = assignment.status.nextStatus;
+    final currentStatus = _optimisticStatus[assignment.id] ?? assignment.status;
+    var nextStatus = currentStatus.nextStatus;
 
     // G4 & R1: Gating graded status to staff + council
     if (nextStatus == AssignmentStatus.graded) {
@@ -2586,8 +2612,10 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModalState) {
+      builder: (ctx) => ManagedModalScope(
+        controllers: [notesController],
+        child: StatefulBuilder(
+          builder: (ctx, setModalState) {
           return Container(
             padding: EdgeInsets.only(
               left: 20,
@@ -2827,7 +2855,7 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       ),
-                      onPressed: () {
+                      onPressed: () async {
                         final notes = notesController.text.trim();
                         final finalNotes = attachedFileName != null
                             ? '$notes\n[Attached File: $attachedFileName]'.trim()
@@ -2845,14 +2873,17 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
 
                         widget.onStatusChanged?.call(updated);
 
-                        _authService.updateAssignmentStatus(
+                        await _authService.updateAssignmentStatus(
                           assignmentId: assignment.id,
                           newStatus: AssignmentStatus.submitted,
                           classLevel: _effectiveClass,
                           pointsReward: assignment.pointsReward,
                         );
 
-                        Navigator.of(ctx).pop();
+                        if (ctx.mounted) {
+                          Navigator.of(ctx).pop();
+                        }
+                        if (!context.mounted) return;
 
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
@@ -2877,6 +2908,7 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
             ),
           );
         },
+      ),
       ),
     );
   }
@@ -3276,6 +3308,7 @@ class _ExamsTabState extends State<ExamsTab> {
   late String _currentSubject;
   late String _effectiveClass;
   final Set<String> _expandedExamIds = {};
+  Timer? _tickerTimer;
 
   @override
   void initState() {
@@ -3283,6 +3316,29 @@ class _ExamsTabState extends State<ExamsTab> {
     final profile = AuthService.getCachedProfile();
     _effectiveClass = widget.classLevel ?? profile?['class_level']?.toString() ?? 'Grade 10';
     _currentSubject = widget.selectedSubject ?? 'All';
+    if (widget.mockNow == null) {
+      _tickerTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+        if (mounted) setState(() {});
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant ExamsTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.classLevel != oldWidget.classLevel && widget.classLevel != null) {
+      _effectiveClass = widget.classLevel!;
+    }
+    if (widget.selectedSubject != oldWidget.selectedSubject &&
+        widget.selectedSubject != null) {
+      _currentSubject = widget.selectedSubject!;
+    }
+  }
+
+  @override
+  void dispose() {
+    _tickerTimer?.cancel();
+    super.dispose();
   }
 
   DateTime get _currentTime => widget.mockNow ?? DateTime.now();
@@ -3330,87 +3386,167 @@ class _ExamsTabState extends State<ExamsTab> {
         // Main Exams Stream List
         Expanded(
           child: StreamBuilder<List<ExamScheduleItem>>(
-            stream: _authService.getExamScheduleStream(
-              classLevel: _effectiveClass,
-              subject: _currentSubject,
-            ),
+            stream: initialList != null
+                ? Stream.value(cachedExams)
+                : _authService.getExamScheduleStream(
+                    classLevel: _effectiveClass,
+                    subject: _currentSubject,
+                  ),
             initialData: cachedExams.isNotEmpty ? cachedExams : null,
             builder: (context, snapshot) {
-              final exams = (snapshot.hasData && snapshot.data != null && snapshot.data!.isNotEmpty)
-                  ? snapshot.data!
-                  : cachedExams;
+              if (snapshot.hasError && cachedExams.isEmpty) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.cloud_off_rounded, size: 42, color: Colors.orangeAccent),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'Could not load examination calendar right now.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          onPressed: () => setState(() {}),
+                          icon: const Icon(Icons.refresh_rounded, size: 18),
+                          label: const Text('Retry'),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
+
+              final List<ExamScheduleItem> exams;
+              if (initialList != null) {
+                exams = List<ExamScheduleItem>.from(cachedExams);
+              } else if (snapshot.hasData && snapshot.data != null) {
+                exams = List<ExamScheduleItem>.from(snapshot.data!);
+              } else {
+                exams = List<ExamScheduleItem>.from(cachedExams);
+              }
+
+              final profile = AuthService.getCachedProfile();
+              final isTeacherOrAdmin = HierarchyService.isTeacherOrFaculty(
+                    role: profile?['role'],
+                    scholarNo: profile?['scholar_no'],
+                  ) ||
+                  HierarchyService.isSuperAdmin(
+                    role: profile?['role'],
+                    scholarNo: profile?['scholar_no'],
+                  );
+
+              final upcomingAndLive = exams
+                  .where((e) => !e.isConcluded(now))
+                  .toList()
+                ..sort((a, b) => a.examDateTime.compareTo(b.examDateTime));
+              final concludedExams = exams
+                  .where((e) => e.isConcluded(now))
+                  .toList()
+                ..sort((a, b) => b.examDateTime.compareTo(a.examDateTime));
+              final urgentOrLiveCount = upcomingAndLive
+                  .where((e) => e.isInProgress(now) || e.isUrgent(now))
+                  .length;
 
               return SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Teacher / Faculty Exam Publisher Action (for Teachers/Admins)
-                    Builder(
-                      builder: (context) {
-                        final profile = AuthService.getCachedProfile();
-                        final isTeacherOrAdmin = HierarchyService.isTeacherOrFaculty(
-                              role: profile?['role'],
-                              scholarNo: profile?['scholar_no'],
-                            ) ||
-                            HierarchyService.isSuperAdmin(
-                              role: profile?['role'],
-                              scholarNo: profile?['scholar_no'],
-                            );
-                        if (isTeacherOrAdmin) {
-                          return Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              _buildTeacherExamPublisherAction(isDark),
-                              const SizedBox(height: 16),
-                            ],
-                          );
-                        }
-                        return const SizedBox.shrink();
-                      },
-                    ),
+                    if (isTeacherOrAdmin) ...[
+                      _buildTeacherExamPublisherAction(isDark),
+                      const SizedBox(height: 16),
+                    ],
 
-                    // Section Heading
-                    Wrap(
-                      alignment: WrapAlignment.spaceBetween,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 8,
-                      runSpacing: 6,
-                      children: [
-                        Text(
-                          _currentSubject == 'All' ? 'Mid-Term Examinations' : '$_currentSubject Exams',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w900,
-                            color: isDark ? Colors.white : const Color(0xFF0F172A),
-                          ),
-                        ),
-                        if (exams.isNotEmpty)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEEF2F6),
-                              borderRadius: BorderRadius.circular(10),
+                    if (exams.isNotEmpty) ...[
+                      _buildExamCalendarSummaryBanner(
+                        isDark: isDark,
+                        upcoming: upcomingAndLive,
+                        concludedCount: concludedExams.length,
+                        urgentOrLiveCount: urgentOrLiveCount,
+                        now: now,
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+
+                    // Section Heading (full width so Wrap spaceBetween never collapses)
+                    SizedBox(
+                      width: double.infinity,
+                      child: Wrap(
+                        alignment: WrapAlignment.spaceBetween,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: [
+                          Text(
+                            _currentSubject == 'All'
+                                ? 'Exam Calendar'
+                                : '$_currentSubject Exams',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                              color: isDark ? Colors.white : const Color(0xFF0F172A),
                             ),
-                            child: Text(
-                              '${exams.length} Papers Scheduled',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: isDark ? Colors.white70 : const Color(0xFF475569),
+                          ),
+                          if (exams.isNotEmpty)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEEF2F6),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                '${exams.length} Papers Scheduled',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: isDark ? Colors.white70 : const Color(0xFF475569),
+                                ),
                               ),
                             ),
-                          ),
-                      ],
+                        ],
+                      ),
                     ),
 
                     const SizedBox(height: 12),
 
-                    // Empty State or Exam Cards
+                    // Empty State or Chronological Exam Calendar Sections
                     if (exams.isEmpty)
                       _buildEmptyState(isDark)
-                    else
-                      ...exams.map((exam) => _buildExamCard(exam, now, isDark)),
+                    else ...[
+                      ...upcomingAndLive.map(
+                        (exam) => _buildExamCard(
+                          exam,
+                          now,
+                          isDark,
+                          canManage: isTeacherOrAdmin && initialList == null,
+                        ),
+                      ),
+                      if (concludedExams.isNotEmpty) ...[
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8, bottom: 10),
+                          child: Text(
+                            'Concluded Examinations (${concludedExams.length})',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              color: isDark ? Colors.white60 : const Color(0xFF64748B),
+                            ),
+                          ),
+                        ),
+                        ...concludedExams.map(
+                          (exam) => _buildExamCard(
+                            exam,
+                            now,
+                            isDark,
+                            canManage: isTeacherOrAdmin && initialList == null,
+                          ),
+                        ),
+                      ],
+                    ],
 
                     const SizedBox(height: 32),
                   ],
@@ -3494,8 +3630,135 @@ class _ExamsTabState extends State<ExamsTab> {
     );
   }
 
+  Widget _buildExamCalendarSummaryBanner({
+    required bool isDark,
+    required List<ExamScheduleItem> upcoming,
+    required int concludedCount,
+    required int urgentOrLiveCount,
+    required DateTime now,
+  }) {
+    final nextExam = upcoming.isNotEmpty ? upcoming.first : null;
+    final accent = isDark ? const Color(0xFF38BDF8) : const Color(0xFF4338CA);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: isDark
+              ? const [Color(0xFF1E293B), Color(0xFF0F172A)]
+              : const [Color(0xFFEEF2FF), Color(0xFFF0F9FF)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: accent.withValues(alpha: isDark ? 0.35 : 0.25),
+        ),
+      ),
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 12,
+        runSpacing: 10,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(Icons.calendar_month_rounded, color: accent, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      nextExam != null
+                          ? 'Next: ${nextExam.subject} (${_monthName(nextExam.examDateTime.month)} ${nextExam.examDateTime.day})'
+                          : 'All $_effectiveClass Papers Completed',
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w900,
+                        color: isDark ? Colors.white : const Color(0xFF0F172A),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      nextExam != null
+                          ? '${nextExam.formattedCountdown(now)} • ${nextExam.examHall}'
+                          : '$concludedCount concluded examination${concludedCount == 1 ? '' : 's'}',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.white70 : const Color(0xFF475569),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              if (urgentOrLiveCount > 0)
+                _buildCalendarStatChip(
+                  label: '$urgentOrLiveCount Soon',
+                  color: isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309),
+                  bg: isDark ? const Color(0xFF451A03) : const Color(0xFFFEF3C7),
+                ),
+              _buildCalendarStatChip(
+                label: '${upcoming.length} Upcoming',
+                color: accent,
+                bg: accent.withValues(alpha: 0.14),
+              ),
+              if (concludedCount > 0)
+                _buildCalendarStatChip(
+                  label: '$concludedCount Done',
+                  color: isDark ? Colors.white70 : const Color(0xFF475569),
+                  bg: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCalendarStatChip({
+    required String label,
+    required Color color,
+    required Color bg,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          color: color,
+        ),
+      ),
+    );
+  }
+
   /// Individual Mid-Term Exam Card Component.
-  Widget _buildExamCard(ExamScheduleItem exam, DateTime now, bool isDark) {
+  Widget _buildExamCard(
+    ExamScheduleItem exam,
+    DateTime now,
+    bool isDark, {
+    bool canManage = false,
+  }) {
     final isUrgent = exam.isUrgent(now);
     final isInProgress = exam.isInProgress(now);
     final isConcluded = exam.isConcluded(now);
@@ -3503,6 +3766,8 @@ class _ExamsTabState extends State<ExamsTab> {
 
     final dateStr =
         '${_monthName(exam.examDateTime.month)} ${exam.examDateTime.day}, ${exam.examDateTime.year} • ${_formatTime(exam.examDateTime)}';
+    final dayNumber = exam.examDateTime.day.toString().padLeft(2, '0');
+    final monthShort = _monthName(exam.examDateTime.month).toUpperCase();
 
     return Padding(
       key: Key('exam_card_${exam.id}'),
@@ -3532,96 +3797,196 @@ class _ExamsTabState extends State<ExamsTab> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Top Bar: Subject Badge + Marks / Duration Pill
-            Wrap(
-              alignment: WrapAlignment.spaceBetween,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 8,
-              runSpacing: 6,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF0F172A) : const Color(0xFFEEF2F6),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(
-                      exam.subject.toUpperCase(),
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 0.5,
-                        color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF4338CA),
+            // Top Bar: Subject Badge + Marks / Duration Pill + Teacher/Admin Actions
+            SizedBox(
+              width: double.infinity,
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF0F172A) : const Color(0xFFEEF2F6),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        exam.subject.toUpperCase(),
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.5,
+                          color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF4338CA),
+                        ),
                       ),
                     ),
                   ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF38BDF8).withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFF38BDF8).withValues(alpha: 0.3)),
-                  ),
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.assessment_rounded, size: 14, color: Color(0xFF38BDF8)),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${exam.maxMarks} Marks • ${exam.durationMinutes}m',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w900,
-                            color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0369A1),
+                  Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 4,
+                    runSpacing: 4,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF38BDF8).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFF38BDF8).withValues(alpha: 0.3)),
+                        ),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.assessment_rounded,
+                                size: 14,
+                                color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0369A1),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                '${exam.maxMarks} Marks • ${exam.durationMinutes}m',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w900,
+                                  color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0369A1),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                      if (canManage)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                              padding: EdgeInsets.zero,
+                              icon: Icon(
+                                Icons.edit_outlined,
+                                size: 18,
+                                color: isDark ? Colors.white70 : const Color(0xFF475569),
+                              ),
+                              tooltip: 'Edit exam schedule',
+                              onPressed: () => _showPublishExamDialog(editingExam: exam),
+                            ),
+                            IconButton(
+                              constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                              padding: EdgeInsets.zero,
+                              icon: const Icon(
+                                Icons.delete_outline_rounded,
+                                size: 18,
+                                color: Color(0xFFEF4444),
+                              ),
+                              tooltip: 'Delete exam schedule',
+                              onPressed: () => _confirmDeleteExam(exam),
+                            ),
+                          ],
+                        ),
+                    ],
                   ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 12),
-
-            // Paper Title
-            Text(
-              exam.paperTitle,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: isDark ? Colors.white : const Color(0xFF0F172A),
+                ],
               ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
             ),
 
-            const SizedBox(height: 6),
+            const SizedBox(height: 12),
 
-            // Exam Date & Time
+            // Calendar Date Tile + Paper Title & Time
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  Icons.calendar_today_rounded,
-                  size: 13,
-                  color: isDark ? Colors.white60 : const Color(0xFF64748B),
-                ),
-                const SizedBox(width: 5),
-                Expanded(
-                  child: Text(
-                    dateStr,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: isDark ? Colors.white70 : const Color(0xFF64748B),
+                Container(
+                  constraints: const BoxConstraints(minWidth: 52),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: isConcluded
+                        ? (isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9))
+                        : (isUrgent
+                            ? (isDark ? const Color(0xFF451A03) : const Color(0xFFFEF3C7))
+                            : (isDark ? const Color(0xFF0F172A) : const Color(0xFFEEF2FF))),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isConcluded
+                          ? (isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1))
+                          : (isUrgent
+                              ? const Color(0xFFF59E0B).withValues(alpha: 0.6)
+                              : const Color(0xFF6366F1).withValues(alpha: 0.35)),
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        monthShort,
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.6,
+                          color: isConcluded
+                              ? (isDark ? Colors.white54 : const Color(0xFF64748B))
+                              : (isUrgent
+                                  ? (isDark ? const Color(0xFFFBBF24) : const Color(0xFF92400E))
+                                  : (isDark ? const Color(0xFF38BDF8) : const Color(0xFF4338CA))),
+                        ),
+                      ),
+                      Text(
+                        dayNumber,
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          height: 1.1,
+                          color: isConcluded
+                              ? (isDark ? Colors.white60 : const Color(0xFF475569))
+                              : (isDark ? Colors.white : const Color(0xFF0F172A)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        exam.paperTitle,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: isDark ? Colors.white : const Color(0xFF0F172A),
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 5),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.calendar_today_rounded,
+                            size: 13,
+                            color: isDark ? Colors.white60 : const Color(0xFF64748B),
+                          ),
+                          const SizedBox(width: 5),
+                          Expanded(
+                            child: Text(
+                              dateStr,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: isDark ? Colors.white70 : const Color(0xFF64748B),
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -3629,7 +3994,7 @@ class _ExamsTabState extends State<ExamsTab> {
 
             const SizedBox(height: 12),
 
-            // Telemetry Countdown HUD
+            // Telemetry Countdown HUD (Adaptive Light & Dark Mode)
             if (isInProgress)
               Semantics(
                 liveRegion: true,
@@ -3637,7 +4002,7 @@ class _ExamsTabState extends State<ExamsTab> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF064E3B),
+                    color: isDark ? const Color(0xFF064E3B) : const Color(0xFFDCFCE7),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: const Color(0xFF10B981)),
                   ),
@@ -3645,15 +4010,19 @@ class _ExamsTabState extends State<ExamsTab> {
                     fit: BoxFit.scaleDown,
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Icon(Icons.play_circle_fill, size: 14, color: Color(0xFF34D399)),
-                        SizedBox(width: 6),
+                      children: [
+                        Icon(
+                          Icons.play_circle_fill,
+                          size: 14,
+                          color: isDark ? const Color(0xFF34D399) : const Color(0xFF047857),
+                        ),
+                        const SizedBox(width: 6),
                         Text(
                           'IN PROGRESS',
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w900,
-                            color: Color(0xFF34D399),
+                            color: isDark ? const Color(0xFF34D399) : const Color(0xFF065F46),
                             letterSpacing: 0.5,
                           ),
                         ),
@@ -3672,7 +4041,7 @@ class _ExamsTabState extends State<ExamsTab> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF451A03),
+                    color: isDark ? const Color(0xFF451A03) : const Color(0xFFFEF3C7),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: const Color(0xFFF59E0B)),
                   ),
@@ -3681,14 +4050,18 @@ class _ExamsTabState extends State<ExamsTab> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.alarm_rounded, size: 14, color: Color(0xFFF59E0B)),
+                        Icon(
+                          Icons.alarm_rounded,
+                          size: 14,
+                          color: isDark ? const Color(0xFFF59E0B) : const Color(0xFFB45309),
+                        ),
                         const SizedBox(width: 6),
                         Text(
                           exam.formattedCountdown(now),
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w900,
-                            color: Color(0xFFFBBF24),
+                            color: isDark ? const Color(0xFFFBBF24) : const Color(0xFF92400E),
                           ),
                         ),
                       ],
@@ -4080,13 +4453,23 @@ class _ExamsTabState extends State<ExamsTab> {
           ),
           const SizedBox(height: 6),
           Text(
-            'Mid-term examination timetables and hall allocations will appear once released by the school administration.',
+            _currentSubject == 'All'
+                ? 'Mid-term examination timetables and hall allocations will appear once released by the school administration.'
+                : 'No examinations scheduled for $_currentSubject yet.',
             style: TextStyle(
               fontSize: 12,
               color: isDark ? Colors.white60 : Colors.grey[600],
             ),
             textAlign: TextAlign.center,
           ),
+          if (_currentSubject != 'All') ...[
+            const SizedBox(height: 14),
+            OutlinedButton.icon(
+              onPressed: () => setState(() => _currentSubject = 'All'),
+              icon: const Icon(Icons.filter_alt_off_rounded, size: 16),
+              label: const Text('Show All Subjects'),
+            ),
+          ],
         ],
       ),
     );
@@ -4164,8 +4547,57 @@ class _ExamsTabState extends State<ExamsTab> {
     );
   }
 
-  void _showPublishExamDialog() {
+  Future<void> _confirmDeleteExam(ExamScheduleItem exam) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Exam Schedule?'),
+        content: Text(
+          'Remove "${exam.paperTitle}" (${exam.subject}) from $_effectiveClass exam calendar?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFEF4444),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await _authService.deleteExamScheduleItem(
+        examId: exam.id,
+        classLevel: exam.classLevel.isNotEmpty ? exam.classLevel : _effectiveClass,
+      );
+      if (!mounted) return;
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Removed "${exam.paperTitle}" from exam calendar.'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not delete exam: $e'),
+          backgroundColor: const Color(0xFFEF4444),
+        ),
+      );
+    }
+  }
+
+  void _showPublishExamDialog({ExamScheduleItem? editingExam}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isEditing = editingExam != null;
     const gradeLevels = [
       'Grade 5',
       'Grade 6',
@@ -4176,20 +4608,55 @@ class _ExamsTabState extends State<ExamsTab> {
       'Grade 11',
       'Grade 12',
     ];
+    const subjectOptions = [
+      'Mathematics',
+      'Physics',
+      'Chemistry',
+      'Computer Science',
+      'English',
+      'Biology',
+      'Social Studies',
+      'Hindi',
+      'Arabic',
+      'French',
+      'Business Studies',
+      'Economics',
+      'Accountancy',
+    ];
 
-    String fromGrade = _effectiveClass.isNotEmpty && gradeLevels.contains(_effectiveClass)
-        ? _effectiveClass
+    final initialClass = editingExam?.classLevel.isNotEmpty == true
+        ? editingExam!.classLevel
+        : _effectiveClass;
+    String fromGrade = initialClass.isNotEmpty && gradeLevels.contains(initialClass)
+        ? initialClass
         : 'Grade 8';
-    String toGrade = 'Grade 12';
-    String selectedSubject = 'Mathematics';
-    final paperController = TextEditingController(text: 'Mid-Term Assessment Paper 1');
-    final hallController = TextEditingController(text: 'Main Examination Hall');
-    final syllabusController = TextEditingController(text: 'Chapters 1 to 5 Revision');
-    DateTime selectedDate = DateTime.now().add(const Duration(days: 7));
-    TimeOfDay selectedTime = const TimeOfDay(hour: 8, minute: 30);
-    int selectedDuration = 90;
-    int selectedMarks = 100;
-    String? photoBase64;
+    String toGrade = isEditing ? fromGrade : 'Grade 12';
+    String selectedSubject = (editingExam != null && subjectOptions.contains(editingExam.subject))
+        ? editingExam.subject
+        : 'Mathematics';
+    final paperController = TextEditingController(
+      text: editingExam?.paperTitle ?? 'Mid-Term Assessment Paper 1',
+    );
+    final hallController = TextEditingController(
+      text: editingExam?.examHall ?? 'Main Examination Hall',
+    );
+    final syllabusController = TextEditingController(
+      text: editingExam != null && editingExam.syllabusTopics.isNotEmpty
+          ? editingExam.syllabusTopics.join(', ')
+          : 'Chapters 1 to 5 Revision',
+    );
+    DateTime selectedDate = editingExam?.examDateTime ??
+        DateTime.now().add(const Duration(days: 7));
+    TimeOfDay selectedTime = editingExam != null
+        ? TimeOfDay.fromDateTime(editingExam.examDateTime)
+        : const TimeOfDay(hour: 8, minute: 30);
+    int selectedDuration = const [45, 60, 90, 120, 180].contains(editingExam?.durationMinutes)
+        ? editingExam!.durationMinutes
+        : 90;
+    int selectedMarks = const [40, 50, 80, 100].contains(editingExam?.maxMarks)
+        ? editingExam!.maxMarks
+        : 100;
+    String? photoBase64 = editingExam?.imageUrl;
     bool isSaving = false;
 
     showModalBottomSheet(
@@ -4233,12 +4700,16 @@ class _ExamsTabState extends State<ExamsTab> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        '📝 Publish Mid-Term Exam Schedule',
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w900,
-                          color: isDark ? Colors.white : const Color(0xFF1E293B),
+                      Expanded(
+                        child: Text(
+                          isEditing
+                              ? '✏️ Edit Examination Entry'
+                              : '📝 Publish Mid-Term Exam Schedule',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w900,
+                            color: isDark ? Colors.white : const Color(0xFF1E293B),
+                          ),
                         ),
                       ),
                       Semantics(
@@ -4255,116 +4726,121 @@ class _ExamsTabState extends State<ExamsTab> {
                   ),
                   const SizedBox(height: 14),
 
-                  // Grade Range Selector ("From Grade" to "To Grade")
-                  Text(
-                    'Target Grade Range',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      color: isDark ? Colors.white70 : const Color(0xFF475569),
+                  if (!isEditing) ...[
+                    // Grade Range Selector ("From Grade" to "To Grade")
+                    Text(
+                      'Target Grade Range',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: isDark ? Colors.white70 : const Color(0xFF475569),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: DropdownButtonFormField<String>(
-                          initialValue: fromGrade,
-                          decoration: InputDecoration(
-                            labelText: 'From Grade',
-                            filled: true,
-                            fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide.none,
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                          ),
-                          items: gradeLevels
-                              .map((g) => DropdownMenuItem(
-                                    value: g,
-                                    child: Text(g, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
-                                  ))
-                              .toList(),
-                          onChanged: (val) {
-                            if (val != null) {
-                              setModalState(() {
-                                fromGrade = val;
-                                if (gradeLevels.indexOf(toGrade) < gradeLevels.indexOf(fromGrade)) {
-                                  toGrade = fromGrade;
-                                }
-                              });
-                            }
-                          },
-                        ),
-                      ),
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 8),
-                        child: Icon(Icons.arrow_forward_rounded, color: Color(0xFF6366F1), size: 20),
-                      ),
-                      Expanded(
-                        child: DropdownButtonFormField<String>(
-                          initialValue: toGrade,
-                          decoration: InputDecoration(
-                            labelText: 'To Grade',
-                            filled: true,
-                            fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide.none,
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                          ),
-                          items: gradeLevels
-                              .map((g) => DropdownMenuItem(
-                                    value: g,
-                                    child: Text(g, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
-                                  ))
-                              .toList(),
-                          onChanged: (val) {
-                            if (val != null) {
-                              setModalState(() {
-                                toGrade = val;
-                                if (gradeLevels.indexOf(fromGrade) > gradeLevels.indexOf(toGrade)) {
-                                  fromGrade = toGrade;
-                                }
-                              });
-                            }
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF6366F1).withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFF6366F1).withValues(alpha: 0.25)),
-                    ),
-                    child: Row(
+                    const SizedBox(height: 6),
+                    Row(
                       children: [
-                        const Icon(Icons.groups_rounded, size: 16, color: Color(0xFF6366F1)),
-                        const SizedBox(width: 8),
                         Expanded(
-                          child: Text(
-                            'Cohort Broadcast: ${cohort.join(', ')} (${cohort.length} Grades)',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF6366F1),
+                          child: DropdownButtonFormField<String>(
+                            isExpanded: true,
+                            initialValue: fromGrade,
+                            decoration: InputDecoration(
+                              labelText: 'From Grade',
+                              filled: true,
+                              fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide.none,
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                             ),
+                            items: gradeLevels
+                                .map((g) => DropdownMenuItem(
+                                      value: g,
+                                      child: Text(g, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+                                    ))
+                                .toList(),
+                            onChanged: (val) {
+                              if (val != null) {
+                                setModalState(() {
+                                  fromGrade = val;
+                                  if (gradeLevels.indexOf(toGrade) < gradeLevels.indexOf(fromGrade)) {
+                                    toGrade = fromGrade;
+                                  }
+                                });
+                              }
+                            },
+                          ),
+                        ),
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 8),
+                          child: Icon(Icons.arrow_forward_rounded, color: Color(0xFF6366F1), size: 20),
+                        ),
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            isExpanded: true,
+                            initialValue: toGrade,
+                            decoration: InputDecoration(
+                              labelText: 'To Grade',
+                              filled: true,
+                              fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide.none,
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            ),
+                            items: gradeLevels
+                                .map((g) => DropdownMenuItem(
+                                      value: g,
+                                      child: Text(g, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+                                    ))
+                                .toList(),
+                            onChanged: (val) {
+                              if (val != null) {
+                                setModalState(() {
+                                  toGrade = val;
+                                  if (gradeLevels.indexOf(fromGrade) > gradeLevels.indexOf(toGrade)) {
+                                    fromGrade = toGrade;
+                                  }
+                                });
+                              }
+                            },
                           ),
                         ),
                       ],
                     ),
-                  ),
-                  const SizedBox(height: 14),
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF6366F1).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFF6366F1).withValues(alpha: 0.25)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.groups_rounded, size: 16, color: Color(0xFF6366F1)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Cohort Broadcast: ${cohort.join(', ')} (${cohort.length} Grades)',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: isDark ? const Color(0xFFA5B4FC) : const Color(0xFF4338CA),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
 
                   // Subject Dropdown
                   DropdownButtonFormField<String>(
+                    isExpanded: true,
                     initialValue: selectedSubject,
                     decoration: InputDecoration(
                       labelText: 'Curriculum Subject',
@@ -4376,21 +4852,7 @@ class _ExamsTabState extends State<ExamsTab> {
                       ),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     ),
-                    items: [
-                      'Mathematics',
-                      'Physics',
-                      'Chemistry',
-                      'Computer Science',
-                      'English',
-                      'Biology',
-                      'Social Studies',
-                      'Hindi',
-                      'Arabic',
-                      'French',
-                      'Business Studies',
-                      'Economics',
-                      'Accountancy',
-                    ]
+                    items: subjectOptions
                         .map((s) => DropdownMenuItem(
                               value: s,
                               child: Text(s, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
@@ -4423,13 +4885,18 @@ class _ExamsTabState extends State<ExamsTab> {
                       Expanded(
                         child: InkWell(
                           onTap: () async {
+                            final first = DateTime.now().subtract(const Duration(days: 30));
+                            final last = DateTime.now().add(const Duration(days: 730));
+                            final clampedInit = selectedDate.isBefore(first)
+                                ? first
+                                : (selectedDate.isAfter(last) ? last : selectedDate);
                             final picked = await showDatePicker(
-                              context: context,
-                              initialDate: selectedDate,
-                              firstDate: DateTime.now().subtract(const Duration(days: 1)),
-                              lastDate: DateTime.now().add(const Duration(days: 365)),
+                              context: ctx,
+                              initialDate: clampedInit,
+                              firstDate: first,
+                              lastDate: last,
                             );
-                            if (picked != null) {
+                            if (picked != null && ctx.mounted) {
                               setModalState(() => selectedDate = picked);
                             }
                           },
@@ -4443,15 +4910,25 @@ class _ExamsTabState extends State<ExamsTab> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('Date', style: TextStyle(fontSize: 11, color: Colors.grey[500], fontWeight: FontWeight.w700)),
+                                Text(
+                                  'Date',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: isDark ? Colors.white60 : const Color(0xFF475569),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
                                 const SizedBox(height: 4),
                                 Row(
                                   children: [
                                     const Icon(Icons.calendar_today_rounded, size: 14, color: Color(0xFF6366F1)),
                                     const SizedBox(width: 6),
-                                    Text(
-                                      '${selectedDate.day}/${selectedDate.month}/${selectedDate.year}',
-                                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                                    Flexible(
+                                      child: Text(
+                                        '${selectedDate.day}/${selectedDate.month}/${selectedDate.year}',
+                                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -4465,10 +4942,10 @@ class _ExamsTabState extends State<ExamsTab> {
                         child: InkWell(
                           onTap: () async {
                             final picked = await showTimePicker(
-                              context: context,
+                              context: ctx,
                               initialTime: selectedTime,
                             );
-                            if (picked != null) {
+                            if (picked != null && ctx.mounted) {
                               setModalState(() => selectedTime = picked);
                             }
                           },
@@ -4482,15 +4959,25 @@ class _ExamsTabState extends State<ExamsTab> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('Time', style: TextStyle(fontSize: 11, color: Colors.grey[500], fontWeight: FontWeight.w700)),
+                                Text(
+                                  'Time',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: isDark ? Colors.white60 : const Color(0xFF475569),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
                                 const SizedBox(height: 4),
                                 Row(
                                   children: [
                                     const Icon(Icons.access_time_rounded, size: 14, color: Color(0xFF6366F1)),
                                     const SizedBox(width: 6),
-                                    Text(
-                                      selectedTime.format(context),
-                                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                                    Flexible(
+                                      child: Text(
+                                        selectedTime.format(ctx),
+                                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -4508,6 +4995,7 @@ class _ExamsTabState extends State<ExamsTab> {
                     children: [
                       Expanded(
                         child: DropdownButtonFormField<int>(
+                          isExpanded: true,
                           initialValue: selectedDuration,
                           decoration: InputDecoration(
                             labelText: 'Duration',
@@ -4534,6 +5022,7 @@ class _ExamsTabState extends State<ExamsTab> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: DropdownButtonFormField<int>(
+                          isExpanded: true,
                           initialValue: selectedMarks,
                           decoration: InputDecoration(
                             labelText: 'Max Marks',
@@ -4592,100 +5081,11 @@ class _ExamsTabState extends State<ExamsTab> {
                   const SizedBox(height: 14),
 
                   // Circular / Timetable Photo Upload
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        '📸 Timetable / Circular Photo',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          color: isDark ? Colors.white : const Color(0xFF1E293B),
-                        ),
-                      ),
-                      if (photoBase64 != null)
-                        TextButton(
-                          onPressed: () => setModalState(() => photoBase64 = null),
-                          child: const Text('Remove', style: TextStyle(color: Colors.red, fontSize: 12)),
-                        ),
-                    ],
+                  AcademicImageUploadField(
+                    label: '📸 Timetable / Circular Photo',
+                    value: photoBase64,
+                    onChanged: (v) => setModalState(() => photoBase64 = v),
                   ),
-                  const SizedBox(height: 6),
-                  if (photoBase64 != null) ...[
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Container(
-                        height: 120,
-                        width: double.infinity,
-                        decoration: BoxDecoration(
-                          border: Border.all(color: const Color(0xFF6366F1), width: 1.5),
-                        ),
-                        child: _buildExamImage(photoBase64!),
-                      ),
-                    ),
-                  ] else ...[
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () async {
-                              try {
-                                final xfile = await ImagePicker().pickImage(
-                                  source: ImageSource.camera,
-                                  imageQuality: 80,
-                                  maxWidth: 1200,
-                                );
-                                if (xfile != null) {
-                                  final bytes = await xfile.readAsBytes();
-                                  setModalState(() {
-                                    photoBase64 = 'data:image/jpeg;base64,${base64Encode(bytes)}';
-                                  });
-                                }
-                              } catch (e) {
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('Camera unavailable: $e')),
-                                  );
-                                }
-                              }
-                            },
-                            icon: const Icon(Icons.camera_alt_rounded, size: 16),
-                            label: const Text('Take Photo', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-                            style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 10)),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () async {
-                              try {
-                                final xfile = await ImagePicker().pickImage(
-                                  source: ImageSource.gallery,
-                                  imageQuality: 80,
-                                  maxWidth: 1200,
-                                );
-                                if (xfile != null) {
-                                  final bytes = await xfile.readAsBytes();
-                                  setModalState(() {
-                                    photoBase64 = 'data:image/jpeg;base64,${base64Encode(bytes)}';
-                                  });
-                                }
-                              } catch (e) {
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('Gallery unavailable: $e')),
-                                  );
-                                }
-                              }
-                            },
-                            icon: const Icon(Icons.photo_library_rounded, size: 16),
-                            label: const Text('Choose Photo', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-                            style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 10)),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
                   const SizedBox(height: 20),
 
                   // Submit Button
@@ -4718,22 +5118,40 @@ class _ExamsTabState extends State<ExamsTab> {
                                   .toList();
 
                               try {
-                                await _authService.publishExamScheduleRange(
-                                  fromGrade: fromGrade,
-                                  toGrade: toGrade,
-                                  subject: selectedSubject,
-                                  paperTitle: paperController.text.trim().isNotEmpty
-                                      ? paperController.text.trim()
-                                      : '$selectedSubject Examination',
-                                  examDateTime: fullDateTime,
-                                  durationMinutes: selectedDuration,
-                                  examHall: hallController.text.trim().isNotEmpty
-                                      ? hallController.text.trim()
-                                      : 'Main Examination Hall',
-                                  maxMarks: selectedMarks,
-                                  syllabusTopics: topics,
-                                  imageUrl: photoBase64,
-                                );
+                                if (isEditing) {
+                                  final updated = editingExam.copyWith(
+                                    subject: selectedSubject,
+                                    paperTitle: paperController.text.trim().isNotEmpty
+                                        ? paperController.text.trim()
+                                        : '$selectedSubject Examination',
+                                    examDateTime: fullDateTime,
+                                    durationMinutes: selectedDuration,
+                                    examHall: hallController.text.trim().isNotEmpty
+                                        ? hallController.text.trim()
+                                        : 'Main Examination Hall',
+                                    maxMarks: selectedMarks,
+                                    syllabusTopics: topics,
+                                    imageUrl: photoBase64,
+                                  );
+                                  await _authService.updateExamScheduleItem(updated);
+                                } else {
+                                  await _authService.publishExamScheduleRange(
+                                    fromGrade: fromGrade,
+                                    toGrade: toGrade,
+                                    subject: selectedSubject,
+                                    paperTitle: paperController.text.trim().isNotEmpty
+                                        ? paperController.text.trim()
+                                        : '$selectedSubject Examination',
+                                    examDateTime: fullDateTime,
+                                    durationMinutes: selectedDuration,
+                                    examHall: hallController.text.trim().isNotEmpty
+                                        ? hallController.text.trim()
+                                        : 'Main Examination Hall',
+                                    maxMarks: selectedMarks,
+                                    syllabusTopics: topics,
+                                    imageUrl: photoBase64,
+                                  );
+                                }
 
                                 if (ctx.mounted) {
                                   Navigator.of(ctx).pop();
@@ -4741,7 +5159,11 @@ class _ExamsTabState extends State<ExamsTab> {
                                 if (!mounted) return;
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                    content: Text('🎉 Exam schedule published for $fromGrade to $toGrade!'),
+                                    content: Text(
+                                      isEditing
+                                          ? '✅ Exam schedule updated!'
+                                          : '🎉 Exam schedule published for $fromGrade to $toGrade!',
+                                    ),
                                     backgroundColor: const Color(0xFF10B981),
                                   ),
                                 );
@@ -4753,7 +5175,7 @@ class _ExamsTabState extends State<ExamsTab> {
                                 if (!mounted) return;
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                    content: Text('Failed to publish exam schedule: $e'),
+                                    content: Text('Failed to save exam schedule: $e'),
                                     backgroundColor: const Color(0xFFEF4444),
                                   ),
                                 );
@@ -4765,9 +5187,9 @@ class _ExamsTabState extends State<ExamsTab> {
                               width: 20,
                               child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                             )
-                          : const Text(
-                              'Publish Exam Schedule',
-                              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                          : Text(
+                              isEditing ? 'Save Exam Changes' : 'Publish Exam Schedule',
+                              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
                             ),
                     ),
                   ),
@@ -4929,7 +5351,6 @@ class _ReportCardTabState extends State<ReportCardTab> {
     if (_isClaiming || card.pointsClaimed || _claimedCardIds.contains(card.id)) return;
     setState(() {
       _isClaiming = true;
-      _claimedCardIds.add(card.id);
     });
 
     final success = await _authService.claimReportCardHonoursMerit(
@@ -4942,6 +5363,9 @@ class _ReportCardTabState extends State<ReportCardTab> {
 
     setState(() {
       _isClaiming = false;
+      if (success) {
+        _claimedCardIds.add(card.id);
+      }
     });
 
     if (success) {
@@ -4954,6 +5378,13 @@ class _ReportCardTabState extends State<ReportCardTab> {
         );
       }
       widget.onHonoursClaimed?.call(card.copyWith(pointsClaimed: true));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not claim honours points right now. Please try again.'),
+          backgroundColor: Color(0xFFEF4444),
+        ),
+      );
     }
   }
 
@@ -4996,7 +5427,16 @@ class _ReportCardTabState extends State<ReportCardTab> {
             classLevel: _effectiveClass,
           );
         }
-        return _buildView(context, cards, cards, isDark);
+        final allUnfilteredCards = AuthService.getCachedReportCards(
+          scholarNo: _effectiveScholarNo,
+          classLevel: _effectiveClass,
+        );
+        return _buildView(
+          context,
+          cards,
+          allUnfilteredCards.isNotEmpty ? allUnfilteredCards : cards,
+          isDark,
+        );
       },
     );
   }
@@ -5040,7 +5480,7 @@ class _ReportCardTabState extends State<ReportCardTab> {
 
         if (terms.length > 1) ...[
           Container(
-            height: 56,
+            height: 64,
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
@@ -6569,14 +7009,18 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  '🏥 Approved Medical Leaves & Excuses',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
-                    color: isDark ? Colors.white : const Color(0xFF1E293B),
+                Expanded(
+                  child: Text(
+                    '🏥 Approved Medical Leaves & Excuses',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                      color: isDark ? Colors.white : const Color(0xFF1E293B),
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
@@ -6626,26 +7070,32 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Row(
-                            children: [
-                              Icon(
-                                isApproved
-                                    ? Icons.check_circle_rounded
-                                    : (isPending ? Icons.hourglass_top_rounded : Icons.cancel_rounded),
-                                color: statusColor,
-                                size: 16,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                item.formattedRange,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w800,
-                                  color: isDark ? Colors.white : const Color(0xFF1E293B),
+                          Expanded(
+                            child: Row(
+                              children: [
+                                Icon(
+                                  isApproved
+                                      ? Icons.check_circle_rounded
+                                      : (isPending ? Icons.hourglass_top_rounded : Icons.cancel_rounded),
+                                  color: statusColor,
+                                  size: 16,
                                 ),
-                              ),
-                            ],
+                                const SizedBox(width: 6),
+                                Flexible(
+                                  child: Text(
+                                    item.formattedRange,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w800,
+                                      color: isDark ? Colors.white : const Color(0xFF1E293B),
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
+                          const SizedBox(width: 8),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                             decoration: BoxDecoration(
@@ -7702,19 +8152,27 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
                                     try {
                                       final xfile = await picker.pickImage(
                                         source: ImageSource.camera,
-                                        imageQuality: 80,
-                                        maxWidth: 1200,
+                                        imageQuality: 72,
+                                        maxWidth: 960,
                                       );
                                       if (xfile != null) {
                                         final bytes = await xfile.readAsBytes();
+                                        final encoded = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+                                        if (!ctx.mounted) return;
+                                        if (encoded.length > 900000) {
+                                          parentMessenger.showSnackBar(
+                                            const SnackBar(content: Text('Photo is too large (max ~650 KB).')),
+                                          );
+                                          return;
+                                        }
                                         setModalState(() {
-                                          photoBase64 = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+                                          photoBase64 = encoded;
                                           pdfFileName = null;
                                         });
                                       }
                                     } catch (e) {
-                                      if (context.mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
+                                      if (ctx.mounted) {
+                                        parentMessenger.showSnackBar(
                                           SnackBar(content: Text('Camera unavailable: $e')),
                                         );
                                       }
@@ -7735,19 +8193,27 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
                                     try {
                                       final xfile = await picker.pickImage(
                                         source: ImageSource.gallery,
-                                        imageQuality: 80,
-                                        maxWidth: 1200,
+                                        imageQuality: 72,
+                                        maxWidth: 960,
                                       );
                                       if (xfile != null) {
                                         final bytes = await xfile.readAsBytes();
+                                        final encoded = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+                                        if (!ctx.mounted) return;
+                                        if (encoded.length > 900000) {
+                                          parentMessenger.showSnackBar(
+                                            const SnackBar(content: Text('Image is too large (max ~650 KB).')),
+                                          );
+                                          return;
+                                        }
                                         setModalState(() {
-                                          photoBase64 = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+                                          photoBase64 = encoded;
                                           pdfFileName = null;
                                         });
                                       }
                                     } catch (e) {
-                                      if (context.mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
+                                      if (ctx.mounted) {
+                                        parentMessenger.showSnackBar(
                                           SnackBar(content: Text('Gallery picker failed: $e')),
                                         );
                                       }
@@ -7776,14 +8242,22 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
                                   final file = await openFile(acceptedTypeGroups: const [typeGroup]);
                                   if (file != null) {
                                     final bytes = await file.readAsBytes();
+                                    final encoded = 'data:application/pdf;base64,${base64Encode(bytes)}';
+                                    if (!ctx.mounted) return;
+                                    if (encoded.length > 900000) {
+                                      parentMessenger.showSnackBar(
+                                        const SnackBar(content: Text('PDF is too large for upload (max ~650 KB).')),
+                                      );
+                                      return;
+                                    }
                                     setModalState(() {
                                       pdfFileName = file.name;
-                                      photoBase64 = 'data:application/pdf;base64,${base64Encode(bytes)}';
+                                      photoBase64 = encoded;
                                     });
                                   }
                                 } catch (e) {
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
+                                  if (ctx.mounted) {
+                                    parentMessenger.showSnackBar(
                                       SnackBar(content: Text('PDF picker failed: $e')),
                                     );
                                   }
