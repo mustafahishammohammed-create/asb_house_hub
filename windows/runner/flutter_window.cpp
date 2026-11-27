@@ -17,7 +17,7 @@ LRESULT CALLBACK ViewPluginMessageSubclassProc(HWND hwnd,
                                                LPARAM lparam,
                                                UINT_PTR subclass_id,
                                                DWORD_PTR ref_data) {
-  if (message >= WM_APP && message <= 0xBFFF) {
+  if (message >= WM_APP && message <= 0xFFFF) {
     auto* controller =
         reinterpret_cast<flutter::FlutterViewController*>(ref_data);
     HWND parent = GetParent(hwnd);

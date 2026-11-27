@@ -4399,6 +4399,37 @@ class AuthService {
     return '$s@$kSchoolDomain';
   }
 
+  Future<void> _reclassifyWindowsAuthError({
+    required FirebaseAuthException original,
+    required String scholarNo,
+    required String password,
+  }) async {
+    FirebaseAuthException? restInvalidCred;
+    var restSucceeded = false;
+    try {
+      await verifyCredentialsViaRest(
+        scholarNo: scholarNo,
+        password: password,
+      ).timeout(const Duration(seconds: 6));
+      restSucceeded = true;
+    } on FirebaseAuthException catch (restErr) {
+      if (restErr.code == 'invalid-credential') {
+        restInvalidCred = restErr;
+      }
+    } catch (_) {}
+
+    if (restInvalidCred != null) {
+      throw restInvalidCred;
+    }
+    if (original.code == 'network-request-failed' && restSucceeded) {
+      throw FirebaseAuthException(
+        code: 'windows-auth-blocked',
+        message:
+            'Windows native Firebase Auth failed to connect while HTTPS REST succeeded. Please retry or check network settings.',
+      );
+    }
+  }
+
   /// Sign in with scholar number and password.
   /// Strictly verifies credentials in real time against Firebase Auth without inventing fake accounts.
   Future<UserCredential?> signIn({
@@ -4417,37 +4448,29 @@ class AuthService {
     UserCredential cred;
 
     try {
-      cred = await _auth
-          .signInWithEmailAndPassword(email: email, password: password)
-          .timeout(
-            authTimeout,
-            onTimeout: () => throw FirebaseAuthException(
-              code: 'network-request-failed',
-              message:
-                  'Authentication connection timed out. Please check your internet connection.',
-            ),
-          );
-    } on FirebaseAuthException catch (e) {
-      if (isWindows && e.code == 'network-request-failed') {
-        try {
-          await verifyCredentialsViaRest(
+      try {
+        cred = await _auth
+            .signInWithEmailAndPassword(email: email, password: password)
+            .timeout(
+              authTimeout,
+              onTimeout: () => throw FirebaseAuthException(
+                code: 'network-request-failed',
+                message:
+                    'Authentication connection timed out. Please check your internet connection.',
+              ),
+            );
+      } on FirebaseAuthException catch (e) {
+        if (isWindows &&
+            (e.code == 'network-request-failed' || e.code == 'unknown-error')) {
+          await _reclassifyWindowsAuthError(
+            original: e,
             scholarNo: cleanScholar,
             password: password,
-          ).timeout(const Duration(seconds: 6));
-          throw FirebaseAuthException(
-            code: 'network-request-failed',
-            message:
-                'Windows Firebase Auth could not reach Google Auth cleanly (possible IPv6 timeout). Try retrying or disabling IPv6 if the issue persists.',
           );
-        } on FirebaseAuthException catch (restErr) {
-          if (restErr.code == 'invalid-credential') {
-            throw FirebaseAuthException(
-              code: 'invalid-credential',
-              message: 'Incorrect scholar number or password.',
-            );
-          }
-        } catch (_) {}
+        }
+        rethrow;
       }
+    } on FirebaseAuthException catch (e) {
       // Protected 11209/admin administrator identity: if 11209@asianschool.bh is
       // not provisioned separately in Firebase Auth, verify against the
       // protected admin@asianschool.bh account using the supplied password.
@@ -4570,25 +4593,13 @@ class AuthService {
             ),
           );
     } on FirebaseAuthException catch (e) {
-      if (isWindows && e.code == 'network-request-failed') {
-        try {
-          await verifyCredentialsViaRest(
-            scholarNo: 'admin',
-            password: password,
-          ).timeout(const Duration(seconds: 6));
-          throw FirebaseAuthException(
-            code: 'network-request-failed',
-            message:
-                'Windows Firebase Auth could not reach Google Auth cleanly (possible IPv6 timeout). Try retrying or disabling IPv6 if the issue persists.',
-          );
-        } on FirebaseAuthException catch (restErr) {
-          if (restErr.code == 'invalid-credential') {
-            throw FirebaseAuthException(
-              code: 'invalid-credential',
-              message: 'Incorrect scholar number or password.',
-            );
-          }
-        } catch (_) {}
+      if (isWindows &&
+          (e.code == 'network-request-failed' || e.code == 'unknown-error')) {
+        await _reclassifyWindowsAuthError(
+          original: e,
+          scholarNo: 'admin',
+          password: password,
+        );
       }
       rethrow;
     }
