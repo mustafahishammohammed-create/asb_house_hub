@@ -4086,16 +4086,10 @@ class AuthService {
               defaultTargetPlatform == TargetPlatform.windows)
           ? const Duration(seconds: 45)
           : const Duration(seconds: 25);
-      if (cleanScholar.toLowerCase() == 'admin' || cleanScholar == '11209') {
-        liveCred = await signInAdmin(
-          password: pwd,
-        ).timeout(switchTimeout);
-      } else {
-        liveCred = await signIn(
-          scholarNo: cleanScholar,
-          password: pwd,
-        ).timeout(switchTimeout);
-      }
+      liveCred = await signIn(
+        scholarNo: cleanScholar,
+        password: pwd,
+      ).timeout(switchTimeout);
       if (liveCred == null) {
         throw FirebaseAuthException(
           code: 'invalid-credential',
@@ -4277,6 +4271,59 @@ class AuthService {
         profile: profile,
       );
     } else {
+      String restMsg = '';
+      try {
+        final errBody = jsonDecode(response.body);
+        if (errBody is Map && errBody['error'] is Map) {
+          restMsg = (errBody['error']['message'] ?? '').toString().toUpperCase();
+        }
+      } catch (_) {}
+
+      if (restMsg.contains('TOO_MANY_ATTEMPTS_TRY_LATER')) {
+        throw FirebaseAuthException(
+          code: 'too-many-requests',
+          message:
+              'Too many failed attempts. Please wait a bit and try again.',
+        );
+      }
+      if (restMsg.contains('USER_DISABLED')) {
+        throw FirebaseAuthException(
+          code: 'user-disabled',
+          message:
+              'Your account has been disabled. Please contact the school administrator.',
+        );
+      }
+
+      if (cleanScholar == '11209') {
+        try {
+          final adminRes = await http
+              .post(
+                url,
+                headers: {'Content-Type': 'application/json'},
+                body: jsonEncode({
+                  'email': 'admin@asianschool.bh',
+                  'password': password,
+                  'returnSecureToken': true,
+                }),
+              )
+              .timeout(const Duration(seconds: 12));
+          if (adminRes.statusCode == 200) {
+            final data = jsonDecode(adminRes.body) as Map<String, dynamic>;
+            final uid = data['localId']?.toString() ?? '';
+            Map<String, dynamic>? profile;
+            try {
+              profile = await getUserProfile(uid, scholarNo: 'admin');
+            } catch (_) {}
+            return (
+              uid: uid,
+              displayName: data['displayName']?.toString(),
+              email: 'admin@asianschool.bh',
+              profile: profile,
+            );
+          }
+        } catch (_) {}
+      }
+
       // Return a single generic failure: the REST endpoint also distinguishes
       // missing accounts from bad passwords, which would leak registration
       // status to an unauthenticated caller.

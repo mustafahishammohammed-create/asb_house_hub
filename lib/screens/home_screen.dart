@@ -462,7 +462,10 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  Future<String?> _promptForSwitchPassword(String scholarNo) async {
+  Future<String?> _promptForSwitchPassword(
+    String scholarNo, {
+    String? errorText,
+  }) async {
     final controller = TextEditingController();
     bool obscure = true;
     try {
@@ -485,6 +488,17 @@ class _HomeScreenState extends State<HomeScreen>
                   'Enter password for Scholar #$scholarNo to verify session switch:',
                   style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 13),
                 ),
+                if (errorText != null && errorText.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    errorText,
+                    style: const TextStyle(
+                      color: Colors.redAccent,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 TextField(
                   controller: controller,
@@ -502,7 +516,7 @@ class _HomeScreenState extends State<HomeScreen>
                     ),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                   ),
-                  onSubmitted: (val) => Navigator.of(ctx).pop(val.trim()),
+                  onSubmitted: (val) => Navigator.of(ctx).pop(val),
                 ),
               ],
             ),
@@ -516,7 +530,7 @@ class _HomeScreenState extends State<HomeScreen>
                   backgroundColor: const Color(0xFFD4AF37),
                   foregroundColor: Colors.black,
                 ),
-                onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+                onPressed: () => Navigator.of(ctx).pop(controller.text),
                 child: const Text('Verify & Switch', style: TextStyle(fontWeight: FontWeight.bold)),
               ),
             ],
@@ -582,7 +596,11 @@ class _HomeScreenState extends State<HomeScreen>
             _pulseController.stop();
           }
         });
-        final freshPwd = await _promptForSwitchPassword(account.scholarNo);
+        final freshPwd = await _promptForSwitchPassword(
+          account.scholarNo,
+          errorText:
+              'Incorrect scholar number or password for #${account.scholarNo}. Please try again.',
+        );
         if (freshPwd != null && freshPwd.isNotEmpty && mounted) {
           setState(() {
             _loading = true;
