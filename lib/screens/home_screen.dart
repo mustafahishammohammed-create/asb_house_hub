@@ -548,8 +548,8 @@ class _HomeScreenState extends State<HomeScreen>
       }
     });
 
-    try {
-      await _authService.switchAccount(accountToSwitch);
+    Future<bool> attemptSwitch(SavedAccount targetAccount) async {
+      await _authService.switchAccount(targetAccount);
       await AuthService.cacheHouse(account.houseName);
 
       if (mounted) {
@@ -565,7 +565,58 @@ class _HomeScreenState extends State<HomeScreen>
           (route) => false,
         );
       }
+      return true;
+    }
+
+    try {
+      await attemptSwitch(accountToSwitch);
     } catch (e) {
+      final errText = e.toString();
+      final isCredErr =
+          errText.contains('invalid-credential') ||
+          errText.contains('requires-recent-login');
+      if (isCredErr && mounted) {
+        setState(() {
+          _loading = false;
+          if (_pulseController.isAnimating) {
+            _pulseController.stop();
+          }
+        });
+        final freshPwd = await _promptForSwitchPassword(account.scholarNo);
+        if (freshPwd != null && freshPwd.isNotEmpty && mounted) {
+          setState(() {
+            _loading = true;
+            if (!_pulseController.isAnimating) {
+              _pulseController.repeat(reverse: true);
+            }
+          });
+          try {
+            await attemptSwitch(account.copyWith(password: freshPwd));
+            return;
+          } catch (retryErr) {
+            if (mounted) {
+              setState(() {
+                _loading = false;
+                if (_pulseController.isAnimating) {
+                  _pulseController.stop();
+                }
+              });
+              final rawMsg = retryErr.toString().replaceFirst(
+                RegExp(r'^(Exception|StateError):\s*'),
+                '',
+              );
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Failed to switch account: $rawMsg'),
+                  backgroundColor: Colors.redAccent,
+                ),
+              );
+            }
+            return;
+          }
+        }
+        return;
+      }
       if (mounted) {
         setState(() {
           _loading = false;
@@ -573,7 +624,7 @@ class _HomeScreenState extends State<HomeScreen>
             _pulseController.stop();
           }
         });
-        final rawMsg = e.toString().replaceFirst(RegExp(r'^(Exception|StateError):\s*'), '');
+        final rawMsg = errText.replaceFirst(RegExp(r'^(Exception|StateError):\s*'), '');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to switch account: $rawMsg'),

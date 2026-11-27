@@ -257,7 +257,9 @@ class SavedAccount {
         map['password']?.toString() ?? profile['password']?.toString();
     profile.remove('password');
     final decryptedPassword = rawPassword != null
-        ? (CredentialVaultService.decrypt(rawPassword) ?? rawPassword)
+        ? (rawPassword.startsWith(CredentialVaultService.tokenPrefix)
+              ? CredentialVaultService.decrypt(rawPassword)
+              : rawPassword)
         : null;
 
     final isSuper = HierarchyService.isSuperAdmin(
@@ -4080,15 +4082,19 @@ class AuthService {
               'Enter the password for scholar #$cleanScholar to switch accounts.',
         );
       }
+      final switchTimeout = (!kIsWeb &&
+              defaultTargetPlatform == TargetPlatform.windows)
+          ? const Duration(seconds: 45)
+          : const Duration(seconds: 25);
       if (cleanScholar.toLowerCase() == 'admin' || cleanScholar == '11209') {
         liveCred = await signInAdmin(
           password: pwd,
-        ).timeout(const Duration(seconds: 25));
+        ).timeout(switchTimeout);
       } else {
         liveCred = await signIn(
           scholarNo: cleanScholar,
           password: pwd,
-        ).timeout(const Duration(seconds: 25));
+        ).timeout(switchTimeout);
       }
       if (liveCred == null) {
         throw FirebaseAuthException(

@@ -361,5 +361,22 @@ void main() {
       expect(find.text('House Arena'), findsOneWidget);
       expect(find.text('YOUR HOUSE'), findsOneWidget);
     });
+
+    test('SavedAccount.fromMap clears undecryptable vault ciphertext instead of leaking enc:v1 as password', () {
+      CredentialVaultService.setTestSecret('secret_old_key_1');
+      final encrypted = CredentialVaultService.encrypt('my_secret_pass')!;
+      expect(encrypted.startsWith(CredentialVaultService.tokenPrefix), isTrue);
+
+      CredentialVaultService.setTestSecret('secret_new_rotated_key_2');
+      final loaded = SavedAccount.fromMap({
+        'scholar_no': '12369',
+        'full_name': 'Scholar',
+        'house_name': 'ruby',
+        'password': encrypted,
+      });
+      CredentialVaultService.setTestSecret(null);
+
+      expect(loaded.password, isNull);
+    });
   });
 }
