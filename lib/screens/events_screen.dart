@@ -220,26 +220,26 @@ class _EventsScreenState extends State<EventsScreen> {
 
                 return CustomScrollView(
                   slivers: [
-                    // Campus Events Overview Strip
-                    if (events.isNotEmpty)
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: EdgeInsets.fromLTRB(
-                            16 + horizontalPad,
-                            6,
-                            16 + horizontalPad,
-                            6,
-                          ),
-                          child: _buildOverviewBanner(
-                            houseColor: houseColor,
-                            isDark: isDark,
-                            totalCount: events.length,
-                            liveCount: liveEvents.length,
-                            upcomingCount: upcomingCount,
-                            hasActiveFilters: hasActiveFilters,
-                          ),
+                    // Editorial Campus Hero Header + Integrated Search
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          16 + horizontalPad,
+                          6,
+                          16 + horizontalPad,
+                          6,
+                        ),
+                        child: _buildHeroHeader(
+                          houseColor: houseColor,
+                          isDark: isDark,
+                          hasEvents: events.isNotEmpty,
+                          totalCount: events.length,
+                          liveCount: liveEvents.length,
+                          upcomingCount: upcomingCount,
+                          hasActiveFilters: hasActiveFilters,
                         ),
                       ),
+                    ),
 
                     // Live event HUD. This is a schedule indicator, not a media
                     // stream: tapping it opens the normal event details.
@@ -248,7 +248,7 @@ class _EventsScreenState extends State<EventsScreen> {
                         child: Padding(
                           padding: EdgeInsets.symmetric(
                             horizontal: 16 + horizontalPad,
-                            vertical: 8,
+                            vertical: 6,
                           ),
                           child: _buildLiveStageHUD(
                             liveEvents,
@@ -276,7 +276,7 @@ class _EventsScreenState extends State<EventsScreen> {
                           horizontalPad,
                           8,
                           horizontalPad,
-                          8,
+                          6,
                         ),
                         child: _buildCategoryFilterBar(
                           events,
@@ -293,69 +293,9 @@ class _EventsScreenState extends State<EventsScreen> {
                           horizontalPad,
                           0,
                           horizontalPad,
-                          4,
+                          8,
                         ),
                         child: _buildHouseFilterBar(houseColor, isDark),
-                      ),
-                    ),
-
-                    // Search Bar
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 16 + horizontalPad,
-                          vertical: 8,
-                        ),
-                        child: TextField(
-                          controller: _searchController,
-                          decoration: InputDecoration(
-                            hintText: 'Search events, stages, venues...',
-                            prefixIcon: const Icon(Icons.search_rounded),
-                            suffixIcon: _searchQuery.isNotEmpty
-                                ? IconButton(
-                                    tooltip: 'Clear search',
-                                    icon: const Icon(Icons.close_rounded),
-                                    onPressed: () {
-                                      _searchController.clear();
-                                      setState(() => _searchQuery = '');
-                                    },
-                                  )
-                                : null,
-                            filled: true,
-                            fillColor: isDark
-                                ? const Color(0xFF1E293B)
-                                : Colors.white,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              borderSide: BorderSide(
-                                color: isDark
-                                    ? const Color(0xFF334155)
-                                    : const Color(0xFFE2E8F0),
-                              ),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              borderSide: BorderSide(
-                                color: isDark
-                                    ? const Color(0xFF334155)
-                                    : const Color(0xFFE2E8F0),
-                              ),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              borderSide: BorderSide(
-                                color: houseColor,
-                                width: 1.5,
-                              ),
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 14,
-                            ),
-                          ),
-                          onChanged: (v) =>
-                              setState(() => _searchQuery = v.trim()),
-                        ),
                       ),
                     ),
 
@@ -449,9 +389,61 @@ class _EventsScreenState extends State<EventsScreen> {
     );
   }
 
-  Widget _buildOverviewBanner({
+  IconData _categoryIcon(EventCategory cat) {
+    switch (cat) {
+      case EventCategory.all:
+        return Icons.grid_view_rounded;
+      case EventCategory.sports:
+        return Icons.sports_soccer_rounded;
+      case EventCategory.cultural:
+        return Icons.palette_rounded;
+      case EventCategory.academic:
+        return Icons.school_rounded;
+      case EventCategory.tech:
+        return Icons.memory_rounded;
+      case EventCategory.arts:
+        return Icons.brush_rounded;
+    }
+  }
+
+  List<Color> _categoryGradient(
+    EventCategory cat,
+    Color accentColor,
+    bool isDark,
+  ) {
+    switch (cat) {
+      case EventCategory.sports:
+        return isDark
+            ? [const Color(0xFF065F46), const Color(0xFF0F766E)]
+            : [const Color(0xFF059669), const Color(0xFF0D9488)];
+      case EventCategory.cultural:
+        return isDark
+            ? [const Color(0xFF6B21A8), const Color(0xFF9D174D)]
+            : [const Color(0xFF7C3AED), const Color(0xFFDB2777)];
+      case EventCategory.academic:
+        return isDark
+            ? [const Color(0xFF1E3A8A), const Color(0xFF3730A3)]
+            : [const Color(0xFF2563EB), const Color(0xFF4F46E5)];
+      case EventCategory.tech:
+        return isDark
+            ? [const Color(0xFF0E7490), const Color(0xFF1E40AF)]
+            : [const Color(0xFF0284C7), const Color(0xFF2563EB)];
+      case EventCategory.arts:
+        return isDark
+            ? [const Color(0xFF9A3412), const Color(0xFFBE185D)]
+            : [const Color(0xFFEA580C), const Color(0xFFE11D48)];
+      case EventCategory.all:
+        return [
+          accentColor,
+          Color.lerp(accentColor, const Color(0xFF0F172A), isDark ? 0.55 : 0.35)!,
+        ];
+    }
+  }
+
+  Widget _buildHeroHeader({
     required Color houseColor,
     required bool isDark,
+    required bool hasEvents,
     required int totalCount,
     required int liveCount,
     required int upcomingCount,
@@ -460,85 +452,211 @@ class _EventsScreenState extends State<EventsScreen> {
     final houseLabel = widget.userHouse.trim().isEmpty
         ? 'Campus'
         : '${widget.userHouse[0].toUpperCase()}${widget.userHouse.substring(1).toLowerCase()}';
+    final deepAccent = Color.lerp(houseColor, const Color(0xFF0F172A), 0.58)!;
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: isDark
-              ? [const Color(0xFF1E293B), houseColor.withValues(alpha: 0.22)]
-              : [Colors.white, houseColor.withValues(alpha: 0.1)],
+              ? [const Color(0xFF1E293B), deepAccent]
+              : [houseColor, deepAccent],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: houseColor.withValues(alpha: isDark ? 0.35 : 0.22),
-        ),
-      ),
-      child: Wrap(
-        alignment: WrapAlignment.spaceBetween,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: 12,
-        runSpacing: 8,
-        children: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(9),
-                decoration: BoxDecoration(
-                  color: houseColor.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(Icons.campaign_rounded, color: houseColor, size: 20),
-              ),
-              const SizedBox(width: 10),
-              Flexible(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '$houseLabel Events Pulse',
-                      style: TextStyle(
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w900,
-                        color: isDark ? Colors.white : const Color(0xFF0F172A),
-                      ),
-                    ),
-                    Text(
-                      '$totalCount scheduled • $upcomingCount upcoming${liveCount > 0 ? ' • $liveCount live' : ''}',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
-                        color: isDark ? Colors.white70 : const Color(0xFF475569),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: houseColor.withValues(alpha: isDark ? 0.25 : 0.28),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
           ),
-          if (hasActiveFilters)
-            TextButton.icon(
-              style: TextButton.styleFrom(
-                minimumSize: const Size(48, 44),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              ),
-              onPressed: () {
-                _searchController.clear();
-                setState(() {
-                  _searchQuery = '';
-                  _selectedCategory = EventCategory.all;
-                  _selectedHouse = 'any';
-                });
-              },
-              icon: const Icon(Icons.filter_alt_off_rounded, size: 16),
-              label: const Text(
-                'Reset filters',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Stack(
+          children: [
+            Positioned(
+              right: -24,
+              top: -20,
+              child: Icon(
+                Icons.celebration_rounded,
+                size: 130,
+                color: Colors.white.withValues(alpha: 0.08),
               ),
             ),
-        ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: double.infinity,
+                    child: Wrap(
+                      alignment: WrapAlignment.spaceBetween,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 12,
+                      runSpacing: 8,
+                      children: [
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.16),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.24),
+                                ),
+                              ),
+                              child: const Icon(
+                                Icons.auto_awesome_rounded,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Flexible(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    hasEvents
+                                        ? '$houseLabel Events Pulse'
+                                        : 'ASB Events & Stage Hub',
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w900,
+                                      color: Colors.white,
+                                      letterSpacing: -0.2,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    hasEvents
+                                        ? '$totalCount scheduled • $upcomingCount upcoming${liveCount > 0 ? ' • $liveCount live' : ''}'
+                                        : 'Explore house competitions, rallies & stage showcases',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.white.withValues(alpha: 0.86),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (hasActiveFilters)
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(
+                              minHeight: 44,
+                              minWidth: 44,
+                            ),
+                            child: TextButton.icon(
+                              style: TextButton.styleFrom(
+                                foregroundColor: Colors.white,
+                                backgroundColor: Colors.white.withValues(
+                                  alpha: 0.18,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                              ),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() {
+                                  _searchQuery = '';
+                                  _selectedCategory = EventCategory.all;
+                                  _selectedHouse = 'any';
+                                });
+                              },
+                              icon: const Icon(
+                                Icons.filter_alt_off_rounded,
+                                size: 16,
+                              ),
+                              label: const Text(
+                                'Reset filters',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: _searchController,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                    cursorColor: Colors.white,
+                    decoration: InputDecoration(
+                      hintText: 'Search events, stages, venues...',
+                      hintStyle: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.72),
+                        fontWeight: FontWeight.w500,
+                      ),
+                      prefixIcon: Icon(
+                        Icons.search_rounded,
+                        color: Colors.white.withValues(alpha: 0.85),
+                      ),
+                      suffixIcon: _searchQuery.isNotEmpty
+                          ? IconButton(
+                              tooltip: 'Clear search',
+                              icon: const Icon(
+                                Icons.close_rounded,
+                                color: Colors.white,
+                              ),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() => _searchQuery = '');
+                              },
+                            )
+                          : null,
+                      filled: true,
+                      fillColor: Colors.black.withValues(alpha: 0.22),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(
+                          color: Colors.white.withValues(alpha: 0.2),
+                        ),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(
+                          color: Colors.white.withValues(alpha: 0.2),
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: const BorderSide(
+                          color: Colors.white,
+                          width: 1.5,
+                        ),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                    ),
+                    onChanged: (v) => setState(() => _searchQuery = v.trim()),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -580,86 +698,96 @@ class _EventsScreenState extends State<EventsScreen> {
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
-        children: [
-          Padding(
+        children: houses.map((scope) {
+          final selected = _selectedHouse == scope;
+          final cleanScope = scope.trim();
+          final label = cleanScope == 'any'
+              ? 'All Houses'
+              : cleanScope == 'all'
+              ? 'School-wide'
+              : cleanScope.isEmpty
+              ? 'House'
+              : '${cleanScope[0].toUpperCase()}${cleanScope.substring(1)}';
+          final color = scope == 'any' || scope == 'all'
+              ? houseColor
+              : HouseColors.getHouseColor(scope);
+          final textAccent = scope == 'any' || scope == 'all'
+              ? HouseColors.getHouseDarkColor(widget.userHouse)
+              : HouseColors.getHouseDarkColor(scope);
+          return Padding(
             padding: const EdgeInsets.only(right: 8),
-            child: Text(
-              'House:',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-                color: isDark ? Colors.white70 : const Color(0xFF475569),
-              ),
-            ),
-          ),
-          ...houses.map((scope) {
-            final selected = _selectedHouse == scope;
-            final cleanScope = scope.trim();
-            final label = cleanScope == 'any'
-                ? 'All'
-                : cleanScope == 'all'
-                ? 'School-wide'
-                : cleanScope.isEmpty
-                ? 'House'
-                : '${cleanScope[0].toUpperCase()}${cleanScope.substring(1)}';
-            final color = scope == 'any' || scope == 'all'
-                ? houseColor
-                : HouseColors.getHouseColor(scope);
-            return Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: Semantics(
-                button: true,
-                selected: selected,
-                label: scope == 'any'
-                    ? 'Show events from every house'
-                    : scope == 'all'
-                    ? 'Show school-wide events'
-                    : 'Show $label house events',
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(
-                    minHeight: 44,
-                    minWidth: 44,
-                  ),
-                  child: InkWell(
-                    onTap: () => setState(() => _selectedHouse = scope),
-                    borderRadius: BorderRadius.circular(20),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
+            child: Semantics(
+              button: true,
+              selected: selected,
+              label: scope == 'any'
+                  ? 'Show events from every house'
+                  : scope == 'all'
+                  ? 'Show school-wide events'
+                  : 'Show $label house events',
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  minHeight: 44,
+                  minWidth: 44,
+                ),
+                child: InkWell(
+                  onTap: () => setState(() => _selectedHouse = scope),
+                  borderRadius: BorderRadius.circular(14),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 9,
+                    ),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? color.withValues(alpha: isDark ? 0.28 : 0.14)
+                          : (isDark
+                                ? const Color(0xFF1E293B).withValues(alpha: 0.7)
+                                : Colors.white),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
                         color: selected
                             ? color
-                            : (isDark ? const Color(0xFF1E293B) : Colors.white),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: selected
-                              ? color
-                              : (isDark
-                                    ? const Color(0xFF334155)
-                                    : const Color(0xFFE2E8F0)),
-                        ),
+                            : (isDark
+                                  ? const Color(0xFF334155)
+                                  : const Color(0xFFE2E8F0)),
+                        width: selected ? 1.5 : 1,
                       ),
-                      child: Text(
-                        label,
-                        style: TextStyle(
-                          color: selected
-                              ? Colors.white
-                              : (isDark
-                                    ? Colors.white70
-                                    : const Color(0xFF334155)),
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: color,
+                            shape: BoxShape.circle,
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: 7),
+                        Text(
+                          label,
+                          style: TextStyle(
+                            color: selected
+                                ? (isDark ? Colors.white : textAccent)
+                                : (isDark
+                                      ? Colors.white70
+                                      : const Color(0xFF475569)),
+                            fontWeight: selected
+                                ? FontWeight.w900
+                                : FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
               ),
-            );
-          }),
-        ],
+            ),
+          );
+        }).toList(),
       ),
     );
   }
@@ -883,6 +1011,16 @@ class _EventsScreenState extends State<EventsScreen> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        Icon(
+                          _categoryIcon(cat),
+                          size: 16,
+                          color: isSelected
+                              ? Colors.white
+                              : (isDark
+                                    ? Colors.white70
+                                    : const Color(0xFF475569)),
+                        ),
+                        const SizedBox(width: 6),
                         Text(
                           cat.displayName,
                           style: TextStyle(
@@ -1002,6 +1140,10 @@ class _EventsScreenState extends State<EventsScreen> {
     final accentColor = normalizedScope != 'all'
         ? HouseColors.getHouseColor(event.houseScope)
         : houseColor;
+    final darkAccent = normalizedScope != 'all'
+        ? HouseColors.getHouseDarkColor(event.houseScope)
+        : HouseColors.getHouseDarkColor(widget.userHouse);
+    final coverColors = _categoryGradient(event.category, accentColor, isDark);
     final startLocal = event.startTime.toLocal();
     const months = <String>[
       'JAN',
@@ -1017,356 +1159,344 @@ class _EventsScreenState extends State<EventsScreen> {
       'NOV',
       'DEC',
     ];
-    final monthShort = months[startLocal.month - 1];
-    final dayNumber = startLocal.day.toString().padLeft(2, '0');
+    final dateTag =
+        '${startLocal.day.toString().padLeft(2, '0')} ${months[startLocal.month - 1]}';
     final isLive = event.isLiveAt(now) || event.isOngoingAt(now);
     final isConcluded = event.isConcludedAt(now);
 
+    final metaParts = <String>[
+      event.category.displayName.toUpperCase(),
+      if (normalizedScope != 'all') '${event.houseScope.toUpperCase()} EXCLUSIVE',
+      if (!event.targetsAllGrades) event.gradeRangeLabel.toUpperCase(),
+    ];
+
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
+      margin: const EdgeInsets.only(bottom: 18),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1E293B) : Colors.white,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
             color: (isLive ? Colors.redAccent : Colors.black).withValues(
-              alpha: isLive ? 0.14 : (isDark ? 0.25 : 0.05),
+              alpha: isLive ? 0.16 : (isDark ? 0.28 : 0.06),
             ),
-            blurRadius: isLive ? 14 : 10,
-            offset: const Offset(0, 4),
+            blurRadius: isLive ? 18 : 14,
+            offset: const Offset(0, 6),
           ),
         ],
         border: Border.all(
           color: isLive
-              ? Colors.redAccent.withValues(alpha: 0.55)
+              ? Colors.redAccent.withValues(alpha: 0.65)
               : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
           width: isLive ? 1.5 : 1,
         ),
       ),
       child: Material(
         color: Colors.transparent,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(24),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: () => _showEventDetailsModal(context, event, houseColor, now),
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Banner Image (using Resilient Photo Engine) or clean accent strip
-              if (event.bannerUrl.isNotEmpty)
-                HomeScreen.buildResilientImage(
-                  event.bannerUrl,
-                  height: 164,
-                )
-              else
-                Container(
-                  height: 4,
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        accentColor,
-                        accentColor.withValues(alpha: 0.35),
-                      ],
+              // Editorial Visual Cover Header (Hero Image OR Category Gradient Stage)
+              SizedBox(
+                height: event.bannerUrl.isNotEmpty ? 176 : 94,
+                width: double.infinity,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (event.bannerUrl.isNotEmpty)
+                      HomeScreen.buildResilientImage(
+                        event.bannerUrl,
+                        height: 176,
+                      )
+                    else
+                      Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: isConcluded
+                                ? [
+                                    const Color(0xFF475569),
+                                    const Color(0xFF1E293B),
+                                  ]
+                                : coverColors,
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                        ),
+                      ),
+                    if (event.bannerUrl.isNotEmpty)
+                      Positioned.fill(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.black.withValues(alpha: 0.42),
+                                Colors.transparent,
+                                Colors.black.withValues(alpha: 0.55),
+                              ],
+                            ),
+                          ),
+                        ),
+                      )
+                    else
+                      Positioned(
+                        right: -8,
+                        bottom: -14,
+                        child: Icon(
+                          _categoryIcon(event.category),
+                          size: 86,
+                          color: Colors.white.withValues(alpha: 0.14),
+                        ),
+                      ),
+                    Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(
+                            width: double.infinity,
+                            child: Wrap(
+                              alignment: WrapAlignment.spaceBetween,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              spacing: 8,
+                              runSpacing: 6,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.36),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.24,
+                                      ),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(
+                                        Icons.calendar_today_rounded,
+                                        size: 12,
+                                        color: Colors.white,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        '$dateTag • ${_formatTimeOnly(event.startTime)}',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 4,
+                                  children: [
+                                    if (event.pointsMultiplier > 1.0)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.amber,
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          '${event.pointsMultiplier}x PTS',
+                                          style: const TextStyle(
+                                            color: Colors.black,
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 10,
+                                          ),
+                                        ),
+                                      )
+                                    else if (event.pointsAwarded > 0)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withValues(
+                                            alpha: 0.22,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          '+${event.pointsAwarded} PTS',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 10,
+                                          ),
+                                        ),
+                                      ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 2,
+                                        vertical: 1,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: isDark
+                                            ? const Color(
+                                                0xFF0F172A,
+                                              ).withValues(alpha: 0.72)
+                                            : Colors.white.withValues(
+                                                alpha: 0.92,
+                                              ),
+                                        borderRadius: BorderRadius.circular(9),
+                                      ),
+                                      child: _buildStatusBadge(event, now),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
+                  ],
                 ),
+              ),
 
+              // Editorial Card Content Body
               Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.fromLTRB(18, 14, 18, 16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 6,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: accentColor.withValues(alpha: 0.14),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            event.category.displayName.toUpperCase(),
-                            style: TextStyle(
-                              color: isDark
-                                  ? Colors.white
-                                  : accentColor,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 10,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ),
-                        if (normalizedScope != 'all')
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: accentColor.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              '${event.houseScope.toUpperCase()} EXCLUSIVE',
-                              style: TextStyle(
-                                color: accentColor,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 10,
-                              ),
-                            ),
-                          ),
-                        if (!event.targetsAllGrades)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.teal.withValues(alpha: 0.14),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              event.gradeRangeLabel.toUpperCase(),
-                              style: TextStyle(
-                                color: isDark
-                                    ? const Color(0xFF2DD4BF)
-                                    : const Color(0xFF0F766E),
-                                fontWeight: FontWeight.w900,
-                                fontSize: 10,
-                              ),
-                            ),
-                          ),
-                        _buildStatusBadge(event, now),
-                        if (event.pointsMultiplier > 1.0)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.amber.withValues(
-                                alpha: isDark ? 0.2 : 0.18,
-                              ),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.amber),
-                            ),
-                            child: Text(
-                              '${event.pointsMultiplier}x Points',
-                              style: TextStyle(
-                                color: isDark
-                                    ? Colors.amber
-                                    : const Color(0xFF92400E),
-                                fontWeight: FontWeight.w900,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ),
-                      ],
+                    Text(
+                      metaParts.join('  •  '),
+                      style: TextStyle(
+                        color: isDark ? Colors.white70 : darkAccent,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 11,
+                        letterSpacing: 0.6,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 12),
-
-                    // Calendar Date Tile + Event Title & Schedule
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          constraints: const BoxConstraints(minWidth: 50),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: isConcluded
-                                ? (isDark
-                                      ? const Color(0xFF0F172A)
-                                      : const Color(0xFFF1F5F9))
-                                : accentColor.withValues(
-                                    alpha: isDark ? 0.16 : 0.09,
-                                  ),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: isConcluded
-                                  ? (isDark
-                                        ? const Color(0xFF334155)
-                                        : const Color(0xFFCBD5E1))
-                                  : accentColor.withValues(alpha: 0.35),
-                            ),
-                          ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                monthShort,
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: 0.5,
-                                  color: isConcluded
-                                      ? (isDark
-                                            ? Colors.white54
-                                            : const Color(0xFF64748B))
-                                      : accentColor,
-                                ),
-                              ),
-                              Text(
-                                dayNumber,
-                                style: TextStyle(
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w900,
-                                  height: 1.1,
-                                  color: isConcluded
-                                      ? (isDark
-                                            ? Colors.white60
-                                            : const Color(0xFF475569))
-                                      : (isDark
-                                            ? Colors.white
-                                            : const Color(0xFF0F172A)),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                event.title,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 16.5,
-                                  color: isDark
-                                      ? Colors.white
-                                      : const Color(0xFF0F172A),
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 3),
-                              Text(
-                                _formatDateTime(event.startTime),
-                                style: TextStyle(
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w600,
-                                  color: isDark
-                                      ? Colors.white60
-                                      : const Color(0xFF64748B),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+                    const SizedBox(height: 6),
+                    Text(
+                      event.title,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 18,
+                        letterSpacing: -0.3,
+                        color: isDark ? Colors.white : const Color(0xFF0F172A),
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
-
                     if (event.description.isNotEmpty) ...[
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 6),
                       Text(
                         event.description,
                         style: TextStyle(
                           color: isDark
                               ? Colors.grey.shade300
                               : const Color(0xFF475569),
-                          fontSize: 13,
-                          height: 1.4,
+                          fontSize: 13.5,
+                          height: 1.45,
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ],
+                    const SizedBox(height: 14),
+                    Divider(
+                      height: 1,
+                      color: isDark
+                          ? const Color(0xFF334155)
+                          : const Color(0xFFE2E8F0),
+                    ),
                     const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? const Color(0xFF0F172A)
-                            : const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: isDark
-                              ? const Color(0xFF334155)
-                              : const Color(0xFFE2E8F0),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.location_on_rounded,
+                          size: 16,
+                          color: accentColor,
                         ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.location_on_outlined,
-                            size: 15,
-                            color: isDark
-                                ? Colors.white60
-                                : const Color(0xFF64748B),
-                          ),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: Text(
-                              event.venue,
-                              style: TextStyle(
-                                color: isDark
-                                    ? Colors.white70
-                                    : const Color(0xFF334155),
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Icon(
-                            Icons.access_time_rounded,
-                            size: 15,
-                            color: isDark
-                                ? Colors.white60
-                                : const Color(0xFF64748B),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            _remainingLabel(event, now),
+                        const SizedBox(width: 5),
+                        Expanded(
+                          child: Text(
+                            event.venue,
                             style: TextStyle(
                               color: isDark
                                   ? Colors.white70
                                   : const Color(0xFF334155),
-                              fontSize: 12,
+                              fontSize: 12.5,
                               fontWeight: FontWeight.w700,
                             ),
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          if (event.pointsAwarded > 0) ...[
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
+                        ),
+                        const SizedBox(width: 10),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 9,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? const Color(0xFF0F172A)
+                                : const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.schedule_rounded,
+                                size: 13,
+                                color: isDark
+                                    ? Colors.white60
+                                    : const Color(0xFF64748B),
                               ),
-                              decoration: BoxDecoration(
-                                color: Colors.green.withValues(alpha: 0.14),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                '+${event.pointsAwarded} PTS',
+                              const SizedBox(width: 4),
+                              Text(
+                                _remainingLabel(event, now),
                                 style: TextStyle(
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.w900,
                                   color: isDark
-                                      ? Colors.greenAccent
-                                      : const Color(0xFF047857),
+                                      ? Colors.white70
+                                      : const Color(0xFF334155),
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w800,
                                 ),
                               ),
-                            ),
-                          ],
-                        ],
-                      ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Icon(
+                          Icons.arrow_forward_ios_rounded,
+                          size: 13,
+                          color: isDark
+                              ? Colors.white38
+                              : const Color(0xFF94A3B8),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -1376,6 +1506,14 @@ class _EventsScreenState extends State<EventsScreen> {
         ),
       ),
     );
+  }
+
+  String _formatTimeOnly(DateTime value) {
+    final local = value.toLocal();
+    final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+    final minute = local.minute.toString().padLeft(2, '0');
+    final suffix = local.hour < 12 ? 'AM' : 'PM';
+    return '$hour:$minute $suffix';
   }
 
   void _showEventDetailsModal(
@@ -1544,39 +1682,86 @@ class _EventsScreenState extends State<EventsScreen> {
                       color: isDark ? Colors.white : const Color(0xFF0F172A),
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 12),
                   Row(
                     children: [
-                      const Icon(
-                        Icons.location_on_outlined,
-                        size: 16,
-                        color: Colors.grey,
-                      ),
-                      const SizedBox(width: 4),
                       Expanded(
-                        child: Text(
-                          event.venue,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: Colors.grey,
-                            fontWeight: FontWeight.w600,
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? const Color(0xFF1E293B)
+                                : const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: isDark
+                                  ? const Color(0xFF334155)
+                                  : const Color(0xFFE2E8F0),
+                            ),
                           ),
-                          overflow: TextOverflow.ellipsis,
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.location_on_rounded,
+                                size: 18,
+                                color: houseColor,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  event.venue,
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    color: isDark
+                                        ? Colors.white
+                                        : const Color(0xFF0F172A),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      const Icon(
-                        Icons.access_time_rounded,
-                        size: 16,
-                        color: Colors.grey,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        _remainingLabel(event, now),
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey,
-                          fontWeight: FontWeight.w600,
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? const Color(0xFF1E293B)
+                                : const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: isDark
+                                  ? const Color(0xFF334155)
+                                  : const Color(0xFFE2E8F0),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.access_time_rounded,
+                                size: 18,
+                                color: houseColor,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _remainingLabel(event, now),
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    color: isDark
+                                        ? Colors.white
+                                        : const Color(0xFF0F172A),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ],
