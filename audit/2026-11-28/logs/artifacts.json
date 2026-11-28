@@ -1,0 +1,80 @@
+{
+  "app-arm64-v8a-release.apk": {
+    "bytes": 39913530,
+    "sha256": "321a8010efa2a5981afa4ee8554ec578be84bb32f4a6b5b94312926ff4b3c1e8",
+    "payloads": {
+      "lib/arm64-v8a/libapp.so": {
+        "sha256": "d100a94842a43f2af025002344733550294390631c52c85cb8c8a9eca4eb3418",
+        "all_fix_markers": true
+      }
+    },
+    "same_payload_as_universal": true
+  },
+  "app-armeabi-v7a-release.apk": {
+    "bytes": 36569776,
+    "sha256": "0d9dff5f58c24d13d68a29232b24c6e9afef18aa5f737802eb4992e8e1dede55",
+    "payloads": {
+      "lib/armeabi-v7a/libapp.so": {
+        "sha256": "dfd0b633ad6cc3521024ee778440da29926ad1ace7aa00d55f2ed98385da7369",
+        "all_fix_markers": true
+      }
+    },
+    "same_payload_as_universal": true
+  },
+  "app-debug.apk": {
+    "bytes": 220577020,
+    "sha256": "41568242fbf3122818cc550e8a95c11741ded175a4921b6662ba4cc8dd9b3752",
+    "payloads": {
+      "assets/flutter_assets/kernel_blob.bin": {
+        "sha256": "61d33b91a0abf1dcc4b0393dbfb101375961b4e5bd8c19b2b6fc4a7bd5dc332b",
+        "all_fix_markers": true
+      }
+    }
+  },
+  "app-release.apk": {
+    "bytes": 98913435,
+    "sha256": "ad15ed5154f9d8b3095c56fa3e9ba9c99a62dfa3c416487dbf13902085c2eb48",
+    "payloads": {
+      "lib/arm64-v8a/libapp.so": {
+        "sha256": "d100a94842a43f2af025002344733550294390631c52c85cb8c8a9eca4eb3418",
+        "all_fix_markers": true
+      },
+      "lib/armeabi-v7a/libapp.so": {
+        "sha256": "dfd0b633ad6cc3521024ee778440da29926ad1ace7aa00d55f2ed98385da7369",
+        "all_fix_markers": true
+      },
+      "lib/x86_64/libapp.so": {
+        "sha256": "929ac88454c620659012da36fcf1a5b217e9efb79aa34d898bdf937842189ab3",
+        "all_fix_markers": true
+      }
+    }
+  },
+  "app-x86_64-release.apk": {
+    "bytes": 42584121,
+    "sha256": "d878c8e62884fb54f45a2b9cfb78dc4c2d0ecb55fca00c5532e959760ba93d4f",
+    "payloads": {
+      "lib/x86_64/libapp.so": {
+        "sha256": "929ac88454c620659012da36fcf1a5b217e9efb79aa34d898bdf937842189ab3",
+        "all_fix_markers": true
+      }
+    },
+    "same_payload_as_universal": true
+  },
+  "windows": {
+    "files_checked": 22,
+    "missing": [],
+    "different": [],
+    "all_fix_markers": true,
+    "payload_sha256": "3eef7d3a6463939bd2f0c99cac33508e0f95904ab5a8f38c3a9bd1d642afd35a"
+  },
+  "android_app_bundle": {
+    "bytes": 89029519,
+    "sha256": "da7c1bcd28006da1d6542af5cb282c41481fd038f3c37749628dbda108f2f647"
+  },
+  "windows_zip": {
+    "bytes": 26593936,
+    "sha256": "5336450e9e92963e8783a6f9e58deb2de6057fb9d8aa868cae24a79da92032c8"
+  },
+  "source_commit": "ccad2fb",
+  "signatures": "All five APKs verified with apksigner; release certificate 0603a5f4f22e84d73b13503b421fd68df994623132005200f9aa2ed21a96655c"
+}

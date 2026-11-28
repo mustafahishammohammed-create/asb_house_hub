@@ -1,0 +1,136 @@
+i  emulators: Starting emulators: firestore, storage
+i  emulators: Detected demo project ID "demo-asb-audit", emulated services will use a demo configuration and attempts to access non-emulated services for this project will fail.
+i  firestore: Firestore Emulator logging to firestore-debug.log
++  firestore: Firestore Emulator was started in standard edition.
++  firestore: Firestore Emulator UI websocket is running on 9150.
+i  Running script: node --test functions/test/security.test.js
+[2026-11-28T07:08:16.870Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f20334e error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'update' @ L1393, evaluation error at L1575:28 for 'update' @ L1575, false for 'update' @ L1393, false for 'update' @ L1575
+[2026-11-28T07:08:16.897Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f203350 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'update' @ L1393, evaluation error at L1575:28 for 'update' @ L1575, false for 'update' @ L1393, false for 'update' @ L1575
+[2026-11-28T07:08:16.922Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f203351 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'update' @ L1393, evaluation error at L1575:28 for 'update' @ L1575, false for 'update' @ L1393, false for 'update' @ L1575
+[2026-11-28T07:08:16.961Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f203352 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'create' @ L1393, evaluation error at L1571:28 for 'create' @ L1571, false for 'update' @ L1393, evaluation error at L1575:28 for 'update' @ L1575, false for 'create' @ L1393, false for 'create' @ L1571
+[2026-11-28T07:08:17.004Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f203353 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'update' @ L1393, evaluation error at L1575:28 for 'update' @ L1575, false for 'update' @ L1393, false for 'update' @ L1575
+✔ rules: homework notes persist only on the owner's valid ungraded submission (13117.297ms)
+✔ rules: a student can provision a nonprivileged roster row (261.591ms)
+[2026-11-28T07:08:17.339Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f203355 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'create' @ L1393, evaluation error at L2207:24 for 'create' @ L2207, false for 'update' @ L1393, evaluation error at L2209:24 for 'update' @ L2209, false for 'create' @ L1393, false for 'create' @ L2207
+[2026-11-28T07:08:17.374Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f203356 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'create' @ L1393, evaluation error at L2207:24 for 'create' @ L2207, false for 'update' @ L1393, evaluation error at L2209:24 for 'update' @ L2209, false for 'create' @ L1393, false for 'create' @ L2207
+✔ rules: a student cannot grant library or unknown capabilities (107.7393ms)
+[2026-11-28T07:08:17.454Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f203357 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'create' @ L1393, evaluation error at L2207:24 for 'create' @ L2207, false for 'update' @ L1393, evaluation error at L2209:24 for 'update' @ L2209, false for 'create' @ L1393, false for 'create' @ L2207
+✔ rules: teaching staff cannot promote themselves to super admin via roster (79.6172ms)
+✔ rules: super admins can provision staff capabilities (57.3956ms)
+[2026-11-28T07:08:17.606Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f203359 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'update' @ L1393, evaluation error at L2209:24 for 'update' @ L2209, false for 'update' @ L1393, false for 'update' @ L2209
+✔ rules: a deactivated member cannot reactivate their roster record (94.083ms)
+[2026-11-28T07:08:17.744Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f20335b error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'update' @ L1393, evaluation error at L2054:26 for 'update' @ L2054, false for 'update' @ L1393, false for 'update' @ L2054
+✔ rules: outsiders cannot read messages or forge read receipts (205.5902ms)
+[2026-11-28T07:08:17.878Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f20335d error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'create' @ L1393, false for 'create' @ L2231, false for 'update' @ L1393, false for 'update' @ L2231
+[2026-11-28T07:08:17.890Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f20335e error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'create' @ L1393, false for 'create' @ L2236, false for 'update' @ L1393, false for 'update' @ L2236
+✔ rules: clients cannot write election tallies or participation (78.3507ms)
+✔ rules: class wildcard cannot expose another scholar's report card or attendance (129.0578ms)
+[2026-11-28T07:08:18.078Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f203360 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'create' @ L1393, false for 'create' @ L1558, false for 'update' @ L1393, evaluation error at L1559:26 for 'update' @ L1559, false for 'create' @ L1393, false for 'create' @ L1558
+✔ rules: the class catch-all cannot bypass assignment validation (59.3326ms)
+✔ election: duplicate votes award only one tally and return the same receipt (4100.1863ms)
+✔ election: cancelled ballots cannot be certified or award points (527.32ms)
+✔ election: certification records the real scholar number and awards exactly once (557.8452ms)
+✔ election: candidate addition and removal are auditable (563.0667ms)
+[2026-11-28T07:08:24.007Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f203361 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'create' @ L1393, evaluation error at L1406:24 for 'create' @ L1406, false for 'update' @ L1393, evaluation error at L1428:24 for 'update' @ L1428, false for 'create' @ L1393, false for 'create' @ L1406
+✔ rules (O02): account cannot self-register a forged scholar_no and access victim records (352.0115ms)
+✔ rules (O04): suspended or deactivated staff loses privileged read/write access (169.2636ms)
+[2026-11-28T07:08:24.400Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f203369 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'create' @ L1393, false for 'create' @ L1465, false for 'update' @ L1393, false for 'update' @ L1498
+[2026-11-28T07:08:24.422Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f20336a error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'create' @ L1393, false for 'create' @ L1465, false for 'update' @ L1393, false for 'update' @ L1498
+[2026-11-28T07:08:24.437Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f20336b error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'create' @ L1393, false for 'create' @ L1465, false for 'update' @ L1393, evaluation error at L1498:26 for 'update' @ L1498, false for 'create' @ L1393, false for 'create' @ L1465
+✔ rules (O07): arbitrary student cannot spoof notifications to other users, chat partner can (109.9412ms)
+[2026-11-28T07:08:24.530Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f20336d error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'create' @ L1393, evaluation error at L1723:24 for 'create' @ L1723, false for 'update' @ L1393, Unable to evaluate the expression as the maximum of 1000 expressions to evaluate has been reached. for 'update' @ L1741, false for 'create' @ L1393, false for 'create' @ L1723
+[2026-11-28T07:08:24.553Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f20336e error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'create' @ L1393, evaluation error at L1723:24 for 'create' @ L1723, false for 'update' @ L1393, Unable to evaluate the expression as the maximum of 1000 expressions to evaluate has been reached. for 'update' @ L1741, false for 'create' @ L1393, false for 'create' @ L1723
+[2026-11-28T07:08:24.613Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f203370 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'update' @ L1393, Unable to evaluate the expression as the maximum of 1000 expressions to evaluate has been reached. for 'update' @ L1741, false for 'update' @ L1393, false for 'update' @ L1741
+[2026-11-28T07:08:24.644Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f203371 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'update' @ L1393, Unable to evaluate the expression as the maximum of 1000 expressions to evaluate has been reached. for 'update' @ L1741, false for 'update' @ L1393, false for 'update' @ L1741
+[2026-11-28T07:08:24.685Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f203372 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'update' @ L1393, Unable to evaluate the expression as the maximum of 1000 expressions to evaluate has been reached. for 'update' @ L1741, false for 'update' @ L1393, false for 'update' @ L1741
+[2026-11-28T07:08:24.696Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f203373 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'update' @ L1393, Unable to evaluate the expression as the maximum of 1000 expressions to evaluate has been reached. for 'update' @ L1741, false for 'update' @ L1393, false for 'update' @ L1741
+✔ rules (O08): student cannot self-assert AI verified status on house_claims create (237.5603ms)
+[2026-11-28T07:08:24.764Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f203375 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'create' @ L1393, false for 'create' @ L2241, false for 'update' @ L1393, false for 'update' @ L2241
+[2026-11-28T07:08:24.840Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f203378 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'create' @ L1393, false for 'create' @ L2268, false for 'update' @ L1393, false for 'update' @ L2268
+✔ rules (O12/O13): Blaze election audits and library v2 collections reject direct client tampering (143.4884ms)
+✔ rules (O19): admin can persist current SportsTrophyRecord payload (47.3807ms)
+[2026-11-28T07:08:24.944Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f20337a error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'create' @ L1393, evaluation error at L1788:24 for 'create' @ L1788, false for 'update' @ L1393, evaluation error at L1808:24 for 'update' @ L1808, false for 'create' @ L1393, false for 'create' @ L1788
+[2026-11-28T07:08:24.976Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f20337b error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'create' @ L1393, evaluation error at L1788:24 for 'create' @ L1788, false for 'update' @ L1393, evaluation error at L1808:24 for 'update' @ L1808, false for 'create' @ L1393, false for 'create' @ L1788
+[2026-11-28T07:08:24.992Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f20337c error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'create' @ L1393, evaluation error at L1788:24 for 'create' @ L1788, false for 'update' @ L1393, evaluation error at L1808:24 for 'update' @ L1808, false for 'create' @ L1393, false for 'create' @ L1788
+[2026-11-28T07:08:25.019Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f20337d error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'create' @ L1393, evaluation error at L1788:24 for 'create' @ L1788, false for 'update' @ L1393, evaluation error at L1808:24 for 'update' @ L1808, false for 'create' @ L1393, false for 'create' @ L1788
+[2026-11-28T07:08:25.053Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f20337e error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'create' @ L1393, evaluation error at L1788:24 for 'create' @ L1788, false for 'update' @ L1393, evaluation error at L1808:24 for 'update' @ L1808, false for 'create' @ L1393, false for 'create' @ L1788
+[2026-11-28T07:08:25.083Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f20337f error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'create' @ L1393, evaluation error at L1788:24 for 'create' @ L1788, false for 'update' @ L1393, evaluation error at L1808:24 for 'update' @ L1808, false for 'create' @ L1393, false for 'create' @ L1788
+✔ rules (O21): zero-price, pre-verified, or mismatched student merch orders are rejected (257.3823ms)
+✔ rules (O27/O28): chat room non-member probing fails and photo messages succeed for members (94.0583ms)
+[2026-11-28T07:08:25.301Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f203384 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'create' @ L1393, evaluation error at L1902:26 for 'create' @ L1902, false for 'update' @ L1393, false for 'update' @ L1926, false for 'create' @ L1393, false for 'create' @ L1902
+✔ rules (O33): user without integer grade cannot RSVP to grade-restricted events (93.336ms)
+[2026-11-28T07:08:25.398Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f203386 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'update' @ L1393, evaluation error at L1596:26 for 'update' @ L1596, false for 'update' @ L1393, false for 'update' @ L1596
+[2026-11-28T07:08:25.419Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f203387 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'update' @ L1393, evaluation error at L1596:26 for 'update' @ L1596, false for 'update' @ L1393, false for 'update' @ L1596
+✔ rules (O16): report card honours merit claim enforces GPA >= 3.80 and one-time flip (86.315ms)
+[2026-11-28T07:08:25.489Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f203388 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'create' @ L1393, evaluation error at L2017:24 for 'create' @ L2017, false for 'update' @ L1393, evaluation error at L2034:24 for 'update' @ L2034, false for 'create' @ L1393, false for 'create' @ L2017
+✔ rules (O29): student cannot initiate a DM directly with another student (94.2485ms)
+[2026-11-28T07:08:25.573Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f20338a error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'update' @ L1393, Unable to evaluate the expression as the maximum of 1000 expressions to evaluate has been reached. for 'update' @ L1498, false for 'update' @ L1393, false for 'update' @ L1498
+[2026-11-28T07:08:25.587Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f20338b error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'delete' @ L1393, evaluation error at L1536:26 for 'delete' @ L1536, false for 'delete' @ L1393, false for 'delete' @ L1536
+✔ rules (Batch 1 O04): suspended accounts cannot mutate own notifications or read own orders (94.9134ms)
+[2026-11-28T07:08:25.681Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f20338d error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'create' @ L1393, evaluation error at L1465:26 for 'create' @ L1465, false for 'update' @ L1393, evaluation error at L1498:26 for 'update' @ L1498, false for 'create' @ L1393, false for 'create' @ L1465
+[2026-11-28T07:08:25.720Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f20338e error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'create' @ L1393, evaluation error at L1465:26 for 'create' @ L1465, false for 'update' @ L1393, evaluation error at L1498:26 for 'update' @ L1498, false for 'create' @ L1393, false for 'create' @ L1465
+[2026-11-28T07:08:25.797Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f203390 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'create' @ L1393, Unable to evaluate the expression as the maximum of 1000 expressions to evaluate has been reached. for 'create' @ L1465, false for 'update' @ L1393, Unable to evaluate the expression as the maximum of 1000 expressions to evaluate has been reached. for 'update' @ L1498, false for 'create' @ L1393, false for 'create' @ L1465
+✔ rules (Batch 1 O07): notifications enforce category/priority, house scope, and class recipient scope (217.2426ms)
+[2026-11-28T07:08:25.892Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f203392 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'create' @ L1393, evaluation error at L1723:24 for 'create' @ L1723, false for 'update' @ L1393, Unable to evaluate the expression as the maximum of 1000 expressions to evaluate has been reached. for 'update' @ L1741, false for 'create' @ L1393, false for 'create' @ L1723
+[2026-11-28T07:08:25.914Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f203393 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'update' @ L1393, Unable to evaluate the expression as the maximum of 1000 expressions to evaluate has been reached. for 'update' @ L1741, false for 'update' @ L1393, Unable to evaluate the expression as the maximum of 1000 expressions to evaluate has been reached. for 'update' @ L1741
+[2026-11-28T07:08:25.969Z]  @firebase/firestore: Firestore (13.4.0): GrpcConnection RPC 'Write' stream 0x5f203395 error. Code: 7 Message: 7 PERMISSION_DENIED: 
+false for 'create' @ L1393, evaluation error at L1788:24 for 'create' @ L1788, false for 'update' @ L1393, evaluation error at L1808:24 for 'update' @ L1808, false for 'create' @ L1393, false for 'create' @ L1788
+✔ rules (Batch 1 O08/O21/O44): block claim self-approval, ocr_keywords spoofing, free order points, and verify administrator parity (183.7282ms)
+✔ storage rules (O09/O04): enforce UID claim ownership, raster MIME allowlist, no overwrites, and active school_members (706.3694ms)
+ℹ tests 29
+ℹ suites 0
+ℹ pass 29
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 23387.9253
++  Script exited successfully (code 0)
+i  emulators: Shutting down emulators.
+i  firestore: Stopping Firestore Emulator
+!  Firestore Emulator has exited upon receiving signal: SIGINT
+i  storage: Stopping Storage Emulator
+i  hub: Stopping emulator hub
+i  logging: Stopping Logging Emulator

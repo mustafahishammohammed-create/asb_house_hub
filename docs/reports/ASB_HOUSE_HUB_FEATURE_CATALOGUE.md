@@ -4,15 +4,15 @@
 
 **Application features for academics, houses, events, leadership, and administration**
 
-**Prepared for:** The Administration, The Asian School, Bahrain  
-**Prepared by:** Mustafa Hisham  
-**Application version:** 1.0.1 (Build 2)  
-**Date:** 27 November 2026  
+**Prepared for:** The Administration, The Asian School, Bahrain
+**Prepared by:** Mustafa Hisham
+**Application version:** 1.0.1 (Build 2)
+**Date:** 28 November 2026
 **Document status:** Submission for administrative review — not a production release approval
 
-> **Current release position: not cleared for production.** While the Batch 1 local security remediations and commits `2e54a9a..13b791c` resolved suspension enforcement, saved-account cache isolation, notification sender scoping, claim self-approval guards, Storage ownership regexes, chat/trophy schemas, scannable QR PDF export, and Android release signing locally, live Cloud Functions deployment (requiring Firebase Blaze), Storage activation, server-owned scoring/catalog authority, App Check, FCM, and enrollment roster binding remain open. No live school data should be entered.
+> **Current release position: not cleared for production.** Local remediation and UI work through `ccad2fb` is verified by 747 automated tests, 29 Firestore/Storage emulator tests, and clean static analysis, and the live Firestore rules were deployed on 28 November 2026 (content parity verified), while the seven composite indexes match the repository. Cloud Functions (requiring Firebase Blaze), Cloud Storage, server-owned scoring/catalog/election authority, App Check, FCM, and enrollment roster binding remain open. The accepted `11209/admin` bootstrap exception (`O01`) remains in place. No live school data should be entered.
 
-> **Purpose of this document.** This catalogue documents what each module of ASB House Hub contains, who can use it, its current release status, and the open audit/deployment gates that block production use. It reflects the 27 November 2026 codebase state (including Batch 1 local security remediations); it is not a production approval.
+> **Purpose of this document.** This catalogue documents what each module of ASB House Hub contains, who can use it, its current release status, and the open audit/deployment gates that block production use. It reflects the 28 November 2026 codebase state at `ccad2fb`; it is not a production approval.
 
 ---
 
@@ -22,8 +22,8 @@
 | --- | ---: |
 | Application modules | **16** |
 | Purpose-built screens | **28** |
-| Automated tests passing | **710** |
-| Emulator security tests passing | **28** |
+| Automated tests passing | **747** |
+| Emulator security tests passing | **29** |
 
 **Status labels:** `GATED` · `PILOT` · `ACTIVATION` · `ROADMAP` · `READY` *(target state; no module is currently assigned)*
 
@@ -47,11 +47,11 @@
 
 ## 1. Executive summary
 
-ASB House Hub is a Flutter application for academic information, house points, events, communication, recognition, and administration. It contains **16 modules** and **28 screens**, across **84 Dart source files**, with role-based access for students, teachers, captains and council members, and administrators.
+ASB House Hub is a Flutter application for academic information, house points, events, communication, recognition, and administration. It contains **16 modules** and **28 screens**, across **85 Dart source files**, with role-based access for students, teachers, captains and council members, and administrators.
 
 Students at The Asian School, Bahrain do not bring mobile phones to school. Student-facing features are provided for use outside school hours on a personal device, subject to school and family policy. Staff features — attendance, scanning, approvals, event management, and academic administration — run on school-authorised devices.
 
-> **Current release position: not cleared for production.** Following the deep code audit of 26 November 2026, substantial local remediations (`2e54a9a..13b791c` plus the Batch 1 security patch) closed key client and rules gaps around suspension enforcement, cache isolation, role parity, notification sender scoping, claim self-approval, bounded store pricing and HMAC-SHA256 voucher binding, Storage ownership, chat creation and photo attachments, trophy schema, scannable vector QR PDF exports, fail-closed release startup, Android signing, and iOS deployment targets. However, **no Cloud Functions are deployed** (the project remains on the Firebase Spark plan without Blaze billing), Cloud Storage is not initialized live, Batch 1 `firestore.rules`, `storage.rules`, and `firestore.indexes.json` are not yet pushed live, and server-side authority (points ledger, sports scoring, election tallies, store catalog, enrollment roster binding, App Check, FCM, and AI proxy) remains open. The build is suitable for code review and synthetic-data demonstration only. No live student, staff, medical, payment, or election data should be entered.
+> **Current release position: not cleared for production.** Following the deep code audit of 26 November 2026, local remediation through `ccad2fb` (including the Batch 1 security patch at `3888842`) closed key client and rules gaps around suspension enforcement, cache isolation, role parity, notification sender scoping, claim self-approval, bounded store pricing and HMAC-SHA256 voucher binding, Storage ownership, chat creation and photo attachments, trophy schema, scannable vector QR PDF exports, fail-closed release startup, Android signing, and iOS deployment targets. The notes-compatible Firestore ruleset `14ab83b3…` was deployed and read back on 28 November 2026: its source exactly matches the repository (SHA-256 `249255033fab7d604e91afeeea5717a80c42a061c98bd751881e0d58b51caa9e`). All seven composite indexes are READY and match the repository. However, **no Cloud Functions are deployed** (the project remains on the Firebase Spark plan without Blaze billing), **no Cloud Storage bucket exists**, and server-side authority (points ledger, sports scoring, election tallies, store catalog, enrollment roster binding, App Check, FCM, and AI proxy) remains open. The build is suitable for code review and synthetic-data demonstration only. No live student, staff, medical, payment, or election data should be entered.
 
 The app is designed around five goals:
 
@@ -63,7 +63,7 @@ The app is designed around five goals:
 
 Capabilities that depend on school IT and Firebase Blaze services — background push notifications, live Cloud Storage uploads and OCR certificate checks, server-verified elections, the transactional library backend, server-side AI proxy, and any future payment integration — are marked `ACTIVATION`. Modules with remaining server-authority, roster, or deployment blockers are marked `GATED` and are not approved for live use.
 
-Verification completed after the final Batch 1 code and rules edits: **710 of 710 automated Flutter tests passing** across 22 test files, a clean `flutter analyze --no-pub` run, **28 of 28 Firestore and Storage Emulator tests passing**, and **3 Cloud Functions JS syntax checks** passing. (Release builds for Android APK, Windows, and Web were previously verified at commit `13b791c`, prior to Batch 1 rules/service edits.) Live Cloud Function deployment, live Blaze Storage activation, iOS macOS/Xcode archiving, physical mobile device testing on the latest patch, accessibility certification, and deployed integration tests remain incomplete.
+Verification completed at `ccad2fb` on 28 November 2026: **747 of 747 automated Flutter tests passing** across 26 test files, clean `flutter analyze --no-pub`, **29 of 29 Firestore and Storage Emulator tests passing**, and **3 backend JavaScript syntax checks** passing. Android release/debug/split APKs and App Bundle, Windows release and portable bundle, and Web release were rebuilt from this source. Homework answers and shared links now persist with per-scholar submissions; incoming grading updates replace completed local status changes; duplicate writes are blocked; Events cards pass compact-screen tests through 300% text scaling. Direct homework file uploads are not available; students can paste a shared link. The deployed rules exactly match the repository and all seven composite indexes match. Remaining platform and backend limits include physical-device testing, iOS archiving, Cloud Functions, Storage provisioning, App Check and FCM.
 
 > **Recommended next step:** approve a closed, synthetic-data technical review and complete the remaining backend deployment gates (`G1`–`G3`) once Firebase Blaze provisioning and school IT sponsorship are confirmed. Do not approve a live pilot until updated `firestore.rules`, `storage.rules`, indexes, Cloud Functions, App Check, and server-owned authority are deployed and verified.
 
@@ -84,9 +84,9 @@ Verification completed after the final Batch 1 code and rules edits: **710 of 71
 | **Screens** | 28 |
 | **Capabilities** | 100+ user-facing features |
 | **Visual identity** | Four house colours, light and dark themes, school branding, responsive layouts |
-| **Current release position** | **Not cleared for production** — Batch 1 & `2e54a9a..13b791c` local fixes verified; Spark/Blaze backend deployment, server authority (`G2`/`G3`), and accepted bootstrap governance (`O01`) remain open |
-| **Deployment state** | Rules updated locally (prior `firestore.rules` pushed at `13b791c`, Batch 1 `firestore.rules`/`storage.rules`/`firestore.indexes.json` pending deploy); no Cloud Functions or Storage bucket active live (Spark plan) |
-| **Quality evidence** | 710/710 Flutter tests passing; 28/28 Firestore + Storage Emulator tests passing; static analysis clean; 3 backend JS checks clean; GitHub Actions CI configured |
+| **Current release position** | **Not cleared for production** — local fixes through `ccad2fb` verified; live Firestore rules deployed 28 November 2026 (content parity verified), 7 indexes match; Blaze Functions/Storage, server authority (`G2`/`G3`), and accepted bootstrap governance (`O01`) remain open |
+| **Deployment state** | Live Firestore rules `14ab83b3…` deployed and matched byte for byte on 28 November 2026; all 7 composite indexes READY and matching; no Cloud Functions or Storage bucket active live |
+| **Quality evidence** | 747/747 Flutter tests passing; 29/29 Firestore + Storage Emulator tests passing; static analysis clean; 3 backend JS checks clean; Windows/Android/Web builds at `ccad2fb`; GitHub Actions CI configured |
 | **Release** | Version 1.0.1, Build 2 — November 2026 |
 
 ### Core design principles
@@ -134,7 +134,7 @@ Every module carries one of these labels. The labels describe implementation and
 | `PILOT` | Interactive demonstration using sample, local, or engagement data. Not authoritative. |
 | `ACTIVATION` | The app-side experience is built. A required school IT / Firebase Blaze service is not yet deployed. |
 | `ROADMAP` | Planned enhancement, not present in this build. |
-| `READY` | Target state: implemented, locally tested, deployed, and no open release-blocking finding. **Not assigned to any module as of 27 November 2026.** |
+| `READY` | Target state: implemented, locally tested, deployed, and no open release-blocking finding. **Not assigned to any module as of 28 November 2026.** |
 
 > **Release note.** No module is production-cleared. While major local authorization, suspension, schema, and platform bugs identified in the 26 November 2026 audit have been closed in code and emulator tests, backend deployment (`G3`), server-owned authority (`G2`), and governance sign-off (`O01`, `O02`) keep production gates open. The companion [deep audit](../audits/ASB_HOUSE_HUB_DEEP_AUDIT_2026-11-26.md) records the original baseline findings and probes.
 
@@ -175,7 +175,7 @@ Every module carries one of these labels. The labels describe implementation and
 - **Student profile modal** gives a quick view of identity, house, class, points, and recognition.
 - **Cached dashboard states** stay scoped to the active account and clear on switch/sign-out.
 
-**Status:** `GATED` — dashboard layout and sender-scoped feeds are hardened locally, but live sign-in enrollment binding (`O02`) and live rules deployment (`G3`) remain pending.
+**Status:** `GATED` — dashboard layout and sender-scoped feeds are hardened locally, but live sign-in enrollment binding (`O02`) and live rule parity verification (`G3`) remain pending.
 
 > **Audit note.** **Closed locally:** `O36` fail-closed startup, `O04` suspension lockout, `O06` scoped dashboard caches, and `O07` sender-scoped in-app notifications. **Open:** `O01`/`O02` identity governance and push notification activation (`O43`).
 
@@ -205,7 +205,7 @@ Every module carries one of these labels. The labels describe implementation and
 
 - **Structure and placement:** Class/section rosters, placement verification, section creation, house/status/transfer controls, and student promotion tools.
 - **Timetable:** Student day/period view, teacher timetable editor with conflict preflight, approval/rejection workflow, and image/circular attachments.
-- **Homework and assignments:** Publishing with due date and reference image, per-scholar submission tracking, grading, and merit awards.
+- **Homework and assignments:** Publishing with due date and reference image, per-scholar submission status, saved answers and shared work links, and live grading updates. Saving waits for acknowledgement and preserves the last saved state on rejection. Direct file uploads are not available; use a shared link. Grading and merit actions remain subject to role and backend controls.
 - **Exams & report cards:** Hall/desk allocation, syllabus revision checklists, term report cards with GPA and academic-year separation, PDF export, and honours summaries.
 - **Attendance and leave:** Period and daily attendance (`present + excused + 0.5 × late`), CBSE 75% compliance indicator, medical leave queue, and clear non-conversion policy.
 - **Circulars and class group chat:** Composer with audience targeting and class chat bound to verified class placement.
@@ -262,7 +262,7 @@ Every module carries one of these labels. The labels describe implementation and
 
 **Status:** `GATED` — in-app sender scoping and anti-spoofing rules are hardened and tested in Batch 1; server Cloud Function fan-out and background FCM push (`O43`) remain `ACTIVATION`.
 
-> **Audit note.** **Closed locally:** `O07` arbitrary cross-user notification spoofing and privilege-escalation category/type forgery; `O04` suspended user updates. **Open:** `O43` background FCM token lifecycle/delivery (`ACTIVATION` pending Blaze/Functions) and deployment of updated Batch 1 `firestore.rules`.
+> **Audit note.** **Closed locally:** `O07` arbitrary cross-user notification spoofing and privilege-escalation category/type forgery; `O04` suspended user updates. **Open:** `O43` background FCM token lifecycle/delivery (`ACTIVATION` pending Blaze/Functions). The live `firestore.rules` ruleset was deployed on 28 November 2026; content parity with the repository is verified.
 
 ### 5.8 Chat and groups
 
@@ -278,7 +278,7 @@ Every module carries one of these labels. The labels describe implementation and
 
 **Status:** `GATED` — room creation, photo attachments, stream limits, and peer rules are repaired (`84446a1` / `a0800af`), pending live rule deployment (`G3`) and server-verified roster binding (`O29`).
 
-> **Audit note.** **Closed locally:** `O27` new DM creation path, `O28` `attachment_url` photo schema acceptance, and `ChatService` stream query bounds. **Open:** Server-backed peer role validation (`O29`) remains aligned with `O02` roster verification and requires Batch 1/post-`13b791c` rule parity live.
+> **Audit note.** **Closed locally:** `O27` new DM creation path, `O28` `attachment_url` photo schema acceptance, and `ChatService` stream query bounds. Live rules were deployed on 28 November 2026; content parity is verified (see the verification note). **Open:** Server-backed peer role validation (`O29`) remains aligned with `O02` roster verification.
 
 ### 5.9 Sports and trophies
 
@@ -450,7 +450,7 @@ Student accounts provide the following implemented functions outside school hour
 ### Services & known limits
 - Internal merchandise catalogue with cart customisation (size, quantity, removal), office order requests, and order status.
 - Pass and receipt preview with vector QR PDF export; library portal (`PILOT` sample loans); optional Gemini 2.5 AI assistant.
-- **Known limits:** Order totals rely on client price inputs until server catalog validation (`O23`); AI keys persist locally without a server proxy (`O26`); election voting (`O11`) and library backend (`O13`) require Blaze Cloud Functions; grade-restricted event eligibility (`O33`) awaits trusted roster binding (`O02`); no module is production-cleared as of 27 November 2026.
+- **Known limits:** Order totals rely on client price inputs until server catalog validation (`O23`); AI keys persist locally without a server proxy (`O26`); election voting (`O11`) and library backend (`O13`) require Blaze Cloud Functions; grade-restricted event eligibility (`O33`) awaits trusted roster binding (`O02`); no module is production-cleared as of 28 November 2026.
 - **Not provided:** No external store/Printify integration, no online payment, no campus-entry pass, no live election results, no Apple Wallet / Google Wallet / NFC support.
 
 ---
@@ -466,22 +466,22 @@ Student accounts provide the following implemented functions outside school hour
 
 | Platform | Support | Current verification note |
 | --- | --- | --- |
-| **Android** | Student access outside school hours; staff scanner and notification centre | Release keystore signing (`android/key.properties`) and ProGuard deferred-component fixes landed (`9cfd7f0`, `d471029`); release APK previously built at `13b791c` before Batch 1 edits; physical device test pending after final edits |
+| **Android** | Student access outside school hours; staff scanner and notification centre | Release keystore signing (`android/key.properties`) and ProGuard deferred-component fixes landed (`9cfd7f0`, `d471029`); release APK (see verification.json for byte size) and debug APK rebuilt at `ccad2fb`; physical-device test pending |
 | **iOS** | Student access outside school hours; staff scanner and notification centre | Deployment target raised to `15.0` (`d471029`); release build requires macOS/Xcode (`O38`) |
-| **Windows** | Desktop access to the app | Release build previously verified at `13b791c` before Batch 1 edits |
-| **Web** | Browser access to the app | Release build previously verified at `13b791c` before Batch 1 edits |
+| **Windows** | Desktop access to the app | Release build and portable `dist/windows/` bundle rebuilt at `ccad2fb` |
+| **Web** | Browser access to the app | Release build rebuilt at `ccad2fb` (known CupertinoIcons font warning) |
 
 ---
 
 ## 9. Security design and open findings
 
-This section reflects the 27 November 2026 security posture across locally verified Batch 1 controls and remaining backend/governance gaps.
+This section reflects the 28 November 2026 security posture at `ccad2fb` across locally verified Batch 1 controls, the live Firestore ruleset, and remaining backend/governance gaps.
 
 | Area | Implemented control (through Batch 1) | Remaining open audit position |
 | --- | --- | --- |
 | **Identity** | Re-authentication before switching, full `clearCache()` scrub (`O06`), live-role preference (`O05`), central UI/Auth/Firestore/Storage suspension (`O04`), unified role parity (`O44`), fail-closed release startup (`O36`), bounded signup timeouts (`13b791c`). | **Accepted exception:** `11209/admin` bootstrap path (`O01`). **Open:** pre-seeded enrollment roster binding (`O02`). |
 | **Authorization** | Sender-scoped `isNotificationScopeSender` + anti-spoof category/type bounds (`O07`), house-scoped captain claim reads, blocked `ocr_keywords`/`file_path`/`ai_verified` injection, and self-approval block (`O08`). | Authoritative server fan-out for notices/OCR and live push delivery (`O43`). |
-| **Storage** | Raster/PDF MIME whitelist blocking SVG XSS, expanded `isLeader()`, `resource == null` + strict `house_claims/{uid}/{scholarNo}_...` path regex, split create/update vs delete, aligned `verifyCertificateSignature` trigger, **Storage Emulator tested (`28/28`)**. | Cloud Storage bucket not activated on Spark plan; rules and OCR trigger await Blaze deployment (`G3`). |
+| **Storage** | Raster/PDF MIME whitelist blocking SVG XSS, expanded `isLeader()`, `resource == null` + strict `house_claims/{uid}/{scholarNo}_...` path regex, split create/update vs delete, aligned `verifyCertificateSignature` trigger, **Storage Emulator tested (`29/29`)**. | No Cloud Storage bucket exists on the Spark project; `storage.rules` and the OCR trigger await Blaze deployment (`G3`). |
 | **Elections** | Direct client tallies denied; UI fails closed when Cloud Functions are unavailable (`d471029`). | No deployed Cloud Functions (`O11`); legacy lifecycle rules (`O10`), audit path mismatch (`O12`), and client secret (`O23`) await Blaze deploy. |
 | **Scoring and conduct** | Points/conduct carry reviewer identity; self-approval on claims blocked; sports trophy schema aligned (`O19`). | Non-atomic client point awards (`O14`, `O15`), client honours (`O16`), revocation order (`O17`), negative contributor edge (`O18`), concurrent sports scoring (`O20`). |
 | **Orders and vouchers** | Bounded positive BHD pricing & immutable order financial fields (`O21`), HMAC-SHA256 `v2.0` tokens binding items + BHD total, live `'verified'`/`'ready'`-only scanner claims without cache fallback (`O22`). | Client-embedded HMAC signing secret and lack of server-side product catalog validation (`O23`). |
@@ -498,22 +498,25 @@ This section reflects the 27 November 2026 security posture across locally verif
 
 ### Current release decision
 
-**Not cleared for production.** Since the 26 November 2026 deep audit (`9d0a559`/`0beb87b`), eight engineering commits (`2e54a9a..13b791c`) plus the Batch 1 local security remediation fixed identity suspension/cache isolation/role parity (`O04`–`O06`, `O44`), notification spoofing (`O07`), claim self-approval (`O08`), Storage path/MIME ownership and trigger alignment (`O09`), order price bounds and live verified-only voucher claims (`O21`, `O22`), chat room/photo rules (`O27`, `O28`), trophy schema (`O19`), scannable vector QR PDFs (`O24`), Gemini `2.5` header auth (`O25`), fail-closed release startup (`O36`), Android signing / iOS `15.0` (`O38`), committed indexes (`O42`), and CI automation.
+**Not cleared for production.** Since the 26 November 2026 deep audit (`9d0a559`/`0beb87b`), local remediation through `ccad2fb` (including Batch 1 at `3888842` and the Exam Calendar, Campus Events, and Homework Tracker work at `38e6326`–`ccad2fb`) fixed identity suspension/cache isolation/role parity (`O04`–`O06`, `O44`), notification spoofing (`O07`), claim self-approval (`O08`), Storage path/MIME ownership and trigger alignment (`O09`), order price bounds and live verified-only voucher claims (`O21`, `O22`), chat room/photo rules (`O27`, `O28`), trophy schema (`O19`), scannable vector QR PDFs (`O24`), Gemini `2.5` header auth (`O25`), fail-closed release startup (`O36`), Android signing / iOS `15.0` (`O38`), committed indexes (`O42`), and CI automation.
 
-However, **Firebase Cloud Functions (requiring Blaze) are not deployed**, **Cloud Storage is not active live**, **Batch 1 rules updates are not yet deployed over the prior `13b791c` live ruleset**, and **server-owned points/sports/catalog/election authority** remains open.
+However, **Firebase Cloud Functions (requiring Blaze) are not deployed**, **no Cloud Storage bucket exists**, and **server-owned points/sports/catalog/election authority** remains open. The notes-compatible Firestore ruleset `14ab83b3…` was deployed and its exact content parity verified on 28 November 2026; all seven composite indexes match `firestore.indexes.json` (read back 28 November 2026).
 
 ### Verification results
 
 | Check | Result | Notes / Scope |
 | --- | --- | --- |
-| Flutter static analysis (`flutter analyze --no-pub`) | **No issues** | Verified after final Batch 1 edits |
-| Flutter automated test suite (`flutter test --no-pub`) | **710 of 710 passing** | 22 test files, verified after final Batch 1 edits |
-| Firestore + Storage Emulator security suite | **28 of 28 passing** | `functions/test/security.test.js` (`--only firestore,storage`), verified after Batch 1 edits |
+| Flutter static analysis (`flutter analyze --no-pub`) | **No issues** | Verified at `ccad2fb` |
+| Flutter automated test suite (`flutter test --no-pub`) | **747 of 747 passing** | 26 test files, verified at `ccad2fb` |
+| Firestore + Storage Emulator security suite | **29 of 29 passing** | `functions/test/security.test.js` (`--only firestore,storage`), verified at `ccad2fb` |
 | Backend JavaScript syntax (`functions/index.js`, `elections-v2.js`, `library-v2.js`) | **3 of 3 passing** | `npm run check` (`node --check`), host Node; CI pins Node 22 |
 | GitHub Actions CI workflow (`.github/workflows/ci.yml`) | **Configured** | Runs `flutter analyze`, `flutter test`, and Firestore+Storage emulator tests |
-| Live Firestore rules | **Stale vs local** | Prior ruleset deployed at `13b791c`; Batch 1 `firestore.rules` hardenings await deploy |
-| Live Cloud Functions & Cloud Storage | **None deployed / inactive** | Blocked on Firebase Blaze billing & IT provisioning |
-| Release binaries (Android APK, Windows, Web) | **Not rebuilt post-Batch 1** | Previously built cleanly at `13b791c` (with `key.properties` signing); iOS release build requires macOS |
+| Live Firestore rules | **Deployed; parity verified** | Ruleset `14ab83b3…`; exact read-back SHA-256 `249255033fab7d604e91afeeea5717a80c42a061c98bd751881e0d58b51caa9e`; 119,158 bytes on both sides |
+| Live composite indexes | **7 deployed, match manifest** | Read back 28 November 2026; matches `firestore.indexes.json` |
+| Live Cloud Functions & Cloud Storage | **No Functions / no bucket** | `firebase functions:list` reports none; bucket inventory is empty; both blocked on Blaze billing and IT provisioning |
+| Release binaries (Android APK, Windows, Web) | **Rebuilt at `ccad2fb`** | Android release (see verification.json for byte size) and debug APK, Windows release plus portable `dist/windows/` bundle, and Web release; iOS release build requires macOS |
+
+> **Rules parity verification (28 November 2026).** A fresh authenticated read first confirmed that the earlier deployed source matched the repository at SHA-256 `e8e9c2bb…`; the older `ce5de955…` entry was incorrect evidence. After the tested homework-notes schema update, ruleset `14ab83b3-19ab-45f3-b375-48707e90c02b` was released at `2026-11-28T07:12:36.389785Z` and read back at `2026-11-28T07:13:15.053Z`. Local and deployed files are both 119,158 bytes with SHA-256 `249255033fab7d604e91afeeea5717a80c42a061c98bd751881e0d58b51caa9e` and exact byte equality. This verifies deployment parity; other documented production-readiness gates remain open.
 
 ### Release gates
 
@@ -521,8 +524,8 @@ However, **Firebase Cloud Functions (requiring Blaze) are not deployed**, **Clou
 | --- | --- | --- | --- |
 | **G1 — Identity and access** | `O01`, `O02`, `O04`–`O06`, `O44` | `O04`–`O06`, `O44` closed locally; **remaining:** bind scholar identity to a pre-seeded school enrollment roster (`O02`) and resolve accepted bootstrap exception (`O01`) in governance phase. | **PARTIAL (OPEN)** |
 | **G2 — Trusted records** | `O07`–`O23`, `O30`, `O31` | `O07`–`O09`, `O19`, `O21`–`O22` hardened locally; **remaining:** server-own points/conduct (`O14`–`O18`), sports scoring (`O20`), elections (`O10`–`O12`), store catalog & remove client HMAC secret (`O23`), atomic timetable/promotion (`O30`, `O31`). | **OPEN** |
-| **G3 — Backend deployment** | `O11`–`O13`, `O25`, `O37`, `O42`, `O43` | `O42` indexes & CI emulator gate created; **remaining:** enable Blaze, deploy Functions on Node 22 (`O11`), activate Storage bucket, push Batch 1 `firestore.rules` + `storage.rules` + indexes, stage App Check (`O37`), verify FCM (`O43`). | **OPEN** |
-| **G4 — Client and platform** | `O23`–`O26`, `O36`–`O38` | `O24` vector QR, `O25` Gemini 2.5, `O36` fail-closed startup, `O38` Android signing & iOS `15.0` closed locally; **remaining:** rebuild after Batch 1, macOS iOS release build, physical device test, move AI key to server proxy / secure keystore (`O26`), remove client HMAC key (`O23`). | **PARTIAL (OPEN)** |
+| **G3 — Backend deployment** | `O11`–`O13`, `O25`, `O37`, `O42`, `O43` | `O42` indexes & CI emulator gate created; live `firestore.rules` deployed 28 November 2026 but content parity verified, all 7 composite indexes match (28 November 2026); **remaining:** enable Blaze, deploy Functions on Node 22 (`O11`), activate Storage bucket and deploy `storage.rules`, stage App Check (`O37`), verify FCM (`O43`). | **OPEN** |
+| **G4 — Client and platform** | `O23`–`O26`, `O36`–`O38` | `O24` vector QR, `O25` Gemini 2.5, `O36` fail-closed startup, `O38` Android signing & iOS `15.0` closed locally; Windows/Android/Web rebuilt at `ccad2fb`; **remaining:** macOS iOS release build, physical-device test, move AI key to server proxy / secure keystore (`O26`), remove client HMAC key (`O23`). | **PARTIAL (OPEN)** |
 | **G5 — Verification and operations** | `O32`–`O35`, `O39`–`O41` | `O39` CI emulator/Flutter pipeline added & query limits applied; **remaining:** hard pagination/aggregate caps (`O32`), roster-backed event/chat eligibility (`O29`, `O33`), corrupt-record isolation (`O35`), accessibility certification & localization/RTL (`O41`), monitoring & backups. | **OPEN** |
 
 ---
@@ -531,22 +534,22 @@ However, **Firebase Cloud Functions (requiring Blaze) are not deployed**, **Clou
 
 ### Current deployment state
 
-| Component | State as of 27 November 2026 |
+| Component | State as of 28 November 2026 |
 | --- | --- |
 | Cloud Functions | **None deployed** (3 modules authored locally; requires Blaze) |
-| Firestore rules | Hardened through Batch 1 locally and emulator-tested (**28/28**); live project still runs prior `13b791c` ruleset until redeployed |
-| Storage | Rules hardened and **emulator-tested** in Batch 1; live Cloud Storage bucket awaits Blaze initialization |
-| Indexes | `firestore.indexes.json` committed locally (`O42`); pending live deploy |
+| Firestore rules | Notes-compatible ruleset `14ab83b3…` deployed on 28 November 2026; exact content parity verified; local security suite **29/29** |
+| Storage | No Cloud Storage bucket exists; `storage.rules` is emulator-tested and awaits Blaze initialization |
+| Indexes | All 7 composite indexes deployed and match `firestore.indexes.json` (read back 28 November 2026) |
 | App Check | No client or backend enforcement (`O37`) |
 | Push delivery | No FCM token lifecycle or backend delivery (`O43`) |
 | Payments | Not enabled; store is an internal office request flow |
-| Release builds | Android keystore signing (`key.properties`), ProGuard fix, and iOS `15.0` target configured locally; APK/Windows/Web verified at `13b791c`; iOS archive requires macOS |
+| Release builds | Android keystore signing (`key.properties`), ProGuard fix, and iOS `15.0` target configured locally; Android release/debug APK, Windows release plus portable `dist/windows/`, and Web release rebuilt at `ccad2fb`; iOS archive requires macOS |
 
 ### Phased rollout
 
-- **Stage 0 — Current (Local Hardened & Synthetic Demo):** 710 Flutter tests + 28 Firestore/Storage emulator tests pass locally; Batch 1 security fixes verified. Allowed for code review, emulator demos, and administrative walkthroughs with synthetic data only.
+- **Stage 0 — Current (Local Hardened & Synthetic Demo):** 747 Flutter tests + 29 Firestore/Storage emulator tests pass locally; Batch 1 security fixes verified; live Firestore rules are deployed (content parity verified) and the seven indexes match the repository. Allowed for code review, emulator demos, and administrative walkthroughs with synthetic data only.
 - **Stage 1 — Remaining G1–G2 Server Authority:** Close server-owned points/sports/catalog/election authority (`O10`, `O14`–`O18`, `O20`, `O23`) and pre-seeded enrollment roster binding (`O02`).
-- **Stage 2 — Blaze Deployment & Live Verification (G3):** Provision Firebase Blaze, deploy Batch 1 `firestore.rules`, `storage.rules`, `firestore.indexes.json`, and Cloud Functions on Node 22, activate Storage & FCM (`O43`), and stage App Check (`O37`).
+- **Stage 2 — Blaze Deployment & Live Verification (G3):** Provision Firebase Blaze, deploy `storage.rules` and Cloud Functions on Node 22, activate Storage & FCM (`O43`), and stage App Check (`O37`); Firestore rules and indexes are already live.
 - **Stage 3 — Conditional Supervised Pilot:** Requires G1–G3 live verification and senior leadership sign-off for one grade and one house (students outside school hours, staff on authorised devices).
 - **Stage 4 — Activated Services & Scale (G4–G5):** Server AI proxy (`O26`), official library lending (`O13`), optional official kiosk elections, iOS release build on macOS, assistive-technology accessibility certification, and localization/RTL review (`O41`).
 
@@ -569,7 +572,7 @@ A live pilot remains **conditional on closing and verifying G1–G3 live**.
 
 | Priority | Work | Gate or dependency |
 | :---: | --- | --- |
-| 1 | Deploy updated Batch 1 `firestore.rules`, `storage.rules`, and `firestore.indexes.json` once target environment is ready | G3 |
+| 1 | Deploy `storage.rules` once Blaze Storage is provisioned (live Firestore rules are deployed but parity is unverified; the indexes already match) | G3 |
 | 2 | Bind new scholar registrations to a trusted school enrollment roster (`O02`) and resolve accepted bootstrap admin exception (`O01`) | G1 / Governance |
 | 3 | Enable Blaze and deploy Cloud Functions on Node 22: authoritative points/conduct ledger (`O14`–`O18`), live sports scoring (`O20`), election callable (`O10`–`O12`), store catalog & server voucher signing (`O23`), library v2 (`O13`), and AI proxy (`O26`) | G2 / G3 |
 | 4 | Initialize Cloud Storage bucket, stage App Check (`O37`), and enable FCM background notifications (`O43`) | G3 |
@@ -583,14 +586,14 @@ A live pilot remains **conditional on closing and verifying G1–G3 live**.
 
 ### Documents in this submission
 
-1. **ASB House Hub — Feature Catalogue & Release Readiness Review** (this document, updated 27 November 2026)
+1. **ASB House Hub — Feature Catalogue & Release Readiness Review** (this document, updated 28 November 2026)
 2. **Deep Code Audit, 26 November 2026** — [docs/audits/ASB_HOUSE_HUB_DEEP_AUDIT_2026-11-26.md](../audits/ASB_HOUSE_HUB_DEEP_AUDIT_2026-11-26.md)
-3. **Source code & CI** — Flutter app (84 Dart files), Firebase rules (`firestore.rules`, `storage.rules`, `firestore.indexes.json`), Cloud Functions (3 Node 22 modules), and GitHub Actions CI (`.github/workflows/ci.yml`)
-4. **Verification summary** — `flutter analyze` clean, **710/710** Flutter tests passing, **28/28** Firestore + Storage Emulator security tests passing, **3/3** Cloud Functions JS checks clean
+3. **Source code & CI** — Flutter app (85 Dart files), Firebase rules (`firestore.rules`, `storage.rules`, `firestore.indexes.json`), Cloud Functions (3 Node 22 modules), and GitHub Actions CI (`.github/workflows/ci.yml`)
+4. **Verification summary** — `flutter analyze` clean, **747/747** Flutter tests passing, **29/29** Firestore + Storage Emulator security tests passing, **3/3** Cloud Functions JS checks clean, live Firestore rules deployed (parity verified) and all 7 composite indexes match the repository
 
 ### Approval requested
 
-1. **Note the current release position:** Batch 1 security hardenings are verified locally, but live server deployment (Blaze Functions/Storage) and identity roster governance keep production clearance **OPEN**.
+1. **Note the current release position:** Batch 1 security hardenings are verified locally and the live Firestore rules are deployed (parity verified) with matching indexes, but Blaze Functions/Storage deployment and identity roster governance keep production clearance **OPEN**.
 2. **Approve a closed, synthetic-data technical walkthrough** for code and UI review.
 3. **Confirm administrative sponsorship, school IT contact, and Firebase Blaze readiness policy** before deploying Stage 2 services.
 
@@ -598,7 +601,7 @@ A live pilot remains **conditional on closing and verifying G1–G3 live**.
 
 ## 15. Appendix: module summary
 
-| # | Module | Primary users | Status and notes (as of 27 November 2026) |
+| # | Module | Primary users | Status and notes (as of 28 November 2026) |
 | :---: | --- | --- | --- |
 | 1 | Identity, onboarding, and account access | All | `GATED` — `O04`–`O06`, `O36`, `O44` fixed locally; `O01` accepted exception, `O02` roster binding open |
 | 2 | Home dashboard and navigation | All | `GATED` — Startup/suspension/cache hardened locally; depends on `O01`/`O02` and `O43` |
@@ -617,7 +620,7 @@ A live pilot remains **conditional on closing and verifying G1–G3 live**.
 | 15 | House AI assistant | Students | `PILOT` — Gemini `2.5` + header auth (`O25`) implemented; server proxy (`O26`) open |
 | 16 | Administration and governance | Administrators | `GATED` — `O04`–`O06`, `O08`, `O44` fixed; `O01`, `O02`, `O10`, `O31` open |
 
-**No module is production-cleared as of 27 November 2026.** `READY` is the target state and is not currently assigned.
+**No module is production-cleared as of 28 November 2026.** `READY` is the target state and is not currently assigned.
 
-*Prepared for the Administration of The Asian School, Bahrain.*  
+*Prepared for the Administration of The Asian School, Bahrain.*
 *ASB House Hub · Version 1.0.1 (Build 2) · November 2026*

@@ -1,20 +1,41 @@
 {
   "audit_date": "2026-11-26",
-  "baseline_commit": "9d0a559",
-  "scope": "Local source, builds, synthetic demo Firestore emulator; read-only deployed Functions inventory",
+  "verification_date": "2026-11-28",
+  "baseline_commit": "ccad2fb",
+  "previous_baseline": "37a4256 (724 Flutter tests); daa992a (721 tests); original 9d0a559 audit",
+  "scope": "Local source and rebuilt release artifacts; synthetic Firestore/Storage emulator tests; deployment of bounded homework submission_notes schema; read-only live rules/indexes/Functions/Storage verification",
   "checks": {
     "flutter_analysis": "No issues",
     "flutter_tests": {
-      "passed": 685,
-      "failed": 0
+      "passed": 747,
+      "failed": 0,
+      "test_files": 26
     },
     "firebase_emulator_tests": {
-      "passed": 13,
+      "passed": 29,
       "failed": 0
     },
     "javascript_syntax": "3 modules pass",
-    "windows_release": "pass",
-    "web_release": "pass with CupertinoIcons font warning",
+    "windows_release": "pass at ccad2fb; dist/windows byte-identical across 22 runtime files; Windows ZIP refreshed",
+    "web_release": "pass at ccad2fb with existing CupertinoIcons font warning",
+    "android_release_apk": "pass at ccad2fb (98913435 bytes)",
+    "android_debug_apk": "pass at ccad2fb (220577020 bytes)",
+    "live_firestore_rules": {
+      "status": "deployed_verified",
+      "parity": "exact_bytes",
+      "read_back_date": "2026-11-28",
+      "read_back_at": "2026-11-28T07:13:15.053Z",
+      "ruleset": "projects/asb-house-hub/rulesets/14ab83b3-19ab-45f3-b375-48707e90c02b",
+      "released_at": "2026-11-28T07:12:36.389785Z",
+      "local_sha256": "249255033fab7d604e91afeeea5717a80c42a061c98bd751881e0d58b51caa9e",
+      "live_sha256": "249255033fab7d604e91afeeea5717a80c42a061c98bd751881e0d58b51caa9e",
+      "local_bytes": 119158,
+      "live_bytes": 119158,
+      "note": "Exact equality after deployment of bounded submission_notes support. A fresh pre-change read also confirmed e8e9c2bb parity; the older ce5de955 evidence was incorrect and superseded."
+    },
+    "live_firestore_indexes": "7 READY composite indexes match firestore.indexes.json",
+    "deployed_functions": [],
+    "storage_buckets": [],
     "npm_audit": {
       "info": 0,
       "low": 0,
@@ -23,23 +44,34 @@
       "critical": 0,
       "total": 10
     },
-    "deployed_functions": []
+    "android_split_apks": "all three rebuilt; architecture payloads match universal APK; signatures verified",
+    "android_app_bundle": "release build passes at ccad2fb; jarsigner verification passes"
   },
   "limitations": [
-    "No production writes, deployment, or billing changes",
-    "Billing, deployed rules/indexes and Storage initialization not independently checked",
-    "Android/iOS builds and physical devices untested",
-    "Node 22 deployment parity untested; emulator host Node 24",
-    "No Storage emulator or deployed HTTP/Auth/App Check integration suite",
-    "Known-gap probes record remaining failures; they are not passing security assertions"
+    "Only firestore:rules was deployed. No production student-data writes, billing changes or Storage/Functions deployments were performed.",
+    "No Cloud Functions are deployed and no Storage bucket exists; live Auth/App Check/FCM and complete backend workflows remain untested.",
+    "Homework saves answer text and shared work links. Direct homework file uploads are unavailable; the misleading filename-only picker was removed.",
+    "Android/iOS physical-device tests and a Windows interactive smoke test were not performed; iOS release requires macOS/Xcode.",
+    "Node 22 deployment parity is untested; emulator host uses a newer Node version.",
+    "The accepted 11209/admin bootstrap exception and other catalogue production-readiness gates remain open.",
+    "The Web build emits the existing CupertinoIcons font warning.",
+    "Backend npm audit reports 10 moderate, 0 high and 0 critical advisories; dependency remediation is outside this fix."
   ],
   "local_logs": [
-    "build/audit/flutter-test-final.log",
-    "build/audit/flutter-analyze-final.log",
-    "build/audit/flutter-windows-build.log",
-    "build/audit/flutter-web-build-final.log",
-    "build/audit/emulator-final.log",
-    "build/audit/npm-audit-all-after.json",
-    "build/audit/firebase-functions-list.json"
+    "audit/2026-11-28/logs/artifacts.json",
+    "audit/2026-11-28/logs/build_apk_--debug.txt",
+    "audit/2026-11-28/logs/build_apk_--release.txt",
+    "audit/2026-11-28/logs/build_apk_--release_--split-per-abi.txt",
+    "audit/2026-11-28/logs/build_appbundle_--release.txt",
+    "audit/2026-11-28/logs/build_web_--release.txt",
+    "audit/2026-11-28/logs/build_windows_--release.txt",
+    "audit/2026-11-28/logs/emulator.txt",
+    "audit/2026-11-28/logs/firebase-functions-list.json",
+    "audit/2026-11-28/logs/firestore-deploy.txt",
+    "audit/2026-11-28/logs/flutter-analyze.txt",
+    "audit/2026-11-28/logs/flutter-test.txt",
+    "audit/2026-11-28/logs/live-firebase-verification.json",
+    "audit/2026-11-28/logs/npm-audit.json",
+    "audit/2026-11-28/logs/aab-signature.txt"
   ]
 }

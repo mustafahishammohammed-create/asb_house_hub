@@ -1,0 +1,4 @@
+
+> check
+> node --check index.js && node --check elections-v2.js && node --check library-v2.js
+

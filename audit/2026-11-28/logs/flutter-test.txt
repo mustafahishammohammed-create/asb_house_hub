@@ -1,0 +1,1035 @@
+00:00 +0: loading C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_image_test.dart
+00:00 +0: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_image_test.dart: Academic imageUrl serialization TimetablePeriod round-trips imageUrl and omits it when empty
+00:00 +1: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_image_test.dart: Academic imageUrl serialization AcademicAssignment round-trips imageUrl and stays rules-compatible
+00:00 +2: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_image_test.dart: Academic imageUrl serialization AcademicReportCard round-trips imageUrl
+00:00 +3: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_image_test.dart: Academic imageUrl serialization ExamScheduleItem imageUrl regression (pre-existing feature)
+00:00 +4: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_image_test.dart: firestore.rules image_url contract isValidHomework whitelists image_url with a 500000-char cap
+00:00 +5: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_image_test.dart: Academic image widgets upload field shows picker buttons when empty and Remove when set
+00:00 +6: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_image_test.dart: Academic image widgets thumbnail opens zoomable preview dialog on tap
+00:00 +7: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_image_test.dart: Academic image widgets broken base64 falls back to broken-image icon
+00:00 +8: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-1 (A1): Report Cards Read Rules & Stream Error Fallback firestore.rules restricts report-card reads to admin or scholar owner
+00:00 +9: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-1 (A1): Report Cards Read Rules & Stream Error Fallback getReportCardsStream returns cached cards when stream errors
+00:00 +10: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-2 (A3): Medical Leaves Truthful Writes & Real Errors submitMedicalLeaveRequest returns false on Firestore failure and does not cache
+Firestore submitMedicalLeaveRequest failure: [cloud_firestore/permission-denied] Missing or insufficient permissions
+00:00 +11: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-2 (A3): Medical Leaves Truthful Writes & Real Errors submitMedicalLeaveRequest succeeds and updates cache on acknowledged write
+00:00 +12: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-2 (A3): Medical Leaves Truthful Writes & Real Errors approveMedicalLeave returns false on Firestore failure and does not mutate cache
+Firestore approveMedicalLeave failure: [cloud_firestore/permission-denied] Admin permission required
+00:00 +13: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-2 (A3): Medical Leaves Truthful Writes & Real Errors rejectMedicalLeave returns false on Firestore failure and does not mutate cache
+Firestore rejectMedicalLeave failure: [cloud_firestore/permission-denied] Admin permission required
+00:00 +14: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-2 (A3): Medical Leaves Truthful Writes & Real Errors getMedicalLeavesStream returns cached list on fallback
+00:00 +15: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:00 +16: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:00 +17: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:00 +18: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:00 +19: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +20: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +21: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +22: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +23: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +24: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +25: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +26: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +27: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +28: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +29: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +30: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +31: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +32: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +33: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +34: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +35: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +36: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +37: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +38: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +39: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +40: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +41: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +42: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +43: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +44: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +44: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_structure_test.dart: M1: Registry service (offline cache + truthful writes) live Firestore denial returns false and leaves cache untouched
+Firestore saveAcademicClass failure: Exception: permission-denied
+Firestore setClassActive failure: Exception: permission-denied
+00:01 +45: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +46: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +47: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +48: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +49: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +49: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_structure_test.dart: M1: Classification verification gate live denial of verification returns false without touching cache
+Firestore class assignment failure: Exception: permission-denied
+00:01 +50: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +51: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +52: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +53: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +54: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +55: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P0-3 (A3): Hide Medical Reports Tab From Non-Staff Council officer or house captain sees only Point Claims tab
+00:01 +56: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +57: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +58: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +59: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +60: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +61: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +62: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +63: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +64: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +65: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +66: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +67: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +68: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +69: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +70: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +71: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +71: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 59: Academic Year Promotion (Spec §9.5) promoteClassSection reports a roster lookup failure truthfully
+promoteClassSection roster fetch failure: Exception: roster unavailable
+00:01 +72: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +73: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +74: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +75: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +76: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +77: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +78: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +79: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +80: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +81: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +82: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +83: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +84: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +85: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +86: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +87: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +88: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +88: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P1-1 (A2): Assignment Publish/Delete Truthful Writes & Gate publishAssignment returns false on simulated Firestore failure and does not cache
+Firestore publishAssignment failure: [cloud_firestore/permission-denied] Missing or insufficient permissions
+00:01 +89: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +90: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +90: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P1-1 (A2): Assignment Publish/Delete Truthful Writes & Gate deleteAssignment returns false on simulated Firestore failure and does not remove from cache
+Firestore deleteAssignment failure: [cloud_firestore/permission-denied] Missing or insufficient permissions
+00:01 +91: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen Audit Logs tab mounts and renders without errors
+00:01 +92: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_structure_test.dart: M1: AdminAcademicsScreen UI staff sees three tabs and the cached registry
+00:01 +93: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_structure_test.dart: M1: AdminAcademicsScreen UI staff sees three tabs and the cached registry
+00:01 +94: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_structure_test.dart: M1: AdminAcademicsScreen UI staff sees three tabs and the cached registry
+00:01 +95: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_structure_test.dart: M1: AdminAcademicsScreen UI staff sees three tabs and the cached registry
+00:01 +95: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P1-2 (A5): Timetable Bulk Ops Truthful Writes & Gate clearTimetableForDay returns false on simulated Firestore failure and does not clear cache
+Firestore clearTimetableForDay failure: [cloud_firestore/permission-denied] Missing or insufficient permissions
+00:01 +96: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_structure_test.dart: M1: AdminAcademicsScreen UI staff sees three tabs and the cached registry
+00:01 +96: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P1-2 (A5): Timetable Bulk Ops Truthful Writes & Gate populateDefaultCBSEWeeklyTimetable returns false on simulated Firestore failure and does not update cache
+Firestore populateDefaultCBSEWeeklyTimetable failure: [cloud_firestore/permission-denied] Missing or insufficient permissions
+00:01 +97: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_structure_test.dart: M1: AdminAcademicsScreen UI staff sees three tabs and the cached registry
+00:01 +98: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_structure_test.dart: M1: AdminAcademicsScreen UI staff sees three tabs and the cached registry
+00:01 +99: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_structure_test.dart: M1: AdminAcademicsScreen UI staff sees three tabs and the cached registry
+00:01 +100: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_structure_test.dart: M1: AdminAcademicsScreen UI staff sees three tabs and the cached registry
+00:01 +100: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P1-4 (A6): Attendance Save Error Handling markStudentAttendance returns false on simulated Firestore failure and does not update cache
+Firestore markStudentAttendance failure: [cloud_firestore/permission-denied] Missing or insufficient permissions
+00:01 +101: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_structure_test.dart: M1: AdminAcademicsScreen UI staff sees three tabs and the cached registry
+00:01 +101: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P1-5 (A4): Honours Merit Claim Interim Hardening claimReportCardHonoursMerit validates GPA against card doc and rejects spoofed caller GPA
+Honours merit claim rejected: verified GPA (3.5) is below 3.80 threshold.
+00:01 +102: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_structure_test.dart: M1: AdminAcademicsScreen UI staff sees three tabs and the cached registry
+00:01 +102: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P1-5 (A4): Honours Merit Claim Interim Hardening claimReportCardHonoursMerit rejects claim when scholar number mismatches card owner
+Honours merit claim rejected: card not found in cache or owner mismatch.
+00:01 +103: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_structure_test.dart: M1: AdminAcademicsScreen UI staff sees three tabs and the cached registry
+00:01 +103: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academics_security_test.dart: P1-5 (A4): Honours Merit Claim Interim Hardening claimReportCardHonoursMerit rejects claim if distinction already claimed
+Honours merit claim rejected: card distinction bonus already claimed.
+00:01 +104: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_structure_test.dart: M1: AdminAcademicsScreen UI staff sees three tabs and the cached registry
+00:01 +105: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_structure_test.dart: M1: AdminAcademicsScreen UI staff sees three tabs and the cached registry
+00:01 +106: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_structure_test.dart: M1: AdminAcademicsScreen UI staff sees three tabs and the cached registry
+00:01 +107: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:01 +108: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +109: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +110: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +110: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: createCampusEvent truthfulness a denied live write returns false and never caches the event
+Firestore createCampusEvent write failed: Exception: permission-denied
+00:02 +111: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +111: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: createCampusEvent truthfulness a denied live write does not disturb existing cached events
+Firestore createCampusEvent write failed: Exception: permission-denied
+00:02 +112: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +112: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: createCampusEvent truthfulness a live write to a missing Firebase app returns false, not a phantom
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:02 +113: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +114: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +115: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +116: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +117: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +118: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +119: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +119: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: campus event validation and lifecycle writes rejects missing title, bad venue, reversed times and category all
+createCampusEvent rejected: Enter an event title.
+createCampusEvent rejected: Enter a venue for the event.
+createCampusEvent rejected: The event must end after it starts.
+createCampusEvent rejected: Choose a valid event category.
+00:02 +120: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +120: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: campus event validation and lifecycle writes rejects an unknown house scope instead of broadening it
+createCampusEvent rejected: Choose a valid house scope.
+00:02 +121: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +121: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: campus event validation and lifecycle writes rejects an invalid or reversed grade range
+createCampusEvent rejected: The starting grade must not be above the ending grade.
+createCampusEvent rejected: Choose a valid grade range.
+00:02 +122: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +123: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +124: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +125: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +126: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +127: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +128: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +128: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: student registration records a denied live RSVP returns false and records nothing
+setEventRegistration failed: Exception: permission-denied
+00:02 +129: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +130: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +131: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +132: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +133: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +133: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/circular_composer_test.dart: School circular publishing semantics local mode publishes with a PDF but reports localOnly, not broadcast
+Circular PDF storage upload failed: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp(). Falling back to Base64.
+00:02 +134: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +134: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/circular_composer_test.dart: School circular publishing semantics a failed live Firestore write returns failure and caches nothing
+Circular PDF storage upload failed: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp(). Falling back to Base64.
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+publishSchoolNotice write failed: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:02 +135: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +136: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +136: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/circular_composer_test.dart: School circular publishing semantics a PDF larger than the inline Firestore fallback is refused
+Circular PDF storage upload failed: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp(). Falling back to Base64.
+Circular PDF is 716801 bytes; too large for the inline Firestore fallback (max 716800). Storage is required.
+00:02 +137: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +138: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +139: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +140: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +141: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +142: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +143: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +144: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +145: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +146: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +147: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +148: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +149: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/academic_section_auto_assign_test.dart: Academic Section Creation & Auto-Assignment AdminAcademicsScreen full tab navigation between Audits and Classes
+00:02 +150: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/audit_remediation_test.dart: Audit Remediation Regression Tests MerchStoreTab handles empty userHouse without RangeError
+00:02 +151: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/audit_remediation_test.dart: Audit Remediation Regression Tests MerchStoreTab handles empty userHouse without RangeError
+00:02 +152: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/audit_remediation_test.dart: Audit Remediation Regression Tests MerchStoreTab handles empty userHouse without RangeError
+00:02 +153: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/audit_remediation_test.dart: Audit Remediation Regression Tests MerchStoreTab handles empty userHouse without RangeError
+00:02 +154: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/audit_remediation_test.dart: Audit Remediation Regression Tests MerchStoreTab handles empty userHouse without RangeError
+00:02 +155: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/audit_remediation_test.dart: Audit Remediation Regression Tests MerchStoreTab handles empty userHouse without RangeError
+00:02 +156: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/audit_remediation_test.dart: Audit Remediation Regression Tests MerchStoreTab handles empty userHouse without RangeError
+00:02 +157: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/audit_remediation_test.dart: Audit Remediation Regression Tests MerchStoreTab handles empty userHouse without RangeError
+00:02 +158: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/audit_remediation_test.dart: Audit Remediation Regression Tests MerchStoreTab handles empty userHouse without RangeError
+00:02 +159: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: LoginScreen & Sign-In Fixes Theme toggle never overlaps portal tabs on compact 360x640 screen
+00:02 +160: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: LoginScreen & Sign-In Fixes Theme toggle never overlaps portal tabs on compact 360x640 screen
+00:02 +161: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: LoginScreen & Sign-In Fixes Theme toggle never overlaps portal tabs on compact 360x640 screen
+00:02 +162: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: LoginScreen & Sign-In Fixes Theme toggle never overlaps portal tabs on compact 360x640 screen
+00:02 +163: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: LoginScreen & Sign-In Fixes Theme toggle never overlaps portal tabs on compact 360x640 screen
+00:02 +164: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: LoginScreen & Sign-In Fixes Theme toggle never overlaps portal tabs on compact 360x640 screen
+00:02 +165: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: LoginScreen & Sign-In Fixes Theme toggle never overlaps portal tabs on compact 360x640 screen
+00:02 +166: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: LoginScreen & Sign-In Fixes Theme toggle never overlaps portal tabs on compact 360x640 screen
+00:02 +167: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: LoginScreen & Sign-In Fixes Theme toggle never overlaps portal tabs on compact 360x640 screen
+00:02 +168: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: LoginScreen & Sign-In Fixes Theme toggle never overlaps portal tabs on compact 360x640 screen
+00:02 +169: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: LoginScreen & Sign-In Fixes Theme toggle never overlaps portal tabs on compact 360x640 screen
+00:02 +170: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: LoginScreen & Sign-In Fixes Theme toggle never overlaps portal tabs on compact 360x640 screen
+00:02 +171: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: LoginScreen & Sign-In Fixes Theme toggle never overlaps portal tabs on compact 360x640 screen
+00:02 +172: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: LoginScreen & Sign-In Fixes Theme toggle never overlaps portal tabs on compact 360x640 screen
+00:02 +173: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: LoginScreen & Sign-In Fixes Theme toggle never overlaps portal tabs on compact 360x640 screen
+00:02 +174: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +175: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +176: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +177: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +178: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +179: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +180: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +181: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +182: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +183: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +184: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +185: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +186: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +187: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +188: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +189: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +190: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +191: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +192: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +193: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +194: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +195: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +196: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +197: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +198: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +199: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +200: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +201: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +202: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +203: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +204: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +205: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +206: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +207: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +208: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +209: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +210: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +211: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +211: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/audit_remediation_test.dart: Audit Remediation Regression Tests Batch 1 O04: HomeScreen locks suspended accounts with Sign Out
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:02 +212: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +213: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +213: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/audit_remediation_test.dart: Audit Remediation Regression Tests Election vote accepts candidate whose id equals scholarNo without false not-on-ballot rejection
+Firestore vote transaction note: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:02 +214: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/admin_command_center_test.dart: M7 Acceptance Test 64: User Status & Unauthorized Admin Blocking admin, head, and management can open and message any class from Classes & Rosters tabs
+00:02 +215: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps students see status badges and no staff publish action
+00:02 +216: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps students see status badges and no staff publish action
+00:02 +217: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps students see status badges and no staff publish action
+00:02 +218: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps students see status badges and no staff publish action
+00:03 +219: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps students see status badges and no staff publish action
+00:03 +220: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps students see status badges and no staff publish action
+00:03 +221: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps students see status badges and no staff publish action
+00:03 +222: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps students see status badges and no staff publish action
+00:03 +223: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps students see status badges and no staff publish action
+00:03 +224: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps students see status badges and no staff publish action
+00:03 +225: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps students see status badges and no staff publish action
+00:03 +226: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps students see status badges and no staff publish action
+00:03 +227: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps students see status badges and no staff publish action
+00:03 +227: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/election_security_test.dart: Session Switching and Admin Vote Isolation Switching from voted student (12428) to admin allows admin to vote without duplicate vote error
+Firestore vote transaction note: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Firestore vote transaction note: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:03 +228: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps students see status badges and no staff publish action
+00:03 +229: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps students see status badges and no staff publish action
+00:03 +229: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/election_security_test.dart: Session Switching and Admin Vote Isolation Full multi-account sequence: Student A -> Student B -> Student C -> Admin -> Student A
+Firestore vote transaction note: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Firestore vote transaction note: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Firestore vote transaction note: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Firestore vote transaction note: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:03 +230: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps students see status badges and no staff publish action
+00:03 +231: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps students see status badges and no staff publish action
+00:03 +232: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps students see status badges and no staff publish action
+00:03 +233: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps students see status badges and no staff publish action
+00:03 +234: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps students see status badges and no staff publish action
+00:03 +235: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps students see status badges and no staff publish action
+00:03 +236: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps students see status badges and no staff publish action
+00:03 +237: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps students see status badges and no staff publish action
+00:03 +238: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps students see status badges and no staff publish action
+00:03 +239: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps students see status badges and no staff publish action
+00:03 +240: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps students see status badges and no staff publish action
+00:03 +241: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps students see status badges and no staff publish action
+00:03 +241: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/election_security_test.dart: Voting on Published Draft Ballots by Administrator & Scholars Draft with cnd_ candidate IDs published by admin allows admin and students to vote without rejection
+Firestore vote transaction note: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Firestore vote transaction note: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:03 +242: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps students see status badges and no staff publish action
+00:03 +242: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/election_security_test.dart: Audit Remediations & Zero-Trust Guarantees Universal Anti-Double-Voting: Admin accounts cannot cast duplicate votes (C6)
+Firestore vote transaction note: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:03 +243: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps students see status badges and no staff publish action
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:03 +244: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/circular_composer_test.dart: SchoolCircularComposer widget flow closing the composer while picking a PDF is safe
+00:03 +245: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/circular_composer_test.dart: SchoolCircularComposer widget flow closing the composer while picking a PDF is safe
+00:03 +246: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/circular_composer_test.dart: SchoolCircularComposer widget flow closing the composer while picking a PDF is safe
+00:03 +247: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/circular_composer_test.dart: SchoolCircularComposer widget flow closing the composer while picking a PDF is safe
+00:03 +248: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/circular_composer_test.dart: SchoolCircularComposer widget flow closing the composer while picking a PDF is safe
+00:03 +249: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/circular_composer_test.dart: SchoolCircularComposer widget flow closing the composer while picking a PDF is safe
+00:03 +250: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/circular_composer_test.dart: SchoolCircularComposer widget flow closing the composer while picking a PDF is safe
+00:03 +251: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/circular_composer_test.dart: SchoolCircularComposer widget flow closing the composer while picking a PDF is safe
+00:03 +252: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/circular_composer_test.dart: SchoolCircularComposer widget flow closing the composer while picking a PDF is safe
+00:03 +253: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/circular_composer_test.dart: SchoolCircularComposer widget flow closing the composer while picking a PDF is safe
+00:03 +254: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/class_group_test.dart: M5f: class group UI verified student auto-joins and sees a read-only group
+00:03 +255: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/class_group_test.dart: M5f: class group UI verified student auto-joins and sees a read-only group
+00:03 +256: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/audit_remediation_test.dart: Audit Remediation Regression Tests Upgraded House Standings tab renders hero card, podium, and standings cleanly
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:03 +257: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +257: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/audit_remediation_test.dart: Audit Remediation Regression Tests SavedAccount.fromMap clears undecryptable vault ciphertext instead of leaking enc:v1 as password
+Credential decryption failed: Tag mismatch (tampered ciphertext)
+00:03 +258: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +259: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +260: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +261: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +262: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +263: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +264: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +264: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/gamification_security_test.dart: P0 Audit G1, G3, G9: Truthful Outcomes & Bounded Ceilings awardPlayerAccoladeCustom clamps meritPoints to max ceiling of 50
+Firestore awardPlayerAccoladeCustom error: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:03 +265: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +265: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/gamification_security_test.dart: P0 Audit G1, G3, G9: Truthful Outcomes & Bounded Ceilings awardVerifiedGamificationPoints offline/unit test path honors token and updates cache
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:03 +266: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +267: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +268: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +269: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +270: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +271: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +272: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +273: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +273: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/gamification_security_test.dart: R1 Council Privileges & G4 Academic Grading Gate updateAssignmentStatus blocks regular student from transitioning assignment to graded
+Unauthorized: Account (student, 12345) cannot transition assignment to graded state
+00:03 +274: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +275: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +276: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +277: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +278: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +279: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +280: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +281: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +282: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +283: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +284: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +285: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +286: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +287: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +288: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +289: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +290: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +291: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:03 +292: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+00:04 +293: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: verified class shows badge, class teacher, eight periods, current/next/break
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:04 +294: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/circular_composer_test.dart: SchoolCircularComposer widget flow admin attaches a PDF, picks details, and publishes
+00:04 +295: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/circular_composer_test.dart: SchoolCircularComposer widget flow admin attaches a PDF, picks details, and publishes
+00:04 +296: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/circular_composer_test.dart: SchoolCircularComposer widget flow admin attaches a PDF, picks details, and publishes
+00:04 +297: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/circular_composer_test.dart: SchoolCircularComposer widget flow admin attaches a PDF, picks details, and publishes
+00:04 +298: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/exam_calendar_test.dart: Exam Calendar & Schedule Regression Suite ExamsTab groups upcoming before concluded papers and filters all subjects
+00:04 +299: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/exam_calendar_test.dart: Exam Calendar & Schedule Regression Suite ExamsTab groups upcoming before concluded papers and filters all subjects
+00:04 +300: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +301: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +302: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +303: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +304: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +305: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +306: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +307: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +308: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +308: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: unverified class never renders the class timetable
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:04 +309: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +310: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +311: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +312: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +313: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +314: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +315: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +316: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +317: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +318: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +319: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +320: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +320: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/house_group_test.dart: M4d: truthful service writes authorised teacher surfaces a denied Firestore write as false
+House group send failed: Exception: permission-denied
+00:04 +321: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +322: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +322: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/house_group_test.dart: M4d: truthful service writes denied moderation by an authorised leader is truthful
+House group moderation failed: Exception: permission-denied
+00:04 +323: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +324: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +325: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +326: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +327: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +328: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +329: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +330: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +331: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +332: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen & Protected Identity Guards Supports LKG student signup flow through Step 3 summary
+00:04 +333: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 320.0 dp at 1.0 text
+00:04 +334: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 320.0 dp at 1.0 text
+00:04 +335: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 320.0 dp at 1.0 text
+00:04 +335: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: primary student gets the simpler interface without council modules
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:04 +336: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 320.0 dp at 1.0 text
+00:04 +337: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 320.0 dp at 1.0 text
+00:04 +338: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 320.0 dp at 1.0 text
+00:04 +339: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 320.0 dp at 1.0 text
+00:04 +340: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 320.0 dp at 1.0 text
+00:04 +341: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 320.0 dp at 1.0 text
+00:04 +342: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 320.0 dp at 1.0 text
+00:04 +343: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 320.0 dp at 1.0 text
+00:04 +344: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 320.0 dp at 1.0 text
+00:04 +345: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 320.0 dp at 1.0 text
+00:04 +346: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 320.0 dp at 1.0 text
+00:04 +347: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 320.0 dp at 1.0 text
+00:04 +348: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 320.0 dp at 1.0 text
+00:04 +349: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 320.0 dp at 1.0 text
+00:04 +350: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 320.0 dp at 1.0 text
+00:04 +350: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/notification_test.dart: M6b: recipient scoping (tests 60-62) unknown scopes, empty ids, and loader failures yield no recipients
+Notification recipient lookup failed: Exception: offline
+00:04 +351: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 320.0 dp at 1.0 text
+00:04 +352: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 320.0 dp at 1.0 text
+00:04 +353: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 320.0 dp at 1.0 text
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:04 +354: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 320.0 dp at 1.0 text
+00:04 +355: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:04 +356: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:04 +356: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/notification_test.dart: M6c: truthful fan-out a failed recipient lookup is not reported as a complete fan-out
+Notification recipient lookup failed: Exception: roster unavailable
+00:04 +357: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:04 +358: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:04 +359: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:04 +360: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:04 +361: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +362: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +363: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +364: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +365: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +366: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +367: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +368: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +369: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +370: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +371: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +372: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +372: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps orders live before upcoming before concluded, supports filter reset and reload
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:05 +373: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +374: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +374: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: dashboard renders unread class/house/timetable counts
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:05 +375: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +375: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 320.0 dp at 1.3 text
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:05 +376: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +377: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +378: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +379: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +379: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps event cards fit a 360dp phone at 1.3x text scale without overflow
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:05 +380: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +380: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/campus_event_test.dart: EventsScreen campus-event gaps event cards fit a 360dp phone at 1.3x text scale without overflow
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:05 +381: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +382: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +383: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +383: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/timetable_engine_test.dart: M2b: AcademicClass permissions & HierarchyService.canEditTimetable updateClassTimetablePermissions updates local cache and handles failure truthfully
+Firestore updateClassTimetablePermissions failure: Exception: permission-denied
+00:05 +384: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +384: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/timetable_engine_test.dart: M2c: TimetableService lifecycle, truthful writes & audit logging saveTimetableDraft rejects invalid timetable structure
+Timetable validation failed: Exactly 8 teaching periods are required., The break needs a valid start time.
+00:05 +385: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +386: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +387: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +388: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +388: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 320.0 dp at 1.5 text
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:05 +389: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +390: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +391: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +392: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +392: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/timetable_engine_test.dart: M2c: TimetableService lifecycle, truthful writes & audit logging rejectTimetable returns false and never caches when Firestore denies the write
+Firestore rejectTimetable failure: Exception: permission-denied
+00:05 +393: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +394: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +395: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +395: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/timetable_engine_test.dart: M2c: TimetableService lifecycle, truthful writes & audit logging Truthful writes return false on simulated Firestore denial
+Firestore saveTimetableDraft failure: Exception: permission-denied
+Firestore submitTimetable failure: Exception: permission-denied
+Firestore publishTimetable failure: Exception: permission-denied
+00:05 +396: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +397: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +398: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +399: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +399: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/dashboard_profile_test.dart: narrow mobile viewport renders the timetable without overflow
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:05 +400: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +401: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +402: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +403: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite orders overdue pending first, shows completion meter, and filters via HUD tiles
+00:05 +404: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen completion redirect & error recovery Redirects to dashboard and clears authTransitionInProgress after signUp completes
+00:05 +405: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen completion redirect & error recovery Redirects to dashboard and clears authTransitionInProgress after signUp completes
+00:05 +406: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen completion redirect & error recovery Redirects to dashboard and clears authTransitionInProgress after signUp completes
+00:05 +407: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen completion redirect & error recovery Redirects to dashboard and clears authTransitionInProgress after signUp completes
+00:05 +408: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen completion redirect & error recovery Redirects to dashboard and clears authTransitionInProgress after signUp completes
+00:05 +409: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen completion redirect & error recovery Redirects to dashboard and clears authTransitionInProgress after signUp completes
+00:05 +410: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen completion redirect & error recovery Redirects to dashboard and clears authTransitionInProgress after signUp completes
+00:05 +410: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 320.0 dp at 2.0 text
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:05 +411: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen completion redirect & error recovery Redirects to dashboard and clears authTransitionInProgress after signUp completes
+00:05 +411: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/timetable_m3_test.dart: M3b: cross-class conflict detection (tests 18–19) publish is blocked on a teacher conflict and writes nothing (18)
+Timetable publish blocked: Teacher Ms. Fatima is already booked by 10A Period 2 (08:30 - 09:15); this class uses Period 2.
+00:05 +412: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen completion redirect & error recovery Redirects to dashboard and clears authTransitionInProgress after signUp completes
+00:05 +412: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/timetable_m3_test.dart: M3b: cross-class conflict detection (tests 18–19) detects a room double-booked across two classes (19)
+Timetable publish blocked: Room lab 2 is already booked by 10A Period 3 (09:15 - 10:00); this class uses Period 3.
+00:05 +413: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen completion redirect & error recovery Redirects to dashboard and clears authTransitionInProgress after signUp completes
+00:05 +414: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen completion redirect & error recovery Redirects to dashboard and clears authTransitionInProgress after signUp completes
+00:05 +415: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen completion redirect & error recovery Redirects to dashboard and clears authTransitionInProgress after signUp completes
+00:05 +416: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen completion redirect & error recovery Redirects to dashboard and clears authTransitionInProgress after signUp completes
+00:05 +417: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen completion redirect & error recovery Redirects to dashboard and clears authTransitionInProgress after signUp completes
+00:05 +418: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen completion redirect & error recovery Redirects to dashboard and clears authTransitionInProgress after signUp completes
+00:05 +419: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen completion redirect & error recovery Redirects to dashboard and clears authTransitionInProgress after signUp completes
+00:05 +420: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen completion redirect & error recovery Redirects to dashboard and clears authTransitionInProgress after signUp completes
+00:05 +420: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/timetable_m3_test.dart: M3d: temporary override service and substitution (test 33) a denied override write returns null and caches nothing
+Timetable conflict check failed: Exception: permission-denied
+00:05 +421: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen completion redirect & error recovery Redirects to dashboard and clears authTransitionInProgress after signUp completes
+00:05 +422: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen completion redirect & error recovery Redirects to dashboard and clears authTransitionInProgress after signUp completes
+00:05 +423: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen completion redirect & error recovery Redirects to dashboard and clears authTransitionInProgress after signUp completes
+00:05 +424: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/auth_screens_test.dart: SignupScreen completion redirect & error recovery Redirects to dashboard and clears authTransitionInProgress after signUp completes
+00:05 +424: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 320.0 dp at 3.0 text
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:05 +425: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests renders 6 school days (Saturday to Thursday) and 8 periods
+00:05 +425: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 320.0 dp at 3.0 text
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:05 +426: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests renders 6 school days (Saturday to Thursday) and 8 periods
+00:05 +427: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests renders 6 school days (Saturday to Thursday) and 8 periods
+00:05 +428: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests renders 6 school days (Saturday to Thursday) and 8 periods
+00:05 +429: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests renders 6 school days (Saturday to Thursday) and 8 periods
+00:05 +430: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests renders 6 school days (Saturday to Thursday) and 8 periods
+00:05 +430: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 360.0 dp at 1.0 text
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:05 +430: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite a rejected status change reverts the card and shows an error
+Firestore updateAssignmentStatus write rejected: Exception: permission-denied
+00:05 +431: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests renders 6 school days (Saturday to Thursday) and 8 periods
+00:06 +432: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests renders 6 school days (Saturday to Thursday) and 8 periods
+00:06 +433: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests renders 6 school days (Saturday to Thursday) and 8 periods
+00:06 +433: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 360.0 dp at 1.3 text
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:06 +434: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests renders 6 school days (Saturday to Thursday) and 8 periods
+00:06 +435: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests renders 6 school days (Saturday to Thursday) and 8 periods
+00:06 +436: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests renders 6 school days (Saturday to Thursday) and 8 periods
+00:06 +436: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 360.0 dp at 1.5 text
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:06 +437: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests renders 6 school days (Saturday to Thursday) and 8 periods
+00:06 +438: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests renders 6 school days (Saturday to Thursday) and 8 periods
+00:06 +439: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests renders 6 school days (Saturday to Thursday) and 8 periods
+00:06 +439: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 360.0 dp at 2.0 text
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:06 +440: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests renders 6 school days (Saturday to Thursday) and 8 periods
+00:06 +440: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_tracker_test.dart: Homework Tracker UI & Regression Suite a rejected submission keeps the sheet open and never claims success
+Firestore updateAssignmentStatus write rejected: Exception: permission-denied
+00:06 +441: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests renders 6 school days (Saturday to Thursday) and 8 periods
+00:06 +442: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests renders 6 school days (Saturday to Thursday) and 8 periods
+00:06 +443: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests renders 6 school days (Saturday to Thursday) and 8 periods
+00:06 +443: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 360.0 dp at 3.0 text
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:06 +444: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests renders 6 school days (Saturday to Thursday) and 8 periods
+00:06 +445: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests renders 6 school days (Saturday to Thursday) and 8 periods
+00:06 +446: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests renders 6 school days (Saturday to Thursday) and 8 periods
+00:06 +446: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 390.0 dp at 1.0 text
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:06 +447: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests renders 6 school days (Saturday to Thursday) and 8 periods
+00:06 +448: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/timetable_m3_test.dart: M3f: teacher editor UI (copy, override, substitute, conflicts) copy dialog copies only the selected days as drafts
+00:06 +449: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/timetable_m3_test.dart: M3f: teacher editor UI (copy, override, substitute, conflicts) copy dialog copies only the selected days as drafts
+00:06 +450: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/timetable_m3_test.dart: M3f: teacher editor UI (copy, override, substitute, conflicts) copy dialog copies only the selected days as drafts
+00:06 +451: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/timetable_m3_test.dart: M3f: teacher editor UI (copy, override, substitute, conflicts) copy dialog copies only the selected days as drafts
+00:06 +452: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/timetable_m3_test.dart: M3f: teacher editor UI (copy, override, substitute, conflicts) copy dialog copies only the selected days as drafts
+00:06 +452: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 390.0 dp at 1.3 text
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:06 +453: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/timetable_m3_test.dart: M3f: teacher editor UI (copy, override, substitute, conflicts) copy dialog copies only the selected days as drafts
+00:06 +454: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/timetable_m3_test.dart: M3f: teacher editor UI (copy, override, substitute, conflicts) copy dialog copies only the selected days as drafts
+00:06 +454: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 390.0 dp at 1.5 text
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:06 +455: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/timetable_m3_test.dart: M3f: teacher editor UI (copy, override, substitute, conflicts) copy dialog copies only the selected days as drafts
+00:06 +456: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/timetable_m3_test.dart: M3f: teacher editor UI (copy, override, substitute, conflicts) copy dialog copies only the selected days as drafts
+00:06 +457: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/timetable_m3_test.dart: M3f: teacher editor UI (copy, override, substitute, conflicts) copy dialog copies only the selected days as drafts
+00:06 +457: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 390.0 dp at 2.0 text
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:06 +458: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/timetable_m3_test.dart: M3f: teacher editor UI (copy, override, substitute, conflicts) copy dialog copies only the selected days as drafts
+00:06 +459: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/timetable_m3_test.dart: M3f: teacher editor UI (copy, override, substitute, conflicts) copy dialog copies only the selected days as drafts
+00:06 +460: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/timetable_m3_test.dart: M3f: teacher editor UI (copy, override, substitute, conflicts) copy dialog copies only the selected days as drafts
+00:06 +461: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/timetable_m3_test.dart: M3f: teacher editor UI (copy, override, substitute, conflicts) copy dialog copies only the selected days as drafts
+00:06 +462: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/timetable_m3_test.dart: M3f: teacher editor UI (copy, override, substitute, conflicts) copy dialog copies only the selected days as drafts
+00:06 +462: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/homework_submission_regression_test.dart: event layout 390.0 dp at 3.0 text
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:06 +463: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/timetable_m3_test.dart: M3f: teacher editor UI (copy, override, substitute, conflicts) copy dialog copies only the selected days as drafts
+00:07 +464: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/timetable_m3_test.dart: M3f: teacher editor UI (copy, override, substitute, conflicts) copy dialog copies only the selected days as drafts
+00:07 +465: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/timetable_m3_test.dart: M3f: teacher editor UI (copy, override, substitute, conflicts) copy dialog copies only the selected days as drafts
+00:07 +466: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/timetable_m3_test.dart: M3f: teacher editor UI (copy, override, substitute, conflicts) copy dialog copies only the selected days as drafts
+00:07 +467: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/timetable_m3_test.dart: M3f: teacher editor UI (copy, override, substitute, conflicts) copy dialog copies only the selected days as drafts
+00:07 +468: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Moving the break recalculates all period times (Acceptance Test 14)
+00:07 +469: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Moving the break recalculates all period times (Acceptance Test 14)
+00:07 +469: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Mascot3DStage mounts and displays 3D movable stage and lore codex
+
+Warning: A call to tap() with finder "Found 1 widget with text "Profile": [
+  Text("Profile", inherit: true, color: Color(alpha: 0.7020, red: 1.0000, green: 1.0000, blue: 1.0000, colorSpace: ColorSpace.sRGB), size: 11.5, weight: 700, dependencies: [DefaultSelectionStyle, DefaultTextStyle, MediaQuery]),
+]" derived an Offset (Offset(360.9, 624.0)) that would not hit test on the specified widget.
+Maybe the widget is actually off-screen, or another widget is obscuring it, or the widget cannot receive pointer events.
+Indeed, Offset(360.9, 624.0) is outside the bounds of the root of the render tree, Size(800.0, 600.0).
+The finder corresponds to this RenderBox: RenderParagraph#35fe2 relayoutBoundary=up14
+The hit test result at that offset is: HitTestResult(HitTestEntry<HitTestTarget>#58da0(_ReusableRenderView#64472), HitTestEntry<HitTestTarget>#18534(<AutomatedTestWidgetsFlutterBinding>))
+#0      WidgetController._getElementPoint (package:flutter_test/src/controller.dart:2165:25)
+#1      WidgetController.getCenter (package:flutter_test/src/controller.dart:1947:12)
+#2      WidgetController.tap (package:flutter_test/src/controller.dart:1080:7)
+#3      main.<anonymous closure> (file:///C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart:264:18)
+<asynchronous suspension>
+#4      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#5      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1953:5)
+<asynchronous suspension>
+#6      StackZoneSpecification._registerCallback.<anonymous closure> (package:stack_trace/src/stack_zone_specification.dart:114:42)
+<asynchronous suspension>
+To silence this warning, pass "warnIfMissed: false" to "tap()".
+To make this warning fatal, set WidgetController.hitTestWarningShouldBeFatal to true.
+
+
+Warning: A call to tap() with finder "Found 1 widget with text "Back Spine": [
+  Text("Back Spine", inherit: true, color: Color(alpha: 0.7020, red: 1.0000, green: 1.0000, blue: 1.0000, colorSpace: ColorSpace.sRGB), size: 11.5, weight: 700, dependencies: [DefaultSelectionStyle, DefaultTextStyle, MediaQuery]),
+]" derived an Offset (Offset(518.8, 624.0)) that would not hit test on the specified widget.
+Maybe the widget is actually off-screen, or another widget is obscuring it, or the widget cannot receive pointer events.
+Indeed, Offset(518.8, 624.0) is outside the bounds of the root of the render tree, Size(800.0, 600.0).
+The finder corresponds to this RenderBox: RenderParagraph#57d34 relayoutBoundary=up14
+The hit test result at that offset is: HitTestResult(HitTestEntry<HitTestTarget>#3ecda(_ReusableRenderView#64472), HitTestEntry<HitTestTarget>#6aa31(<AutomatedTestWidgetsFlutterBinding>))
+#0      WidgetController._getElementPoint (package:flutter_test/src/controller.dart:2165:25)
+#1      WidgetController.getCenter (package:flutter_test/src/controller.dart:1947:12)
+#2      WidgetController.tap (package:flutter_test/src/controller.dart:1080:7)
+#3      main.<anonymous closure> (file:///C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart:269:18)
+<asynchronous suspension>
+#4      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#5      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1953:5)
+<asynchronous suspension>
+#6      StackZoneSpecification._registerCallback.<anonymous closure> (package:stack_trace/src/stack_zone_specification.dart:114:42)
+<asynchronous suspension>
+To silence this warning, pass "warnIfMissed: false" to "tap()".
+To make this warning fatal, set WidgetController.hitTestWarningShouldBeFatal to true.
+
+00:07 +470: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Moving the break recalculates all period times (Acceptance Test 14)
+00:07 +471: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Moving the break recalculates all period times (Acceptance Test 14)
+00:07 +472: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Moving the break recalculates all period times (Acceptance Test 14)
+00:07 +473: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/timetable_m3_test.dart: M3f: teacher editor UI (copy, override, substitute, conflicts) override mode offers substitute assignment and saves a dated version
+00:07 +474: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/timetable_m3_test.dart: M3f: teacher editor UI (copy, override, substitute, conflicts) override mode offers substitute assignment and saves a dated version
+00:07 +475: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/timetable_m3_test.dart: M3f: teacher editor UI (copy, override, substitute, conflicts) override mode offers substitute assignment and saves a dated version
+00:07 +476: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Customise Period 1 start with the time picker (Acceptance Test 24)
+00:08 +477: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Customise Period 1 start with the time picker (Acceptance Test 24)
+00:08 +478: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Customise Period 1 start with the time picker (Acceptance Test 24)
+00:08 +479: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Customise Period 1 start with the time picker (Acceptance Test 24)
+00:08 +480: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Customise Period 1 start with the time picker (Acceptance Test 24)
+00:08 +481: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Customise Period 1 start with the time picker (Acceptance Test 24)
+00:08 +482: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Customise Period 1 start with the time picker (Acceptance Test 24)
+00:08 +483: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Customise Period 1 start with the time picker (Acceptance Test 24)
+00:08 +484: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Customise Period 1 start with the time picker (Acceptance Test 24)
+00:08 +485: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Customise Period 1 start with the time picker (Acceptance Test 24)
+00:08 +486: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Customise Period 1 start with the time picker (Acceptance Test 24)
+00:08 +487: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Customise Period 1 start with the time picker (Acceptance Test 24)
+00:08 +487: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: AuthGate in waiting state glows with cached house colors
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:08 +488: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Customise Period 1 start with the time picker (Acceptance Test 24)
+00:08 +489: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Customise Period 1 start with the time picker (Acceptance Test 24)
+00:08 +490: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Customise Period 1 start with the time picker (Acceptance Test 24)
+00:08 +491: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Customise Period 1 start with the time picker (Acceptance Test 24)
+00:08 +492: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Customise Period 1 start with the time picker (Acceptance Test 24)
+00:08 +493: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Customise Period 1 start with the time picker (Acceptance Test 24)
+00:08 +494: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Customise Period 1 start with the time picker (Acceptance Test 24)
+00:08 +495: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Customise Period 1 start with the time picker (Acceptance Test 24)
+00:08 +496: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Customise Period 1 start with the time picker (Acceptance Test 24)
+00:08 +497: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: IdScannerScreen adapts responsive layout between desktop wide and mobile viewports
+00:08 +498: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Customise a later period independently (Acceptance Test 25)
+00:08 +499: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Customise a later period independently (Acceptance Test 25)
+00:08 +500: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Customise a later period independently (Acceptance Test 25)
+00:08 +501: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Customise a later period independently (Acceptance Test 25)
+00:09 +501: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: IdScannerScreen handles case-insensitive token schemes and navigates to evaluation screen
+Firestore query error or timeout for scholar 10042: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:09 +502: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Customise a later period independently (Acceptance Test 25)
+00:09 +503: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Customise a later period independently (Acceptance Test 25)
+00:09 +504: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Customise a later period independently (Acceptance Test 25)
+00:09 +505: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Customise a later period independently (Acceptance Test 25)
+00:09 +506: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Customise a later period independently (Acceptance Test 25)
+00:09 +507: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Customise a later period independently (Acceptance Test 25)
+00:09 +508: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: ChatRoomScreen same-house (Ruby to Ruby) displays alliance and wallpaper
+00:09 +509: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Save Draft persists version to cache without publishing to active
+00:09 +510: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Save Draft persists version to cache without publishing to active
+00:09 +511: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Save Draft persists version to cache without publishing to active
+00:09 +512: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Save Draft persists version to cache without publishing to active
+00:09 +513: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Save Draft persists version to cache without publishing to active
+00:09 +514: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Save Draft persists version to cache without publishing to active
+00:09 +515: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Save Draft persists version to cache without publishing to active
+00:09 +516: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: QrDecoderService decodes valid QR code and returns null for invalid image bytes
+Pure Dart QR decode error: RangeError (length): Invalid value: Not in inclusive range 0..3: 4
+00:09 +517: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Publish button activates recurring timetable version
+00:09 +518: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Publish button activates recurring timetable version
+00:10 +519: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Publish button activates recurring timetable version
+00:10 +520: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: IdScannerScreen navigates on valid signed pass and displays alert on tampered pass
+00:10 +521: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Full week preview dialog opens and shows week overview
+00:10 +522: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Teacher 6-Day Timetable Editor Widget Tests Full week preview dialog opens and shows week overview
+00:10 +523: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: DigitalWalletScreen action buttons wrap responsively at 200% font scaling without overflow
+00:10 +524: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: DigitalWalletScreen action buttons wrap responsively at 200% font scaling without overflow
+00:10 +525: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Student View Migration (6-Day Sat–Thu with Section-Aware Engine) Student sees published recurring timetable version with 8 periods + break
+00:10 +526: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Student View Migration (6-Day Sat–Thu with Section-Aware Engine) Student sees published recurring timetable version with 8 periods + break
+00:10 +527: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: DigitalWalletScreen synchronous Frame 1 pre-hydration displays cached contribution without zero flash
+00:10 +528: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Student View Migration (6-Day Sat–Thu with Section-Aware Engine) Staff sees "Edit Timetable" button and can open the recurring editor
+00:10 +529: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Student View Migration (6-Day Sat–Thu with Section-Aware Engine) Staff sees "Edit Timetable" button and can open the recurring editor
+00:10 +530: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Student View Migration (6-Day Sat–Thu with Section-Aware Engine) Staff sees "Edit Timetable" button and can open the recurring editor
+00:10 +531: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: DigitalWalletScreen wallet modal sheet accessibility, focus, and dismiss interaction
+00:11 +532: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: DigitalWalletScreen wallet modal sheet accessibility, focus, and dismiss interaction
+00:11 +533: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: DigitalWalletScreen wallet modal sheet accessibility, focus, and dismiss interaction
+00:11 +534: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Student View Migration (6-Day Sat–Thu with Section-Aware Engine) Assigned teacher is authorized in the editor
+00:11 +535: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Student View Migration (6-Day Sat–Thu with Section-Aware Engine) Assigned teacher is authorized in the editor
+00:11 +536: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Student View Migration (6-Day Sat–Thu with Section-Aware Engine) Assigned teacher is authorized in the editor
+00:11 +537: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Student View Migration (6-Day Sat–Thu with Section-Aware Engine) Assigned teacher is authorized in the editor
+00:11 +538: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: DigitalWalletScreen renders dynamic READY vs CLAIMED badges on Store Passes
+00:11 +539: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Student View Migration (6-Day Sat–Thu with Section-Aware Engine) Multi-class editor picker opens dialog and navigates to selected class (Acceptance Test 22)
+00:11 +540: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/teacher_timetable_editor_test.dart: M2e: Student View Migration (6-Day Sat–Thu with Section-Aware Engine) Multi-class editor picker opens dialog and navigates to selected class (Acceptance Test 22)
+00:11 +541: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: DigitalWalletScreen receipt modal QR and document MergeSemantics accessibility
+00:11 +542: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: DigitalWalletScreen receipt modal 200% font scaling responsive stacking without overflow
+00:12 +543: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Mascot3DStage keyboard navigation, rotation, zoom, roar, and CAD telemetry semantics
+00:12 +544: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Mascot3DStage 48dp minimum touch target bounding boxes across all controls
+00:12 +545: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Mascot3DStage 200% font scaling responsive stacking without overflow
+00:12 +546: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: HouseArenaScreen arena nav pills 48dp target size and accessible tab semantics
+00:12 +547: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Battle Chant Generation & Cadence Verification across all 4 houses
+00:12 +548: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: BattleChantSynthesizer Audio Controls & WCAG 1.4.2 Mute Compliance
+00:12 +549: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: BattleChantSynthesizer Closed Captions, Screen Reader Live Region & ExcludeSemantics Equalizer
+00:12 +550: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: BattleChantSynthesizer 48x48dp minimum touch targets across all controls
+00:13 +551: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: BattleChantSynthesizer 200% font scale responsive layout without overflow
+00:13 +552: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: HouseArenaScreen Spirit Reactor integrates Rally Synthesizer and Overdrive trigger
+00:13 +553: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Merchandise store pure commerce pricing in BHD without house points
+00:13 +554: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: AppleFitnessBadgesVault honours summary header Semantics and concentric activity rings
+00:13 +555: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: AppleFitnessBadgesVault category filter chips 48dp minimum touch target and accessible button semantics
+00:13 +556: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: AppleFitnessBadge modal 3D inspection keyboard traversal, flip action, and 48dp targets
+00:14 +557: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: AppleFitnessBadgesVault 200% font scale responsive layout without overflow
+00:14 +558: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: AuthService.getCachedPointsForHouse returns baseline seed fallback and verified scores
+00:14 +559: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: AuthService.incrementCachedHousePoints write-through caching and zero-bounds clamping
+00:14 +560: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: HouseLeaderboardScreen Frame 1 zero-flash points and >= 48dp switcher pills
+00:14 +561: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: HomeScreen liveRegion semantics on celebration and offline banners
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:14 +562: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: HomeScreen live standings 200% font scale layout elasticity
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:14 +563: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: GamificationSecurityService Valid Token Generation & Verification
+00:14 +564: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Anti-Tampering Rejection on Payload Modification
+00:14 +565: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Hard Ceiling Clamp Enforcement
+00:14 +566: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: 24-Hour Cooldown Enforcement
+00:14 +567: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Rapid-Fire Anti-Spam Debounce
+00:14 +568: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Accessible Cooldown Live Region & 48dp Targets
+00:14 +569: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 4 Master Test 1: Full Automated WCAG Guideline Suite (meetsGuideline)
+00:15 +570: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 4 Master Test 2: End-to-End Gamification Security & Score Pipeline
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:15 +571: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 4 Master Test 3: Anti-Tampering Rejection & Replay Attack Defense
+00:15 +572: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 4 Master Test 4: Cooldown Lockout & 60s Debounce Integration
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:15 +573: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 4 Master Test 5: AXTree Bridge Shielding Verification
+00:15 +574: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 4 Master Test 6: 200% Font Scale Master Regression Sweep
+00:15 +575: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 23 Test 1: TimetablePeriod Serialization & Dynamic Parsing
+00:15 +576: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 23 Test 2: Active Period Detection Logic
+00:15 +577: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 23 Test 3: Frame-1 Offline Cache & Pre-Hydration
+00:15 +578: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 23 Test 4: Day Switcher 48dp Touch Targets & Semantics
+00:15 +579: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 23 Test 5: Screen Reader Live Region on Active Class
+00:15 +580: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 23 Test 6: 200% Font Scale Master Layout Sweep
+00:15 +581: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 24 Test 1: AcademicAssignment Serialization & Due Date Parsing
+00:15 +582: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 24 Test 2: Assignment Status Progression & Lifecycle
+00:15 +583: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 24 Test 3: Frame-1 Offline Cache & Pre-Hydration
+00:15 +584: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 24 Test 4: Subject Filter & 48dp Touch Targets (meetsGuideline)
+00:15 +585: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 24 Test 5: Screen Reader Live Region & Deadline Announcements
+00:15 +586: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 24 Test 6: 200% Font Scale Master Layout Sweep
+00:15 +587: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 25 Test 1 (Test 103): ExamScheduleItem Serialization & Telemetry Engine
+00:15 +588: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 25 Test 2 (Test 104): Frame-1 Offline Cache & Zero-Hardcoded Baseline
+00:15 +589: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 25 Test 3 (Test 105): Tri-Segment Tab Switching & 48dp Touch Targets
+00:16 +590: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 25 Test 4 (Test 106): Syllabus Vault Accordion & Expansion Semantics
+00:16 +591: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 25 Test 5 (Test 107): Exam Hall Navigation & Urgency Live Region Alerts
+00:16 +592: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 25 Test 6 (Test 108): 200% Font Scale & Multi-Resolution Layout Stress Test
+00:16 +593: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 26 Test 1 (Test 109): Live Event Wall Dual-Mode Base64 & Network Image Engine
+00:16 +594: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 26 Test 2 (Test 110): AcademicReportCard Serialization & GPA Calculation
+00:16 +595: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 26 Test 3 (Test 111): Frame-1 Offline Cache & Zero Dummy Data Baseline
+00:16 +596: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 26 Test 4 (Test 112): 4-Segment Navigation & 48dp Touch Targets
+00:16 +597: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 26 Test 5 (Test 113): Report Card Live Region & Academic Honours Semantics
+00:16 +598: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 26 Test 6 (Test 114): 200% Font Scale Elasticity & Multi-Resolution Layout Stress Test
+00:16 +599: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 27 Test 1 (Test 115): AttendanceRecord & Summary Telemetry Engine
+00:16 +600: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 27 Test 2 (Test 116): Frame-1 Offline Cache & Zero Dummy Data Baseline
+00:16 +601: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 27 Test 3 (Test 117): 5-Segment Tab Navigation & 48dp Touch Targets
+00:17 +602: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 27 Test 4 (Test 118): Period-Wise Absence Breakdown & Screen Reader Semantics
+00:17 +603: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 27 Test 5 (Test 119): Ministry 75% Compliance Alert & Critical Live Region
+00:17 +604: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 27 Test 6 (Test 120): 200% Font Scale Multi-Resolution Layout Sweep
+00:17 +605: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 28 Test 1 (Test 121): Master Frame-1 Offline Cache Invalidation & Zero-Dummy Baseline Sweep
+00:17 +606: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 28 Test 2 (Test 122): End-to-End Cross-Tab Navigation & 48dp Touch Target Rigor
+00:17 +607: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 28 Test 3 (Test 123): Cross-Subsystem Cryptographic HMAC-SHA256 Gamification Integration
+00:17 +608: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 28 Test 4 (Test 124): Universal Screen Reader Live Region Orchestration Sweep
+00:17 +609: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 28 Test 5 (Test 125): Resilient Dual-Mode Image Engine Integration Stress Test
+00:17 +610: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 28 Test 6 (Test 126): Phase 5 Master 200% Font Scale & Multi-Resolution Responsive Sweep
+00:17 +611: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Test 127: Multi-Account Management & Sibling Authentication State Machine
+00:17 +612: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Test 128: AccountSwitcherModal & AddSiblingModal Responsive & Accessible Workflow
+00:17 +613: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 29 Test 1 (Test 129): LoginScreen Enter key submission executes _handleLogin via CallbackShortcuts
+00:18 +614: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 29 Test 2 (Test 130): SavedAccount JSON round-trip retains credentials and restores active session without nulling profile
+00:18 +615: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 29 Test 3 (Test 131): CampusEvent model serialization, category parsing, and duration calculations
+00:18 +616: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 29 Test 4 (Test 132): AuthService.getCachedEvents returns pure zero baseline ([]) when unseeded
+00:18 +617: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 29 Test 5 (Test 133): EventsScreen renders category filter pills meeting >= 48x48 dp target guidelines
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:18 +618: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 29 Test 6 (Test 134): HomeScreen.buildResilientImage safely renders Base64 Data URIs and remote URLs on EventsScreen
+00:18 +619: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 30 Test 1 (Test 135): ElectionCandidate and ElectionBallot domain models JSON round-trip and getters
+00:18 +620: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 30 Test 2 (Test 136): AuthService.getCachedBallots returns pure zero baseline when unseeded
+00:18 +621: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 30 Test 3 (Test 137): AuthService.cacheBallots writes through to persistent storage and retrieves accurately
+00:18 +622: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 30 Test 4 (Test 138): ElectionChamberScreen renders position filter pills meeting >= 48x48 dp touch target guidelines
+00:18 +623: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 30 Test 5 (Test 139): ElectionChamberScreen candidate manifesto modal opens and displays full pledge text
+00:18 +624: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 30 Test 6 (Test 140): ElectionChamberScreen displays accessible zero-data empty state when no ballots are registered
+00:18 +625: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 31 Test 1 (Test 141): BallotCastReceipt domain model serialization and formatted number
+00:18 +626: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 31 Test 2 (Test 142): ElectionSecurityService generates deterministic anonymized voter hashes
+00:18 +627: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 31 Test 3 (Test 143): ElectionSecurityService verifies and detects altered proof tokens
+00:18 +628: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 31 Test 4 (Test 144): AuthService.getCachedVoteReceipts returns pure zero baseline when unseeded
+00:18 +629: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 31 Test 5 (Test 145): AuthService.castDigitalVote prevents duplicate voting for the same ballot
+Firestore vote transaction note: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:18 +630: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 31 Test 6 (Test 146): Digital voting confirmation modal enforces min 48x48 dp touch targets
+00:18 +631: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 32 Test 1 (Test 147): ElectionAuditRecord model serialization and quorum compliance calculation
+00:18 +632: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 32 Test 2 (Test 148): ElectionSecurityService.verifyBallotBoxIntegrity confirms uncorrupted vote ledgers
+00:18 +633: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 32 Test 3 (Test 149): ElectionSecurityService.auditReceiptVerification checks valid receipts and flags invalid tokens
+00:18 +634: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 32 Test 4 (Test 150): AuthService.getCachedElectionAudit returns null when unseeded (pure zero baseline)
+00:18 +635: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 32 Test 5 (Test 151): ElectionAuditScreen renders House turnout bars and verification input with min 48x48 dp touch targets
+00:18 +636: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 32 Test 6 (Test 152): Screen reader live region announces ballot box audit certification and receipt verification status
+00:18 +637: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 33 Test 1 (Test 153): CertifiedElectionResult model serialization and proclamation formatting
+00:18 +638: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 33 Test 2 (Test 154): AuthService.certifyElectionAndAwardPoints transactionally awards house points
+00:18 +639: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 33 Test 3 (Test 155): AuthService.getCachedCertifiedGazette returns empty list when unseeded
+00:18 +640: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 33 Test 4 (Test 156): ElectionGazetteScreen renders accessible empty state when unseeded
+00:18 +641: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 33 Test 5 (Test 157): ElectionGazetteScreen renders certified cards without overflow on mobile phone dimensions (360x640)
+00:18 +642: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 33 Test 6 (Test 158): Phone version app bar and list items meet min 48x48 dp touch target guidelines
+00:18 +643: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 34 Test 1 (Test 159): Cross-Phase Zero Dummy Baseline Audit across all 6 subsystems
+00:18 +644: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 34 Test 2 (Test 160): Universal Mobile Phone Viewport Stress Test (360x640 dp) across Phase 6 screens
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:18 +645: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 34 Test 3 (Test 161): Master WCAG 2.1 AA Tap Target Audit (all controls >= 48x48 dp)
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:18 +646: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 34 Test 4 (Test 162): Cross-Phase Cryptographic Security Audit (HMAC-SHA256 tamper detection)
+00:18 +647: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 34 Test 5 (Test 163): Multi-Account & Sibling Switcher Session Isolation Audit
+00:18 +648: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 34 Test 6 (Test 164): End-to-End Democratic Election to Gazette Proclamation Lifecycle
+Firestore vote transaction note: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:18 +649: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 35 Test 1 (Test 165): SportsMatchFixture serialization and SportType enum parsing
+00:18 +650: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 35 Test 2 (Test 166): HouseLeagueStanding.calculateStandings verifies 3-1-0 points formula and goal difference sorting
+00:18 +651: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 35 Test 3 (Test 167): AuthService.getCachedSportsFixtures returns pure zero baseline when unseeded
+00:18 +652: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 35 Test 4 (Test 168): SportsTournamentScreen renders accessible empty state and 4 sports filter chips
+00:19 +653: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 35 Test 5 (Test 169): SportsTournamentScreen renders match cards and league tables with 0 overflows on mobile phone (360x640 dp)
+00:19 +654: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 35 Test 6 (Test 170): All sports filter tabs and action buttons enforce min 48x48 dp touch target guidelines
+00:19 +655: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 36 Test 1 (Test 171): LiveMatchEvent serialization and commentary formatting
+00:19 +656: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 36 Test 2 (Test 172): LiveMatchClock period formatting across Football, Basketball, Volleyball & Track
+00:19 +657: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 36 Test 3 (Test 173): AuthService.getCachedLiveMatchEvents returns pure zero baseline when unseeded
+00:19 +658: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 36 Test 4 (Test 174): LiveMatchHudScreen renders digital scoreboard, house crests & dynamic period clock
+00:19 +659: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 36 Test 5 (Test 175): LiveMatchHudScreen renders with 0 overflows on mobile phone dimensions (360x640 dp)
+00:19 +660: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 36 Test 6 (Test 176): Screen reader liveRegion is present and scoring buttons enforce min 48x48 dp touch target
+00:19 +661: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 37 Test 1 (Test 177): SportsSecurityService generates deterministic HMAC-SHA256 certification tokens
+00:19 +662: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 37 Test 2 (Test 178): SportsSecurityService.verifyMatchCertificationToken detects tampered scores
+00:19 +663: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 37 Test 3 (Test 179): AuthService.certifyMatchResult completes match and records HMAC token
+00:19 +664: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 37 Test 4 (Test 180): Regular unauthorized students cannot certify match results
+00:19 +665: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 37 Test 5 (Test 181): LiveMatchHudScreen displays gold certification banner and hides score controls when certified
+00:19 +666: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 37 Test 6 (Test 182): Mobile phone viewport stress test: certification controls enforce min 48x48 dp touch target with 0 overflows (360x640 dp)
+00:19 +667: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 38 Test 1 (Test 183): PlayerSportsStats serialization, primaryStat evaluation, and sortTopPerformers ranking
+00:19 +668: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 38 Test 2 (Test 184): SportAccoladeType mapping across all 4 sports
+00:19 +669: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 38 Test 3 (Test 185): AuthService PlayerSportsStats offline cache persistence and zero dummy baseline audit
+00:19 +670: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 38 Test 4 (Test 186): SportsTournamentScreen 3-tab navigation switches to Accolades & MVPs tab and renders leaderboard
+00:19 +671: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 38 Test 5 (Test 187): Mobile phone viewport stress test: Accolades tab on 360x640 dp screen with 0 overflows
+00:19 +672: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 38 Test 6 (Test 188): LiveMatchHudScreen displays MVP badge banner and opens MVP nomination modal
+00:19 +673: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 39 Test 1 (Test 189): SportsTrophyRecord serialization and trophy tier formatting
+00:19 +674: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 39 Test 2 (Test 190): AuthService.awardChampionshipTrophyAndPoints transactionally awards house points (+100 / +50)
+00:19 +675: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 39 Test 3 (Test 191): AuthService.getCachedSportsTrophies returns pure zero baseline when unseeded
+00:19 +676: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 39 Test 4 (Test 192): SportsTournamentScreen Tab 4 renders Trophy Cabinet empty state cleanly
+00:20 +677: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 39 Test 5 (Test 193): Universal Mobile Viewport Stress Test: Trophy Cabinet renders without overflows at 360x640 dp
+00:20 +678: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 39 Test 6 (Test 194): Trophy cabinet cards meet minimum 48x48 dp touch target guidelines
+00:20 +679: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 40 Test 1 (Test 195): Master Cross-Phase Zero Dummy Baseline Audit across all 7 subsystems
+00:20 +680: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 40 Test 2 (Test 196): Universal Mobile Viewport Stress Test: All Phase 7 screens render with 0 overflows at 360x640 dp
+00:20 +681: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 40 Test 3 (Test 197): Master WCAG 2.1 AA Tap Target Audit across sports controls
+00:20 +682: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 40 Test 4 (Test 198): Cross-Phase Cryptographic Security Audit (Sports HMAC + Election HMAC + Store Voucher HMAC)
+00:20 +683: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 40 Test 5 (Test 199): End-to-End Sports Lifecycle (Fixture -> Live HUD -> Referee Certification -> MVP -> Trophy Points)
+Firestore awardMatchMvp error: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:20 +684: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Part 40 Test 6 (Test 200): Multi-Account Session Isolation across all 7 phases
+00:20 +685: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Built-in AI Test 1 (Test 201): Comprehensive Student Live Context Builder across all 7 subsystems
+00:20 +686: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Built-in AI Test 2 (Test 202): Contextual Offline Heuristics for Timetable, Homework & Exams
+00:20 +687: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Built-in AI Test 3 (Test 203): Statutory 75% CBSE Attendance Evaluation and Alert Warning in AI Heuristics
+00:20 +688: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Built-in AI Test 4 (Test 204): Inter-House Sports League Fixtures, Standings & Trophy Recognition
+00:20 +689: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Built-in AI Test 5 (Test 205): HouseAiChatScreen Widget Tree, Mascot Hero HUD & Quick-Glance Status Bar
+00:20 +690: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Built-in AI Test 6 (Test 206): HouseAiChatScreen Mobile Viewport Elasticity (360x640 dp, 0 overflows)
+00:20 +691: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: UI/UX Audit Test 1 (Test 207): AppThemeController Persistence & Dynamic Mode Cycle
+00:20 +692: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: UI/UX Audit Test 2 (Test 208): LoginScreen Quick Theme Toggle Interaction
+00:21 +693: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: UI/UX Audit Test 3 (Test 209): HomeScreen Adaptive AppBar on 360x640 dp Mobile Viewport
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:21 +694: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: UI/UX Audit Test 4 (Test 210): HomeScreen Hero Card Student Name Scaling
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:21 +695: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: UI/UX Audit Test 5 (Test 211): AcademicsScreen Responsive Scrollable Tab Navigation
+00:21 +696: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: UI/UX Audit Test 6 (Test 212): Sports & Wallet Scrollable TabBars on Mobile Viewport (0 Overflows)
+00:21 +697: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Onboarding Test 1 (Test 213): OnboardingScreen slide content, eyebrow chips, featurettes & PageView traversal
+00:21 +698: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Onboarding Test 2 (Test 214): OnboardingScreen Skip button persists preference asb_has_completed_onboarding to true
+00:21 +699: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Onboarding Test 3 (Test 215): OnboardingScreen mobile phone viewport stress test (360x640 dp, 0 overflows)
+00:22 +700: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Onboarding Test 4 (Test 216): AuthGate routing logic based on AuthService.hasCompletedOnboarding()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:22 +701: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Academics Test 1 (Test 217): ExamScheduleItem imageUrl & publishExamScheduleRange grade cohort broadcast
+00:22 +702: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Academics Test 2 (Test 218): Issue Report Card for Scholar Number & Faculty Desk verification
+00:22 +703: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Digital Identity Test (Test 219): Static Printable Student ID QR Determinism & Cryptographic Verification
+00:22 +704: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Academics Subsystem Test (Test 220): MedicalLeaveRequest Model, Serialization & AuthService Caching
+00:22 +705: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Communication Subsystem Test (Test 221): ChatService Role Hierarchy & User Resolution
+00:22 +706: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Communication Subsystem Test (Test 222): ChatListScreen Mounting, Tab Navigation & WCAG Semantics
+00:22 +707: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Behavior Subsystem Test (Test 223): StudentBehaviorEvaluationScreen Merit/Demerit UI, Reason Chips & Point Stepper
+00:22 +708: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Academics Test 3 (Test 224): Timetable Period CRUD & Auto-Load CBSE Weekly Timetable in AuthService
+00:22 +709: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Academics Test 4 (Test 225): Homework Assignment Creation, Deletion & Offline Caching in AuthService
+00:22 +710: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Academics Test 5 (Test 226): TimetableTab UI: Add Period Modal, Edit Period & Auto-Load CBSE Template Interaction
+00:23 +711: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Academics Test 6 (Test 227): AssignmentsTab UI: Add Task Modal, Subject Filtering & Delete Task Interaction
+00:23 +712: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 2 Test 1: VoucherSecurityService eliminates false positives on missing or unverified vouchers
+00:23 +713: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 2 Test 2: GlobalWalletStore order persistence and offline caching fallback
+00:23 +714: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 2 Test 3: GlobalWalletStore.orderFromFirestore safely reconstructs orders with fallback
+00:23 +715: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 2 Test 4: AuthService certificate upload path and pre-allocated docRef binding
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Firebase Storage upload failed or timed out: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp(). Falling back to Base64.
+Firestore submitHouseClaim fallback or error: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+Firestore submitHouseClaim fallback or error: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:23 +716: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 3 Test 1: saveTimetablePeriod & deleteTimetablePeriod fail safely on Firestore write failure without polluting local cache
+Firestore saveTimetablePeriod failure: Exception: Simulated permission-denied Firestore write failure
+Firestore deleteTimetablePeriod failure: Exception: Simulated permission-denied Firestore write failure
+00:23 +717: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 3 Test 2: publishExamScheduleRange & publishStudentReportCard propagate Firestore failure and prevent cache writes
+Firestore publishExamScheduleRange batch commit failed: Exception: Simulated batch commit timeout
+Firestore publishStudentReportCard failed: Exception: Simulated batch commit timeout
+00:23 +718: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 3 Test 3: castDigitalVote, certifyMatchResult & awardChampionshipTrophyAndPoints fail gracefully on live transaction errors
+Firestore vote transaction note: Exception: Simulated transaction contention
+Firestore certifyMatchResult failed: Exception: Simulated transaction contention
+Firestore awardChampionshipTrophyAndPoints failed: Exception: Simulated transaction contention
+00:23 +719: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 3 Test 4: ManagedModalScope properly disposes controllers upon element unmount without premature disposal
+00:23 +720: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 4 Test 1: Gemini candidate models audit (no hallucinated or EOL models)
+00:23 +721: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 4 Test 2: GeminiAiService.validateApiKey validates keys and executes model fallback
+Validation ping failed on gemini-2.5-flash: Exception: Connection refused
+Validation ping failed on gemini-2.5-pro: Exception: Connection refused
+Validation ping failed on gemini-2.0-flash: Exception: Connection refused
+00:23 +722: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 4 Test 3: GeminiAiService.generateResponse live generation, fallback, and offline recovery
+Gemini model gemini-2.5-flash returned error: HTTP 500
+Gemini exception on gemini-2.5-flash: Exception: SocketException: Network unreachable
+Gemini exception on gemini-2.5-pro: Exception: SocketException: Network unreachable
+Gemini exception on gemini-2.0-flash: Exception: SocketException: Network unreachable
+00:23 +723: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 4 Test 4: DropdownButtonFormField initialValue state updates and super_admin roster slot immunity
+00:24 +724: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 4 Test 5: Pubspec dead dependencies and unused import hygiene audit
+00:24 +725: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 5 Test 1: WCAG 2.1 AA min 48x48 dp touch target compliance on post deletion and account removal buttons
+00:24 +726: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 5 Test 2: Dynamic tooltip and Semantics on LoginScreen and AccountSwitcherModal password toggles
+00:24 +727: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 5 Test 3: Screen reader Semantics and Close tooltip on modal dialog close buttons
+00:24 +728: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 5 Test 4: Localization Foundation (ARB Assets, l10n.yaml, and AppLocalizations class)
+00:24 +729: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 5 Test 5: MaterialApp localization integration and localized widget tree resolution
+00:25 +730: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 1 Test 1: CredentialVaultService encrypts, decrypts, rejects tampering and handles legacy tokens
+00:25 +731: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 1 Test 2: SharedPreferences saved_accounts_list never leaks plaintext passwords and decrypts transparently
+00:25 +732: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 1 Test 3: firestore.rules and storage.rules enforce Phase 1 security policies and collections
+00:25 +733: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 1 Test 4: CredentialVaultService handles passwords starting with enc:v1: and unicode/emojis without data loss
+Credential decryption error: FormatException: Invalid base64 data (at character 35)
+MyVerySecretSpecialPassphrase_2026!
+                                  ^
+
+00:25 +734: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 1 Test 5: firestore.rules and storage.rules enforce election unblockers, election_gazettes, and sports_fixtures events
+00:25 +735: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 2 Test 5: GlobalWalletStore partitions orders, cart, and favorites by scholar number in local storage
+00:25 +736: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 2 Test 6: AuthService.signOut() and switchAccount() invoke GlobalWalletStore.resetSession() to purge all in-memory wallet and cart state
+00:25 +737: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Phase 2 Test 7: BattleChantSynthesizer mounts and functions cleanly without dead SingleTickerProviderStateMixin
+00:25 +738: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: PassDocumentExporter generates valid PDF 1.4 byte structure and exports to disk
+00:25 +739: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: Dynamic attendance percentage computes accurately over attendance logs
+00:25 +740: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: AuthService.createElectionBallot persists ballot into cache and Firestore
+00:25 +741: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: SchoolElectionsPage mounts cleanly and handles unauthenticated state
+Error accessing currentUser on platform thread: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:25 +742: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: ensureSchoolMemberRecord provisions student roster entry with parsed grade, house, and active status
+00:25 +743: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: ensureSchoolMemberRecord provisions staff/admin with manage_elections capability
+00:25 +744: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: lookupScholarDetails auto-fills scholar details and position-tailored manifesto
+00:25 +745: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: AuthService.getFoundationalGazettes returns statutory proclamations and cacheCertifiedGazette stores them
+00:25 +746: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: castDigitalVote caches receipt and getReceiptForBallot retrieves candidate-specific receipt
+Firestore vote transaction note: [core/no-app] No Firebase App '[DEFAULT]' has been created - call Firebase.initializeApp()
+00:25 +747: C:/Users/User/OneDrive/Desktop/asb_house_hub_flutter/test/widget_test.dart: (tearDownAll)
+00:25 +747: All tests passed!
