@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:asb_house_hub/models/campus_event.dart';
 import 'package:asb_house_hub/screens/events_screen.dart';
 import 'package:asb_house_hub/services/auth_service.dart';
+import 'package:asb_house_hub/theme/app_theme.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -741,5 +742,48 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     });
+
+    testWidgets(
+      'event cards fit a 360dp phone at 1.3x text scale without overflow',
+      (tester) async {
+        final now = DateTime.now();
+        await AuthService.cacheEvents([
+          CampusEvent(
+            id: 'ev_compact',
+            title: 'Inter-House Athletics Meet Finals',
+            description: 'Track and field finals on the main oval.',
+            category: EventCategory.sports,
+            startTime: now.add(const Duration(hours: 2)),
+            endTime: now.add(const Duration(hours: 5)),
+            venue: 'Main Campus Stadium',
+            pointsAwarded: 150,
+            pointsMultiplier: 1.5,
+          ),
+        ]);
+
+        tester.view.physicalSize = const Size(360, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.lightTheme,
+            home: Builder(
+              builder: (context) => MediaQuery(
+                data: MediaQuery.of(
+                  context,
+                ).copyWith(textScaler: const TextScaler.linear(1.3)),
+                child: const EventsScreen(userHouse: 'emerald'),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.text('Inter-House Athletics Meet Finals'), findsOneWidget);
+      },
+    );
   });
 }

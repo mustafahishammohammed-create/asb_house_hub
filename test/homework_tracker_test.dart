@@ -3,10 +3,24 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:asb_house_hub/models/academic_assignment.dart';
 import 'package:asb_house_hub/screens/academics_screen.dart';
+import 'package:asb_house_hub/services/auth_service.dart';
 import 'package:asb_house_hub/theme/app_theme.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() async {
+    SharedPreferences.setMockInitialValues({});
+    await AuthService.initPreferences();
+    await AuthService.clearCache();
+    AuthService.isFirebaseLiveOverride = false;
+    AuthService.firestoreFailureSimulated = null;
+  });
+
+  tearDown(() {
+    AuthService.isFirebaseLiveOverride = null;
+    AuthService.firestoreFailureSimulated = null;
+  });
 
   group('Homework Tracker UI & Regression Suite', () {
     testWidgets('orders overdue pending first, shows completion meter, and filters via HUD tiles',
@@ -132,6 +146,104 @@ void main() {
 
       tester.view.resetPhysicalSize();
       tester.view.resetDevicePixelRatio();
+    });
+
+    testWidgets('a rejected status change reverts the card and shows an error',
+        (WidgetTester tester) async {
+      final now = DateTime(2026, 10, 10, 12, 0);
+      AuthService.isFirebaseLiveOverride = true;
+      AuthService.firestoreFailureSimulated = Exception('permission-denied');
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.lightTheme,
+          home: Scaffold(
+            body: AssignmentsTab(
+              classLevel: 'Grade 10',
+              mockNow: now,
+              initialAssignments: [
+                AcademicAssignment(
+                  id: 'hw_reject',
+                  title: 'Photosynthesis Worksheet',
+                  subject: 'Biology',
+                  teacherName: 'Dr. Nair',
+                  dueDateTime: now.add(const Duration(hours: 3)),
+                  pointsReward: 20,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('PENDING'), findsOneWidget);
+      await tester.ensureVisible(find.text('PENDING'));
+      await tester.tap(find.text('PENDING'));
+      await tester.pumpAndSettle();
+
+      // The optimistic SUBMITTED state must be rolled back when the write fails.
+      expect(find.text('PENDING'), findsOneWidget);
+      expect(find.text('SUBMITTED'), findsNothing);
+      expect(
+        find.text(
+          'Could not update this homework task. Please check your connection and try again.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a rejected submission keeps the sheet open and never claims success',
+        (WidgetTester tester) async {
+      final now = DateTime(2026, 10, 10, 12, 0);
+      AuthService.isFirebaseLiveOverride = true;
+      AuthService.firestoreFailureSimulated = Exception('permission-denied');
+
+      tester.view.physicalSize = const Size(500, 1100);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.lightTheme,
+          home: Scaffold(
+            body: AssignmentsTab(
+              classLevel: 'Grade 10',
+              mockNow: now,
+              initialAssignments: [
+                AcademicAssignment(
+                  id: 'hw_submit_reject',
+                  title: 'Photosynthesis Worksheet',
+                  subject: 'Biology',
+                  teacherName: 'Dr. Nair',
+                  dueDateTime: now.add(const Duration(hours: 3)),
+                  pointsReward: 20,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.text('Submit Work'));
+      await tester.tap(find.text('Submit Work'));
+      await tester.pumpAndSettle();
+      expect(find.text('Turn In / Submit Homework'), findsOneWidget);
+
+      await tester.ensureVisible(find.text('Turn In / Submit Homework'));
+      await tester.tap(find.text('Turn In / Submit Homework'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('submitted to'), findsNothing);
+      expect(
+        find.text(
+          'Could not submit this homework. Please check your connection and try again.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Turn In / Submit Homework'), findsOneWidget);
     });
   });
 }

@@ -2200,6 +2200,7 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                         isDark,
                         isTeacherOrAdmin,
                         _statusFilter != 'All' || _currentSubject != 'All',
+                        _statusFilter,
                       )
                     else
                       ...assignments.map((assignment) => _buildAssignmentCard(assignment, now, isDark, isTeacherOrAdmin)),
@@ -2896,7 +2897,7 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
     );
   }
 
-  void _cycleAssignmentStatus(AcademicAssignment assignment) {
+  Future<void> _cycleAssignmentStatus(AcademicAssignment assignment) async {
     final currentStatus = _optimisticStatus[assignment.id] ?? assignment.status;
     var nextStatus = currentStatus.nextStatus;
 
@@ -2905,6 +2906,7 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
       final role = AuthService.getCachedRole() ?? '';
       final sNo = AuthService.getCachedScholarNo() ?? '';
       if (!HierarchyService.canGradeAcademics(role: role, scholarNo: sNo)) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Grading and merit points require teacher or council verification.'),
@@ -2920,15 +2922,42 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
       _optimisticStatus[assignment.id] = nextStatus;
     });
 
-    final updated = assignment.copyWith(status: nextStatus);
-    widget.onStatusChanged?.call(updated);
+    bool saved = false;
+    try {
+      saved = await _authService.updateAssignmentStatus(
+        assignmentId: assignment.id,
+        newStatus: nextStatus,
+        classLevel: _effectiveClass,
+        pointsReward: assignment.pointsReward,
+      );
+    } catch (_) {
+      saved = false;
+    }
 
-    _authService.updateAssignmentStatus(
-      assignmentId: assignment.id,
-      newStatus: nextStatus,
-      classLevel: _effectiveClass,
-      pointsReward: assignment.pointsReward,
-    );
+    if (!mounted) return;
+
+    if (!saved) {
+      // The write was rejected (rules, missing profile, offline). Roll the
+      // optimistic status back so the card never shows an unsaved state.
+      setState(() {
+        if (currentStatus == assignment.status) {
+          _optimisticStatus.remove(assignment.id);
+        } else {
+          _optimisticStatus[assignment.id] = currentStatus;
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Could not update this homework task. Please check your connection and try again.',
+          ),
+          duration: Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+
+    widget.onStatusChanged?.call(assignment.copyWith(status: nextStatus));
 
     final view = View.maybeOf(context);
     if (view != null) {
@@ -3209,14 +3238,41 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                           _optimisticStatus[assignment.id] = AssignmentStatus.submitted;
                         });
 
-                        widget.onStatusChanged?.call(updated);
+                        bool saved = false;
+                        try {
+                          saved = await _authService.updateAssignmentStatus(
+                            assignmentId: assignment.id,
+                            newStatus: AssignmentStatus.submitted,
+                            classLevel: _effectiveClass,
+                            pointsReward: assignment.pointsReward,
+                          );
+                        } catch (_) {
+                          saved = false;
+                        }
 
-                        await _authService.updateAssignmentStatus(
-                          assignmentId: assignment.id,
-                          newStatus: AssignmentStatus.submitted,
-                          classLevel: _effectiveClass,
-                          pointsReward: assignment.pointsReward,
-                        );
+                        if (!saved) {
+                          // Never report success for a rejected write. Keep the
+                          // sheet open so the scholar can retry.
+                          if (mounted) {
+                            setState(() {
+                              _optimisticStatus.remove(assignment.id);
+                            });
+                          }
+                          if (ctx.mounted) {
+                            ScaffoldMessenger.of(ctx).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Could not submit this homework. Please check your connection and try again.',
+                                ),
+                                backgroundColor: Color(0xFFB91C1C),
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          }
+                          return;
+                        }
+
+                        widget.onStatusChanged?.call(updated);
 
                         if (ctx.mounted) {
                           Navigator.of(ctx).pop();
@@ -3255,7 +3311,17 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
     bool isDark, [
     bool isTeacherOrAdmin = false,
     bool hasFilterReset = false,
+    String statusFilter = 'All',
   ]) {
+    final hasStatusFilter = statusFilter != 'All';
+    final emptyTitle = hasStatusFilter
+        ? 'No ${statusFilter.toLowerCase()} homework right now.'
+        : (_currentSubject == 'All'
+            ? 'No homework assignments pending for this subject.'
+            : 'No $_currentSubject homework for this class yet.');
+    final emptySubtitle = hasStatusFilter
+        ? 'Try a different status filter, or tap Show All Homework to see everything.'
+        : 'Assignments will appear automatically once assigned by your course instructors.';
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
@@ -3275,7 +3341,7 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
           ),
           const SizedBox(height: 14),
           Text(
-            'No homework assignments pending for this subject.',
+            emptyTitle,
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w800,
@@ -3285,7 +3351,7 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
           ),
           const SizedBox(height: 6),
           Text(
-            'Assignments will appear automatically once assigned by your course instructors.',
+            emptySubtitle,
             style: TextStyle(
               fontSize: 12,
               color: isDark ? Colors.white60 : Colors.grey[600],

@@ -1163,6 +1163,12 @@ class _EventsScreenState extends State<EventsScreen> {
         '${startLocal.day.toString().padLeft(2, '0')} ${months[startLocal.month - 1]}';
     final isLive = event.isLiveAt(now) || event.isOngoingAt(now);
     final isConcluded = event.isConcludedAt(now);
+    // The cover carries overlaid pills, so it must grow with the user's font
+    // scale or the overlay overflows on compact phones with larger text.
+    final coverScale = MediaQuery.textScalerOf(
+      context,
+    ).scale(1.0).clamp(1.0, 1.5).toDouble();
+    final coverHeight = (event.bannerUrl.isNotEmpty ? 176.0 : 94.0) * coverScale;
 
     final metaParts = <String>[
       event.category.displayName.toUpperCase(),
@@ -1203,7 +1209,7 @@ class _EventsScreenState extends State<EventsScreen> {
             children: [
               // Editorial Visual Cover Header (Hero Image OR Category Gradient Stage)
               SizedBox(
-                height: event.bannerUrl.isNotEmpty ? 176 : 94,
+                height: coverHeight,
                 width: double.infinity,
                 child: Stack(
                   fit: StackFit.expand,
@@ -1211,7 +1217,7 @@ class _EventsScreenState extends State<EventsScreen> {
                     if (event.bannerUrl.isNotEmpty)
                       HomeScreen.buildResilientImage(
                         event.bannerUrl,
-                        height: 176,
+                        height: coverHeight,
                       )
                     else
                       Container(
@@ -1282,24 +1288,28 @@ class _EventsScreenState extends State<EventsScreen> {
                                       ),
                                     ),
                                   ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(
-                                        Icons.calendar_today_rounded,
-                                        size: 12,
-                                        color: Colors.white,
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        '$dateTag • ${_formatTimeOnly(event.startTime)}',
-                                        style: const TextStyle(
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: Alignment.centerLeft,
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(
+                                          Icons.calendar_today_rounded,
+                                          size: 12,
                                           color: Colors.white,
-                                          fontWeight: FontWeight.w800,
-                                          fontSize: 11,
                                         ),
-                                      ),
-                                    ],
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          '$dateTag • ${_formatTimeOnly(event.startTime)}',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                                 Wrap(
@@ -1453,39 +1463,46 @@ class _EventsScreenState extends State<EventsScreen> {
                           ),
                         ),
                         const SizedBox(width: 10),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 9,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: isDark
-                                ? const Color(0xFF0F172A)
-                                : const Color(0xFFF1F5F9),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.schedule_rounded,
-                                size: 13,
-                                color: isDark
-                                    ? Colors.white60
-                                    : const Color(0xFF64748B),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 132),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 9,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? const Color(0xFF0F172A)
+                                  : const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.schedule_rounded,
+                                    size: 13,
+                                    color: isDark
+                                        ? Colors.white60
+                                        : const Color(0xFF64748B),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _remainingLabel(event, now),
+                                    style: TextStyle(
+                                      color: isDark
+                                          ? Colors.white70
+                                          : const Color(0xFF334155),
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(width: 4),
-                              Text(
-                                _remainingLabel(event, now),
-                                style: TextStyle(
-                                  color: isDark
-                                      ? Colors.white70
-                                      : const Color(0xFF334155),
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ],
+                            ),
                           ),
                         ),
                         const SizedBox(width: 6),
