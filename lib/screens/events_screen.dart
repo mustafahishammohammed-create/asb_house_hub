@@ -1163,12 +1163,7 @@ class _EventsScreenState extends State<EventsScreen> {
         '${startLocal.day.toString().padLeft(2, '0')} ${months[startLocal.month - 1]}';
     final isLive = event.isLiveAt(now) || event.isOngoingAt(now);
     final isConcluded = event.isConcludedAt(now);
-    // The cover carries overlaid pills, so it must grow with the user's font
-    // scale or the overlay overflows on compact phones with larger text.
-    final coverScale = MediaQuery.textScalerOf(
-      context,
-    ).scale(1.0).clamp(1.0, 1.5).toDouble();
-    final coverHeight = (event.bannerUrl.isNotEmpty ? 176.0 : 94.0) * coverScale;
+    final coverHeight = event.bannerUrl.isNotEmpty ? 176.0 : 94.0;
 
     final metaParts = <String>[
       event.category.displayName.toUpperCase(),
@@ -1208,29 +1203,31 @@ class _EventsScreenState extends State<EventsScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Editorial Visual Cover Header (Hero Image OR Category Gradient Stage)
-              SizedBox(
-                height: coverHeight,
-                width: double.infinity,
+              ConstrainedBox(
+                constraints: BoxConstraints(minHeight: coverHeight),
                 child: Stack(
-                  fit: StackFit.expand,
                   children: [
                     if (event.bannerUrl.isNotEmpty)
-                      HomeScreen.buildResilientImage(
-                        event.bannerUrl,
-                        height: coverHeight,
+                      Positioned.fill(
+                        child: HomeScreen.buildResilientImage(
+                          event.bannerUrl,
+                          height: coverHeight,
+                        ),
                       )
                     else
-                      Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: isConcluded
-                                ? [
-                                    const Color(0xFF475569),
-                                    const Color(0xFF1E293B),
-                                  ]
-                                : coverColors,
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
+                      Positioned.fill(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: isConcluded
+                                  ? [
+                                      const Color(0xFF475569),
+                                      const Color(0xFF1E293B),
+                                    ]
+                                  : coverColors,
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
                           ),
                         ),
                       ),
@@ -1260,129 +1257,136 @@ class _EventsScreenState extends State<EventsScreen> {
                           color: Colors.white.withValues(alpha: 0.14),
                         ),
                       ),
-                    Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          SizedBox(
-                            width: double.infinity,
-                            child: Wrap(
-                              alignment: WrapAlignment.spaceBetween,
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              spacing: 8,
-                              runSpacing: 6,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 5,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black.withValues(alpha: 0.36),
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(
-                                      color: Colors.white.withValues(
-                                        alpha: 0.24,
+                    ConstrainedBox(
+                      constraints: BoxConstraints(minHeight: coverHeight),
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SizedBox(
+                              width: double.infinity,
+                              child: Wrap(
+                                alignment: WrapAlignment.spaceBetween,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                spacing: 8,
+                                runSpacing: 6,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 5,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.36,
+                                      ),
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.24,
+                                        ),
+                                      ),
+                                    ),
+                                    child: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      alignment: Alignment.centerLeft,
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(
+                                            Icons.calendar_today_rounded,
+                                            size: 12,
+                                            color: Colors.white,
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            '$dateTag • ${_formatTimeOnly(event.startTime)}',
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ),
-                                  child: FittedBox(
-                                    fit: BoxFit.scaleDown,
-                                    alignment: Alignment.centerLeft,
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Icon(
-                                          Icons.calendar_today_rounded,
-                                          size: 12,
-                                          color: Colors.white,
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Text(
-                                          '$dateTag • ${_formatTimeOnly(event.startTime)}',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: 11,
+                                  Wrap(
+                                    spacing: 6,
+                                    runSpacing: 4,
+                                    children: [
+                                      if (event.pointsMultiplier > 1.0)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.amber,
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            '${event.pointsMultiplier}x PTS',
+                                            style: const TextStyle(
+                                              color: Colors.black,
+                                              fontWeight: FontWeight.w900,
+                                              fontSize: 10,
+                                            ),
+                                          ),
+                                        )
+                                      else if (event.pointsAwarded > 0)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withValues(
+                                              alpha: 0.22,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            '+${event.pointsAwarded} PTS',
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w900,
+                                              fontSize: 10,
+                                            ),
                                           ),
                                         ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                                Wrap(
-                                  spacing: 6,
-                                  runSpacing: 4,
-                                  children: [
-                                    if (event.pointsMultiplier > 1.0)
                                       Container(
                                         padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 4,
+                                          horizontal: 2,
+                                          vertical: 1,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: Colors.amber,
+                                          color: isDark
+                                              ? const Color(
+                                                  0xFF0F172A,
+                                                ).withValues(alpha: 0.72)
+                                              : Colors.white.withValues(
+                                                  alpha: 0.92,
+                                                ),
                                           borderRadius: BorderRadius.circular(
-                                            8,
+                                            9,
                                           ),
                                         ),
-                                        child: Text(
-                                          '${event.pointsMultiplier}x PTS',
-                                          style: const TextStyle(
-                                            color: Colors.black,
-                                            fontWeight: FontWeight.w900,
-                                            fontSize: 10,
-                                          ),
-                                        ),
-                                      )
-                                    else if (event.pointsAwarded > 0)
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 4,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white.withValues(
-                                            alpha: 0.22,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          '+${event.pointsAwarded} PTS',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.w900,
-                                            fontSize: 10,
-                                          ),
-                                        ),
+                                        child: _buildStatusBadge(event, now),
                                       ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 2,
-                                        vertical: 1,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: isDark
-                                            ? const Color(
-                                                0xFF0F172A,
-                                              ).withValues(alpha: 0.72)
-                                            : Colors.white.withValues(
-                                                alpha: 0.92,
-                                              ),
-                                        borderRadius: BorderRadius.circular(9),
-                                      ),
-                                      child: _buildStatusBadge(event, now),
-                                    ),
-                                  ],
-                                ),
-                              ],
+                                    ],
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ],

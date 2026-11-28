@@ -9209,7 +9209,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // 1. Verify empty state with add task button
-    expect(find.text('No homework assignments pending for this subject.'), findsOneWidget);
+    expect(find.text('No homework for this class yet.'), findsOneWidget);
     expect(find.byKey(const Key('empty_add_assignment_button')), findsOneWidget);
     expect(find.byKey(const Key('add_assignment_button')), findsOneWidget);
 
@@ -9249,7 +9249,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Verify task is removed
-    expect(find.text('No homework assignments pending for this subject.'), findsOneWidget);
+    expect(find.text('No homework for this class yet.'), findsOneWidget);
   });
 
   // ===========================================================================

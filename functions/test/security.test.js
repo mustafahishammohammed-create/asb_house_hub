@@ -55,6 +55,23 @@ beforeEach(async () => {
     await env.clearStorage();
   }
 });
+
+test("rules: homework notes persist only on the owner's valid ungraded submission", async () => {
+  await db.doc("users/student").set(student());
+  const client = env.authenticatedContext("student", { email: "12345@asianschool.bh" }).firestore();
+  const submission = doc(client, "classes/Grade 10/assignments/essay/submissions/12345");
+  const data = { scholar_no: "12345", status: "submitted", submission_notes: "My answer https://example.com/work" };
+  await assertSucceeds(setDoc(submission, data));
+  assert.equal((await getDoc(submission)).data().submission_notes, data.submission_notes);
+  await assertSucceeds(updateDoc(submission, { submission_notes: "Updated answer" }));
+  await assertFails(updateDoc(submission, { submission_notes: "x".repeat(3001) }));
+  await assertFails(updateDoc(submission, { submission_notes: 42 }));
+  await assertFails(updateDoc(submission, { status: "graded" }));
+  await assertFails(setDoc(doc(client, "classes/Grade 10/assignments/essay/submissions/99999"),
+      { ...data, scholar_no: "99999" }));
+  await db.doc("classes/Grade 10/assignments/essay/submissions/12345").update({ status: "graded" });
+  await assertFails(updateDoc(submission, { status: "submitted", submission_notes: "Replace marked work" }));
+});
 after(async () => {
   if (env) await env.cleanup();
   if (app) await deleteApp(app);

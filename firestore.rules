@@ -1325,7 +1325,7 @@ service cloud.firestore {
     function isValidSubmission(scholarNo, data) {
       return hasOnlyAllowedFields([
         'scholar_no', 'status', 'submitted_at', 'graded_at',
-        'student_name', 'house_name', 'class_level', 'last_updated'
+        'student_name', 'house_name', 'class_level', 'last_updated', 'submission_notes'
       ]) &&
       hasRequiredFields(['scholar_no', 'status']) &&
       data.scholar_no == scholarNo &&
@@ -1335,6 +1335,7 @@ service cloud.firestore {
       (!('student_name' in data) || (data.student_name is string && data.student_name.size() <= 100)) &&
       (!('house_name' in data) || (data.house_name is string && data.house_name.size() <= 50)) &&
       (!('class_level' in data) || (data.class_level is string && data.class_level.size() <= 50)) &&
+      (!('submission_notes' in data) || (data.submission_notes is string && data.submission_notes.size() <= 3000)) &&
       (!('last_updated' in data) || data.last_updated is timestamp);
     }
 

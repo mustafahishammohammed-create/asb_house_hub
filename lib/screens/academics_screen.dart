@@ -1905,6 +1905,7 @@ typedef AcademicHomeworkTab = AssignmentsTab;
 /// Academic Homework Tracker & Points Claim Tab.
 /// Real-time status cycling (PENDING ➔ SUBMITTED ➔ GRADED), due date countdown, and merit awards.
 class AssignmentsTab extends StatefulWidget {
+  final AuthService? authService;
   final String? classLevel;
   final String? selectedSubject;
   final DateTime? mockNow;
@@ -1913,6 +1914,7 @@ class AssignmentsTab extends StatefulWidget {
 
   const AssignmentsTab({
     super.key,
+    this.authService,
     this.classLevel,
     this.selectedSubject,
     this.mockNow,
@@ -1925,18 +1927,22 @@ class AssignmentsTab extends StatefulWidget {
 }
 
 class _AssignmentsTabState extends State<AssignmentsTab> {
-  final AuthService _authService = AuthService();
+  late final AuthService _authService = widget.authService ?? AuthService();
   late String _currentSubject;
   late String _effectiveClass;
   String _statusFilter = 'All'; // 'All', 'Pending', 'Submitted', 'Graded'
-  final Map<String, AssignmentStatus> _optimisticStatus = {};
+  final Map<String, AcademicAssignment> _savedAssignments = {};
+  final Map<String, AcademicAssignment> _savedAssignmentBases = {};
+  final Set<String> _savingAssignments = {};
+  int _assignmentScope = 0;
   Timer? _tickerTimer;
 
   @override
   void initState() {
     super.initState();
     final profile = AuthService.getCachedProfile();
-    _effectiveClass = widget.classLevel ?? profile?['class_level']?.toString() ?? 'Grade 10';
+    _effectiveClass =
+        widget.classLevel ?? profile?['class_level']?.toString() ?? 'Grade 10';
     _currentSubject = widget.selectedSubject ?? 'All';
     if (widget.mockNow == null) {
       _tickerTimer = Timer.periodic(const Duration(seconds: 30), (_) {
@@ -1948,8 +1954,13 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
   @override
   void didUpdateWidget(covariant AssignmentsTab oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.classLevel != oldWidget.classLevel && widget.classLevel != null) {
+    if (widget.classLevel != oldWidget.classLevel &&
+        widget.classLevel != null) {
       _effectiveClass = widget.classLevel!;
+      _assignmentScope++;
+      _savedAssignments.clear();
+      _savedAssignmentBases.clear();
+      _savingAssignments.clear();
     }
     if (widget.selectedSubject != oldWidget.selectedSubject &&
         widget.selectedSubject != null) {
@@ -2090,14 +2101,19 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                 rawAssignments = List<AcademicAssignment>.from(cachedAssignments);
               }
 
-              // Apply optimistic statuses if mutated & sort by action priority
-              final allAssignments = rawAssignments.map((a) {
-                if (_optimisticStatus.containsKey(a.id)) {
-                  return a.copyWith(status: _optimisticStatus[a.id]);
-                }
-                return a;
-              }).toList()
-                ..sort((a, b) {
+              // Keep an acknowledged write visible while its original snapshot
+              // is still on screen. Any newer authoritative value wins.
+              final allAssignments =
+                  rawAssignments.map((a) {
+                    if (_savedAssignments.containsKey(a.id)) {
+                      if (_savedAssignmentBases[a.id] == a) {
+                        return _savedAssignments[a.id]!;
+                      }
+                      _savedAssignments.remove(a.id);
+                      _savedAssignmentBases.remove(a.id);
+                    }
+                    return a;
+                  }).toList()..sort((a, b) {
                   int rank(AcademicAssignment item) {
                     if (item.status == AssignmentStatus.pending && item.isOverdue(now)) return 0;
                     if (item.status == AssignmentStatus.pending) return 1;
@@ -2897,55 +2913,58 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
     );
   }
 
-  Future<void> _cycleAssignmentStatus(AcademicAssignment assignment) async {
-    final currentStatus = _optimisticStatus[assignment.id] ?? assignment.status;
-    var nextStatus = currentStatus.nextStatus;
-
-    // G4 & R1: Gating graded status to staff + council
-    if (nextStatus == AssignmentStatus.graded) {
-      final role = AuthService.getCachedRole() ?? '';
-      final sNo = AuthService.getCachedScholarNo() ?? '';
-      if (!HierarchyService.canGradeAcademics(role: role, scholarNo: sNo)) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Grading and merit points require teacher or council verification.'),
-            duration: Duration(seconds: 3),
-          ),
-        );
-        // Student cannot advance to graded; cycle back to pending (unsubmit)
-        nextStatus = AssignmentStatus.pending;
-      }
-    }
-
-    setState(() {
-      _optimisticStatus[assignment.id] = nextStatus;
-    });
-
-    bool saved = false;
+  Future<bool> _saveAssignment(
+    AcademicAssignment assignment,
+    AssignmentStatus status, {
+    String? notes,
+  }) async {
+    if (_savingAssignments.contains(assignment.id)) return false;
+    final scope = _assignmentScope;
+    final classLevel = _effectiveClass;
+    final base = _savedAssignmentBases[assignment.id] ?? assignment;
+    setState(() => _savingAssignments.add(assignment.id));
+    bool saved;
     try {
       saved = await _authService.updateAssignmentStatus(
         assignmentId: assignment.id,
-        newStatus: nextStatus,
-        classLevel: _effectiveClass,
+        newStatus: status,
+        classLevel: classLevel,
         pointsReward: assignment.pointsReward,
+        submissionNotes: notes,
       );
     } catch (_) {
       saved = false;
     }
+    if (!mounted || scope != _assignmentScope) return false;
+    final updated = assignment.copyWith(
+      status: status,
+      submissionNotes: notes,
+      submittedAt: status == AssignmentStatus.submitted ? DateTime.now() : null,
+    );
+    setState(() {
+      _savingAssignments.remove(assignment.id);
+      if (saved) {
+        _savedAssignmentBases[assignment.id] = base;
+        _savedAssignments[assignment.id] = updated;
+      }
+    });
+    if (saved) widget.onStatusChanged?.call(updated);
+    return saved;
+  }
 
+  Future<void> _cycleAssignmentStatus(AcademicAssignment assignment) async {
+    if (_savingAssignments.contains(assignment.id)) return;
+    var nextStatus = assignment.status.nextStatus;
+    if (nextStatus == AssignmentStatus.graded) {
+      final role = AuthService.getCachedRole() ?? '';
+      final scholar = AuthService.getCachedScholarNo() ?? '';
+      if (!HierarchyService.canGradeAcademics(role: role, scholarNo: scholar)) {
+        nextStatus = AssignmentStatus.pending;
+      }
+    }
+    final saved = await _saveAssignment(assignment, nextStatus);
     if (!mounted) return;
-
     if (!saved) {
-      // The write was rejected (rules, missing profile, offline). Roll the
-      // optimistic status back so the card never shows an unsaved state.
-      setState(() {
-        if (currentStatus == assignment.status) {
-          _optimisticStatus.remove(assignment.id);
-        } else {
-          _optimisticStatus[assignment.id] = currentStatus;
-        }
-      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -2956,9 +2975,6 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
       );
       return;
     }
-
-    widget.onStatusChanged?.call(assignment.copyWith(status: nextStatus));
-
     final view = View.maybeOf(context);
     if (view != null) {
       SemanticsService.sendAnnouncement(
@@ -2969,11 +2985,17 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
     }
   }
 
-  void _showSubmitAssignmentModal(BuildContext context, AcademicAssignment assignment) {
+  void _showSubmitAssignmentModal(
+    BuildContext context,
+    AcademicAssignment assignment,
+  ) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final notesController = TextEditingController(text: assignment.submissionNotes);
-    String? attachedFileName;
-    final currentStatus = _optimisticStatus[assignment.id] ?? assignment.status;
+    final notesController = TextEditingController(
+      text: assignment.submissionNotes,
+    );
+    bool isSaving = false;
+    String? submitError;
+    final currentStatus = assignment.status;
 
     showModalBottomSheet<void>(
       context: context,
@@ -2983,326 +3005,295 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
         controllers: [notesController],
         child: StatefulBuilder(
           builder: (ctx, setModalState) {
-          return Container(
-            padding: EdgeInsets.only(
-              left: 20,
-              right: 20,
-              top: 20,
-              bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-            ),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF0F172A) : Colors.white,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            ),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 44,
-                      height: 5,
-                      decoration: BoxDecoration(
-                        color: Colors.grey.withValues(alpha: 0.3),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            return Container(
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 20,
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+              ),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF0F172A) : Colors.white,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(24),
+                ),
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 44,
+                        height: 5,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF6366F1).withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          assignment.subject.toUpperCase(),
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w900,
-                            color: Color(0xFF6366F1),
-                          ),
+                          color: Colors.grey.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(10),
                         ),
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          '+${assignment.pointsReward} PTS',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w900,
-                            color: Color(0xFFF59E0B),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    assignment.title,
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                      color: isDark ? Colors.white : const Color(0xFF0F172A),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Instructor: ${assignment.teacherName} • ${assignment.formattedRemaining()}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: isDark ? Colors.white60 : const Color(0xFF64748B),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Row(
-                          children: [
-                            Icon(Icons.description_outlined, size: 16, color: Color(0xFF6366F1)),
-                            SizedBox(width: 6),
-                            Text(
-                              'ASSIGNMENT BRIEF & RUBRIC',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 0.5,
-                                color: Color(0xFF6366F1),
-                              ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(
+                              0xFF6366F1,
+                            ).withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            assignment.subject.toUpperCase(),
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                              color: Color(0xFF6366F1),
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          assignment.description.isNotEmpty
-                              ? assignment.description
-                              : 'Review chapter concepts and complete all assigned exercises. Submit clean working steps or attached document for assessment.',
-                          style: TextStyle(
-                            fontSize: 13,
-                            height: 1.45,
-                            color: isDark ? Colors.white70 : const Color(0xFF334155),
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Rubric: Quality of answer (40%), Methodology (30%), Timeliness (30%).',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontStyle: FontStyle.italic,
-                            color: isDark ? Colors.white54 : const Color(0xFF64748B),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(
+                              0xFFF59E0B,
+                            ).withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '+${assignment.pointsReward} PTS',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                              color: Color(0xFFF59E0B),
+                            ),
                           ),
                         ),
                       ],
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Student Submission Notes / Work Links:',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? Colors.white70 : const Color(0xFF334155),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  TextField(
-                    controller: notesController,
-                    maxLines: 3,
-                    style: TextStyle(fontSize: 13, color: isDark ? Colors.white : Colors.black87),
-                    decoration: InputDecoration(
-                      hintText: 'Type your answer, paste links (GitHub, Google Drive, Docs), or notes for teacher...',
-                      hintStyle: const TextStyle(fontSize: 12, color: Colors.grey),
-                      filled: true,
-                      fillColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
+                    const SizedBox(height: 12),
+                    Text(
+                      assignment.title,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        color: isDark ? Colors.white : const Color(0xFF0F172A),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  if (attachedFileName != null)
+                    const SizedBox(height: 4),
+                    Text(
+                      'Instructor: ${assignment.teacherName} • ${assignment.formattedRemaining()}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: isDark
+                            ? Colors.white60
+                            : const Color(0xFF64748B),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.all(10),
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: Colors.green.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.green.withValues(alpha: 0.4)),
+                        color: isDark
+                            ? const Color(0xFF1E293B)
+                            : const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: isDark
+                              ? const Color(0xFF334155)
+                              : const Color(0xFFE2E8F0),
+                        ),
                       ),
-                      child: Row(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Icon(Icons.attach_file_rounded, size: 18, color: Colors.green),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              attachedFileName!,
-                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                          const Row(
+                            children: [
+                              Icon(
+                                Icons.description_outlined,
+                                size: 16,
+                                color: Color(0xFF6366F1),
+                              ),
+                              SizedBox(width: 6),
+                              Text(
+                                'ASSIGNMENT BRIEF & RUBRIC',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0.5,
+                                  color: Color(0xFF6366F1),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            assignment.description.isNotEmpty
+                                ? assignment.description
+                                : 'Review chapter concepts and complete all assigned exercises. Submit clean working steps or attached document for assessment.',
+                            style: TextStyle(
+                              fontSize: 13,
+                              height: 1.45,
+                              color: isDark
+                                  ? Colors.white70
+                                  : const Color(0xFF334155),
                             ),
                           ),
-                          IconButton(
-                            icon: const Icon(Icons.close, size: 16),
-                            onPressed: () => setModalState(() {
-                              attachedFileName = null;
-                            }),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Rubric: Quality of answer (40%), Methodology (30%), Timeliness (30%).',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontStyle: FontStyle.italic,
+                              color: isDark
+                                  ? Colors.white54
+                                  : const Color(0xFF64748B),
+                            ),
                           ),
                         ],
                       ),
                     ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Icons.attach_file_rounded, size: 16),
-                          label: const Text('Attach Solution File', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                          onPressed: () async {
-                            try {
-                              const typeGroup = XTypeGroup(
-                                label: 'Homework Files',
-                                extensions: ['pdf', 'png', 'jpg', 'jpeg', 'docx', 'txt'],
-                              );
-                              final file = await openFile(acceptedTypeGroups: const [typeGroup]);
-                              if (file != null) {
-                                setModalState(() {
-                                  attachedFileName = file.name;
-                                });
-                              }
-                            } catch (e) {
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('File picker error: $e')),
-                                );
-                              }
-                            }
-                          },
+                    const SizedBox(height: 16),
+                    Text(
+                      'Student Submission Notes / Work Links:',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: isDark
+                            ? Colors.white70
+                            : const Color(0xFF334155),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: notesController,
+                      enabled: !isSaving,
+                      maxLength: 3000,
+                      maxLines: 3,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
+                      decoration: InputDecoration(
+                        hintText:
+                            'Type your answer, paste links (GitHub, Google Drive, Docs), or notes for teacher...',
+                        hintStyle: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey,
+                        ),
+                        filled: true,
+                        fillColor: isDark
+                            ? const Color(0xFF1E293B)
+                            : const Color(0xFFF1F5F9),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: ElevatedButton.icon(
-                      icon: const Icon(Icons.upload_file_rounded, size: 20),
-                      label: Text(
-                        currentStatus == AssignmentStatus.pending
-                            ? 'Turn In / Submit Homework'
-                            : 'Update Homework Submission',
-                        style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF6366F1),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      ),
-                      onPressed: () async {
-                        final notes = notesController.text.trim();
-                        final finalNotes = attachedFileName != null
-                            ? '$notes\n[Attached File: $attachedFileName]'.trim()
-                            : notes;
-
-                        final updated = assignment.copyWith(
-                          status: AssignmentStatus.submitted,
-                          submittedAt: DateTime.now(),
-                          submissionNotes: finalNotes,
-                        );
-
-                        setState(() {
-                          _optimisticStatus[assignment.id] = AssignmentStatus.submitted;
-                        });
-
-                        bool saved = false;
-                        try {
-                          saved = await _authService.updateAssignmentStatus(
-                            assignmentId: assignment.id,
-                            newStatus: AssignmentStatus.submitted,
-                            classLevel: _effectiveClass,
-                            pointsReward: assignment.pointsReward,
-                          );
-                        } catch (_) {
-                          saved = false;
-                        }
-
-                        if (!saved) {
-                          // Never report success for a rejected write. Keep the
-                          // sheet open so the scholar can retry.
-                          if (mounted) {
-                            setState(() {
-                              _optimisticStatus.remove(assignment.id);
-                            });
-                          }
-                          if (ctx.mounted) {
-                            ScaffoldMessenger.of(ctx).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Could not submit this homework. Please check your connection and try again.',
-                                ),
-                                backgroundColor: Color(0xFFB91C1C),
-                                behavior: SnackBarBehavior.floating,
-                              ),
-                            );
-                          }
-                          return;
-                        }
-
-                        widget.onStatusChanged?.call(updated);
-
-                        if (ctx.mounted) {
-                          Navigator.of(ctx).pop();
-                        }
-                        if (!context.mounted) return;
-
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Row(
-                              children: [
-                                const Icon(Icons.check_circle_rounded, color: Colors.greenAccent),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Text('✓ Homework for "${assignment.title}" submitted to ${assignment.teacherName}!'),
-                                ),
-                              ],
-                            ),
-                            backgroundColor: const Color(0xFF1E293B),
-                            behavior: SnackBarBehavior.floating,
-                          ),
-                        );
-                      },
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 12),
+                    const Text(
+                      'For files, paste a shared link above and give your teacher access.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    if (submitError != null) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        submitError!,
+                        key: const Key('homework_submit_error'),
+                        style: const TextStyle(color: Color(0xFFB91C1C)),
+                      ),
+                    ],
+                    const SizedBox(height: 18),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.upload_file_rounded, size: 20),
+                        label: Text(
+                          currentStatus == AssignmentStatus.pending
+                              ? 'Turn In / Submit Homework'
+                              : 'Update Homework Submission',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 14,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF6366F1),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        onPressed: isSaving
+                            ? null
+                            : () async {
+                                if (_savingAssignments.contains(assignment.id)) {
+                                  return;
+                                }
+                                setModalState(() {
+                                  isSaving = true;
+                                  submitError = null;
+                                });
+                                final saved = await _saveAssignment(
+                                  assignment,
+                                  AssignmentStatus.submitted,
+                                  notes: notesController.text.trim(),
+                                );
+                                if (!ctx.mounted) return;
+                                setModalState(() => isSaving = false);
+                                if (!saved) {
+                                  setModalState(
+                                    () => submitError =
+                                        'Could not submit this homework. Please check your connection and try again.',
+                                  );
+                                  return;
+                                }
+                                if (ctx.mounted) {
+                                  Navigator.of(ctx).pop();
+                                }
+                                if (!context.mounted) return;
+
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.check_circle_rounded,
+                                          color: Colors.greenAccent,
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Text(
+                                            '✓ Homework for "${assignment.title}" submitted to ${assignment.teacherName}!',
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    backgroundColor: const Color(0xFF1E293B),
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                              },
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          );
-        },
-      ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -3317,8 +3308,8 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
     final emptyTitle = hasStatusFilter
         ? 'No ${statusFilter.toLowerCase()} homework right now.'
         : (_currentSubject == 'All'
-            ? 'No homework assignments pending for this subject.'
-            : 'No $_currentSubject homework for this class yet.');
+              ? 'No homework for this class yet.'
+              : 'No $_currentSubject homework for this class yet.');
     final emptySubtitle = hasStatusFilter
         ? 'Try a different status filter, or tap Show All Homework to see everything.'
         : 'Assignments will appear automatically once assigned by your course instructors.';
@@ -3375,12 +3366,24 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
               key: const Key('empty_add_assignment_button'),
               onPressed: _showAddAssignmentModal,
               icon: const Icon(Icons.add_rounded, size: 16),
-              label: const Text('+ Add Homework Task', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+              label: const Text(
+                '+ Add Homework Task',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+              ),
               style: FilledButton.styleFrom(
-                backgroundColor: isDark ? const Color(0xFF38BDF8) : const Color(0xFF4338CA),
-                foregroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                backgroundColor: isDark
+                    ? const Color(0xFF38BDF8)
+                    : const Color(0xFF4338CA),
+                foregroundColor: isDark
+                    ? const Color(0xFF0F172A)
+                    : Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
           ],

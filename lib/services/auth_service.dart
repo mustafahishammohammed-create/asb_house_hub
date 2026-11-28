@@ -29,6 +29,7 @@ import '../models/medical_leave_request.dart';
 import '../models/academic_class.dart';
 import '../models/school_notice.dart';
 import 'timetable_service.dart';
+import 'assignment_submission_stream.dart';
 import 'election_security_service.dart';
 import 'sports_security_service.dart';
 import 'hierarchy_service.dart';
@@ -1475,6 +1476,12 @@ class AuthService {
           ? classLevel.trim()
           : (getCachedProfile()?['class_level']?.toString() ?? 'Grade 10');
 
+      if (!_isFirebaseLive) {
+        return Stream.value(
+          getCachedAssignments(classLevel: cLevel, subject: subject),
+        );
+      }
+
       Query query = _firestore
           .collection('classes')
           .doc(cLevel)
@@ -1486,15 +1493,33 @@ class AuthService {
         query = query.where('subject', isEqualTo: subject.trim());
       }
 
-      return query.snapshots().map((snap) {
-        final assignments = snap.docs
-            .map((doc) => AcademicAssignment.fromFirestore(doc))
-            .toList();
-        assignments.sort();
-        if (assignments.isNotEmpty) {
-          cacheAssignments(assignments, classLevel: cLevel, subject: subject);
-        }
-        return assignments;
+      Stream<List<AcademicAssignment>> stream = query.snapshots().map((snap) {
+        final tasks = snap.docs.map(AcademicAssignment.fromFirestore).toList();
+        tasks.sort();
+        return tasks;
+      });
+      final scholar = getCachedScholarNo() ?? '';
+      final canGrade = HierarchyService.canGradeAcademics(
+        role: getCachedRole() ?? '',
+        scholarNo: scholar,
+      );
+      if (!canGrade && scholar.isNotEmpty) {
+        stream = watchAssignmentSubmissions(
+          stream,
+          (id) => _firestore
+              .collection('classes')
+              .doc(cLevel)
+              .collection('assignments')
+              .doc(id)
+              .collection('submissions')
+              .doc(scholar)
+              .snapshots()
+              .map((snapshot) => snapshot.data()),
+        );
+      }
+      return stream.map((tasks) {
+        cacheAssignments(tasks, classLevel: cLevel, subject: subject);
+        return tasks;
       });
     } catch (_) {
       return Stream.value(<AcademicAssignment>[]);
@@ -1509,8 +1534,12 @@ class AuthService {
     String? scholarNo,
     String? house,
     int pointsReward = 20,
+    String? submissionNotes,
   }) async {
     try {
+      if (submissionNotes != null && submissionNotes.length > 3000) {
+        return false;
+      }
       final userRole = getCachedRole() ?? currentUser?.displayName ?? '';
       final sNo = (scholarNo != null && scholarNo.trim().isNotEmpty)
           ? scholarNo.trim()
@@ -1538,7 +1567,9 @@ class AuthService {
           ? classLevel.trim()
           : (getCachedProfile()?['class_level']?.toString().trim() ?? '');
       if (cLevel.isEmpty) {
-        debugPrint('updateAssignmentStatus rejected: no class level available.');
+        debugPrint(
+          'updateAssignmentStatus rejected: no class level available.',
+        );
         return false;
       }
 
@@ -1569,6 +1600,9 @@ class AuthService {
 
       final now = DateTime.now();
       final updateData = <String, dynamic>{'status': newStatus.name};
+      if (submissionNotes != null) {
+        updateData['submission_notes'] = submissionNotes.trim();
+      }
       if (newStatus == AssignmentStatus.submitted) {
         updateData['submitted_at'] = now.toIso8601String();
       } else if (newStatus == AssignmentStatus.graded) {
@@ -1578,14 +1612,20 @@ class AuthService {
       // 1. Update Firestore document if live, failing truthfully on server denial
       if (_isFirebaseLive) {
         try {
+          if (firestoreFailureSimulated != null) {
+            throw firestoreFailureSimulated!;
+          }
+          final batch = _firestore.batch();
           if (canGrade) {
             // Staff / Council: update the authoritative class-level assignment record
-            await _firestore
-                .collection('classes')
-                .doc(cLevel)
-                .collection('assignments')
-                .doc(assignmentId)
-                .update(updateData);
+            batch.update(
+              _firestore
+                  .collection('classes')
+                  .doc(cLevel)
+                  .collection('assignments')
+                  .doc(assignmentId),
+              updateData,
+            );
           }
 
           // Isolated per-scholar submission tracking: only write to submissions subcollection
@@ -1597,26 +1637,30 @@ class AuthService {
               'class_level': cLevel,
               'house_name': effectiveHouse,
               'last_updated': FieldValue.serverTimestamp(),
+              if (submissionNotes != null)
+                'submission_notes': submissionNotes.trim(),
             };
             if (newStatus == AssignmentStatus.submitted) {
               subDoc['submitted_at'] = now.toIso8601String();
             } else if (newStatus == AssignmentStatus.graded) {
               subDoc['graded_at'] = now.toIso8601String();
             }
-            await _firestore
-                .collection('classes')
-                .doc(cLevel)
-                .collection('assignments')
-                .doc(assignmentId)
-                .collection('submissions')
-                .doc(sNo)
-                .set(subDoc, SetOptions(merge: true));
+            batch.set(
+              _firestore
+                  .collection('classes')
+                  .doc(cLevel)
+                  .collection('assignments')
+                  .doc(assignmentId)
+                  .collection('submissions')
+                  .doc(sNo),
+              subDoc,
+              SetOptions(merge: true),
+            );
           }
+          await batch.commit();
         } catch (e) {
-          if (!_isNoAppException(e)) {
-            debugPrint('Firestore updateAssignmentStatus write rejected: $e');
-            return false;
-          }
+          debugPrint('Firestore updateAssignmentStatus write rejected: $e');
+          return false;
         }
       }
 
@@ -1625,12 +1669,21 @@ class AuthService {
       final updatedList = cached.map((a) {
         if (a.id == assignmentId) {
           if (newStatus == AssignmentStatus.submitted) {
-            return a.copyWith(status: newStatus, submittedAt: now);
+            return a.copyWith(
+              status: newStatus,
+              submittedAt: now,
+              submissionNotes: submissionNotes?.trim(),
+            );
           } else if (newStatus == AssignmentStatus.graded) {
-            return a.copyWith(status: newStatus, gradedAt: now);
+            return a.copyWith(
+              status: newStatus,
+              gradedAt: now,
+              submissionNotes: submissionNotes?.trim(),
+            );
           } else {
             return a.copyWith(
               status: newStatus,
+              submissionNotes: submissionNotes?.trim(),
               submittedAt: null,
               gradedAt: null,
             );
@@ -1638,6 +1691,15 @@ class AuthService {
         }
         return a;
       }).toList();
+      await cacheAssignments(updatedList, classLevel: cLevel);
+      // Refresh existing subject views as well as the class-wide cache.
+      for (final subject in updatedList.map((a) => a.subject).toSet()) {
+        await cacheAssignments(
+          updatedList.where((a) => a.subject == subject).toList(),
+          classLevel: cLevel,
+          subject: subject,
+        );
+      }
       await cacheAssignments(updatedList, classLevel: cLevel);
 
       // 3. When marked GRADED, award verified merit points using GamificationSecurityService

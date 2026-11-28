@@ -13,6 +13,10 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     await AuthService.initPreferences();
     await AuthService.clearCache();
+    await AuthService.cacheProfile({
+      'role': 'student', 'scholar_no': '99901',
+      'house_name': 'emerald', 'class_level': 'Grade 10',
+    }, syncMemberRecord: false);
     AuthService.isFirebaseLiveOverride = false;
     AuthService.firestoreFailureSimulated = null;
   });
