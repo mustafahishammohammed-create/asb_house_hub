@@ -1,0 +1,17 @@
+Verifies
+Verified using v1 scheme (JAR signing): false
+Verified using v2 scheme (APK Signature Scheme v2): true
+Verified using v3 scheme (APK Signature Scheme v3): false
+Verified using v3.1 scheme (APK Signature Scheme v3.1): false
+Verified using v4 scheme (APK Signature Scheme v4): false
+Verified for SourceStamp: false
+Number of signers: 1
+Signer #1 certificate DN: CN=ASB House Hub Upload
+Signer #1 certificate SHA-256 digest: 0603a5f4f22e84d73b13503b421fd68df994623132005200f9aa2ed21a96655c
+Signer #1 certificate SHA-1 digest: c870d470b7bd85fc69de5decd9c774c61eea794b
+Signer #1 certificate MD5 digest: bd63370219bcd4c3ee2e5ec96c7cd655
+Signer #1 key algorithm: RSA
+Signer #1 key size (bits): 2048
+Signer #1 public key SHA-256 digest: 0d1fa59e556cd15440f672b19f5cba501a965f4613799e2512018eb7c2df0c6e
+Signer #1 public key SHA-1 digest: 0bb76b3bfa4d9bc8d216bdb3f511d2679655899a
+Signer #1 public key MD5 digest: fc647681bf8be762bd0f2f415e37177c

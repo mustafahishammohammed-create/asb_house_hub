@@ -1,0 +1,34 @@
+{
+  "created_at": "2026-11-28T17:14:35.162639+00:00",
+  "version": "1.0.2+3",
+  "source_commit": "52c21f98534b0049c9849116731a25f7052f57c9",
+  "flutter_tests_passed": 759,
+  "emulator_tests_passed": 32,
+  "flutter_analysis": "no issues",
+  "artifacts": {
+    "build\\app\\outputs\\flutter-apk\\app-release.apk": {
+      "bytes": 98929879,
+      "sha256": "42d008056b42c96e1f953560bd39724ceafdaddcaab0cfd5e662ad167fcbd9d2"
+    },
+    "build\\distributions\\ASB_House_Hub_Windows.zip": {
+      "bytes": 26595773,
+      "sha256": "03b0a8a21744e9e9402caa87fa347c6071f324897ba8eaeaf65c9a89a39c97d4"
+    },
+    "dist\\windows\\asb_house_hub.exe": {
+      "bytes": 16166400,
+      "sha256": "37bc085b152c144da2eca6b479af950d33ae2c67587235068284e125626e5ec4"
+    },
+    "dist\\windows\\data\\app.so": {
+      "bytes": 13845384,
+      "sha256": "cbca2ae34aa4d67ba0ae5412a52f495f5c25c87d031ed0d887257d9c99e06b8c"
+    }
+  },
+  "windows_runtime_file_count": 22,
+  "windows_runtime_matches_build": true,
+  "final_account_selector_present_in_all_native_payloads": true,
+  "apk_signature_verified": true,
+  "apk_signing_certificate_sha256": "0603a5f4f22e84d73b13503b421fd68df994623132005200f9aa2ed21a96655c",
+  "android_package": "bh.asianschool.asb_house_hub",
+  "android_version_code": 3,
+  "windows_file_version": "1.0.2+3"
+}

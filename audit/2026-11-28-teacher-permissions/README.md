@@ -27,4 +27,4 @@ Existing medical reports without a trusted class ID remain available to their ow
 
 Existing grade-wide academic content and the school's other unrelated role policies were not migrated in this change. Existing PDF medical attachments still use the pre-existing image-oriented preview; a full PDF viewer is a separate outstanding issue. Physical Android-device testing and signed-in Windows interactive testing were not performed; automated UI and backend tests are the validation evidence.
 
-The release APK and Windows distribution are rebuilt separately; their hashes and source commit are recorded in the release manifest after packaging. Older split APKs, debug APK and Play Store bundle are not part of this release.
+The signed universal APK and Windows ZIP were rebuilt from source commit `52c21f9` as version **1.0.2+3**. APK signature verification passed with the existing release key. All 22 Windows runtime files match the build. The new account-selector marker is present in every APK architecture and the Windows Dart payload. Hashes are recorded in `release.json`. Older split APKs, debug APK and Play Store bundle are not part of this release.
