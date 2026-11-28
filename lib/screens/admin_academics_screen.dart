@@ -449,43 +449,7 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
     }
   }
 
-  Future<void> _editClassTeacher(AcademicClass cls) async {
-    final controller = TextEditingController(text: cls.classTeacher);
-    final name = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Class Teacher — ${cls.classId}'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'Class teacher name',
-            hintText: 'e.g. Ms. Fatima Al Hasan',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (name == null || !mounted) return;
-    final ok = await _authService.saveAcademicClass(
-      cls.copyWith(classTeacher: name),
-    );
-    if (!mounted) return;
-    _toast(
-      ok ? 'Class teacher updated for ${cls.classId}.' : 'Update failed.',
-      error: !ok,
-    );
-  }
+  Future<void> _editClassTeacher(AcademicClass cls) => _editClassCommunication(cls);
 
   Future<void> _editClassCommunication(AcademicClass cls) async {
     final updated = await showDialog<AcademicClass>(
@@ -493,7 +457,12 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
       builder: (ctx) => _ClassCommunicationDialog(cls: cls),
     );
     if (updated == null || !mounted) return;
-    final ok = await _authService.saveAcademicClass(updated);
+    final ok = await _authService.updateClassCommunicationSettings(
+      classId: updated.classId, classTeacher: updated.classTeacher,
+      classTeacherUid: updated.classTeacherUid ?? '',
+      subjectTeacherUids: updated.subjectTeacherUids,
+      studentPostingEnabled: updated.studentPostingEnabled,
+    );
     if (!mounted) return;
     _toast(
       ok
@@ -2181,7 +2150,6 @@ class _SectionEditorDialog extends StatefulWidget {
 class _SectionEditorDialogState extends State<_SectionEditorDialog> {
   String _grade = 'Grade 11';
   String _section = 'A';
-  final _teacherController = TextEditingController();
 
   static const List<String> _sections = [
     'A',
@@ -2214,7 +2182,6 @@ class _SectionEditorDialogState extends State<_SectionEditorDialog> {
 
   @override
   void dispose() {
-    _teacherController.dispose();
     super.dispose();
   }
 
@@ -2254,13 +2221,7 @@ class _SectionEditorDialogState extends State<_SectionEditorDialog> {
               onChanged: (v) => setState(() => _section = v ?? _section),
             ),
             const SizedBox(height: 16),
-            TextField(
-              controller: _teacherController,
-              decoration: const InputDecoration(
-                labelText: 'Class teacher (optional)',
-                border: OutlineInputBorder(),
-              ),
-            ),
+            const Text('After creating the class, use Edit class teacher to select a registered teaching account.'),
             const SizedBox(height: 12),
             Text(
               'Canonical class ID: $classId',
@@ -2285,7 +2246,6 @@ class _SectionEditorDialogState extends State<_SectionEditorDialog> {
               classId: classId,
               grade: _grade,
               section: _section,
-              classTeacher: _teacherController.text.trim(),
             ),
           ),
           child: const Text('Create'),
@@ -2308,124 +2268,81 @@ class _ClassCommunicationDialog extends StatefulWidget {
 }
 
 class _ClassCommunicationDialogState extends State<_ClassCommunicationDialog> {
-  late final TextEditingController _teacherNameController;
-  late final TextEditingController _teacherUidController;
-  late final TextEditingController _subjectUidsController;
+  late final Stream<List<Map<String, dynamic>>> _staffStream;
+  late String _teacherUid;
+  late Set<String> _subjectUids;
   late bool _studentPostingEnabled;
 
   @override
   void initState() {
     super.initState();
-    _teacherNameController = TextEditingController(
-      text: widget.cls.classTeacher,
-    );
-    _teacherUidController = TextEditingController(
-      text: widget.cls.classTeacherUid ?? '',
-    );
-    _subjectUidsController = TextEditingController(
-      text: widget.cls.subjectTeacherUids.join(', '),
-    );
+    _staffStream = AuthService().getTeachingStaffStream();
+    _teacherUid = widget.cls.classTeacherUid ?? '';
+    _subjectUids = widget.cls.subjectTeacherUids.toSet();
     _studentPostingEnabled = widget.cls.studentPostingEnabled;
   }
 
   @override
-  void dispose() {
-    _teacherNameController.dispose();
-    _teacherUidController.dispose();
-    _subjectUidsController.dispose();
-    super.dispose();
-  }
-
-  List<String> _parseUids(String raw) {
-    final seen = <String>{};
-    for (final part in raw.split(',')) {
-      final uid = part.trim();
-      if (uid.isNotEmpty) seen.add(uid);
-    }
-    return seen.toList();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text('Class Group — ${widget.cls.classId}'),
-      content: SizedBox(
-        width: 360,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextField(
-                controller: _teacherNameController,
-                decoration: const InputDecoration(
-                  labelText: 'Class teacher name',
-                  hintText: 'e.g. Ms. Fatima Al Hasan',
-                  border: OutlineInputBorder(),
-                ),
+  Widget build(BuildContext context) => StreamBuilder<List<Map<String, dynamic>>>(
+    stream: _staffStream,
+    builder: (context, snapshot) {
+      final staff = snapshot.data ?? <Map<String, dynamic>>[];
+      final selected = staff.where((p) => p['uid'] == _teacherUid).firstOrNull;
+      final ready = snapshot.hasData && !snapshot.hasError;
+      return AlertDialog(
+        title: Text('Teachers & messaging — ${widget.cls.classId}'),
+        content: SizedBox(width: 380, child: SingleChildScrollView(child: Column(
+          mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (!ready) Text(snapshot.hasError ? 'Unable to load teaching accounts. Close and retry.' : 'Loading teaching accounts…'),
+            if (ready) ...[
+              DropdownButtonFormField<String>(
+                key: ValueKey('class_teacher_account_$_teacherUid'),
+                initialValue: _teacherUid, isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Class teacher', border: OutlineInputBorder()),
+                items: [
+                  const DropdownMenuItem(value: '', child: Text('No class teacher')),
+                  if (_teacherUid.isNotEmpty && selected == null)
+                    DropdownMenuItem(value: _teacherUid, enabled: false,
+                      child: const Text('Previous account unavailable', overflow: TextOverflow.ellipsis)),
+                  ...staff.map((p) => DropdownMenuItem(value: p['uid'].toString(), child: Text(
+                    '${p['full_name']} (${p['scholar_no'] ?? ''})', overflow: TextOverflow.ellipsis))),
+                ],
+                onChanged: (value) => setState(() => _teacherUid = value ?? ''),
               ),
               const SizedBox(height: 12),
-              TextField(
-                controller: _teacherUidController,
-                decoration: const InputDecoration(
-                  labelText: 'Class teacher UID',
-                  hintText: 'Firebase Auth UID for class-group access',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _subjectUidsController,
-                maxLines: 2,
-                decoration: const InputDecoration(
-                  labelText: 'Subject teacher UIDs',
-                  hintText: 'Comma-separated Firebase Auth UIDs',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              SwitchListTile(
+              const Text('The class teacher can access this class group and medical reports submitted to this class. Subject teachers can access the group, but not medical reports.'),
+              if (staff.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text('No active teaching accounts found. Assign a teacher role to the registered account first.')),
+              const SizedBox(height: 16),
+              const Text('Subject teachers', style: TextStyle(fontWeight: FontWeight.w700)),
+              ...staff.map((p) => CheckboxListTile(
                 contentPadding: EdgeInsets.zero,
-                value: _studentPostingEnabled,
+                title: Text(p['full_name'].toString()),
+                subtitle: Text('Staff ID: ${p['scholar_no'] ?? ''}'),
+                value: _subjectUids.contains(p['uid']),
+                onChanged: (checked) => setState(() {
+                  if (checked == true) { _subjectUids.add(p['uid'].toString()); }
+                  else { _subjectUids.remove(p['uid']); }
+                }),
+              )),
+              SwitchListTile(contentPadding: EdgeInsets.zero, value: _studentPostingEnabled,
                 title: const Text('Allow student posting'),
-                subtitle: const Text(
-                  'Default is read-only. Class representatives can always post.',
-                ),
-                onChanged: (v) => setState(() => _studentPostingEnabled = v),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'These assignments are enforced by Firestore rules. Subject teachers only see the classes listed here.',
-                style: TextStyle(
-                  fontSize: 11.5,
-                  height: 1.35,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
+                subtitle: const Text('Class representatives can always post.'),
+                onChanged: (v) => setState(() => _studentPostingEnabled = v)),
             ],
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(
-            context,
-            widget.cls.copyWith(
-              classTeacher: _teacherNameController.text.trim(),
-              classTeacherUid: _teacherUidController.text.trim(),
-              subjectTeacherUids: _parseUids(_subjectUidsController.text),
-              studentPostingEnabled: _studentPostingEnabled,
-            ),
-          ),
-          child: const Text('Save'),
-        ),
-      ],
-    );
-  }
+          ],
+        ))),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          FilledButton(onPressed: !ready || (_teacherUid.isNotEmpty && selected == null) ? null : () => Navigator.pop(context,
+            widget.cls.copyWith(classTeacher: selected?['full_name']?.toString() ?? '',
+              classTeacherUid: _teacherUid, subjectTeacherUids: _subjectUids.toList(),
+              studentPostingEnabled: _studentPostingEnabled)), child: const Text('Save')),
+        ],
+      );
+    },
+  );
 }
 
 class _KeepAliveTab extends StatefulWidget {

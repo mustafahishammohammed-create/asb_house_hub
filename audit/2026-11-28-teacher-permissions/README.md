@@ -5,6 +5,7 @@ Version: 1.0.2+3. This report supersedes the earlier broad teacher/administrator
 ## Delivered behavior
 
 - Administration has a visible **Class students** entry. Every class has **View students** in its action menu; tapping the class opens its roster. Rosters show names, scholar numbers, verification/account status and student count, including inactive sections. Live placements take priority over stale saved-account data.
+- Teacher assignment now selects a registered account instead of only saving a name. The class teacher name and UID are saved together; subject teachers are selected by account. Updating assignments does not reassign student placements. Name-only legacy assignments must be linked to an account using **Edit class teacher**.
 - Teachers have a **Teacher Workspace**, their assigned class groups, and **1-on-1 Chats**. They can start private conversations with students and other teachers. The directory is no longer truncated at 200 users.
 - Teachers cannot review/approve/reject point claims, edit the class registry, move students or use academic-administration controls. These restrictions are enforced by Firestore, not only hidden buttons. Existing management/council/house-captain claim permissions remain.
 - Class and subject teachers can message only groups where administration assigned their UID. A teacher's old student placement does not grant another class's group access. Revoked group access clears the visible feed; switching groups clears the draft and attachment.
@@ -15,10 +16,10 @@ Version: 1.0.2+3. This report supersedes the earlier broad teacher/administrator
 
 ## Validation
 
-- Full Flutter suite: **758 passed**, zero failed.
+- Full Flutter suite: **759 passed**, zero failed.
 - Static analysis: **no issues**.
 - Firestore/Storage emulator suite: **32 passed**, zero failed. Positive and negative cases cover report creation/query/review, reassignment revocation, legacy reports, teacher claim denial, registry/placement tampering, class-group posting and private chats.
-- Live Firestore rules and the new medical class/submitted-time index deployed. Exact rule hash is recorded in `logs/live-verification.json`; index readiness will be rechecked after release packaging.
+- Live Firestore rules and the new medical class/submitted-time index deployed. Exact rule hash is recorded in `logs/live-verification.json`; all eight deployed indexes are READY and match the local index definitions.
 
 ## Compatibility and limits
 

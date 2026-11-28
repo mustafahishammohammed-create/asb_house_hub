@@ -1,5 +1,5 @@
 {
-  "checked_at": "2026-11-28T17:06:54.106Z",
+  "checked_at": "2026-11-28T17:11:14.604Z",
   "ruleset": "projects/asb-house-hub/rulesets/41a3cb6c-f062-4f62-88b6-beb92a048dc8",
   "release_time": "2026-11-28T17:06:27.831431Z",
   "local_bytes": 120174,
@@ -11,7 +11,7 @@
   "indexes": {
     "live": 8,
     "local": 8,
-    "all_ready": false,
+    "all_ready": true,
     "same": true
   },
   "storage_bucket_count": 0

@@ -9753,6 +9753,33 @@ class AuthService {
     return true;
   }
 
+  /// Registered teaching accounts for the administrator's assignment picker.
+  Stream<List<Map<String, dynamic>>> getTeachingStaffStream() {
+    List<Map<String, dynamic>> eligible(Iterable<Map<String, dynamic>> rows) {
+      final byUid = <String, Map<String, dynamic>>{};
+      for (final row in rows) {
+        final uid = (row['uid'] ?? '').toString();
+        if (uid.isNotEmpty && (row['status'] ?? 'active') == 'active' &&
+            HierarchyService.isTeacherOrFaculty(role: row['role']?.toString())) {
+          byUid[uid] = row;
+        }
+      }
+      return byUid.values.toList()..sort((a, b) =>
+        (a['full_name'] ?? '').toString().compareTo((b['full_name'] ?? '').toString()));
+    }
+    if (!_isFirebaseLive) {
+      return Stream.value(eligible([
+        if (getCachedProfile() != null) getCachedProfile()!,
+        ...getSavedAccounts().map((a) => {...a.cachedProfile, 'uid': a.uid,
+          'full_name': a.fullName, 'scholar_no': a.scholarNo, 'role': a.role}),
+      ]));
+    }
+    return _firestore.collection('users').where('role', whereIn: [
+      'teacher', 'faculty', 'principal', 'staff', 'faculty_advisor',
+      'teacher_lead', 'class_teacher', 'subject_teacher',
+    ]).snapshots().map((snap) => eligible(snap.docs.map((d) => {...d.data(), 'uid': d.id})));
+  }
+
   /// Updates class-group permissions for a class/section (admin only).
   ///
   /// [classTeacherUid] and [subjectTeacherUids] are the authoritative
@@ -9761,6 +9788,7 @@ class AuthService {
   Future<bool> updateClassCommunicationSettings({
     required String classId,
     String? classTeacherUid,
+    String? classTeacher,
     List<String>? subjectTeacherUids,
     bool? studentPostingEnabled,
   }) async {
@@ -9770,6 +9798,7 @@ class AuthService {
     final updates = <String, dynamic>{
       'updated_at': FieldValue.serverTimestamp(),
     };
+    if (classTeacher != null) updates['class_teacher'] = classTeacher.trim();
     if (classTeacherUid != null) {
       updates['class_teacher_uid'] = classTeacherUid.trim();
     }
@@ -9791,10 +9820,8 @@ class AuthService {
         }
         await _firestore.collection('academic_classes').doc(id).update(updates);
       } catch (e) {
-        if (!_isNoAppException(e)) {
-          debugPrint('Firestore updateClassCommunicationSettings failure: $e');
-          return false;
-        }
+        debugPrint('Firestore updateClassCommunicationSettings failure: $e');
+        return false;
       }
     }
 
@@ -9804,6 +9831,7 @@ class AuthService {
       final current = cached[idx];
       cached[idx] = current.copyWith(
         classTeacherUid: classTeacherUid?.trim(),
+        classTeacher: classTeacher?.trim(),
         subjectTeacherUids: subjectTeacherUids
             ?.map((e) => e.trim())
             .where((e) => e.isNotEmpty)

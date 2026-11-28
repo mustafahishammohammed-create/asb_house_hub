@@ -1,2 +1,2 @@
 Analyzing asb_house_hub_flutter...                              
-No issues found! (ran in 73.7s)
+No issues found! (ran in 49.4s)

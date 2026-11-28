@@ -157,4 +157,29 @@ void main() {
     expect(AuthService.getCachedMedicalLeaves(), isEmpty);
   });
 
+  testWidgets('assigning a teacher links the registered account and keeps student placements unchanged', (tester) async {
+    await AuthService.saveAllAccounts([SavedAccount(scholarNo: 'T002', fullName: 'Ms. New',
+      houseName: 'ruby', uid: 'teacher-new', role: 'teacher')]);
+    await signIn('head', 'head');
+    await AuthService.saveVerifiedClassPlacement('12345', {'scholar_no': '12345',
+      'full_name': 'Pupil', 'class_id': '10B', 'class_verified': true});
+    final before = AuthService.getVerifiedClassPlacements();
+    await tester.pumpWidget(const MaterialApp(home: AdminAcademicsScreen(initialTab: 1)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Class actions').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit class teacher'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byWidgetPredicate((w) => w is DropdownButtonFormField<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Ms. New (T002)').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pumpAndSettle();
+    final updated = AuthService.getCachedAcademicClasses().firstWhere((c) => c.classId == '10A');
+    expect(updated.classTeacherUid, 'teacher-new');
+    expect(updated.classTeacher, 'Ms. New');
+    expect(AuthService.getVerifiedClassPlacements(), before);
+  });
+
 }
