@@ -2,6 +2,14 @@
 
 A comprehensive Flutter application for ASB House Hub, featuring house point tracking, digital campus ID passes, conduct evaluations (merits and demerits), and live interactive leaderboards.
 
+## Current local release — 1.0.2+3
+
+- Android installer: `build/app/outputs/flutter-apk/app-release.apk`
+- Portable Windows package: `build/distributions/ASB_House_Hub_Windows.zip`
+- Runnable Windows app: `dist/windows/asb_house_hub.exe` (keep its companion files together)
+
+These are the canonical release locations; avoid making additional `Windowslatest` or backup copies inside the workspace. Build intermediates and older installers can be regenerated. Historical reports in `audit/` and `docs/audits/` are intentional evidence, not application backups. See the [current release verification](audit/2026-11-28-teacher-permissions/README.md) and [artifact hashes](audit/2026-11-28-teacher-permissions/release.json).
+
 ## Audit and backend readiness
 
 The [26 November 2026 deep audit](docs/audits/ASB_HOUSE_HUB_DEEP_AUDIT_2026-11-26.md) and [feature catalogue](docs/reports/ASB_HOUSE_HUB_FEATURE_CATALOGUE.md) record verified fixes, findings, test evidence, and reproduction commands. See [Blaze requirements](docs/audits/elections/BLAZE_REQUIRED_FEATURES.md) before deploying backend services.
@@ -13,7 +21,8 @@ The [26 November 2026 deep audit](docs/audits/ASB_HOUSE_HUB_DEEP_AUDIT_2026-11-2
 - `functions/` — Firebase Cloud Functions (`elections-v2.js`, `library-v2.js`, `index.js`) and emulator security tests
 - `docs/` — Organized documentation (`audits/`, `reports/`, `proposals/`, `assets/`)
 - `tool/` — Development, icon, inventory, and gap-probe scripts (`scripts/` for Windows launch helpers)
-- `audit/` — Local emulator gap-probe output directory (`known-gap-probes.json`)
+- `audit/` — Dated audit evidence, validation logs, and release verification manifests
+- `dist/windows/` — Current portable Windows runtime
 
 ## Features
 
