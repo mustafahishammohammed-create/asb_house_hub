@@ -51,9 +51,11 @@ class ChatService {
   }
 
   /// Stream of registered users so authorised members can pick a permitted peer.
-  Stream<QuerySnapshot> getAllUsersStream({int limit = 200}) {
+  Stream<QuerySnapshot> getAllUsersStream({int? limit}) {
     try {
-      return _firestore.collection('users').limit(limit).snapshots();
+      Query query = _firestore.collection('users');
+      if (limit != null) query = query.limit(limit);
+      return query.snapshots();
     } catch (_) {
       return const Stream.empty();
     }

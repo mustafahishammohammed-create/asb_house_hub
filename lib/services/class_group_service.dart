@@ -142,8 +142,8 @@ class ClassGroupService {
           .collection('messages')
           .orderBy('timestamp', descending: true)
           .limit(200)
-          .snapshots()
-          .map((snapshot) => snapshot.docs
+          .snapshots(includeMetadataChanges: true)
+          .map((snapshot) => snapshot.metadata.isFromCache ? <ClassGroupMessage>[] : snapshot.docs
               .map((doc) => ClassGroupMessage.fromMap(doc.id, doc.data()))
               .toList());
     });
@@ -411,7 +411,7 @@ class ClassGroupService {
         return cls;
       }
     } catch (_) {}
-    return cached;
+    return null;
   }
 
   static bool _isNoAppException(Object e) {

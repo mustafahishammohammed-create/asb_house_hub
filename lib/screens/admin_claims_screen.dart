@@ -4,6 +4,8 @@ import 'dart:convert';
 import '../services/auth_service.dart';
 import '../services/hierarchy_service.dart';
 import '../models/medical_leave_request.dart';
+import '../models/academic_class.dart';
+import '../models/class_group.dart';
 import '../theme/app_theme.dart';
 import '../widgets/student_profile_modal.dart';
 import 'chat_list_screen.dart';
@@ -25,20 +27,37 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
   final Set<String> _processingClaimIds = {};
   final _searchController = TextEditingController();
   String _searchQuery = '';
-  String _medicalStatusFilter = 'all'; // 'all', 'pending', 'approved', 'rejected'
+  String _medicalStatusFilter =
+      'all'; // 'all', 'pending', 'approved', 'rejected'
   late TabController _tabController;
   bool _canReviewMedical = false;
+  bool _canReviewClaims = false;
+  bool _isSenior = false;
+  String? _medicalClassId;
 
   @override
   void initState() {
     super.initState();
     final profile = AuthService.getCachedProfile();
     final role = profile?['role']?.toString();
-    final scholarNo = profile?['scholar_no']?.toString() ?? AuthService.getCachedScholarNo();
-    _canReviewMedical = HierarchyService.isTeacherOrFaculty(role: role, scholarNo: scholarNo) ||
+    final scholarNo =
+        profile?['scholar_no']?.toString() ?? AuthService.getCachedScholarNo();
+    _isSenior = HierarchyService.isSeniorAdmin(
+      role: role,
+      scholarNo: scholarNo,
+    );
+    _canReviewClaims = HierarchyService.canReviewClaims(
+      role: role,
+      scholarNo: scholarNo,
+    );
+    _canReviewMedical =
+        HierarchyService.isTeacherOrFaculty(role: role, scholarNo: scholarNo) ||
         HierarchyService.isSuperAdmin(role: role, scholarNo: scholarNo) ||
         HierarchyService.isSeniorAdmin(role: role, scholarNo: scholarNo);
-    _tabController = TabController(length: _canReviewMedical ? 2 : 1, vsync: this);
+    _tabController = TabController(
+      length: _canReviewMedical ? 2 : 1,
+      vsync: this,
+    );
   }
 
   @override
@@ -57,14 +76,17 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
     String activityTitle,
   ) async {
     if (_processingClaimIds.contains(claimId)) return;
-    final currentScholar =
-        (AuthService.getCachedScholarNo() ?? '').trim().toLowerCase();
+    final currentScholar = (AuthService.getCachedScholarNo() ?? '')
+        .trim()
+        .toLowerCase();
     if (currentScholar.isNotEmpty &&
         scholarNo.trim().toLowerCase() == currentScholar &&
         !widget.isSuperAdmin) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Self-approval is blocked: another reviewer must approve your claim.'),
+          content: Text(
+            'Self-approval is blocked: another reviewer must approve your claim.',
+          ),
           backgroundColor: Colors.red,
         ),
       );
@@ -165,7 +187,9 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Error approving medical leave: Permission denied or network failure.'),
+            content: Text(
+              'Error approving medical leave: Permission denied or network failure.',
+            ),
             backgroundColor: Colors.red,
           ),
         );
@@ -205,7 +229,9 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Error declining medical leave: Permission denied or network failure.'),
+            content: Text(
+              'Error declining medical leave: Permission denied or network failure.',
+            ),
             backgroundColor: Colors.red,
           ),
         );
@@ -230,7 +256,9 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
     if (photoData.startsWith('data:image/') || photoData.length > 100) {
       try {
         final commaIdx = photoData.indexOf(',');
-        final base64Str = commaIdx != -1 ? photoData.substring(commaIdx + 1) : photoData;
+        final base64Str = commaIdx != -1
+            ? photoData.substring(commaIdx + 1)
+            : photoData;
         final bytes = base64Decode(base64Str);
         imagePreview = ClipRRect(
           borderRadius: BorderRadius.circular(12),
@@ -245,21 +273,32 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
               errorBuilder: (context, error, stackTrace) => const Center(
                 child: Padding(
                   padding: EdgeInsets.all(32),
-                  child: Icon(Icons.broken_image_rounded, size: 64, color: Colors.grey),
+                  child: Icon(
+                    Icons.broken_image_rounded,
+                    size: 64,
+                    color: Colors.grey,
+                  ),
                 ),
               ),
             ),
           ),
         );
       } catch (_) {
-        imagePreview = const Icon(Icons.broken_image_rounded, size: 64, color: Colors.grey);
+        imagePreview = const Icon(
+          Icons.broken_image_rounded,
+          size: 64,
+          color: Colors.grey,
+        );
       }
     } else {
       imagePreview = const Column(
         children: [
           Icon(Icons.description_outlined, size: 64, color: Colors.teal),
           SizedBox(height: 12),
-          Text('No Prescription Image Attached', style: TextStyle(fontWeight: FontWeight.w600)),
+          Text(
+            'No Prescription Image Attached',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
         ],
       );
     }
@@ -277,14 +316,23 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Doctor / Clinic: ${leave.doctorName.isNotEmpty ? leave.doctorName : "Unspecified"}',
-                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+              Text(
+                'Doctor / Clinic: ${leave.doctorName.isNotEmpty ? leave.doctorName : "Unspecified"}',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
+              ),
               const SizedBox(height: 4),
-              Text('Duration: ${leave.formattedRange}',
-                  style: TextStyle(fontSize: 13, color: Colors.grey[700])),
+              Text(
+                'Duration: ${leave.formattedRange}',
+                style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+              ),
               const SizedBox(height: 4),
-              Text('Reason: ${leave.reason}',
-                  style: TextStyle(fontSize: 13, color: Colors.grey[800])),
+              Text(
+                'Reason: ${leave.reason}',
+                style: TextStyle(fontSize: 13, color: Colors.grey[800]),
+              ),
               const SizedBox(height: 16),
               Container(
                 width: double.infinity,
@@ -308,7 +356,10 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Close', style: TextStyle(fontWeight: FontWeight.w700)),
+            child: const Text(
+              'Close',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
           ),
         ],
       ),
@@ -335,7 +386,11 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
               errorBuilder: (context, error, stackTrace) => const Center(
                 child: Padding(
                   padding: EdgeInsets.all(32),
-                  child: Icon(Icons.broken_image_rounded, size: 64, color: Colors.grey),
+                  child: Icon(
+                    Icons.broken_image_rounded,
+                    size: 64,
+                    color: Colors.grey,
+                  ),
                 ),
               ),
             ),
@@ -369,7 +424,11 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
             errorBuilder: (context, error, stackTrace) => const Center(
               child: Padding(
                 padding: EdgeInsets.all(32),
-                child: Icon(Icons.broken_image_rounded, size: 64, color: Colors.grey),
+                child: Icon(
+                  Icons.broken_image_rounded,
+                  size: 64,
+                  color: Colors.grey,
+                ),
               ),
             ),
           ),
@@ -445,14 +504,41 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
   void _showCouncilRosterDialog(BuildContext context) {
     showDialog(
       context: context,
-      builder: (ctx) => _CouncilRosterManagementDialog(
-        authService: _authService,
-      ),
+      builder: (ctx) =>
+          _CouncilRosterManagementDialog(authService: _authService),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    if (!_canReviewClaims) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Teacher Workspace'),
+          actions: [
+            IconButton(
+              tooltip: 'My class groups',
+              icon: const Icon(Icons.school_outlined),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ClassGroupScreen()),
+              ),
+            ),
+            IconButton(
+              tooltip: '1-on-1 Chats',
+              icon: const Icon(Icons.chat_outlined),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ChatListScreen()),
+              ),
+            ),
+          ],
+        ),
+        body: _canReviewMedical
+            ? _buildMedicalReportsTab()
+            : const Center(child: Text('You do not have review access.')),
+      );
+    }
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
@@ -563,15 +649,15 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
           ],
           PopupMenuButton<String>(
             tooltip: 'Administrative Tools',
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             icon: const Icon(Icons.more_vert_rounded),
             onSelected: (value) async {
               if (value == 'class_groups') {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => const ClassGroupScreen(),
-                  ),
+                  MaterialPageRoute(builder: (_) => const ClassGroupScreen()),
                 );
                 return;
               }
@@ -586,13 +672,17 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
               }
               if (value == 'migrate_contributors') {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Starting legacy contributor migration...')),
+                  const SnackBar(
+                    content: Text('Starting legacy contributor migration...'),
+                  ),
                 );
                 final count = await AuthService.migrateLegacyContributorDocs();
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('Migration complete: $count legacy contributor record(s) merged into unified scheme.'),
+                      content: Text(
+                        'Migration complete: $count legacy contributor record(s) merged into unified scheme.',
+                      ),
                       backgroundColor: Colors.green[700],
                     ),
                   );
@@ -605,33 +695,64 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
                   value: 'class_groups',
                   child: Row(
                     children: [
-                      Icon(Icons.forum_rounded, size: 20, color: Colors.indigoAccent),
+                      Icon(
+                        Icons.forum_rounded,
+                        size: 20,
+                        color: Colors.indigoAccent,
+                      ),
                       SizedBox(width: 10),
-                      Text('Class Groups & Messaging', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                      Text(
+                        'Class Groups & Messaging',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ],
                   ),
                 ),
-              if (_canReviewMedical)
+              if (_isSenior)
                 const PopupMenuItem(
                   value: 'academic_management',
                   child: Row(
                     children: [
-                      Icon(Icons.school_rounded, size: 20, color: Colors.indigo),
+                      Icon(
+                        Icons.school_rounded,
+                        size: 20,
+                        color: Colors.indigo,
+                      ),
                       SizedBox(width: 10),
-                      Text('Academic Management', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                      Text(
+                        'Academic Management',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ],
                   ),
                 ),
-              const PopupMenuItem(
-                value: 'migrate_contributors',
-                child: Row(
-                  children: [
-                    Icon(Icons.merge_type_rounded, size: 20, color: Colors.blueAccent),
-                    SizedBox(width: 10),
-                    Text('Merge Legacy Contributors', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                  ],
+              if (_isSenior)
+                const PopupMenuItem(
+                  value: 'migrate_contributors',
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.merge_type_rounded,
+                        size: 20,
+                        color: Colors.blueAccent,
+                      ),
+                      SizedBox(width: 10),
+                      Text(
+                        'Merge Legacy Contributors',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
             ],
           ),
           const SizedBox(width: 8),
@@ -643,7 +764,10 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
                 indicatorWeight: 3,
                 labelColor: Theme.of(context).colorScheme.onSurface,
                 unselectedLabelColor: Colors.grey,
-                labelStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                labelStyle: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
+                ),
                 tabs: const [
                   Tab(
                     icon: Icon(Icons.verified_user_rounded, size: 20),
@@ -660,10 +784,7 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
       body: _canReviewMedical
           ? TabBarView(
               controller: _tabController,
-              children: [
-                _buildClaimsTab(),
-                _buildMedicalReportsTab(),
-              ],
+              children: [_buildClaimsTab(), _buildMedicalReportsTab()],
             )
           : _buildClaimsTab(),
     );
@@ -672,6 +793,13 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
   Widget _buildClaimsTab() {
     return Column(
       children: [
+        if (_isSenior) Padding(padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+          child: FilledButton.icon(
+            key: const Key('admin_class_students_button'),
+            onPressed: () => Navigator.push(context, MaterialPageRoute(
+              builder: (_) => const AdminAcademicsScreen(initialTab: 2))),
+            icon: const Icon(Icons.groups_outlined), label: const Text('Class students'),
+          )),
         Padding(
           padding: const EdgeInsets.fromLTRB(24, 12, 24, 4),
           child: TextField(
@@ -790,11 +918,19 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
               final docs = allDocs.where((doc) {
                 if (_searchQuery.isEmpty) return true;
                 final raw = doc.data();
-                final data = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
-                final sName = (data['student_name'] ?? '').toString().toLowerCase();
+                final data = raw is Map
+                    ? Map<String, dynamic>.from(raw)
+                    : <String, dynamic>{};
+                final sName = (data['student_name'] ?? '')
+                    .toString()
+                    .toLowerCase();
                 final sNo = (data['scholar_no'] ?? '').toString().toLowerCase();
-                final title = (data['activity_title'] ?? '').toString().toLowerCase();
-                final house = (data['house_name'] ?? '').toString().toLowerCase();
+                final title = (data['activity_title'] ?? '')
+                    .toString()
+                    .toLowerCase();
+                final house = (data['house_name'] ?? '')
+                    .toString()
+                    .toLowerCase();
                 return sName.contains(_searchQuery) ||
                     sNo.contains(_searchQuery) ||
                     title.contains(_searchQuery) ||
@@ -808,11 +944,18 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.search_off_rounded, size: 56, color: Colors.grey[400]),
+                        Icon(
+                          Icons.search_off_rounded,
+                          size: 56,
+                          color: Colors.grey[400],
+                        ),
                         const SizedBox(height: 14),
                         const Text(
                           'No Matching Claims',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                         const SizedBox(height: 6),
                         Text(
@@ -828,11 +971,14 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
               return ListView.separated(
                 padding: const EdgeInsets.all(24),
                 itemCount: docs.length,
-                separatorBuilder: (context, index) => const SizedBox(height: 16),
+                separatorBuilder: (context, index) =>
+                    const SizedBox(height: 16),
                 itemBuilder: (context, index) {
                   final doc = docs[index];
                   final raw = doc.data();
-                  final data = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+                  final data = raw is Map
+                      ? Map<String, dynamic>.from(raw)
+                      : <String, dynamic>{};
                   final claimId = doc.id;
                   final studentName = data['student_name'] ?? 'Unknown Student';
                   final scholarNo = data['scholar_no'] ?? '---';
@@ -891,7 +1037,9 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
                                         vertical: 6,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: houseColor.withValues(alpha: 0.15),
+                                        color: houseColor.withValues(
+                                          alpha: 0.15,
+                                        ),
                                         borderRadius: BorderRadius.circular(10),
                                       ),
                                       child: Text(
@@ -967,7 +1115,9 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
                                 'Submitted by $studentName',
                                 style: TextStyle(
                                   fontSize: 14,
-                                  color: Theme.of(context).brightness == Brightness.dark
+                                  color:
+                                      Theme.of(context).brightness ==
+                                          Brightness.dark
                                       ? Colors.cyanAccent
                                       : const Color(0xFF0369A1),
                                   fontWeight: FontWeight.w700,
@@ -978,7 +1128,9 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
                               Icon(
                                 Icons.open_in_new_rounded,
                                 size: 13,
-                                color: Theme.of(context).brightness == Brightness.dark
+                                color:
+                                    Theme.of(context).brightness ==
+                                        Brightness.dark
                                     ? Colors.cyanAccent
                                     : const Color(0xFF0369A1),
                               ),
@@ -1025,85 +1177,122 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
                         ),
                         if (data['ai_status'] != null) ...[
                           const SizedBox(height: 10),
-                          Builder(builder: (context) {
-                            final aiStatus = data['ai_status']?.toString().toLowerCase();
-                            final aiConfidence = (data['ai_confidence'] as num?)?.toDouble() ?? 0.0;
-                            final aiSummary = data['ai_summary']?.toString() ?? '';
+                          Builder(
+                            builder: (context) {
+                              final aiStatus = data['ai_status']
+                                  ?.toString()
+                                  .toLowerCase();
+                              final aiConfidence =
+                                  (data['ai_confidence'] as num?)?.toDouble() ??
+                                  0.0;
+                              final aiSummary =
+                                  data['ai_summary']?.toString() ?? '';
 
-                            if (aiStatus == 'verified') {
-                              return Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                decoration: BoxDecoration(
-                                  color: Colors.green.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
-                                ),
-                                child: Row(
-                                  children: [
-                                    const Icon(Icons.verified_rounded, color: Colors.green, size: 18),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        'AI Seal Matched (${aiConfidence.toInt()}% confidence)\n${aiSummary.isNotEmpty ? aiSummary : "Institutional marker detected"}',
-                                        style: const TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w700,
-                                          color: Colors.green,
-                                        ),
+                              if (aiStatus == 'verified') {
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: Colors.green.withValues(
+                                        alpha: 0.3,
                                       ),
                                     ),
-                                  ],
-                                ),
-                              );
-                            } else if (aiStatus == 'unrecognized') {
-                              return Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                decoration: BoxDecoration(
-                                  color: Colors.amber.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
-                                ),
-                                child: const Row(
-                                  children: [
-                                    Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 18),
-                                    SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        'AI Warning: No official school seal detected. Manual staff inspection required.',
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.verified_rounded,
+                                        color: Colors.green,
+                                        size: 18,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          'AI Seal Matched (${aiConfidence.toInt()}% confidence)\n${aiSummary.isNotEmpty ? aiSummary : "Institutional marker detected"}',
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w700,
+                                            color: Colors.green,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              } else if (aiStatus == 'unrecognized') {
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.amber.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: Colors.amber.withValues(
+                                        alpha: 0.4,
+                                      ),
+                                    ),
+                                  ),
+                                  child: const Row(
+                                    children: [
+                                      Icon(
+                                        Icons.warning_amber_rounded,
+                                        color: Colors.amber,
+                                        size: 18,
+                                      ),
+                                      SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          'AI Warning: No official school seal detected. Manual staff inspection required.',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w700,
+                                            color: Colors.amber,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              } else {
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.withValues(alpha: 0.08),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Row(
+                                    children: [
+                                      SizedBox(
+                                        width: 14,
+                                        height: 14,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      ),
+                                      SizedBox(width: 10),
+                                      Text(
+                                        'Cloud Vision AI scanning certificate in background...',
                                         style: TextStyle(
                                           fontSize: 11,
-                                          fontWeight: FontWeight.w700,
-                                          color: Colors.amber,
+                                          color: Colors.blue,
                                         ),
                                       ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            } else {
-                              return Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                decoration: BoxDecoration(
-                                  color: Colors.blue.withValues(alpha: 0.08),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: const Row(
-                                  children: [
-                                    SizedBox(
-                                      width: 14,
-                                      height: 14,
-                                      child: CircularProgressIndicator(strokeWidth: 2),
-                                    ),
-                                    SizedBox(width: 10),
-                                    Text(
-                                      'Cloud Vision AI scanning certificate in background...',
-                                      style: TextStyle(fontSize: 11, color: Colors.blue),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }
-                          }),
+                                    ],
+                                  ),
+                                );
+                              }
+                            },
+                          ),
                         ],
                         const SizedBox(height: 20),
                         Divider(color: Colors.grey.withValues(alpha: 0.2)),
@@ -1114,8 +1303,12 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
                               child: OutlinedButton.icon(
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: Colors.redAccent,
-                                  side: const BorderSide(color: Colors.redAccent),
-                                  padding: const EdgeInsets.symmetric(vertical: 14),
+                                  side: const BorderSide(
+                                    color: Colors.redAccent,
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                  ),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(16),
                                   ),
@@ -1149,7 +1342,9 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
                                   backgroundColor: Colors.green[600],
                                   foregroundColor: Colors.white,
                                   elevation: 2,
-                                  padding: const EdgeInsets.symmetric(vertical: 14),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                  ),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(16),
                                   ),
@@ -1198,6 +1393,60 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
   }
 
   Widget _buildMedicalReportsTab() {
+    if (_isSenior) return _buildMedicalList();
+    final profile = AuthService.getCachedProfile();
+    return StreamBuilder<List<AcademicClass>>(
+      stream: _authService.getAcademicClassesStream(activeOnly: true),
+      builder: (context, snapshot) {
+        final classes = (snapshot.data ?? const <AcademicClass>[])
+            .where(
+              (c) => ClassGroupAccess.isClassTeacher(profile, c.classId, c),
+            )
+            .toList();
+        if (classes.isEmpty) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Text(
+                'Medical Reports\nReports appear here only for classes where you are the assigned class teacher, after a student submits one.',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          );
+        }
+        final selected = classes.any((c) => c.classId == _medicalClassId)
+            ? _medicalClassId!
+            : classes.first.classId;
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: DropdownButtonFormField<String>(
+                key: ValueKey('medical_class_$selected'),
+                isExpanded: true,
+                initialValue: selected,
+                decoration: const InputDecoration(
+                  labelText: 'Medical Reports — My class',
+                ),
+                items: classes
+                    .map(
+                      (c) => DropdownMenuItem(
+                        value: c.classId,
+                        child: Text(c.displayLabel),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) => setState(() => _medicalClassId = value),
+              ),
+            ),
+            Expanded(child: _buildMedicalList(classId: selected)),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildMedicalList({String? classId}) {
     return Column(
       children: [
         Padding(
@@ -1207,7 +1456,8 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
             onChanged: (val) =>
                 setState(() => _searchQuery = val.trim().toLowerCase()),
             decoration: InputDecoration(
-              hintText: 'Search medical leaves by student, doctor, diagnosis...',
+              hintText:
+                  'Search medical leaves by student, doctor, diagnosis...',
               prefixIcon: const Icon(Icons.search_rounded),
               suffixIcon: _searchQuery.isNotEmpty
                   ? Semantics(
@@ -1237,21 +1487,44 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
         ),
         Expanded(
           child: StreamBuilder<List<MedicalLeaveRequest>>(
-            stream: _authService.getMedicalLeavesStream(),
+            key: ValueKey('medical_reports_${classId ?? 'all'}'),
+            stream: _authService.getMedicalLeavesStream(classId: classId),
             builder: (context, snapshot) {
-              final leaves = snapshot.data ?? AuthService.getCachedMedicalLeaves();
-              final pendingCount = leaves.where((l) => l.status == MedicalLeaveStatus.pending).length;
-              final approvedCount = leaves.where((l) => l.status == MedicalLeaveStatus.approved).length;
-              final rejectedCount = leaves.where((l) => l.status == MedicalLeaveStatus.rejected).length;
+              if (snapshot.hasError) {
+                return const Center(
+                  child: Text(
+                    'Unable to load reports. Check your connection and class access.',
+                  ),
+                );
+              }
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final leaves = snapshot.data ?? const <MedicalLeaveRequest>[];
+              final pendingCount = leaves
+                  .where((l) => l.status == MedicalLeaveStatus.pending)
+                  .length;
+              final approvedCount = leaves
+                  .where((l) => l.status == MedicalLeaveStatus.approved)
+                  .length;
+              final rejectedCount = leaves
+                  .where((l) => l.status == MedicalLeaveStatus.rejected)
+                  .length;
 
               // Filter by status tab
               List<MedicalLeaveRequest> statusFiltered = leaves;
               if (_medicalStatusFilter == 'pending') {
-                statusFiltered = leaves.where((l) => l.status == MedicalLeaveStatus.pending).toList();
+                statusFiltered = leaves
+                    .where((l) => l.status == MedicalLeaveStatus.pending)
+                    .toList();
               } else if (_medicalStatusFilter == 'approved') {
-                statusFiltered = leaves.where((l) => l.status == MedicalLeaveStatus.approved).toList();
+                statusFiltered = leaves
+                    .where((l) => l.status == MedicalLeaveStatus.approved)
+                    .toList();
               } else if (_medicalStatusFilter == 'rejected') {
-                statusFiltered = leaves.where((l) => l.status == MedicalLeaveStatus.rejected).toList();
+                statusFiltered = leaves
+                    .where((l) => l.status == MedicalLeaveStatus.rejected)
+                    .toList();
               }
 
               final filtered = statusFiltered.where((l) {
@@ -1267,43 +1540,86 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
                 children: [
                   // Filter Chips Row
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 8,
+                    ),
                     child: SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       child: Row(
                         children: [
                           ChoiceChip(
-                            label: Text('All (${leaves.length})', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
+                            label: Text(
+                              'All (${leaves.length})',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                              ),
+                            ),
                             selected: _medicalStatusFilter == 'all',
                             onSelected: (val) {
-                              if (val) setState(() => _medicalStatusFilter = 'all');
+                              if (val) {
+                                setState(() => _medicalStatusFilter = 'all');
+                              }
                             },
                           ),
                           const SizedBox(width: 8),
                           ChoiceChip(
-                            label: Text('Pending ($pendingCount)', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
+                            label: Text(
+                              'Pending ($pendingCount)',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                              ),
+                            ),
                             selected: _medicalStatusFilter == 'pending',
                             selectedColor: Colors.amber.withValues(alpha: 0.3),
                             onSelected: (val) {
-                              if (val) setState(() => _medicalStatusFilter = 'pending');
+                              if (val) {
+                                setState(
+                                  () => _medicalStatusFilter = 'pending',
+                                );
+                              }
                             },
                           ),
                           const SizedBox(width: 8),
                           ChoiceChip(
-                            label: Text('Approved ($approvedCount)', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
+                            label: Text(
+                              'Approved ($approvedCount)',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                              ),
+                            ),
                             selected: _medicalStatusFilter == 'approved',
                             selectedColor: Colors.teal.withValues(alpha: 0.3),
                             onSelected: (val) {
-                              if (val) setState(() => _medicalStatusFilter = 'approved');
+                              if (val) {
+                                setState(
+                                  () => _medicalStatusFilter = 'approved',
+                                );
+                              }
                             },
                           ),
                           const SizedBox(width: 8),
                           ChoiceChip(
-                            label: Text('Declined ($rejectedCount)', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
+                            label: Text(
+                              'Declined ($rejectedCount)',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                              ),
+                            ),
                             selected: _medicalStatusFilter == 'rejected',
-                            selectedColor: Colors.redAccent.withValues(alpha: 0.3),
+                            selectedColor: Colors.redAccent.withValues(
+                              alpha: 0.3,
+                            ),
                             onSelected: (val) {
-                              if (val) setState(() => _medicalStatusFilter = 'rejected');
+                              if (val) {
+                                setState(
+                                  () => _medicalStatusFilter = 'rejected',
+                                );
+                              }
                             },
                           ),
                         ],
@@ -1359,7 +1675,8 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
                         : ListView.separated(
                             padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
                             itemCount: filtered.length,
-                            separatorBuilder: (context, index) => const SizedBox(height: 16),
+                            separatorBuilder: (context, index) =>
+                                const SizedBox(height: 16),
                             itemBuilder: (context, index) {
                               return _buildMedicalLeaveCard(filtered[index]);
                             },
@@ -1404,8 +1721,9 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
               InkWell(
                 onTap: () => StudentProfileModal.show(
@@ -1416,7 +1734,9 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
                   classLevel: leave.classLevel,
                 ),
                 borderRadius: BorderRadius.circular(10),
-                child: Row(
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(
@@ -1450,13 +1770,16 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
                 decoration: BoxDecoration(
                   color: isApproved
                       ? Colors.green.withValues(alpha: 0.15)
                       : (isRejected
-                          ? Colors.red.withValues(alpha: 0.15)
-                          : Colors.teal.withValues(alpha: 0.15)),
+                            ? Colors.red.withValues(alpha: 0.15)
+                            : Colors.teal.withValues(alpha: 0.15)),
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Row(
@@ -1465,21 +1788,27 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
                     Icon(
                       isApproved
                           ? Icons.check_circle_rounded
-                          : (isRejected ? Icons.cancel_rounded : Icons.date_range_rounded),
+                          : (isRejected
+                                ? Icons.cancel_rounded
+                                : Icons.date_range_rounded),
                       size: 13,
-                      color: isApproved ? Colors.green[700] : (isRejected ? Colors.redAccent : Colors.teal),
+                      color: isApproved
+                          ? Colors.green[700]
+                          : (isRejected ? Colors.redAccent : Colors.teal),
                     ),
                     const SizedBox(width: 4),
                     Text(
                       isApproved
                           ? 'Approved (${leave.durationDays}d)'
                           : (isRejected
-                              ? 'Declined'
-                              : '${leave.durationDays} ${leave.durationDays == 1 ? "Day" : "Days"}'),
+                                ? 'Declined'
+                                : '${leave.durationDays} ${leave.durationDays == 1 ? "Day" : "Days"}'),
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w800,
-                        color: isApproved ? Colors.green[800] : (isRejected ? Colors.redAccent : Colors.teal),
+                        color: isApproved
+                            ? Colors.green[800]
+                            : (isRejected ? Colors.redAccent : Colors.teal),
                       ),
                     ),
                   ],
@@ -1536,7 +1865,9 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
                   : const Color(0xFFF8FAFC),
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
-                color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
+                color: Theme.of(
+                  context,
+                ).colorScheme.outline.withValues(alpha: 0.3),
               ),
             ),
             child: Column(
@@ -1545,11 +1876,18 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
                 if (leave.doctorName.isNotEmpty) ...[
                   Row(
                     children: [
-                      const Icon(Icons.local_hospital_rounded, size: 14, color: Colors.teal),
+                      const Icon(
+                        Icons.local_hospital_rounded,
+                        size: 14,
+                        color: Colors.teal,
+                      ),
                       const SizedBox(width: 6),
                       Text(
                         'Physician: ${leave.doctorName}',
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ],
                   ),
@@ -1559,13 +1897,15 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
                   'Diagnosis / Reason: ${leave.reason}',
                   style: const TextStyle(fontSize: 13, height: 1.3),
                 ),
-                if (leave.adminRemark != null && leave.adminRemark!.isNotEmpty) ...[
+                if (leave.adminRemark != null &&
+                    leave.adminRemark!.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: (isApproved ? Colors.green : Colors.redAccent).withValues(alpha: 0.1),
+                      color: (isApproved ? Colors.green : Colors.redAccent)
+                          .withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
@@ -1573,7 +1913,9 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
-                        color: isApproved ? Colors.green[800] : Colors.redAccent,
+                        color: isApproved
+                            ? Colors.green[800]
+                            : Colors.redAccent,
                       ),
                     ),
                   ),
@@ -1588,29 +1930,37 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                color: hasPhoto ? Colors.teal.withValues(alpha: 0.08) : Colors.grey.withValues(alpha: 0.08),
+                color: hasPhoto
+                    ? Colors.teal.withValues(alpha: 0.08)
+                    : Colors.grey.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(
-                  color: hasPhoto ? Colors.teal.withValues(alpha: 0.3) : Colors.grey.withValues(alpha: 0.2),
+                  color: hasPhoto
+                      ? Colors.teal.withValues(alpha: 0.3)
+                      : Colors.grey.withValues(alpha: 0.2),
                 ),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(
-                    hasPhoto ? Icons.photo_library_rounded : Icons.hide_image_outlined,
+                    hasPhoto
+                        ? Icons.photo_library_rounded
+                        : Icons.hide_image_outlined,
                     color: hasPhoto ? Colors.teal : Colors.grey,
                     size: 20,
                   ),
                   const SizedBox(width: 8),
-                  Text(
-                    hasPhoto ? 'Inspect Doctor Certificate & Prescription' : 'No Prescription Photo Attached',
+                  Flexible(child: Text(
+                    hasPhoto
+                        ? 'Inspect Doctor Certificate & Prescription'
+                        : 'No Prescription Photo Attached',
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
                       color: hasPhoto ? Colors.teal : Colors.grey,
                     ),
-                  ),
+                  )),
                 ],
               ),
             ),
@@ -1643,11 +1993,17 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
                         : const Icon(Icons.close_rounded, size: 18),
                     label: Text(
                       isProcessing ? 'Processing...' : 'Decline',
-                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                      ),
                     ),
                     onPressed: isProcessing
                         ? null
-                        : () => _handleRejectMedicalLeave(leave.id, leave.studentName),
+                        : () => _handleRejectMedicalLeave(
+                            leave.id,
+                            leave.studentName,
+                          ),
                   ),
                 ),
                 const SizedBox(width: 14),
@@ -1674,11 +2030,17 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
                         : const Icon(Icons.check_rounded, size: 18),
                     label: Text(
                       isProcessing ? 'Processing...' : 'Approve Leave',
-                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                      ),
                     ),
                     onPressed: isProcessing
                         ? null
-                        : () => _handleApproveMedicalLeave(leave.id, leave.studentName),
+                        : () => _handleApproveMedicalLeave(
+                            leave.id,
+                            leave.studentName,
+                          ),
                   ),
                 ),
               ],
@@ -1693,9 +2055,7 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
 class _CouncilRosterManagementDialog extends StatefulWidget {
   final AuthService authService;
 
-  const _CouncilRosterManagementDialog({
-    required this.authService,
-  });
+  const _CouncilRosterManagementDialog({required this.authService});
 
   @override
   State<_CouncilRosterManagementDialog> createState() =>
@@ -1704,7 +2064,8 @@ class _CouncilRosterManagementDialog extends StatefulWidget {
 
 class _CouncilRosterManagementDialogState
     extends State<_CouncilRosterManagementDialog> {
-  String _selectedFilter = 'all'; // 'all', 'teacher', 'council', 'captain', 'prefect'
+  String _selectedFilter =
+      'all'; // 'all', 'teacher', 'council', 'captain', 'prefect'
   String _searchQuery = '';
   final TextEditingController _searchCtrl = TextEditingController();
 
@@ -1717,9 +2078,8 @@ class _CouncilRosterManagementDialogState
   void _openDirectAssignDialog(BuildContext context) {
     showDialog(
       context: context,
-      builder: (ctx) => _DirectRoleAssignDialog(
-        authService: widget.authService,
-      ),
+      builder: (ctx) =>
+          _DirectRoleAssignDialog(authService: widget.authService),
     );
   }
 
@@ -1798,7 +2158,10 @@ class _CouncilRosterManagementDialogState
                     button: true,
                     label: 'Close dialog',
                     child: IconButton(
-                      constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                      constraints: const BoxConstraints(
+                        minWidth: 48,
+                        minHeight: 48,
+                      ),
                       icon: const Icon(Icons.close_rounded),
                       tooltip: 'Close',
                       onPressed: () => Navigator.pop(context),
@@ -1829,13 +2192,18 @@ class _CouncilRosterManagementDialogState
                     icon: const Icon(Icons.person_add_alt_1_rounded, size: 16),
                     label: const Text(
                       '➕ Assign Role & Position',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
                   OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.amber[800],
-                      side: BorderSide(color: Colors.amber.withValues(alpha: 0.5)),
+                      side: BorderSide(
+                        color: Colors.amber.withValues(alpha: 0.5),
+                      ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -1849,7 +2217,9 @@ class _CouncilRosterManagementDialogState
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                            content: Text('Standard roster templates initialized!'),
+                            content: Text(
+                              'Standard roster templates initialized!',
+                            ),
                             duration: Duration(seconds: 2),
                           ),
                         );
@@ -1858,7 +2228,10 @@ class _CouncilRosterManagementDialogState
                     icon: const Icon(Icons.bolt_rounded, size: 16),
                     label: const Text(
                       '⚡ Seed Templates',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ],
@@ -1898,7 +2271,8 @@ class _CouncilRosterManagementDialogState
                     vertical: 8,
                   ),
                 ),
-                onChanged: (val) => setState(() => _searchQuery = val.trim().toLowerCase()),
+                onChanged: (val) =>
+                    setState(() => _searchQuery = val.trim().toLowerCase()),
               ),
               const SizedBox(height: 10),
 
@@ -1949,7 +2323,8 @@ class _CouncilRosterManagementDialogState
                             ),
                             const SizedBox(height: 8),
                             ElevatedButton(
-                              onPressed: () => widget.authService.seedAdminRoster(),
+                              onPressed: () =>
+                                  widget.authService.seedAdminRoster(),
                               child: const Text('Initialize Roster Slots'),
                             ),
                           ],
@@ -1962,10 +2337,18 @@ class _CouncilRosterManagementDialogState
                       final data = raw is Map
                           ? Map<String, dynamic>.from(raw)
                           : <String, dynamic>{};
-                      final role = (data['role'] ?? '').toString().toLowerCase();
-                      final title = (data['title'] ?? '').toString().toLowerCase();
-                      final name = (data['name'] ?? '').toString().toLowerCase();
-                      final sNo = (data['scholar_no'] ?? '').toString().toLowerCase();
+                      final role = (data['role'] ?? '')
+                          .toString()
+                          .toLowerCase();
+                      final title = (data['title'] ?? '')
+                          .toString()
+                          .toLowerCase();
+                      final name = (data['name'] ?? '')
+                          .toString()
+                          .toLowerCase();
+                      final sNo = (data['scholar_no'] ?? '')
+                          .toString()
+                          .toLowerCase();
 
                       // Category filter
                       if (_selectedFilter == 'teacher' &&
@@ -1997,7 +2380,8 @@ class _CouncilRosterManagementDialogState
 
                       // Search filter
                       if (_searchQuery.isNotEmpty) {
-                        final matches = title.contains(_searchQuery) ||
+                        final matches =
+                            title.contains(_searchQuery) ||
                             name.contains(_searchQuery) ||
                             sNo.contains(_searchQuery) ||
                             role.contains(_searchQuery);
@@ -2030,7 +2414,8 @@ class _CouncilRosterManagementDialogState
                         final role = (data['role'] ?? 'council').toString();
                         final cls = data['class'] ?? '';
                         final isVacant =
-                            scholarNo.isEmpty || name.toString().contains('Vacant');
+                            scholarNo.isEmpty ||
+                            name.toString().contains('Vacant');
 
                         return Padding(
                           padding: const EdgeInsets.symmetric(
@@ -2070,8 +2455,8 @@ class _CouncilRosterManagementDialogState
                                         color: isVacant
                                             ? Colors.red[400]
                                             : (isDark
-                                                ? Colors.grey[300]
-                                                : Colors.grey[700]),
+                                                  ? Colors.grey[300]
+                                                  : Colors.grey[700]),
                                         fontSize: 12,
                                         fontWeight: isVacant
                                             ? FontWeight.w600
@@ -2087,8 +2472,8 @@ class _CouncilRosterManagementDialogState
                                   backgroundColor: scholarNo.isEmpty
                                       ? HouseColors.ruby
                                       : (isDark
-                                          ? const Color(0xFF334155)
-                                          : Colors.grey[800]),
+                                            ? const Color(0xFF334155)
+                                            : Colors.grey[800]),
                                   foregroundColor: Colors.white,
                                   minimumSize: const Size(70, 34),
                                   padding: const EdgeInsets.symmetric(
@@ -2104,10 +2489,7 @@ class _CouncilRosterManagementDialogState
                                   filtered[i].id,
                                   data,
                                 ),
-                                icon: const Icon(
-                                  Icons.edit_rounded,
-                                  size: 13,
-                                ),
+                                icon: const Icon(Icons.edit_rounded, size: 13),
                                 label: Text(
                                   scholarNo.isEmpty ? 'Assign' : 'Edit',
                                   style: const TextStyle(
@@ -2181,10 +2563,10 @@ class _CouncilRosterManagementDialogState
         color: isVacant
             ? Colors.grey
             : (r == 'teacher'
-                ? Colors.purple
-                : (r == 'captain'
-                    ? Colors.amber[800]
-                    : (r == 'prefect' ? Colors.blue : Colors.green))),
+                  ? Colors.purple
+                  : (r == 'captain'
+                        ? Colors.amber[800]
+                        : (r == 'prefect' ? Colors.blue : Colors.green))),
       ),
     );
   }
@@ -2249,8 +2631,10 @@ class _DirectRoleAssignDialogState extends State<_DirectRoleAssignDialog> {
   final _positionTitleCtrl = TextEditingController();
   final _classCtrl = TextEditingController();
 
-  String _selectedRole = 'teacher'; // 'teacher', 'council', 'captain', 'prefect', 'super_admin', 'student'
-  String _selectedHouse = 'All'; // 'All', 'Ruby', 'Sapphire', 'Emerald', 'Topaz'
+  String _selectedRole =
+      'teacher'; // 'teacher', 'council', 'captain', 'prefect', 'super_admin', 'student'
+  String _selectedHouse =
+      'All'; // 'All', 'Ruby', 'Sapphire', 'Emerald', 'Topaz'
   bool _isSaving = false;
 
   @override
@@ -2423,7 +2807,8 @@ class _DirectRoleAssignDialogState extends State<_DirectRoleAssignDialog> {
                 controller: _positionTitleCtrl,
                 decoration: const InputDecoration(
                   labelText: 'Designation / Position Title',
-                  hintText: 'e.g. Senior Faculty Advisor, Head Boy, Sports Captain',
+                  hintText:
+                      'e.g. Senior Faculty Advisor, Head Boy, Sports Captain',
                   prefixIcon: Icon(Icons.title_rounded, size: 20),
                   border: OutlineInputBorder(),
                 ),
@@ -2439,11 +2824,23 @@ class _DirectRoleAssignDialogState extends State<_DirectRoleAssignDialog> {
                   border: OutlineInputBorder(),
                 ),
                 items: const [
-                  DropdownMenuItem(value: 'All', child: Text('All Houses / School-Wide')),
+                  DropdownMenuItem(
+                    value: 'All',
+                    child: Text('All Houses / School-Wide'),
+                  ),
                   DropdownMenuItem(value: 'Ruby', child: Text('🔴 Ruby House')),
-                  DropdownMenuItem(value: 'Sapphire', child: Text('🔵 Sapphire House')),
-                  DropdownMenuItem(value: 'Emerald', child: Text('🟢 Emerald House')),
-                  DropdownMenuItem(value: 'Topaz', child: Text('🟡 Topaz House')),
+                  DropdownMenuItem(
+                    value: 'Sapphire',
+                    child: Text('🔵 Sapphire House'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'Emerald',
+                    child: Text('🟢 Emerald House'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'Topaz',
+                    child: Text('🟡 Topaz House'),
+                  ),
                 ],
                 onChanged: (val) {
                   if (val != null) setState(() => _selectedHouse = val);
@@ -2588,8 +2985,9 @@ class _EditRosterSlotDialogState extends State<EditRosterSlotDialog> {
 
     try {
       final storedScholar = (widget.data['scholar_no'] ?? '').toString().trim();
-      final oldScholar =
-          storedScholar.isNotEmpty ? storedScholar : _scholarCtrl.text.trim();
+      final oldScholar = storedScholar.isNotEmpty
+          ? storedScholar
+          : _scholarCtrl.text.trim();
       await widget.authService.revokeUserRole(
         scholarNo: oldScholar,
         slotId: widget.docId,
@@ -2656,7 +3054,15 @@ class _EditRosterSlotDialogState extends State<EditRosterSlotDialog> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              initialValue: ['teacher', 'council', 'captain', 'prefect', 'super_admin', 'student'].contains(_role)
+              initialValue:
+                  [
+                    'teacher',
+                    'council',
+                    'captain',
+                    'prefect',
+                    'super_admin',
+                    'student',
+                  ].contains(_role)
                   ? _role
                   : 'council',
               decoration: const InputDecoration(
@@ -2664,12 +3070,30 @@ class _EditRosterSlotDialogState extends State<EditRosterSlotDialog> {
                 border: OutlineInputBorder(),
               ),
               items: const [
-                DropdownMenuItem(value: 'teacher', child: Text('👨‍🏫 Faculty / Teacher')),
-                DropdownMenuItem(value: 'council', child: Text('🏛️ Executive Council')),
-                DropdownMenuItem(value: 'captain', child: Text('🏆 House Captain')),
-                DropdownMenuItem(value: 'prefect', child: Text('🎖️ Grade Prefect')),
-                DropdownMenuItem(value: 'super_admin', child: Text('👑 Super Admin')),
-                DropdownMenuItem(value: 'student', child: Text('🎓 Student Member')),
+                DropdownMenuItem(
+                  value: 'teacher',
+                  child: Text('👨‍🏫 Faculty / Teacher'),
+                ),
+                DropdownMenuItem(
+                  value: 'council',
+                  child: Text('🏛️ Executive Council'),
+                ),
+                DropdownMenuItem(
+                  value: 'captain',
+                  child: Text('🏆 House Captain'),
+                ),
+                DropdownMenuItem(
+                  value: 'prefect',
+                  child: Text('🎖️ Grade Prefect'),
+                ),
+                DropdownMenuItem(
+                  value: 'super_admin',
+                  child: Text('👑 Super Admin'),
+                ),
+                DropdownMenuItem(
+                  value: 'student',
+                  child: Text('🎓 Student Member'),
+                ),
               ],
               onChanged: (val) {
                 if (val != null) setState(() => _role = val);
@@ -2702,7 +3126,10 @@ class _EditRosterSlotDialogState extends State<EditRosterSlotDialog> {
               ? const SizedBox(
                   width: 20,
                   height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
                 )
               : const Text('Save'),
         ),
@@ -2710,4 +3137,3 @@ class _EditRosterSlotDialogState extends State<EditRosterSlotDialog> {
     );
   }
 }
-

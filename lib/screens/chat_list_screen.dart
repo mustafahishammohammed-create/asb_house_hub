@@ -283,7 +283,7 @@ class _ChatListScreenState extends State<ChatListScreen>
             ),
             SizedBox(width: 10),
             Text(
-              '1-on-1 Student Chats',
+              '1-on-1 Chats',
               style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20),
             ),
           ],

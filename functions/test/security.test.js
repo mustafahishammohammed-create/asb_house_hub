@@ -6,7 +6,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { initializeTestEnvironment, assertFails, assertSucceeds } = require("@firebase/rules-unit-testing");
-const { doc, getDoc, setDoc, updateDoc, deleteDoc, Timestamp: ClientTimestamp } = require("firebase/firestore");
+const { doc, getDoc, getDocs, collection, query, where, orderBy, or, setDoc, updateDoc, deleteDoc, Timestamp: ClientTimestamp } = require("firebase/firestore");
 const { ref: storageRef, uploadBytes, uploadString, getBytes, deleteObject } = require("firebase/storage");
 const { initializeApp, deleteApp } = require("firebase-admin/app");
 const { getFirestore, Timestamp } = require("firebase-admin/firestore");
@@ -75,6 +75,103 @@ test("rules: homework notes persist only on the owner's valid ungraded submissio
 after(async () => {
   if (env) await env.cleanup();
   if (app) await deleteApp(app);
+});
+
+test("medical privacy: owner, assigned class teacher and management only; class reassignment revokes access", async () => {
+  for (const [uid, role] of [["lead", "teacher"], ["other", "teacher"], ["subject", "subject_teacher"],
+    ["head", "head"], ["management", "management"], ["principal", "principal"], ["admin", "administrator"],
+    ["peer", "student"], ["council", "council"]]) {
+    await db.doc(`users/${uid}`).set({ ...student(`s-${uid}`), role });
+  }
+  await db.doc("users/pupil").set({ ...student(), class_id: "10A", class_verified: true });
+  await db.doc("academic_classes/10A").set({ class_id: "10A", grade: "Grade 10", section: "A", active: true,
+    class_teacher_uid: "lead", subject_teacher_uids: ["subject"] });
+  const client = uid => env.authenticatedContext(uid, { email: `${uid === "pupil" ? "12345" : `s-${uid}`}@asianschool.bh` }).firestore();
+  const report = { scholar_no: "12345", student_name: "Test Scholar", status: "pending", class_id: "10A",
+    submitted_at: "2026-11-28T08:00:00.000Z", reason: "Private note", certificate_photo: "data:image/png;base64,test" };
+  await assertSucceeds(setDoc(doc(client("pupil"), "medical_leaves/report"), report));
+  for (const uid of ["pupil", "lead", "head", "management", "principal", "admin"]) {
+    await assertSucceeds(getDoc(doc(client(uid), "medical_leaves/report")));
+  }
+  for (const uid of ["other", "subject", "peer", "council"]) {
+    await assertFails(getDoc(doc(client(uid), "medical_leaves/report")));
+    await assertFails(updateDoc(doc(client(uid), "medical_leaves/report"), { status: "approved" }));
+  }
+  await assertSucceeds(getDocs(query(collection(client("lead"), "medical_leaves"), where("class_id", "==", "10A"), orderBy("submitted_at", "desc"))));
+  await assertSucceeds(getDocs(collection(client("head"), "medical_leaves")));
+  await assertFails(getDocs(collection(client("lead"), "medical_leaves")));
+  await assertFails(getDocs(query(collection(client("other"), "medical_leaves"), where("class_id", "==", "10A"), orderBy("submitted_at", "desc"))));
+  await assertFails(setDoc(doc(client("pupil"), "medical_leaves/spoofed"), { ...report, class_id: "10B" }));
+  await assertFails(setDoc(doc(client("peer"), "medical_leaves/impersonated"), report));
+  await assertFails(setDoc(doc(client("pupil"), "medical_leaves/fake-review"), { ...report, reviewed_by: "Principal" }));
+  await assertFails(updateDoc(doc(client("lead"), "medical_leaves/report"), { class_id: "10B" }));
+  await db.doc("academic_classes/10A").update({ class_teacher_uid: "other" });
+  await assertFails(getDoc(doc(client("lead"), "medical_leaves/report")));
+  await assertSucceeds(getDoc(doc(client("other"), "medical_leaves/report")));
+  await assertSucceeds(updateDoc(doc(client("other"), "medical_leaves/report"), { status: "approved", reviewed_by: "Class Teacher" }));
+  // Legacy reports without a trusted class remain private to their owner and management.
+  const { class_id, ...legacy } = report;
+  await db.doc("medical_leaves/legacy").set(legacy);
+  await assertFails(getDoc(doc(client("other"), "medical_leaves/legacy")));
+  await assertSucceeds(getDoc(doc(client("head"), "medical_leaves/legacy")));
+});
+
+test("teachers cannot approve claims, reassign classes, or browse another class registry/group", async () => {
+  await db.doc("users/lead").set({ ...student("70001"), role: "teacher" });
+  await db.doc("users/other").set({ ...student("70002"), role: "teacher" });
+  await db.doc("users/pupil").set({ ...student(), class_id: "10B", class_verified: true });
+  for (const [classId, uid] of [["10A", "lead"], ["10B", "other"]]) {
+    await db.doc(`academic_classes/${classId}`).set({ class_id: classId, grade: "Grade 10", section: classId.slice(-1), active: true,
+      class_teacher_uid: uid, subject_teacher_uids: [] });
+    await db.doc(`class_groups/${classId}`).set({ class_id: classId });
+  }
+  const lead = env.authenticatedContext("lead").firestore();
+  await assertSucceeds(getDoc(doc(lead, "academic_classes/10A")));
+  await assertFails(getDoc(doc(lead, "academic_classes/10B")));
+  await assertSucceeds(getDocs(query(collection(lead, "academic_classes"), or(
+    where("class_teacher_uid", "==", "lead"), where("subject_teacher_uids", "array-contains", "lead")))));
+  await assertFails(getDocs(collection(lead, "academic_classes")));
+  await assertSucceeds(getDoc(doc(lead, "class_groups/10A")));
+  await assertFails(getDoc(doc(lead, "class_groups/10B")));
+  const message = { sender_id: "lead", sender_name: "Teacher", sender_role: "Teacher", sender_class: "10A",
+    text: "Class notice", category: "general", is_pinned: false, is_hidden: false, timestamp: ClientTimestamp.now() };
+  await assertSucceeds(setDoc(doc(lead, "class_groups/10A/messages/post"), message));
+  await assertFails(setDoc(doc(lead, "class_groups/10B/messages/post"), { ...message, sender_class: "10B" }));
+  // A promoted teacher's stale student placement cannot reopen an unrelated group.
+  await db.doc("users/lead").update({ class_id: "10B", class_verified: true });
+  await assertFails(getDoc(doc(lead, "class_groups/10B")));
+  await assertFails(updateDoc(doc(lead, "academic_classes/10B"), { class_teacher_uid: "lead" }));
+  await assertFails(updateDoc(doc(lead, "academic_classes/10A"), { subject_teacher_uids: ["other"] }));
+  await assertFails(updateDoc(doc(lead, "users/pupil"), { class_id: "10A" }));
+  await db.doc("house_claims/claim").set({ scholar_no: "12345", student_name: "Test Scholar", house_name: "ruby",
+    activity_title: "Science", points: 5, cert_url: "https://example.test/cert.jpg", status: "pending" });
+  await assertFails(getDoc(doc(lead, "house_claims/claim")));
+  for (const status of ["approved", "rejected"]) {
+    await assertFails(updateDoc(doc(lead, "house_claims/claim"), { status, reviewer_id: "lead", verified_at: ClientTimestamp.now() }));
+  }
+});
+
+test("teachers can message students and other teachers, but cannot join or alter other people's private chats", async () => {
+  for (const uid of ["teacher", "colleague", "outsider"]) {
+    await db.doc(`users/${uid}`).set({ ...student(`s-${uid}`), role: "teacher" });
+  }
+  await db.doc("users/pupil").set(student());
+  const teacher = env.authenticatedContext("teacher").firestore();
+  const outsider = env.authenticatedContext("outsider").firestore();
+  for (const peer of ["pupil", "colleague"]) {
+    const room = `chats/${peer}_teacher`;
+    await assertSucceeds(setDoc(doc(teacher, room), { participants: ["teacher", peer] }));
+    const msg = { sender_id: "teacher", sender_name: "Teacher", text: "Hello", is_read: false, timestamp: ClientTimestamp.now() };
+    await assertSucceeds(setDoc(doc(teacher, `${room}/messages/hello`), msg));
+    await assertFails(getDoc(doc(outsider, `${room}/messages/hello`)));
+    await assertFails(updateDoc(doc(outsider, room), { participants: ["teacher", peer, "outsider"] }));
+    await assertFails(updateDoc(doc(teacher, room), { participants: ["teacher", peer, "outsider"] }));
+    await assertFails(updateDoc(doc(outsider, `${room}/messages/hello`), { text: "Tampered" }));
+    await assertFails(deleteDoc(doc(outsider, `${room}/messages/hello`)));
+  }
+  await db.doc("users/pupil/notifications/private").set({ title: "Private", body: "Message preview" });
+  await assertFails(getDoc(doc(outsider, "users/pupil/notifications/private")));
+  await assertSucceeds(getDoc(doc(env.authenticatedContext("pupil").firestore(), "users/pupil/notifications/private")));
 });
 
 test("rules: a student can provision a nonprivileged roster row", async () => {
@@ -326,8 +423,8 @@ test("rules (O08): student cannot self-assert AI verified status on house_claims
     ai_status: "pending_scan",
     created_at: Timestamp.now(),
   });
-  await db.doc("users/teacher-reviewer").set({ ...student("49002"), role: "teacher" });
-  const reviewer = env.authenticatedContext("teacher-reviewer").firestore();
+  await db.doc("users/admin-reviewer").set({ ...student("49002"), role: "administrator" });
+  const reviewer = env.authenticatedContext("admin-reviewer").firestore();
   await assertFails(updateDoc(doc(reviewer, "house_claims/review-me"), {
     status: "approved",
   }));
@@ -338,12 +435,12 @@ test("rules (O08): student cannot self-assert AI verified status on house_claims
   }));
   await assertSucceeds(updateDoc(doc(reviewer, "house_claims/review-me"), {
     status: "approved",
-    reviewer_id: "teacher-reviewer",
+    reviewer_id: "admin-reviewer",
     verified_at: ClientTimestamp.now(),
   }));
   await assertFails(updateDoc(doc(reviewer, "house_claims/review-me"), {
     status: "rejected",
-    reviewer_id: "teacher-reviewer",
+    reviewer_id: "admin-reviewer",
     verified_at: ClientTimestamp.now(),
     rejection_reason: "Changed my mind",
   }));

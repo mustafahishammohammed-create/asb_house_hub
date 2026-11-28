@@ -14,7 +14,9 @@ class HierarchyService {
     final rStr = (role ?? '').trim().toLowerCase();
 
     if (sNo == 'admin' || sNo == '11209') return true;
-    if (rStr == 'super_admin' || rStr == 'admin' || rStr == 'administrator') return true;
+    if (rStr == 'super_admin' || rStr == 'admin' || rStr == 'administrator') {
+      return true;
+    }
 
     return false;
   }
@@ -23,7 +25,8 @@ class HierarchyService {
   static bool isTeacherOrFaculty({
     String? scholarNo,
     String? role,
-    String? fullName, // retained for API compatibility — NOT used for authorization
+    String?
+    fullName, // retained for API compatibility — NOT used for authorization
   }) {
     final rStr = (role ?? '').trim().toLowerCase();
 
@@ -45,7 +48,8 @@ class HierarchyService {
   static bool isCaptain({
     String? scholarNo,
     String? role,
-    String? fullName, // retained for API compatibility — NOT used for authorization
+    String?
+    fullName, // retained for API compatibility — NOT used for authorization
   }) {
     final rStr = (role ?? '').trim().toLowerCase();
 
@@ -63,7 +67,8 @@ class HierarchyService {
   static bool isCouncil({
     String? scholarNo,
     String? role,
-    String? fullName, // retained for API compatibility — NOT used for authorization
+    String?
+    fullName, // retained for API compatibility — NOT used for authorization
   }) {
     final rStr = (role ?? '').trim().toLowerCase();
 
@@ -87,13 +92,12 @@ class HierarchyService {
   static bool isPrefect({
     String? scholarNo,
     String? role,
-    String? fullName, // retained for API compatibility — NOT used for authorization
+    String?
+    fullName, // retained for API compatibility — NOT used for authorization
   }) {
     final rStr = (role ?? '').trim().toLowerCase();
 
-    if (rStr == 'prefect' ||
-        rStr == 'student_rep' ||
-        rStr == 'grade_prefect') {
+    if (rStr == 'prefect' || rStr == 'student_rep' || rStr == 'grade_prefect') {
       return true;
     }
 
@@ -134,27 +138,34 @@ class HierarchyService {
   }
 
   /// Check if user is a parent account.
-  static bool isParent({
-    String? scholarNo,
-    String? role,
-    String? fullName,
-  }) {
+  static bool isParent({String? scholarNo, String? role, String? fullName}) {
     return (role ?? '').trim().toLowerCase() == 'parent';
   }
 
   /// General check if user holds administrative or executive review privileges.
-  static bool isAdmin({
-    String? scholarNo,
-    String? role,
-    String? fullName,
-  }) {
-    return isSeniorAdmin(scholarNo: scholarNo, role: role, fullName: fullName) ||
+  static bool isAdmin({String? scholarNo, String? role, String? fullName}) {
+    return isSeniorAdmin(
+          scholarNo: scholarNo,
+          role: role,
+          fullName: fullName,
+        ) ||
         isSuperAdmin(scholarNo: scholarNo, role: role, fullName: fullName) ||
-        isTeacherOrFaculty(scholarNo: scholarNo, role: role, fullName: fullName) ||
+        isTeacherOrFaculty(
+          scholarNo: scholarNo,
+          role: role,
+          fullName: fullName,
+        ) ||
         isCaptain(scholarNo: scholarNo, role: role, fullName: fullName) ||
         isCouncil(scholarNo: scholarNo, role: role, fullName: fullName) ||
         isPrefect(scholarNo: scholarNo, role: role, fullName: fullName);
   }
+
+  /// Point claims are reviewed by management and student council/house officers.
+  /// Teaching staff do not inherit claim approval from general staff access.
+  static bool canReviewClaims({String? scholarNo, String? role}) =>
+      isSeniorAdmin(scholarNo: scholarNo, role: role) ||
+      isCouncil(role: role) ||
+      isCaptain(role: role);
 
   /// Canonical check whether an account is authorized to grade assignments and award academic merit points.
   /// Requirement R1 & Audit G4: Staff, Teachers, Principal, Head, Management, and Council officers have grading authority.
@@ -164,9 +175,17 @@ class HierarchyService {
     String? role,
     String? fullName,
   }) {
-    return isSeniorAdmin(scholarNo: scholarNo, role: role, fullName: fullName) ||
+    return isSeniorAdmin(
+          scholarNo: scholarNo,
+          role: role,
+          fullName: fullName,
+        ) ||
         isSuperAdmin(scholarNo: scholarNo, role: role, fullName: fullName) ||
-        isTeacherOrFaculty(scholarNo: scholarNo, role: role, fullName: fullName) ||
+        isTeacherOrFaculty(
+          scholarNo: scholarNo,
+          role: role,
+          fullName: fullName,
+        ) ||
         isCouncil(scholarNo: scholarNo, role: role, fullName: fullName);
   }
 
@@ -196,7 +215,8 @@ class HierarchyService {
     if (isCouncil(scholarNo: sNo, role: rStr)) return true;
     if (isCaptain(scholarNo: sNo, role: rStr)) return true;
     if (capabilities != null &&
-        (capabilities['manage_elections'] == true || capabilities['is_admin'] == true)) {
+        (capabilities['manage_elections'] == true ||
+            capabilities['is_admin'] == true)) {
       return true;
     }
 
@@ -245,7 +265,8 @@ class HierarchyService {
     AcademicClass? academicClass,
   }) {
     if (profile == null) return false;
-    final sNo = (profile['scholar_no'] ?? profile['scholarNo'] ?? '').toString();
+    final sNo = (profile['scholar_no'] ?? profile['scholarNo'] ?? '')
+        .toString();
     final role = (profile['role'] ?? '').toString();
     final uid = (profile['uid'] ?? profile['id'] ?? '').toString().trim();
 
@@ -256,14 +277,17 @@ class HierarchyService {
 
     // If no academicClass is passed or classId doesn't match, deny
     if (academicClass == null) return false;
-    if (academicClass.classId.toUpperCase() != classId.trim().toUpperCase()) return false;
+    if (academicClass.classId.toUpperCase() != classId.trim().toUpperCase()) {
+      return false;
+    }
 
     // Administration locked editing for this section
     if (!academicClass.timetableEditingEnabled) return false;
 
     // Check teacher UID authority
     if (uid.isNotEmpty) {
-      if (academicClass.classTeacherUid != null && academicClass.classTeacherUid == uid) {
+      if (academicClass.classTeacherUid != null &&
+          academicClass.classTeacherUid == uid) {
         return true;
       }
       if (academicClass.timetableEditorUids.contains(uid)) {
@@ -272,7 +296,13 @@ class HierarchyService {
     }
 
     // Name-based fallback for legacy entries where classTeacherUid is not yet set
-    final fullName = (profile['full_name'] ?? profile['name'] ?? profile['displayName'] ?? '').toString().trim();
+    final fullName =
+        (profile['full_name'] ??
+                profile['name'] ??
+                profile['displayName'] ??
+                '')
+            .toString()
+            .trim();
     if (academicClass.classTeacherUid == null &&
         academicClass.classTeacher.isNotEmpty &&
         fullName.isNotEmpty &&
@@ -317,7 +347,11 @@ class HierarchyService {
         rStr == 'director') {
       return 'School Management';
     }
-    if (isTeacherOrFaculty(scholarNo: scholarNo, role: role, fullName: fullName)) {
+    if (isTeacherOrFaculty(
+      scholarNo: scholarNo,
+      role: role,
+      fullName: fullName,
+    )) {
       return 'Faculty Lead';
     }
     if (isCaptain(scholarNo: scholarNo, role: role, fullName: fullName)) {

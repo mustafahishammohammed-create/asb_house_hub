@@ -38,6 +38,7 @@ class MedicalLeaveRequest {
   final String studentName;
   final String house;
   final String classLevel;
+  final String classId;
   final DateTime startDate;
   final DateTime endDate;
   final String reason;
@@ -55,6 +56,7 @@ class MedicalLeaveRequest {
     required this.studentName,
     required this.house,
     required this.classLevel,
+    this.classId = '',
     required this.startDate,
     required this.endDate,
     required this.reason,
@@ -81,7 +83,8 @@ class MedicalLeaveRequest {
   String get formattedRange => formattedDateRange;
 
   bool get hasCertificatePhoto =>
-      certificatePhotoBase64 != null && certificatePhotoBase64!.trim().isNotEmpty;
+      certificatePhotoBase64 != null &&
+      certificatePhotoBase64!.trim().isNotEmpty;
 
   Map<String, dynamic> toMap() {
     return {
@@ -90,20 +93,26 @@ class MedicalLeaveRequest {
       'student_name': studentName,
       'house': house,
       'class_level': classLevel,
+      if (classId.isNotEmpty) 'class_id': classId,
       'start_date': startDate.toIso8601String(),
       'end_date': endDate.toIso8601String(),
       'reason': reason,
       'doctor_name': doctorName,
-      'certificate_photo': certificatePhotoBase64,
+      if (certificatePhotoBase64 != null)
+        'certificate_photo': certificatePhotoBase64,
       'submitted_at': submittedAt.toIso8601String(),
       'status': status.name,
-      'admin_remark': adminRemark,
-      'reviewed_by': reviewedBy,
-      'reviewed_at': reviewedAt?.toIso8601String(),
+      if (adminRemark != null) 'admin_remark': adminRemark,
+      if (reviewedBy != null) 'reviewed_by': reviewedBy,
+      if (reviewedAt != null) 'reviewed_at': reviewedAt!.toIso8601String(),
     };
   }
 
-  factory MedicalLeaveRequest.fromMap(Map<String, dynamic> map, {String? docId, String? id}) {
+  factory MedicalLeaveRequest.fromMap(
+    Map<String, dynamic> map, {
+    String? docId,
+    String? id,
+  }) {
     DateTime parseDate(dynamic val, DateTime fallback) {
       if (val is Timestamp) return val.toDate();
       if (val is DateTime) return val;
@@ -116,10 +125,15 @@ class MedicalLeaveRequest {
 
     final now = DateTime.now();
     return MedicalLeaveRequest(
-      id: id ?? docId ?? map['id']?.toString() ?? 'med_${now.millisecondsSinceEpoch}',
+      id:
+          id ??
+          docId ??
+          map['id']?.toString() ??
+          'med_${now.millisecondsSinceEpoch}',
       scholarNo: map['scholar_no']?.toString() ?? '2310910',
       studentName: map['student_name']?.toString() ?? 'ASB Student',
       house: map['house']?.toString() ?? 'ruby',
+      classId: map['class_id']?.toString() ?? '',
       classLevel: map['class_level']?.toString() ?? 'Grade 10',
       startDate: parseDate(map['start_date'], now),
       endDate: parseDate(map['end_date'], now),
@@ -130,7 +144,9 @@ class MedicalLeaveRequest {
       status: MedicalLeaveStatus.fromString(map['status']?.toString()),
       adminRemark: map['admin_remark']?.toString(),
       reviewedBy: map['reviewed_by']?.toString(),
-      reviewedAt: map['reviewed_at'] != null ? parseDate(map['reviewed_at'], now) : null,
+      reviewedAt: map['reviewed_at'] != null
+          ? parseDate(map['reviewed_at'], now)
+          : null,
     );
   }
 

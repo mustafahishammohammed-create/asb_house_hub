@@ -94,6 +94,8 @@ void main() {
         'full_name': 'Test Student',
         'house': 'ruby',
         'role': 'student',
+        'class_id': '10A',
+        'class_verified': true,
       });
 
       // Simulate live failure
@@ -257,7 +259,7 @@ void main() {
       expect(find.text('Medical Reports'), findsNothing, reason: 'Captains/council must NOT see Medical Reports');
     });
 
-    testWidgets('Faculty / SuperAdmin sees both Point Claims and Medical Reports tabs', (tester) async {
+    testWidgets('Teachers see their workspace without claim review controls', (tester) async {
       // Set role to teacher / faculty
       await AuthService.cacheProfile({
         'scholar_no': 'FACULTY_01',
@@ -273,9 +275,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byType(TabBar), findsOneWidget);
-      expect(find.text('Point Claims'), findsOneWidget);
-      expect(find.text('Medical Reports'), findsOneWidget);
+      expect(find.text('Teacher Workspace'), findsOneWidget);
+      expect(find.text('Point Claims'), findsNothing);
+      expect(find.textContaining('assigned class teacher'), findsOneWidget);
+      expect(find.byTooltip('1-on-1 Chats'), findsOneWidget);
     });
   });
 

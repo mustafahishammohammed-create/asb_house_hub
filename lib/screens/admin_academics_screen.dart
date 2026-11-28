@@ -14,7 +14,8 @@ import 'class_group_screen.dart';
 /// are enforced admin-only by Firestore rules; this screen additionally
 /// hides controls from non-staff roles.
 class AdminAcademicsScreen extends StatefulWidget {
-  const AdminAcademicsScreen({super.key});
+  final int initialTab;
+  const AdminAcademicsScreen({super.key, this.initialTab = 0});
 
   @override
   State<AdminAcademicsScreen> createState() => _AdminAcademicsScreenState();
@@ -33,7 +34,8 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
   String? _promotionSourceClassId;
   String? _promotionTargetClassId;
   bool _promotingBatch = false;
-  final TextEditingController _individualScholarNoController = TextEditingController();
+  final TextEditingController _individualScholarNoController =
+      TextEditingController();
   String? _individualTargetClassId;
   bool _promotingIndividual = false;
 
@@ -48,13 +50,12 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
     final role = profile?['role']?.toString();
     final scholarNo =
         profile?['scholar_no']?.toString() ?? AuthService.getCachedScholarNo();
-    _isStaff = HierarchyService.isTeacherOrFaculty(
-          role: role,
-          scholarNo: scholarNo,
-        ) ||
-        HierarchyService.isSuperAdmin(role: role, scholarNo: scholarNo) ||
-        HierarchyService.isSeniorAdmin(role: role, scholarNo: scholarNo);
-    _tabController = TabController(length: 6, vsync: this);
+    _isStaff = HierarchyService.isSeniorAdmin(role: role, scholarNo: scholarNo);
+    _tabController = TabController(
+      length: 6,
+      initialIndex: widget.initialTab.clamp(0, 5),
+      vsync: this,
+    );
   }
 
   void _openClassGroup(AcademicClass cls) {
@@ -103,8 +104,10 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
     final classId = _declaredClassId(profile);
     if (scholarNo.isEmpty) return;
     if (classId.isEmpty) {
-      _toast('No valid class on record for $name — use Transfer to assign one.',
-          error: true);
+      _toast(
+        'No valid class on record for $name — use Transfer to assign one.',
+        error: true,
+      );
       return;
     }
     final parsed = AcademicStructure.parseClassId(classId);
@@ -183,10 +186,8 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
 
     final selected = await showDialog<String>(
       context: context,
-      builder: (ctx) => _HouseAssignmentDialog(
-        studentName: name,
-        currentHouse: currentHouse,
-      ),
+      builder: (ctx) =>
+          _HouseAssignmentDialog(studentName: name, currentHouse: currentHouse),
     );
     if (selected == null || selected.isEmpty || !mounted) return;
     setState(() => _processing.add(scholarNo));
@@ -197,7 +198,9 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
     if (!mounted) return;
     setState(() => _processing.remove(scholarNo));
     _toast(
-      ok ? '$name assigned to ${selected.toUpperCase()} House.' : 'House assignment failed for $name.',
+      ok
+          ? '$name assigned to ${selected.toUpperCase()} House.'
+          : 'House assignment failed for $name.',
       error: !ok,
     );
   }
@@ -210,10 +213,8 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
 
     final selected = await showDialog<String>(
       context: context,
-      builder: (ctx) => _UserStatusDialog(
-        studentName: name,
-        currentStatus: currentStatus,
-      ),
+      builder: (ctx) =>
+          _UserStatusDialog(studentName: name, currentStatus: currentStatus),
     );
     if (selected == null || selected.isEmpty || !mounted) return;
     setState(() => _processing.add(scholarNo));
@@ -224,7 +225,9 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
     if (!mounted) return;
     setState(() => _processing.remove(scholarNo));
     _toast(
-      ok ? '$name account status set to $selected.' : 'Status update failed for $name.',
+      ok
+          ? '$name account status set to $selected.'
+          : 'Status update failed for $name.',
       error: !ok,
     );
   }
@@ -250,10 +253,7 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
     if (ok) {
       final fanOut = _timetableService.lastNotificationResult;
       if (fanOut != null && fanOut.warning != null) {
-        _toast(
-          fanOut.warning!,
-          error: true,
-        );
+        _toast(fanOut.warning!, error: true);
       }
     }
   }
@@ -270,7 +270,10 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
             Expanded(
               child: Text(
                 '${v.classId} ${v.dayOfWeek} (v${v.version}) Preview',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
               ),
             ),
           ],
@@ -291,52 +294,74 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(
                       'Temporary Override for: ${v.overrideDate?.toLocal().toString().split(' ').first ?? 'Date'}',
-                      style: const TextStyle(fontSize: 12, color: Colors.amber, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.amber,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 const Divider(height: 20),
                 if (v.slots.isEmpty)
-                  const Text('No slots in this version.', style: TextStyle(color: Colors.grey))
+                  const Text(
+                    'No slots in this version.',
+                    style: TextStyle(color: Colors.grey),
+                  )
                 else
-                  ...v.slots.map((s) => Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: Theme.of(ctx).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: Colors.blue.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                'P${s.periodNumber}',
-                                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
+                  ...v.slots.map(
+                    (s) => Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Theme.of(ctx).colorScheme.surfaceContainerHighest
+                            .withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              'P${s.periodNumber}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue,
                               ),
                             ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    s.subject.isEmpty ? 'Free Period' : s.subject,
-                                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  s.subject.isEmpty ? 'Free Period' : s.subject,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 13,
                                   ),
-                                  Text(
-                                    '${s.teacherName.isNotEmpty ? s.teacherName : 'Teacher'} • ${s.room.isNotEmpty ? s.room : 'No room'} (${s.timeSlot})',
-                                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                                ),
+                                Text(
+                                  '${s.teacherName.isNotEmpty ? s.teacherName : 'Teacher'} • ${s.room.isNotEmpty ? s.room : 'No room'} (${s.timeSlot})',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey,
                                   ),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                      )),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -356,7 +381,9 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
     final reason = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Reject Timetable — ${version.classId} ${version.dayOfWeek}'),
+        title: Text(
+          'Reject Timetable — ${version.classId} ${version.dayOfWeek}',
+        ),
         content: TextField(
           controller: controller,
           maxLines: 3,
@@ -393,7 +420,9 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
     );
     if (!mounted) return;
     _toast(
-      ok ? 'Rejected timetable version for ${version.classId}.' : 'Rejection failed.',
+      ok
+          ? 'Rejected timetable version for ${version.classId}.'
+          : 'Rejection failed.',
       error: !ok,
     );
   }
@@ -500,7 +529,7 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                 Icon(Icons.lock_outline_rounded, size: 48, color: scheme.error),
                 const SizedBox(height: 16),
                 Text(
-                  'Academic management is restricted to school staff and administrators.',
+                  'Academic management is restricted to school management and administrators.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: scheme.onSurfaceVariant),
                 ),
@@ -534,12 +563,30 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
       body: TabBarView(
         controller: _tabController,
         children: [
-          _KeepAliveTab(key: const PageStorageKey('tab_verify'), child: _buildPendingTab(scheme)),
-          _KeepAliveTab(key: const PageStorageKey('tab_classes'), child: _buildClassesTab(scheme)),
-          _KeepAliveTab(key: const PageStorageKey('tab_rosters'), child: _buildRostersTab(scheme)),
-          _KeepAliveTab(key: const PageStorageKey('tab_promotion'), child: _buildPromotionTab(scheme)),
-          _KeepAliveTab(key: const PageStorageKey('tab_approvals'), child: _buildApprovalsTab(scheme)),
-          _KeepAliveTab(key: const PageStorageKey('tab_audits'), child: _buildAuditLogsTab(scheme)),
+          _KeepAliveTab(
+            key: const PageStorageKey('tab_verify'),
+            child: _buildPendingTab(scheme),
+          ),
+          _KeepAliveTab(
+            key: const PageStorageKey('tab_classes'),
+            child: _buildClassesTab(scheme),
+          ),
+          _KeepAliveTab(
+            key: const PageStorageKey('tab_rosters'),
+            child: _buildRostersTab(scheme),
+          ),
+          _KeepAliveTab(
+            key: const PageStorageKey('tab_promotion'),
+            child: _buildPromotionTab(scheme),
+          ),
+          _KeepAliveTab(
+            key: const PageStorageKey('tab_approvals'),
+            child: _buildApprovalsTab(scheme),
+          ),
+          _KeepAliveTab(
+            key: const PageStorageKey('tab_audits'),
+            child: _buildAuditLogsTab(scheme),
+          ),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -727,6 +774,10 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                     ),
                   ),
                 ),
+                onTap: () => setState(() {
+                  _rosterClassId = cls.classId;
+                  _tabController.animateTo(2);
+                }),
                 title: Text(
                   cls.displayLabel,
                   style: const TextStyle(fontWeight: FontWeight.w700),
@@ -740,32 +791,48 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                     color: scheme.onSurfaceVariant,
                   ),
                 ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
+                trailing: PopupMenuButton<String>(
+                  tooltip: 'Class actions',
+                  onSelected: (action) {
+                    switch (action) {
+                      case 'students':
+                        setState(() {
+                          _rosterClassId = cls.classId;
+                          _tabController.animateTo(2);
+                        });
+                      case 'message':
+                        _openClassGroup(cls);
+                      case 'teacher':
+                        _editClassTeacher(cls);
+                      case 'settings':
+                        _editClassCommunication(cls);
+                      case 'active':
+                        _toggleClassActive(cls, !cls.active);
+                    }
+                  },
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(
+                      value: 'students',
+                      child: Text('View students'),
+                    ),
+                    PopupMenuItem(
+                      value: 'message',
                       key: Key('admin_open_class_group_${cls.classId}'),
-                      tooltip: 'Message class group',
-                      icon: Icon(
-                        Icons.chat_rounded,
-                        size: 20,
-                        color: scheme.primary,
+                      child: const Text('Message class group'),
+                    ),
+                    const PopupMenuItem(
+                      value: 'teacher',
+                      child: Text('Edit class teacher'),
+                    ),
+                    const PopupMenuItem(
+                      value: 'settings',
+                      child: Text('Class group settings'),
+                    ),
+                    PopupMenuItem(
+                      value: 'active',
+                      child: Text(
+                        cls.active ? 'Deactivate class' : 'Activate class',
                       ),
-                      onPressed: () => _openClassGroup(cls),
-                    ),
-                    IconButton(
-                      tooltip: 'Edit class teacher',
-                      icon: const Icon(Icons.edit_outlined, size: 20),
-                      onPressed: () => _editClassTeacher(cls),
-                    ),
-                    IconButton(
-                      tooltip: 'Class group settings',
-                      icon: const Icon(Icons.forum_outlined, size: 20),
-                      onPressed: () => _editClassCommunication(cls),
-                    ),
-                    Switch(
-                      value: cls.active,
-                      onChanged: (v) => _toggleClassActive(cls, v),
                     ),
                   ],
                 ),
@@ -786,9 +853,7 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
         if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
-        final rawClasses = (snap.data ?? [])
-            .where((c) => c.active)
-            .toList();
+        final rawClasses = snap.data ?? <AcademicClass>[];
         final uniqueMap = <String, AcademicClass>{};
         for (final c in rawClasses) {
           uniqueMap[c.classId] = c;
@@ -801,12 +866,12 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
             'Create an active section first to browse its roster.',
           );
         }
-        final selected = _rosterClassId != null &&
+        final selected =
+            _rosterClassId != null &&
                 classes.any((c) => c.classId == _rosterClassId)
             ? _rosterClassId!
             : classes.first.classId;
-        final selectedClass =
-            classes.firstWhere((c) => c.classId == selected);
+        final selectedClass = classes.firstWhere((c) => c.classId == selected);
         return Column(
           children: [
             Padding(
@@ -815,7 +880,9 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                 children: [
                   Expanded(
                     child: DropdownButtonFormField<String>(
-                      key: ValueKey('roster_${classes.map((c) => c.classId).join("_")}_$selected'),
+                      key: ValueKey(
+                        'roster_${classes.map((c) => c.classId).join("_")}_$selected',
+                      ),
                       initialValue: selected,
                       decoration: const InputDecoration(
                         labelText: 'Select class',
@@ -846,10 +913,17 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
               child: StreamBuilder<List<Map<String, dynamic>>>(
                 key: ValueKey('roster_students_$selected'),
                 stream: _authService.getClassRosterStream(selected),
-                initialData: const <Map<String, dynamic>>[],
                 builder: (context, rosterSnap) {
-                  if (rosterSnap.connectionState == ConnectionState.waiting && !rosterSnap.hasData) {
+                  if (rosterSnap.connectionState == ConnectionState.waiting &&
+                      !rosterSnap.hasData) {
                     return const Center(child: CircularProgressIndicator());
+                  }
+                  if (rosterSnap.hasError) {
+                    return _emptyState(
+                      scheme,
+                      Icons.error_outline,
+                      'Unable to load students. Check your connection and administrator access.',
+                    );
                   }
                   final roster = rosterSnap.data ?? [];
                   if (roster.isEmpty) {
@@ -861,14 +935,20 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                   }
                   return ListView.separated(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-                    itemCount: roster.length,
+                    itemCount: roster.length + 1,
                     separatorBuilder: (_, _) => const SizedBox(height: 8),
                     itemBuilder: (context, i) {
-                      final p = roster[i];
+                      if (i == 0) {
+                        return Text('${roster.length} students in $selected',
+                          style: const TextStyle(fontWeight: FontWeight.w700));
+                      }
+                      final p = roster[i - 1];
                       final name = (p['full_name'] ?? 'Scholar').toString();
                       final scholarNo = (p['scholar_no'] ?? '').toString();
                       final verified = p['class_verified'] == true;
-                      final status = (p['status'] ?? 'active').toString().toLowerCase();
+                      final status = (p['status'] ?? 'active')
+                          .toString()
+                          .toLowerCase();
                       final isSuspended = status == 'suspended';
                       final isDeactivated = status == 'deactivated';
                       return Card(
@@ -896,9 +976,14 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                               ),
                               if (isSuspended || isDeactivated)
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
                                   decoration: BoxDecoration(
-                                    color: isSuspended ? Colors.orange[100] : Colors.red[100],
+                                    color: isSuspended
+                                        ? Colors.orange[100]
+                                        : Colors.red[100],
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                   child: Text(
@@ -906,7 +991,9 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                                     style: TextStyle(
                                       fontSize: 10,
                                       fontWeight: FontWeight.bold,
-                                      color: isSuspended ? Colors.orange[900] : Colors.red[900],
+                                      color: isSuspended
+                                          ? Colors.orange[900]
+                                          : Colors.red[900],
                                     ),
                                   ),
                                 ),
@@ -952,7 +1039,10 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                                     value: 'transfer',
                                     child: Row(
                                       children: [
-                                        Icon(Icons.swap_horiz_rounded, size: 18),
+                                        Icon(
+                                          Icons.swap_horiz_rounded,
+                                          size: 18,
+                                        ),
                                         SizedBox(width: 8),
                                         Text('Transfer Class'),
                                       ],
@@ -962,7 +1052,10 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                                     value: 'status',
                                     child: Row(
                                       children: [
-                                        Icon(Icons.manage_accounts_outlined, size: 18),
+                                        Icon(
+                                          Icons.manage_accounts_outlined,
+                                          size: 18,
+                                        ),
                                         SizedBox(width: 8),
                                         Text('Account Status'),
                                       ],
@@ -1030,20 +1123,23 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
           );
         }
 
-        final sourceClass = _promotionSourceClassId != null &&
+        final sourceClass =
+            _promotionSourceClassId != null &&
                 classes.any((c) => c.classId == _promotionSourceClassId)
             ? _promotionSourceClassId!
             : classes.first.classId;
 
         final autoTarget = AcademicStructure.nextClassId(sourceClass);
         final rawTarget = _promotionTargetClassId ?? autoTarget;
-        final targetClass = (rawTarget != null && classes.any((c) => c.classId == rawTarget))
+        final targetClass =
+            (rawTarget != null && classes.any((c) => c.classId == rawTarget))
             ? rawTarget
             : (classes.any((c) => c.classId != sourceClass)
-                ? classes.firstWhere((c) => c.classId != sourceClass).classId
-                : null);
+                  ? classes.firstWhere((c) => c.classId != sourceClass).classId
+                  : null);
 
-        final individualTarget = (_individualTargetClassId != null &&
+        final individualTarget =
+            (_individualTargetClassId != null &&
                 classes.any((c) => c.classId == _individualTargetClassId))
             ? _individualTargetClassId
             : (classes.isNotEmpty ? classes.first.classId : null);
@@ -1098,11 +1194,16 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                   children: [
                     const Text(
                       'Promote Class Section',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
-                      key: ValueKey('source_${classes.map((c) => c.classId).join("_")}_$sourceClass'),
+                      key: ValueKey(
+                        'source_${classes.map((c) => c.classId).join("_")}_$sourceClass',
+                      ),
                       initialValue: classes.any((c) => c.classId == sourceClass)
                           ? sourceClass
                           : (classes.isNotEmpty ? classes.first.classId : null),
@@ -1111,24 +1212,31 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                         border: OutlineInputBorder(),
                       ),
                       items: classes
-                          .map((c) => DropdownMenuItem(
-                                value: c.classId,
-                                child: Text('${c.classId} — ${c.displayLabel}'),
-                              ))
+                          .map(
+                            (c) => DropdownMenuItem(
+                              value: c.classId,
+                              child: Text('${c.classId} — ${c.displayLabel}'),
+                            ),
+                          )
                           .toList(),
                       onChanged: (v) {
                         if (v != null) {
                           setState(() {
                             _promotionSourceClassId = v;
-                            _promotionTargetClassId = AcademicStructure.nextClassId(v);
+                            _promotionTargetClassId =
+                                AcademicStructure.nextClassId(v);
                           });
                         }
                       },
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
-                      key: ValueKey('target_${classes.map((c) => c.classId).join("_")}_$targetClass'),
-                      initialValue: (targetClass != null && classes.any((c) => c.classId == targetClass))
+                      key: ValueKey(
+                        'target_${classes.map((c) => c.classId).join("_")}_$targetClass',
+                      ),
+                      initialValue:
+                          (targetClass != null &&
+                              classes.any((c) => c.classId == targetClass))
                           ? targetClass
                           : null,
                       decoration: InputDecoration(
@@ -1139,12 +1247,15 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                             : 'No next grade (Final Grade 12 graduating batch)',
                       ),
                       items: classes
-                          .map((c) => DropdownMenuItem(
-                                value: c.classId,
-                                child: Text('${c.classId} — ${c.displayLabel}'),
-                              ))
+                          .map(
+                            (c) => DropdownMenuItem(
+                              value: c.classId,
+                              child: Text('${c.classId} — ${c.displayLabel}'),
+                            ),
+                          )
                           .toList(),
-                      onChanged: (v) => setState(() => _promotionTargetClassId = v),
+                      onChanged: (v) =>
+                          setState(() => _promotionTargetClassId = v),
                     ),
                     const SizedBox(height: 16),
                     StreamBuilder<List<Map<String, dynamic>>>(
@@ -1170,20 +1281,26 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
-                        onPressed: (_promotingBatch || targetClass == null || targetClass == sourceClass)
+                        onPressed:
+                            (_promotingBatch ||
+                                targetClass == null ||
+                                targetClass == sourceClass)
                             ? null
                             : () async {
                                 final confirmed = await showDialog<bool>(
                                   context: context,
                                   builder: (c) => AlertDialog(
-                                    title: const Text('Confirm Section Promotion'),
+                                    title: const Text(
+                                      'Confirm Section Promotion',
+                                    ),
                                     content: Text(
                                       'Promote verified scholars in $sourceClass to $targetClass? '
                                       'House assignments will remain completely intact.',
                                     ),
                                     actions: [
                                       TextButton(
-                                        onPressed: () => Navigator.pop(c, false),
+                                        onPressed: () =>
+                                            Navigator.pop(c, false),
                                         child: const Text('Cancel'),
                                       ),
                                       FilledButton(
@@ -1195,10 +1312,11 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                                 );
                                 if (confirmed != true || !mounted) return;
                                 setState(() => _promotingBatch = true);
-                                final res = await _authService.promoteClassSection(
-                                  sourceClassId: sourceClass,
-                                  targetClassId: targetClass,
-                                );
+                                final res = await _authService
+                                    .promoteClassSection(
+                                      sourceClassId: sourceClass,
+                                      targetClassId: targetClass,
+                                    );
                                 if (!mounted) return;
                                 setState(() => _promotingBatch = false);
                                 if (res.hasError) {
@@ -1226,7 +1344,9 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                             ? const SizedBox(
                                 width: 16,
                                 height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
                             : const Icon(Icons.upgrade_rounded),
                         label: Text('Promote Section to ${targetClass ?? ''}'),
@@ -1245,7 +1365,10 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                   children: [
                     const Text(
                       'Promote Individual Scholar',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     TextField(
@@ -1259,8 +1382,12 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
                       isExpanded: true,
-                      key: ValueKey('ind_${classes.map((c) => c.classId).join("_")}_$individualTarget'),
-                      initialValue: (individualTarget != null && classes.any((c) => c.classId == individualTarget))
+                      key: ValueKey(
+                        'ind_${classes.map((c) => c.classId).join("_")}_$individualTarget',
+                      ),
+                      initialValue:
+                          (individualTarget != null &&
+                              classes.any((c) => c.classId == individualTarget))
                           ? individualTarget
                           : null,
                       decoration: const InputDecoration(
@@ -1268,23 +1395,31 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                         border: OutlineInputBorder(),
                       ),
                       items: classes
-                          .map((c) => DropdownMenuItem(
-                                value: c.classId,
-                                child: Text('${c.classId} — ${c.displayLabel}'),
-                              ))
+                          .map(
+                            (c) => DropdownMenuItem(
+                              value: c.classId,
+                              child: Text('${c.classId} — ${c.displayLabel}'),
+                            ),
+                          )
                           .toList(),
-                      onChanged: (v) => setState(() => _individualTargetClassId = v),
+                      onChanged: (v) =>
+                          setState(() => _individualTargetClassId = v),
                     ),
                     const SizedBox(height: 16),
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
-                        onPressed: (_promotingIndividual || individualTarget == null)
+                        onPressed:
+                            (_promotingIndividual || individualTarget == null)
                             ? null
                             : () async {
-                                final sNo = _individualScholarNoController.text.trim();
+                                final sNo = _individualScholarNoController.text
+                                    .trim();
                                 if (sNo.isEmpty) {
-                                  _toast('Enter a valid scholar number', error: true);
+                                  _toast(
+                                    'Enter a valid scholar number',
+                                    error: true,
+                                  );
                                   return;
                                 }
                                 setState(() => _promotingIndividual = true);
@@ -1306,7 +1441,9 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                             ? const SizedBox(
                                 width: 16,
                                 height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
                             : const Icon(Icons.person_add_rounded),
                         label: const Text('Promote Scholar'),
@@ -1355,7 +1492,10 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                     Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
                           decoration: BoxDecoration(
                             color: scheme.primaryContainer,
                             borderRadius: BorderRadius.circular(999),
@@ -1372,24 +1512,36 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                         const SizedBox(width: 8),
                         Text(
                           v.dayOfWeek,
-                          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 16,
+                          ),
                         ),
                         const Spacer(),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
                           decoration: BoxDecoration(
                             color: scheme.surfaceContainerHighest,
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Text(
                             'v${v.version}',
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
                           ),
                         ),
                         if (v.isTemporary) ...[
                           const SizedBox(width: 6),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
                             decoration: BoxDecoration(
                               color: Colors.amber[100],
                               borderRadius: BorderRadius.circular(6),
@@ -1409,11 +1561,17 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                     const SizedBox(height: 8),
                     Text(
                       'Submitted by: ${v.createdByName.isNotEmpty ? v.createdByName : 'Teacher'} (${v.createdByUid.isNotEmpty ? v.createdByUid : 'UID'})',
-                      style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: scheme.onSurfaceVariant,
+                      ),
                     ),
                     Text(
                       'Schedule: ${v.slots.length} periods • Break after Period ${v.breakAfterPeriod}',
-                      style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: scheme.onSurfaceVariant,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     Wrap(
@@ -1431,7 +1589,9 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                           onPressed: () => _rejectSubmittedTimetable(v),
                           icon: const Icon(Icons.close_rounded, size: 18),
                           label: const Text('Reject'),
-                          style: OutlinedButton.styleFrom(foregroundColor: scheme.error),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: scheme.error,
+                          ),
                         ),
                         FilledButton.icon(
                           onPressed: () => _approveSubmittedTimetable(v),
@@ -1483,7 +1643,9 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                             : action[0].toUpperCase() + action.substring(1),
                       ),
                       onSelected: (selected) {
-                        if (selected) setState(() => _auditActionFilter = action);
+                        if (selected) {
+                          setState(() => _auditActionFilter = action);
+                        }
                       },
                     ),
                   ),
@@ -1493,7 +1655,9 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
         ),
         Expanded(
           child: StreamBuilder<List<Map<String, dynamic>>>(
-            key: ValueKey('audits_stream_${_auditClassFilter}_$_auditActionFilter'),
+            key: ValueKey(
+              'audits_stream_${_auditClassFilter}_$_auditActionFilter',
+            ),
             stream: _timetableService.getAllTimetableAuditsStream(
               classId: _auditClassFilter,
               actionFilter: _auditActionFilter,
@@ -1503,7 +1667,8 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
               actionFilter: _auditActionFilter,
             ),
             builder: (context, snap) {
-              if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+              if (snap.connectionState == ConnectionState.waiting &&
+                  !snap.hasData) {
                 return const Center(child: CircularProgressIndicator());
               }
               List<Map<String, dynamic>> logs;
@@ -1534,7 +1699,10 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                 itemBuilder: (context, i) {
                   try {
                     final log = logs[i];
-                    final rawAction = (log['action'] ?? '').toString().trim().toLowerCase();
+                    final rawAction = (log['action'] ?? '')
+                        .toString()
+                        .trim()
+                        .toLowerCase();
                     final action = rawAction.isEmpty ? 'audit' : rawAction;
                     final classId = (log['class_id'] ?? '').toString();
                     final actorName = (log['actor_name'] ?? 'Staff').toString();
@@ -1544,7 +1712,12 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                     String timeLabel = '';
                     try {
                       if (ts is Timestamp) {
-                        timeLabel = ts.toDate().toLocal().toString().split('.').first;
+                        timeLabel = ts
+                            .toDate()
+                            .toLocal()
+                            .toString()
+                            .split('.')
+                            .first;
                       } else if (ts is DateTime) {
                         timeLabel = ts.toLocal().toString().split('.').first;
                       } else if (ts != null) {
@@ -1590,7 +1763,10 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                             Row(
                               children: [
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 3,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: chipColor.withValues(alpha: 0.15),
                                     borderRadius: BorderRadius.circular(6),
@@ -1607,46 +1783,72 @@ class _AdminAcademicsScreenState extends State<AdminAcademicsScreen>
                                 if (classId.isNotEmpty) ...[
                                   const SizedBox(width: 8),
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 3,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: scheme.surfaceContainerHighest,
                                       borderRadius: BorderRadius.circular(6),
                                     ),
                                     child: Text(
                                       classId,
-                                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                   ),
                                 ],
                                 const Spacer(),
                                 Text(
                                   timeLabel,
-                                  style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: scheme.onSurfaceVariant,
+                                  ),
                                 ),
                               ],
                             ),
                             const SizedBox(height: 6),
                             Text(
                               details,
-                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                             const SizedBox(height: 4),
                             Row(
                               children: [
-                                Icon(Icons.person_outline, size: 14, color: scheme.onSurfaceVariant),
+                                Icon(
+                                  Icons.person_outline,
+                                  size: 14,
+                                  color: scheme.onSurfaceVariant,
+                                ),
                                 const SizedBox(width: 4),
                                 Expanded(
                                   child: Text(
                                     'By $actorName ($actorUid)',
-                                    style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: scheme.onSurfaceVariant,
+                                    ),
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
-                                Icon(Icons.lock_outline, size: 12, color: scheme.onSurfaceVariant),
+                                Icon(
+                                  Icons.lock_outline,
+                                  size: 12,
+                                  color: scheme.onSurfaceVariant,
+                                ),
                                 const SizedBox(width: 2),
                                 Text(
                                   'Immutable Audit',
-                                  style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant),
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: scheme.onSurfaceVariant,
+                                  ),
                                 ),
                               ],
                             ),
@@ -1718,8 +1920,17 @@ class _HouseAssignmentDialogState extends State<_HouseAssignmentDialog> {
               ListTile(
                 dense: true,
                 leading: CircleAvatar(backgroundColor: color, radius: 10),
-                title: Text(label, style: TextStyle(fontWeight: FontWeight.w600, color: color)),
-                trailing: _selected == id ? const Icon(Icons.check_circle, color: Colors.green, size: 20) : const Icon(Icons.circle_outlined, size: 20),
+                title: Text(
+                  label,
+                  style: TextStyle(fontWeight: FontWeight.w600, color: color),
+                ),
+                trailing: _selected == id
+                    ? const Icon(
+                        Icons.check_circle,
+                        color: Colors.green,
+                        size: 20,
+                      )
+                    : const Icon(Icons.circle_outlined, size: 20),
                 onTap: () => setState(() => _selected = id),
               ),
           ],
@@ -1781,23 +1992,55 @@ class _UserStatusDialogState extends State<_UserStatusDialog> {
             const SizedBox(height: 12),
             ListTile(
               dense: true,
-              title: const Text('Active', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
+              title: const Text(
+                'Active',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.green,
+                ),
+              ),
               subtitle: const Text('Full system access permitted.'),
-              trailing: _selected == 'active' ? const Icon(Icons.check_circle, color: Colors.green, size: 20) : const Icon(Icons.circle_outlined, size: 20),
+              trailing: _selected == 'active'
+                  ? const Icon(
+                      Icons.check_circle,
+                      color: Colors.green,
+                      size: 20,
+                    )
+                  : const Icon(Icons.circle_outlined, size: 20),
               onTap: () => setState(() => _selected = 'active'),
             ),
             ListTile(
               dense: true,
-              title: const Text('Suspended', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
+              title: const Text(
+                'Suspended',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.orange,
+                ),
+              ),
               subtitle: const Text('Temporary access hold.'),
-              trailing: _selected == 'suspended' ? const Icon(Icons.check_circle, color: Colors.orange, size: 20) : const Icon(Icons.circle_outlined, size: 20),
+              trailing: _selected == 'suspended'
+                  ? const Icon(
+                      Icons.check_circle,
+                      color: Colors.orange,
+                      size: 20,
+                    )
+                  : const Icon(Icons.circle_outlined, size: 20),
               onTap: () => setState(() => _selected = 'suspended'),
             ),
             ListTile(
               dense: true,
-              title: const Text('Deactivated', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red)),
+              title: const Text(
+                'Deactivated',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red,
+                ),
+              ),
               subtitle: const Text('Account disabled.'),
-              trailing: _selected == 'deactivated' ? const Icon(Icons.check_circle, color: Colors.red, size: 20) : const Icon(Icons.circle_outlined, size: 20),
+              trailing: _selected == 'deactivated'
+                  ? const Icon(Icons.check_circle, color: Colors.red, size: 20)
+                  : const Icon(Icons.circle_outlined, size: 20),
               onTap: () => setState(() => _selected = 'deactivated'),
             ),
           ],
@@ -1866,10 +2109,14 @@ class _TransferDialogState extends State<_TransferDialog> {
             if (available.isEmpty) {
               return const Padding(
                 padding: EdgeInsets.symmetric(vertical: 16),
-                child: Text('No other active sections available to transfer to.'),
+                child: Text(
+                  'No other active sections available to transfer to.',
+                ),
               );
             }
-            final validSelected = (_selected != null && available.any((c) => c.classId == _selected))
+            final validSelected =
+                (_selected != null &&
+                    available.any((c) => c.classId == _selected))
                 ? _selected
                 : available.first.classId;
             return DropdownButtonFormField<String>(
@@ -1900,9 +2147,15 @@ class _TransferDialogState extends State<_TransferDialog> {
         ),
         Builder(
           builder: (context) {
-            final classes = AuthService.getCachedAcademicClasses().where((c) => c.active).toList();
-            final available = classes.where((c) => c.classId != widget.currentClassId).toList();
-            final effectiveTarget = (_selected != null && available.any((c) => c.classId == _selected))
+            final classes = AuthService.getCachedAcademicClasses()
+                .where((c) => c.active)
+                .toList();
+            final available = classes
+                .where((c) => c.classId != widget.currentClassId)
+                .toList();
+            final effectiveTarget =
+                (_selected != null &&
+                    available.any((c) => c.classId == _selected))
                 ? _selected
                 : (available.isNotEmpty ? available.first.classId : null);
             return FilledButton(
@@ -1931,8 +2184,32 @@ class _SectionEditorDialogState extends State<_SectionEditorDialog> {
   final _teacherController = TextEditingController();
 
   static const List<String> _sections = [
-    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
-    'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+    'A',
+    'B',
+    'C',
+    'D',
+    'E',
+    'F',
+    'G',
+    'H',
+    'I',
+    'J',
+    'K',
+    'L',
+    'M',
+    'N',
+    'O',
+    'P',
+    'Q',
+    'R',
+    'S',
+    'T',
+    'U',
+    'V',
+    'W',
+    'X',
+    'Y',
+    'Z',
   ];
 
   @override
@@ -2039,10 +2316,12 @@ class _ClassCommunicationDialogState extends State<_ClassCommunicationDialog> {
   @override
   void initState() {
     super.initState();
-    _teacherNameController =
-        TextEditingController(text: widget.cls.classTeacher);
-    _teacherUidController =
-        TextEditingController(text: widget.cls.classTeacherUid ?? '');
+    _teacherNameController = TextEditingController(
+      text: widget.cls.classTeacher,
+    );
+    _teacherUidController = TextEditingController(
+      text: widget.cls.classTeacherUid ?? '',
+    );
     _subjectUidsController = TextEditingController(
       text: widget.cls.subjectTeacherUids.join(', '),
     );
@@ -2112,8 +2391,7 @@ class _ClassCommunicationDialogState extends State<_ClassCommunicationDialog> {
                 subtitle: const Text(
                   'Default is read-only. Class representatives can always post.',
                 ),
-                onChanged: (v) =>
-                    setState(() => _studentPostingEnabled = v),
+                onChanged: (v) => setState(() => _studentPostingEnabled = v),
               ),
               const SizedBox(height: 4),
               Text(

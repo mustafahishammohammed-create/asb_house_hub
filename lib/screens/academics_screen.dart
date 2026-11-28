@@ -7421,7 +7421,12 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
     return StreamBuilder<List<MedicalLeaveRequest>>(
       stream: AuthService().getMedicalLeavesStream(scholarNo: sNo),
       builder: (context, snapshot) {
-        final leaves = snapshot.data ?? AuthService.getCachedMedicalLeaves(scholarNo: sNo);
+        if (snapshot.hasError) {
+          return const Padding(padding: EdgeInsets.all(16), child: Text(
+            'Unable to load medical reports. Check your connection and sign-in.'));
+        }
+        final leaves = snapshot.data ?? (AuthService.isFirebaseLive
+            ? <MedicalLeaveRequest>[] : AuthService.getCachedMedicalLeaves(scholarNo: sNo));
         if (leaves.isEmpty) return const SizedBox.shrink();
 
         return Column(
@@ -8321,6 +8326,8 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
     DateTime endDate = DateTime.now();
     String? photoBase64;
     String? pdfFileName;
+    bool submitting = false;
+    String? submissionError;
     final picker = ImagePicker();
 
     showModalBottomSheet(
@@ -8350,14 +8357,14 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
+                        Expanded(child: Text(
                           '🏥 Submit Medical Leave & Report',
                           style: TextStyle(
                             fontSize: 17,
                             fontWeight: FontWeight.w900,
                             color: isDark ? Colors.white : const Color(0xFF1E293B),
                           ),
-                        ),
+                        )),
                         Semantics(
                           button: true,
                           label: 'Close dialog',
@@ -8372,7 +8379,7 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Attach a photo of the Doctor\'s Prescription or Medical Certificate for administrative review and statutory attendance excuse.',
+                      'Your report is shared privately with your assigned class teacher and senior school management. Other students and teachers cannot view it.',
                       style: TextStyle(
                         fontSize: 12,
                         color: isDark ? Colors.white60 : Colors.black54,
@@ -8452,6 +8459,8 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
                     const SizedBox(height: 12),
                     TextField(
                       controller: doctorController,
+                      maxLength: 100,
+                      enabled: !submitting,
                       decoration: InputDecoration(
                         labelText: 'Doctor / Clinic / Hospital Name',
                         hintText: 'e.g. Salmaniya Medical Complex',
@@ -8466,6 +8475,8 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
                     const SizedBox(height: 12),
                     TextField(
                       controller: reasonController,
+                      maxLength: 2000,
+                      enabled: !submitting,
                       maxLines: 2,
                       decoration: InputDecoration(
                         labelText: 'Medical Reason / Diagnosis Notes',
@@ -8581,9 +8592,9 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
                                         final bytes = await xfile.readAsBytes();
                                         final encoded = 'data:image/jpeg;base64,${base64Encode(bytes)}';
                                         if (!ctx.mounted) return;
-                                        if (encoded.length > 900000) {
+                                        if (encoded.length > 500000) {
                                           parentMessenger.showSnackBar(
-                                            const SnackBar(content: Text('Photo is too large (max ~650 KB).')),
+                                            const SnackBar(content: Text('Photo is too large (max ~365 KB).')),
                                           );
                                           return;
                                         }
@@ -8622,9 +8633,9 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
                                         final bytes = await xfile.readAsBytes();
                                         final encoded = 'data:image/jpeg;base64,${base64Encode(bytes)}';
                                         if (!ctx.mounted) return;
-                                        if (encoded.length > 900000) {
+                                        if (encoded.length > 500000) {
                                           parentMessenger.showSnackBar(
-                                            const SnackBar(content: Text('Image is too large (max ~650 KB).')),
+                                            const SnackBar(content: Text('Image is too large (max ~365 KB).')),
                                           );
                                           return;
                                         }
@@ -8666,9 +8677,9 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
                                     final bytes = await file.readAsBytes();
                                     final encoded = 'data:application/pdf;base64,${base64Encode(bytes)}';
                                     if (!ctx.mounted) return;
-                                    if (encoded.length > 900000) {
+                                    if (encoded.length > 500000) {
                                       parentMessenger.showSnackBar(
-                                        const SnackBar(content: Text('PDF is too large for upload (max ~650 KB).')),
+                                        const SnackBar(content: Text('PDF is too large for upload (max ~365 KB).')),
                                       );
                                       return;
                                     }
@@ -8696,19 +8707,21 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
                         ],
                       ),
                     ],
+                    if (submissionError != null) Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Text(submissionError!, style: const TextStyle(color: Colors.redAccent))),
                     const SizedBox(height: 20),
                     SizedBox(
                       width: double.infinity,
                       height: 48,
                       child: ElevatedButton(
-                        onPressed: () async {
+                        onPressed: submitting ? null : () async {
                           if (reasonController.text.trim().isEmpty) {
                             parentMessenger.showSnackBar(
                               const SnackBar(content: Text('Please provide medical reason / diagnosis notes.')),
                             );
                             return;
                           }
-                          Navigator.of(ctx).pop();
 
                           final profile = AuthService.getCachedProfile();
                           final sNo = widget.scholarNo ?? (profile?['scholar_no']?.toString().trim().isNotEmpty == true
@@ -8732,6 +8745,7 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
                             return;
                           }
 
+                          setModalState(() { submitting = true; submissionError = null; });
                           final ok = await AuthService().submitMedicalLeaveRequest(
                             scholarNo: sNo,
                             studentName: sName,
@@ -8744,20 +8758,23 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
                             certificatePhotoBase64: photoBase64,
                           );
 
-                          if (!mounted) return;
+                          if (!mounted || !ctx.mounted) return;
+                          setModalState(() => submitting = false);
                           if (ok) {
+                            Navigator.of(ctx).pop();
                             parentMessenger.showSnackBar(
                               SnackBar(
                                 content: const Text(
-                                  'Medical Leave Pass & Doctor Prescription submitted directly to Administration for approval!',
+                                  'Medical report shared privately with your class teacher and school management.',
                                 ),
                                 backgroundColor: Colors.green[700],
                               ),
                             );
                           } else {
+                            setModalState(() => submissionError = 'Report not submitted. Check your connection and verified class placement, then retry.');
                             parentMessenger.showSnackBar(
                               const SnackBar(
-                                content: Text('Failed to submit medical leave request. Please check permissions or connection.'),
+                                content: Text('Report not submitted. Check your connection and ask administration to verify your class placement.'),
                                 backgroundColor: Colors.redAccent,
                               ),
                             );
@@ -8770,8 +8787,8 @@ class _AcademicAttendanceTabState extends State<AcademicAttendanceTab> {
                             borderRadius: BorderRadius.circular(14),
                           ),
                         ),
-                        child: const Text(
-                          'Submit Medical Certificate to Admin',
+                        child: Text(
+                          submitting ? 'Submitting…' : 'Submit Medical Report',
                           style: TextStyle(fontWeight: FontWeight.w800),
                         ),
                       ),

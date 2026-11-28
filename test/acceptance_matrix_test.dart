@@ -174,7 +174,7 @@ void main() {
     expect(rules.contains("resource.data.status != 'published'"), isTrue);
 
     // Class, house, and class-group scoping helpers remain in place.
-    expect(rules.contains('getUserData().class_id == classId'), isTrue);
+    expect(rules.contains("resource.data.class_id == getUserData().get('class_id', '')"), isTrue);
     expect(rules.contains('isSameHouse(houseId)'), isTrue);
     expect(rules.contains('isVerifiedClassMember(classId)'), isTrue);
     expect(rules.contains('function isAdmin()'), isTrue);

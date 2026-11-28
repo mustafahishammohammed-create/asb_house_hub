@@ -465,7 +465,7 @@ service cloud.firestore {
     // the profile. Unverified signups and legacy profiles without
     // class_verified == true are not members.
     function isVerifiedClassMember(classId) {
-      return isActiveUser() && hasUserDoc() &&
+      return isActiveUser() && !_hasStaffAdminRole() && hasUserDoc() &&
         'class_id' in getUserData() &&
         getUserData().class_id is string &&
         getUserData().class_id.upper() == classId.upper() &&
@@ -474,7 +474,7 @@ service cloud.firestore {
     }
 
     function isClassTeacher(classId) {
-      return isActiveUser() &&
+      return isAdmin() &&
         exists(/databases/$(database)/documents/academic_classes/$(classId)) &&
         'class_teacher_uid' in getClassData(classId) &&
         getClassData(classId).class_teacher_uid == request.auth.uid;
@@ -1217,7 +1217,7 @@ service cloud.firestore {
 
     function isValidMedicalLeave(data) {
       return hasOnlyAllowedFields([
-        'id', 'scholar_no', 'scholarNo', 'student_name', 'studentName', 'house',
+        'class_id', 'id', 'scholar_no', 'scholarNo', 'student_name', 'studentName', 'house',
         'class_level', 'classLevel', 'start_date', 'startDate', 'end_date', 'endDate',
         'reason', 'doctor_name', 'doctorName', 'certificate_photo', 'certificatePhoto',
         'submitted_at', 'submittedAt', 'status', 'admin_remark', 'adminRemark',
@@ -1226,6 +1226,7 @@ service cloud.firestore {
       hasRequiredFields(['scholar_no', 'student_name', 'status']) &&
       data.scholar_no is string && data.scholar_no.size() >= 1 && data.scholar_no.size() <= 30 &&
       data.student_name is string && data.student_name.size() >= 1 && data.student_name.size() <= 100 &&
+      (!('class_id' in data) || (data.class_id is string && data.class_id.size() <= 20)) &&
       data.status is string && data.status in ['pending', 'approved', 'rejected'] &&
       (!('house' in data) || (data.house is string && data.house.lower() in ['ruby', 'sapphire', 'emerald', 'topaz'])) &&
       (!('class_level' in data) || (data.class_level is string && data.class_level.size() <= 50)) &&
@@ -1233,20 +1234,20 @@ service cloud.firestore {
       (!('reason' in data) || (data.reason is string && data.reason.size() <= 2000)) &&
       (!('doctor_name' in data) || (data.doctor_name is string && data.doctor_name.size() <= 100)) &&
       (!('doctorName' in data) || (data.doctorName is string && data.doctorName.size() <= 100)) &&
-      (!('certificate_photo' in data) || (data.certificate_photo is string && data.certificate_photo.size() <= 500000)) &&
-      (!('certificatePhoto' in data) || (data.certificatePhoto is string && data.certificatePhoto.size() <= 500000)) &&
-      (!('admin_remark' in data) || (data.admin_remark is string && data.admin_remark.size() <= 2000)) &&
-      (!('adminRemark' in data) || (data.adminRemark is string && data.adminRemark.size() <= 2000)) &&
-      (!('reviewed_by' in data) || (data.reviewed_by is string && data.reviewed_by.size() <= 100)) &&
-      (!('reviewedBy' in data) || (data.reviewedBy is string && data.reviewedBy.size() <= 100)) &&
+      (!('certificate_photo' in data) || data.certificate_photo == null || (data.certificate_photo is string && data.certificate_photo.size() <= 500000)) &&
+      (!('certificatePhoto' in data) || data.certificatePhoto == null || (data.certificatePhoto is string && data.certificatePhoto.size() <= 500000)) &&
+      (!('admin_remark' in data) || data.admin_remark == null || (data.admin_remark is string && data.admin_remark.size() <= 2000)) &&
+      (!('adminRemark' in data) || data.adminRemark == null || (data.adminRemark is string && data.adminRemark.size() <= 2000)) &&
+      (!('reviewed_by' in data) || data.reviewed_by == null || (data.reviewed_by is string && data.reviewed_by.size() <= 100)) &&
+      (!('reviewedBy' in data) || data.reviewedBy == null || (data.reviewedBy is string && data.reviewedBy.size() <= 100)) &&
       (!('start_date' in data) || (data.start_date is string && data.start_date.size() <= 50) || data.start_date is timestamp) &&
       (!('startDate' in data) || (data.startDate is string && data.startDate.size() <= 50) || data.startDate is timestamp) &&
       (!('end_date' in data) || (data.end_date is string && data.end_date.size() <= 50) || data.end_date is timestamp) &&
       (!('endDate' in data) || (data.endDate is string && data.endDate.size() <= 50) || data.endDate is timestamp) &&
       (!('submitted_at' in data) || (data.submitted_at is string && data.submitted_at.size() <= 50) || data.submitted_at is timestamp) &&
       (!('submittedAt' in data) || (data.submittedAt is string && data.submittedAt.size() <= 50) || data.submittedAt is timestamp) &&
-      (!('reviewed_at' in data) || (data.reviewed_at is string && data.reviewed_at.size() <= 50) || data.reviewed_at is timestamp) &&
-      (!('reviewedAt' in data) || (data.reviewedAt is string && data.reviewedAt.size() <= 50) || data.reviewedAt is timestamp);
+      (!('reviewed_at' in data) || data.reviewed_at == null || (data.reviewed_at is string && data.reviewed_at.size() <= 50) || data.reviewed_at is timestamp) &&
+      (!('reviewedAt' in data) || data.reviewedAt == null || (data.reviewedAt is string && data.reviewedAt.size() <= 50) || data.reviewedAt is timestamp);
     }
 
     function isValidSportsTrophy(data) {
@@ -1422,13 +1423,13 @@ service cloud.firestore {
 
       // Update:
       // - super_admin can update any field including role and points
-      // - faculty/teacher/admin can update points (e.g. claim approval or conduct marks)
+      // - senior management can update protected profile fields without changing role
       // - council/captain can update student points_contributed (bounded 0..+500 delta) on claim approvals
       // - self-update: owner can update basic profile fields, but CANNOT modify role, points, or scholar_no
       allow update: if isActiveUser() && isValidUser(request.resource.data) && (
         _hasSuperAdminRole() ||
         (
-          _hasStaffAdminRole() &&
+          _hasSeniorAdminRole() &&
           request.resource.data.role == resource.data.role &&
           areImmutableFieldsUnchanged(['scholar_no', 'created_at', 'uid'])
         ) ||
@@ -1461,11 +1462,11 @@ service cloud.firestore {
 
       // Subcollection: users/{userId}/notifications/{notificationId}
       match /notifications/{notificationId} {
-        allow read: if isOwner(userId) || isAdmin();
+        allow read: if isOwner(userId);
         allow create: if isActiveUser() &&
           isValidNotification(request.resource.data) &&
           request.resource.data.sender_id == request.auth.uid && (
-          _hasStaffAdminRole() ||
+          _hasSeniorAdminRole() ||
           (
             _hasCouncilRole() &&
             request.resource.data.get('category', 'house') in ['house', 'points', 'timetable', 'class', 'chat'] &&
@@ -1503,7 +1504,7 @@ service cloud.firestore {
         ) || (
           isActiveUser() &&
           (
-            _hasStaffAdminRole() ||
+            _hasSeniorAdminRole() ||
             (
               _hasCouncilRole() &&
               request.resource.data.get('category', 'house') in ['house', 'points', 'timetable', 'class', 'chat'] &&
@@ -1617,16 +1618,18 @@ service cloud.firestore {
     // Students may only read their own assigned class; all writes are admin-only.
     // Grade/section identity is immutable after creation (transfer students instead).
     match /academic_classes/{classId} {
-      allow read: if isAdmin() ||
-        (isSignedIn() && hasUserDoc() && 'class_id' in getUserData() && getUserData().class_id == classId);
-      allow create: if isAdmin() &&
+      allow read: if isSeniorAdmin() ||
+        (isAdmin() && (resource.data.get('class_teacher_uid', '') == request.auth.uid ||
+          request.auth.uid in resource.data.get('subject_teacher_uids', []))) ||
+        (isActiveUser() && !_hasStaffAdminRole() && hasUserDoc() && resource.data.class_id == getUserData().get('class_id', ''));
+      allow create: if isSeniorAdmin() &&
         isValidAcademicClass(request.resource.data) &&
         request.resource.data.class_id == classId;
-      allow update: if isAdmin() &&
+      allow update: if isSeniorAdmin() &&
         isValidAcademicClass(request.resource.data) &&
         request.resource.data.class_id == classId &&
         areImmutableFieldsUnchanged(['grade', 'section', 'created_at']);
-      allow delete: if isAdmin();
+      allow delete: if isSeniorAdmin();
     }
 
     // 3c. timetable_versions/{versionId} — recurring weekly timetable versions (M2)
@@ -1717,13 +1720,13 @@ service cloud.firestore {
     // 5. house_claims/{claimId}
     match /house_claims/{claimId} {
       // Read: owner of the claim OR admin OR council OR same-house captains
-      allow read: if isScholarOwner(resource.data.scholar_no) || isAdmin() || isCouncil() || (isCaptain() && _hasSameHouse(resource.data.house_name));
+      allow read: if isScholarOwner(resource.data.scholar_no) || isSeniorAdmin() || isCouncil() || (isCaptain() && _hasSameHouse(resource.data.house_name));
 
       // Create: authenticated user with initial status == 'pending'; AI/moderation metadata is server/staff controlled
       allow create: if isActiveUser() &&
         isValidHouseClaim(request.resource.data) &&
         request.resource.data.status == 'pending' &&
-        (_hasStaffAdminRole() || (
+        (_hasSeniorAdminRole() || (
           _hasScholarOwner(request.resource.data.scholar_no) &&
           _hasSameHouse(request.resource.data.house_name) &&
           'full_name' in getUserData() &&
@@ -1736,7 +1739,7 @@ service cloud.firestore {
           request.resource.data.get('ai_status', 'pending_scan') == 'pending_scan'
         ));
 
-      // Update: staff admin, executive council, or captain of the same house (approving/rejecting someone else's claim),
+      // Update: senior admin, executive council, or captain of the same house (approving/rejecting someone else's claim),
       // OR the owning student finalizing cert_url immediately after pre-registered Storage upload.
       allow update: if isActiveUser() &&
         isValidHouseClaim(request.resource.data) && (
@@ -1748,7 +1751,7 @@ service cloud.firestore {
           !request.resource.data.cert_url.matches('^uploading://.*')
         ) || (
           (
-            _hasStaffAdminRole() ||
+            _hasSeniorAdminRole() ||
             _hasCouncilRole() ||
             (_hasCaptainRole() && _hasSameHouse(resource.data.house_name))
           ) &&
@@ -2031,16 +2034,11 @@ service cloud.firestore {
                : request.resource.data.participants[0]
            ))
         );
-      allow update: if isActiveUser() && (
-        (
-          resource.data != null &&
-          'participants' in resource.data &&
-          request.auth.uid in resource.data.participants &&
-          request.resource.data.participants == resource.data.participants
-        ) ||
-        isAdmin()
-      );
-      allow delete: if isAdmin();
+      // A staff role must never let a nonparticipant join a private room.
+      allow update: if isActiveUser() &&
+        request.auth.uid in resource.data.participants &&
+        request.resource.data.participants == resource.data.participants;
+      allow delete: if isActiveUser() && request.auth.uid in resource.data.participants;
 
       match /messages/{messageId} {
         function isChannelParticipant() {
@@ -2055,10 +2053,9 @@ service cloud.firestore {
           (isChannelParticipant() && (
           (resource.data.sender_id == request.auth.uid && isValidChatMessage(request.resource.data) && request.resource.data.sender_id == resource.data.sender_id) ||
           (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['is_read', 'read_at']) && request.resource.data.is_read is bool)
-          )) ||
-          isAdmin()
+          ))
         );
-        allow delete: if isActiveUser() && (resource.data.sender_id == request.auth.uid || isAdmin());
+        allow delete: if isChannelParticipant() && resource.data.sender_id == request.auth.uid;
       }
     }
 
@@ -2123,18 +2120,28 @@ service cloud.firestore {
       allow write: if isAdmin() || isCouncil();
     }
 
+    function canReviewMedical(data) {
+      return isSeniorAdmin() ||
+        (data.get('class_id', '') != '' && isClassTeacher(data.class_id));
+    }
+
     match /medical_leaves/{leaveId} {
-      allow read: if (('scholar_no' in resource.data && isScholarOwner(resource.data.scholar_no)) || isAdmin());
-      allow create: if isSignedIn() &&
-        ('scholar_no' in request.resource.data && isScholarOwner(request.resource.data.scholar_no)) &&
+      allow read: if isScholarOwner(resource.data.scholar_no) || canReviewMedical(resource.data);
+      allow create: if isActiveUser() &&
+        isScholarOwner(request.resource.data.scholar_no) &&
+        request.resource.data.get('class_id', '') != '' &&
+        isVerifiedClassMember(request.resource.data.class_id) &&
         request.resource.data.status == 'pending' &&
+        request.resource.data.get('reviewed_by', '') == '' &&
+        request.resource.data.get('admin_remark', '') == '' &&
+        !request.resource.data.keys().hasAny(['reviewed_at', 'reviewedAt', 'reviewedBy', 'adminRemark']) &&
         isValidMedicalLeave(request.resource.data);
-      allow update: if isAdmin() &&
+      allow update: if canReviewMedical(resource.data) &&
         resource.data.status == 'pending' &&
         request.resource.data.status in ['approved', 'rejected'] &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewed_by', 'reviewed_at', 'admin_remark']) &&
         isValidMedicalLeave(request.resource.data);
-      allow delete: if isAdmin();
+      allow delete: if isSeniorAdmin();
     }
 
     // 15. system_config/{configId}

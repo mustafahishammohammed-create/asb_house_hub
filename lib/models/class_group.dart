@@ -275,6 +275,7 @@ class ClassGroupAccess {
     if (profile == null) return false;
     final target = classId.trim().toUpperCase();
     if (target.isEmpty) return false;
+    if (HierarchyService.isTeacherOrFaculty(role: roleOf(profile))) return false;
     return resolveClassId(profile) == target &&
         profile['class_verified'] == true;
   }

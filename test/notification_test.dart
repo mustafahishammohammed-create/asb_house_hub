@@ -768,7 +768,7 @@ void main() {
           "request.resource.data.diff(resource.data).affectedKeys().hasOnly(['is_read'])",
         ),
       );
-      expect(source, contains('allow read: if isOwner(userId) || isAdmin();'));
+      expect(source, contains('allow read: if isOwner(userId);'));
     });
 
     test('deduplicated fan-out retries cannot change read state', () {
@@ -795,7 +795,7 @@ void main() {
       expect(block, contains('allow create: if isActiveUser()'));
       expect(block, contains('isValidNotification(request.resource.data)'));
       expect(block, contains('request.resource.data.sender_id == request.auth.uid'));
-      expect(block, contains('_hasStaffAdminRole()'));
+      expect(block, contains('_hasSeniorAdminRole()'));
       expect(block, contains('_hasCouncilRole()'));
       expect(block, contains('_hasCaptainRole()'));
       expect(block, contains('isNotificationScopeSender(request.resource.data, userId)'));

@@ -349,6 +349,7 @@ class AuthService {
   static Future<void> initPreferences() async {
     try {
       _prefs = await SharedPreferences.getInstance();
+      await _prefs?.remove(_kCachedMedicalLeavesKey); // Remove legacy cross-account medical cache.
       await TimetableService.initPreferences(_prefs);
     } catch (_) {}
   }
@@ -3880,6 +3881,7 @@ class AuthService {
       }
       final dynamicKeys = (_prefs?.getKeys() ?? const <String>{}).where(
         (k) =>
+            k.startsWith('cached_medical_leaves_list_') ||
             k.startsWith('cached_timetable_') ||
             k.startsWith('cached_assignments_') ||
             k.startsWith('cached_exams_') ||
@@ -5529,6 +5531,12 @@ class AuthService {
     String? studentName,
     String? activityTitle,
   }) async {
+    final profile = getCachedProfile();
+    if (!HierarchyService.canReviewClaims(
+      role: profile?['role']?.toString(), scholarNo: getCachedScholarNo())) {
+      throw StateError('Claim review is restricted to authorized reviewers.');
+    }
+
     final claimRef = _firestore.collection('house_claims').doc(claimId);
 
     String authHouse = houseName.toLowerCase().trim();
@@ -5686,6 +5694,12 @@ class AuthService {
     String? reason,
     String? studentName,
   }) async {
+    final profile = getCachedProfile();
+    if (!HierarchyService.canReviewClaims(
+      role: profile?['role']?.toString(), scholarNo: getCachedScholarNo())) {
+      throw StateError('Claim review is restricted to authorized reviewers.');
+    }
+
     final claimRef = _firestore.collection('house_claims').doc(claimId);
     String authScholar = '';
     String authTitle = 'Competition Entry';
@@ -9026,20 +9040,23 @@ class AuthService {
 
   static const String _kCachedMedicalLeavesKey = 'cached_medical_leaves_list';
 
+  static String get _medicalCacheKey =>
+      '${_kCachedMedicalLeavesKey}_${getCachedProfile()?['uid'] ?? getCachedScholarNo() ?? 'local'}';
+
   /// Caches medical leave requests to local disk.
   static Future<void> cacheMedicalLeaves(
     List<MedicalLeaveRequest> leaves,
   ) async {
     try {
       final list = leaves.map((l) => l.toMap()).toList();
-      await _prefs?.setString(_kCachedMedicalLeavesKey, jsonEncode(list));
+      await _prefs?.setString(_medicalCacheKey, jsonEncode(list));
     } catch (_) {}
   }
 
   /// Retrieves medical leave requests from local cache. Returns [] when unseeded.
   static List<MedicalLeaveRequest> getCachedMedicalLeaves({String? scholarNo}) {
     try {
-      final raw = _prefs?.getString(_kCachedMedicalLeavesKey);
+      final raw = _prefs?.getString(_medicalCacheKey);
       if (raw != null && raw.isNotEmpty) {
         final decoded = jsonDecode(raw);
         if (decoded is List) {
@@ -9057,40 +9074,40 @@ class AuthService {
     return <MedicalLeaveRequest>[];
   }
 
-  /// Stream of submitted medical leaves (bounded for Admin / Faculty approval).
+  /// Server-scoped reads. A teacher must select a class they lead; rules
+  /// verify the current assignment on every read. Live errors never reveal
+  /// cached reports belonging to another session or a previous assignment.
   Stream<List<MedicalLeaveRequest>> getMedicalLeavesStream({
     String? scholarNo,
+    String? classId,
     int limit = 150,
   }) {
+    if (!_isFirebaseLive) {
+      return Stream.value(getCachedMedicalLeaves(scholarNo: scholarNo)
+          .where((l) => classId == null || l.classId == classId).toList());
+    }
+    final profile = getCachedProfile();
+    final senior = HierarchyService.isSeniorAdmin(
+      role: profile?['role']?.toString(), scholarNo: getCachedScholarNo());
+    final ownScholar = (profile?['scholar_no'] ?? getCachedScholarNo() ?? '').toString();
+    if (!senior && (classId ?? '').isEmpty &&
+        ((scholarNo ?? '').isEmpty || scholarNo != ownScholar)) {
+      return const Stream.empty();
+    }
     try {
-      Query query = _firestore
-          .collection('medical_leaves')
-          .orderBy('submitted_at', descending: true);
+      Query query = _firestore.collection('medical_leaves');
       if (scholarNo != null && scholarNo.isNotEmpty) {
         query = query.where('scholar_no', isEqualTo: scholarNo.trim());
       }
-      query = query.limit(limit);
-      return query
-          .snapshots()
-          .map((snap) {
-            final list = _safeDecodeDocs(
-              snap.docs,
-              (data, id) => MedicalLeaveRequest.fromMap(data, docId: id),
-            );
-            cacheMedicalLeaves(list);
-            return list;
-          })
-          .transform(
-            StreamTransformer<List<MedicalLeaveRequest>,
-                List<MedicalLeaveRequest>>.fromHandlers(
-              handleError: (e, stackTrace, sink) {
-                debugPrint('Medical leaves stream error: $e');
-                sink.add(getCachedMedicalLeaves(scholarNo: scholarNo));
-              },
-            ),
-          );
-    } catch (_) {
-      return Stream.value(getCachedMedicalLeaves(scholarNo: scholarNo));
+      if (classId != null && classId.isNotEmpty) {
+        query = query.where('class_id', isEqualTo: classId);
+      }
+      return query.orderBy('submitted_at', descending: true).limit(limit)
+          .snapshots(includeMetadataChanges: true).map((snap) => snap.metadata.isFromCache
+            ? <MedicalLeaveRequest>[] : _safeDecodeDocs(
+            snap.docs, (data, id) => MedicalLeaveRequest.fromMap(data, docId: id)));
+    } catch (e, stack) {
+      return Stream.error(e, stack);
     }
   }
 
@@ -9106,6 +9123,12 @@ class AuthService {
     String doctorName = '',
     String? certificatePhotoBase64,
   }) async {
+    final profile = getCachedProfile();
+    final classId = (profile?['class_id'] ?? '').toString().trim().toUpperCase();
+    if (_isFirebaseLive && (classId.isEmpty || profile?['class_verified'] != true ||
+        scholarNo.trim() != (profile?['scholar_no'] ?? '').toString())) {
+      return false;
+    }
     final now = DateTime.now();
     final leaveId = 'med_${now.millisecondsSinceEpoch}';
 
@@ -9115,6 +9138,7 @@ class AuthService {
       studentName: studentName.trim(),
       house: house.toLowerCase().trim(),
       classLevel: classLevel.trim(),
+      classId: classId,
       startDate: startDate,
       endDate: endDate,
       reason: reason.trim(),
@@ -9134,14 +9158,13 @@ class AuthService {
             .doc(leaveId)
             .set(request.toMap());
       } catch (e) {
-        if (!_isNoAppException(e)) {
-          debugPrint('Firestore submitMedicalLeaveRequest failure: $e');
-          return false;
-        }
+        debugPrint('Firestore submitMedicalLeaveRequest failure: $e');
+        return false;
       }
     }
 
     // Update local write-through cache only on successful Firestore write or test mode
+    if (_isFirebaseLive) return true;
     final cached = getCachedMedicalLeaves();
     await cacheMedicalLeaves([request, ...cached]);
     return true;
@@ -9163,16 +9186,15 @@ class AuthService {
           'status': 'approved',
           'reviewed_by': reviewerName,
           'reviewed_at': FieldValue.serverTimestamp(),
-          'admin_remark': adminRemark,
+          'admin_remark': adminRemark ?? '',
         });
       } catch (e) {
-        if (!_isNoAppException(e)) {
-          debugPrint('Firestore approveMedicalLeave failure: $e');
-          return false;
-        }
+        debugPrint('Firestore approveMedicalLeave failure: $e');
+        return false;
       }
     }
 
+    if (_isFirebaseLive) return true;
     final cached = getCachedMedicalLeaves();
     final idx = cached.indexWhere((l) => l.id == leaveId);
     if (idx != -1) {
@@ -9183,6 +9205,7 @@ class AuthService {
         studentName: existing.studentName,
         house: existing.house,
         classLevel: existing.classLevel,
+        classId: existing.classId,
         startDate: existing.startDate,
         endDate: existing.endDate,
         reason: existing.reason,
@@ -9215,16 +9238,15 @@ class AuthService {
           'status': 'rejected',
           'reviewed_by': reviewerName,
           'reviewed_at': FieldValue.serverTimestamp(),
-          'admin_remark': adminRemark,
+          'admin_remark': adminRemark ?? '',
         });
       } catch (e) {
-        if (!_isNoAppException(e)) {
-          debugPrint('Firestore rejectMedicalLeave failure: $e');
-          return false;
-        }
+        debugPrint('Firestore rejectMedicalLeave failure: $e');
+        return false;
       }
     }
 
+    if (_isFirebaseLive) return true;
     final cached = getCachedMedicalLeaves();
     final idx = cached.indexWhere((l) => l.id == leaveId);
     if (idx != -1) {
@@ -9235,6 +9257,7 @@ class AuthService {
         studentName: existing.studentName,
         house: existing.house,
         classLevel: existing.classLevel,
+        classId: existing.classId,
         startDate: existing.startDate,
         endDate: existing.endDate,
         reason: existing.reason,
@@ -9371,8 +9394,15 @@ class AuthService {
     bool activeOnly = false,
   }) {
     Stream<List<AcademicClass>> stream() async* {
-      List<AcademicClass> applyFilter(List<AcademicClass> list) =>
-          activeOnly ? list.where((c) => c.active).toList() : list;
+      final profile = getCachedProfile();
+      final uid = (profile?['uid'] ?? '').toString();
+      final role = profile?['role']?.toString();
+      final senior = HierarchyService.isSeniorAdmin(role: role,
+          scholarNo: profile?['scholar_no']?.toString());
+      final teacher = HierarchyService.isTeacherOrFaculty(role: role);
+      List<AcademicClass> applyFilter(List<AcademicClass> list) => list.where((c) =>
+        (!activeOnly || c.active) && (senior || !teacher ||
+          (uid.isNotEmpty && (c.classTeacherUid == uid || c.subjectTeacherUids.contains(uid))))).toList();
 
       // Immediately yield cached classes so UI never hangs in waiting state
       yield applyFilter(getCachedAcademicClasses());
@@ -9381,7 +9411,18 @@ class AuthService {
 
       try {
         Query query = _firestore.collection('academic_classes');
-        if (activeOnly) query = query.where('active', isEqualTo: true);
+        if (!senior) {
+          if (teacher && uid.isNotEmpty) {
+            query = query.where(Filter.or(
+              Filter('class_teacher_uid', isEqualTo: uid),
+              Filter('subject_teacher_uids', arrayContains: uid)));
+          } else {
+            final classId = (profile?['class_id'] ?? '').toString();
+            if (classId.isEmpty) { yield <AcademicClass>[]; return; }
+            query = query.where('class_id', isEqualTo: classId);
+          }
+        }
+
         await for (final snap in query.snapshots()) {
           final list = snap.docs
               .map((d) => AcademicClass.fromFirestore(d))
@@ -10440,7 +10481,7 @@ class AuthService {
         if (_staffRoles.contains(role)) return false;
 
         final cid = (data['class_id'] ?? '').toString().trim().toUpperCase();
-        if (cid == id) return true;
+        if (cid.isNotEmpty) return cid == id;
 
         final rawLevel = (data['class_level'] ?? '').toString().trim();
         final normGrade = AcademicStructure.normalizeGrade(rawLevel);
@@ -10501,78 +10542,19 @@ class AuthService {
         return local;
       }
 
-      yield getLocalRoster();
-
-      if (!_isFirebaseLive) return;
-
-      try {
-        await for (final snap in _firestore.collection('users').snapshots()) {
-          final roster = <Map<String, dynamic>>[];
-          final seen = <String>{};
-
-          final localSaved = getSavedAccounts();
-          final placements = getVerifiedClassPlacements();
-          for (final doc in snap.docs) {
-            final data = Map<String, dynamic>.from(doc.data());
-            final sNo = (data['scholar_no'] ?? doc.id).toString().trim();
-
-            // Overlay local saved account data if matching
-            for (final acc in localSaved) {
-              final accSNo = acc.scholarNo.trim().toLowerCase();
-              final docSNo = sNo.toLowerCase();
-              final parsedAcc = int.tryParse(accSNo);
-              final parsedDoc = int.tryParse(docSNo);
-              final match =
-                  accSNo == docSNo ||
-                  acc.uid.trim() == doc.id ||
-                  (parsedAcc != null &&
-                      parsedDoc != null &&
-                      parsedAcc == parsedDoc);
-              if (match) {
-                data.addAll(acc.cachedProfile);
-                if (acc.classLevel != null) {
-                  data['class_level'] = acc.classLevel;
-                }
-                if (acc.division != null) {
-                  data['division'] = acc.division;
-                }
-                break;
-              }
-            }
-
-            final sKey = sNo.toLowerCase();
-            final uKey = doc.id.toLowerCase();
-            final placement = placements[sKey] ?? placements[uKey];
-            if (placement != null) {
-              data.addAll(placement);
-            }
-
-            if (matches(data)) {
-              seen.add(sNo);
-              roster.add({...data, 'uid': doc.id});
-            }
-          }
-
-          for (final loc in getLocalRoster()) {
-            final sNo = (loc['scholar_no'] ?? loc['uid'] ?? '')
-                .toString()
-                .trim();
-            if (!seen.contains(sNo)) {
-              seen.add(sNo);
-              roster.add(loc);
-            }
-          }
-
-          roster.sort(
-            (a, b) => (a['full_name'] ?? '').toString().compareTo(
-              (b['full_name'] ?? '').toString(),
-            ),
-          );
-          yield roster;
-        }
-      } catch (e) {
-        debugPrint('Class roster stream error: $e');
+      if (!_isFirebaseLive) {
         yield getLocalRoster();
+        return;
+      }
+      // The server is authoritative; do not resurrect moved students from
+      // saved-account or placement caches when another admin edits a class.
+      await for (final snap in _firestore.collection('users').snapshots()) {
+        final roster = snap.docs
+            .where((doc) => matches(doc.data()))
+            .map((doc) => {...doc.data(), 'uid': doc.id}).toList();
+        roster.sort((a, b) => (a['full_name'] ?? '').toString()
+            .compareTo((b['full_name'] ?? '').toString()));
+        yield roster;
       }
     }
 

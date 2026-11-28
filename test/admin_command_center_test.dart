@@ -593,7 +593,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Academic management is restricted to school staff and administrators.'), findsOneWidget);
+      expect(find.text('Academic management is restricted to school management and administrators.'), findsOneWidget);
       expect(find.byIcon(Icons.lock_outline_rounded), findsOneWidget);
       // Admin action tabs must NOT be present
       expect(find.text('Promotion'), findsNothing);
@@ -654,6 +654,8 @@ void main() {
       await tester.tap(find.text('Classes'));
       await tester.pumpAndSettle();
 
+      await tester.tap(find.byTooltip('Class actions'));
+      await tester.pumpAndSettle();
       final openChatBtn = find.byKey(const Key('admin_open_class_group_11D'));
       expect(openChatBtn, findsOneWidget);
       await tester.tap(openChatBtn);
@@ -672,9 +674,9 @@ void main() {
       expect(match, isNotNull);
       final body = match!.group(1)!;
 
-      expect(body.contains('allow create: if isAdmin()'), isTrue);
-      expect(body.contains('allow update: if isAdmin()'), isTrue);
-      expect(body.contains('allow delete: if isAdmin();'), isTrue);
+      expect(body.contains('allow create: if isSeniorAdmin()'), isTrue);
+      expect(body.contains('allow update: if isSeniorAdmin()'), isTrue);
+      expect(body.contains('allow delete: if isSeniorAdmin();'), isTrue);
     });
 
     test('firestore.rules forbids regular owners from changing status or role', () {

@@ -159,11 +159,11 @@ void main() {
       ).firstMatch(rules);
       expect(match, isNotNull, reason: 'academic_classes block missing');
       final body = match!.group(1)!;
-      expect(body.contains('allow read: if isAdmin() ||'), isTrue);
-      expect(body.contains('getUserData().class_id == classId'), isTrue);
-      expect(body.contains('allow create: if isAdmin()'), isTrue);
-      expect(body.contains('allow update: if isAdmin()'), isTrue);
-      expect(body.contains('allow delete: if isAdmin();'), isTrue);
+      expect(body.contains('allow read: if isSeniorAdmin() ||'), isTrue);
+      expect(body.contains("resource.data.class_id == getUserData().get('class_id', '')"), isTrue);
+      expect(body.contains('allow create: if isSeniorAdmin()'), isTrue);
+      expect(body.contains('allow update: if isSeniorAdmin()'), isTrue);
+      expect(body.contains('allow delete: if isSeniorAdmin();'), isTrue);
       expect(body.contains('isValidAcademicClass(request.resource.data)'), isTrue);
       expect(
         body.contains("areImmutableFieldsUnchanged(['grade', 'section', 'created_at'])"),
@@ -384,7 +384,7 @@ void main() {
         'scholar_no': '30003',
         'full_name': 'Ms. Fatima Al Hasan',
         'house_name': 'ruby',
-        'role': 'teacher',
+        'role': 'principal',
       });
     }
 
@@ -399,13 +399,13 @@ void main() {
       await tester.pumpWidget(const MaterialApp(home: AdminAcademicsScreen()));
       await tester.pump();
       expect(
-        find.textContaining('restricted to school staff'),
+        find.textContaining('restricted to school management'),
         findsOneWidget,
       );
       expect(find.byType(TabBar), findsNothing);
     });
 
-    testWidgets('staff sees three tabs and the cached registry', (tester) async {
+    testWidgets('management sees administration tabs and the cached registry', (tester) async {
       await seedStaffProfile();
       final auth = AuthService();
       await auth.saveAcademicClass(

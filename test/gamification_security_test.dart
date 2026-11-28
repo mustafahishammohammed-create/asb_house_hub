@@ -555,7 +555,7 @@ void main() {
       final block = matchBlock(r'/house_claims/\{claimId\}');
       expect(
         block,
-        matches(RegExp(r'(_hasStaffAdminRole|isAdmin)\(\)\s*\|\|\s*(_hasCouncilRole|isCouncil)\(\)\s*\|\|')),
+        matches(RegExp(r'(_hasSeniorAdminRole|isSeniorAdmin)\(\)\s*\|\|\s*(_hasCouncilRole|isCouncil)\(\)\s*\|\|')),
       );
       expect(
         block,

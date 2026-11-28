@@ -64,10 +64,10 @@ class _ClassGroupScreenState extends State<ClassGroupScreen> {
   void initState() {
     super.initState();
     _profile = AuthService.getCachedProfile();
-    _classId = (widget.initialClassId ??
-            ClassGroupAccess.resolveClassId(_profile))
-        .trim()
-        .toUpperCase();
+    _classId =
+        (widget.initialClassId ?? ClassGroupAccess.resolveClassId(_profile))
+            .trim()
+            .toUpperCase();
     _academicClass = widget.initialAcademicClass ?? _cachedClass(_classId);
     _group = ClassGroup.defaultsFor(_classId);
     _recomputeAccess();
@@ -76,7 +76,7 @@ class _ClassGroupScreenState extends State<ClassGroupScreen> {
     if (_classId.isNotEmpty) {
       _classSubscription = _service
           .getAcademicClassStream(_classId)
-          .listen(_onAcademicClassUpdate, onError: (_) {});
+          .listen(_onAcademicClassUpdate, onError: (_) => _revokeClassAccess());
     }
   }
 
@@ -98,11 +98,14 @@ class _ClassGroupScreenState extends State<ClassGroupScreen> {
   }
 
   void _recomputeAccess() {
-    _canView = _classId.isNotEmpty &&
+    _canView =
+        _classId.isNotEmpty &&
         ClassGroupAccess.canView(_profile, _classId, _academicClass);
-    _canPost = _classId.isNotEmpty &&
+    _canPost =
+        _classId.isNotEmpty &&
         ClassGroupAccess.canSend(_profile, _classId, _academicClass);
-    _canModerate = _classId.isNotEmpty &&
+    _canModerate =
+        _classId.isNotEmpty &&
         ClassGroupAccess.canModerate(_profile, _classId, _academicClass);
   }
 
@@ -114,19 +117,31 @@ class _ClassGroupScreenState extends State<ClassGroupScreen> {
     });
   }
 
+  void _revokeClassAccess() {
+    if (!mounted) return;
+    setState(() {
+      _canView = false;
+      _canPost = false;
+      _canModerate = false;
+      _messagesStream = Stream.value(const <ClassGroupMessage>[]);
+    });
+  }
+
   void _selectClass(AcademicClass cls) {
     setState(() {
+      _messageController.clear();
+      _pendingAttachment = '';
       _classId = cls.classId.trim().toUpperCase();
       _academicClass = cls;
       _group = ClassGroup.defaultsFor(_classId);
       _recomputeAccess();
-      _messagesStream = widget.messagesStream ??
-          _service.getClassMessagesStream(_classId);
+      _messagesStream =
+          widget.messagesStream ?? _service.getClassMessagesStream(_classId);
     });
     _classSubscription?.cancel();
     _classSubscription = _service
         .getAcademicClassStream(_classId)
-        .listen(_onAcademicClassUpdate, onError: (_) {});
+        .listen(_onAcademicClassUpdate, onError: (_) => _revokeClassAccess());
   }
 
   void _openClassPicker() {
@@ -141,10 +156,10 @@ class _ClassGroupScreenState extends State<ClassGroupScreen> {
   }
 
   String get _roleTitle => HierarchyService.getRoleDisplayTitle(
-        scholarNo: ClassGroupAccess.scholarOf(_profile),
-        role: ClassGroupAccess.roleOf(_profile),
-        fullName: ClassGroupAccess.nameOf(_profile),
-      );
+    scholarNo: ClassGroupAccess.scholarOf(_profile),
+    role: ClassGroupAccess.roleOf(_profile),
+    fullName: ClassGroupAccess.nameOf(_profile),
+  );
 
   bool get _isStaff =>
       HierarchyService.isTeacherOrFaculty(
@@ -175,8 +190,7 @@ class _ClassGroupScreenState extends State<ClassGroupScreen> {
                 children: [
                   const Text(
                     'Attach an image',
-                    style:
-                        TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
                   ),
                   const SizedBox(height: 12),
                   AcademicImageUploadField(
@@ -320,8 +334,10 @@ class _ClassGroupScreenState extends State<ClassGroupScreen> {
               child: Text(
                 _classId.isEmpty ? 'Class Group' : _group.displayName,
                 overflow: TextOverflow.ellipsis,
-                style:
-                    const TextStyle(fontWeight: FontWeight.w900, fontSize: 19),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 19,
+                ),
               ),
             ),
           ],
@@ -336,10 +352,7 @@ class _ClassGroupScreenState extends State<ClassGroupScreen> {
                 icon: Icon(Icons.swap_horiz_rounded, color: accent, size: 18),
                 label: Text(
                   'Classes',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    color: accent,
-                  ),
+                  style: TextStyle(fontWeight: FontWeight.w800, color: accent),
                 ),
               ),
             ),
@@ -348,18 +361,18 @@ class _ClassGroupScreenState extends State<ClassGroupScreen> {
       body: _classId.isEmpty
           ? _buildNoClass(accent, isDark)
           : !_canView
-              ? _buildAccessDenied(accent)
-              : Column(
-                  children: [
-                    _buildMembershipBanner(accent, isDark),
-                    _buildCategoryFilters(accent),
-                    Expanded(child: _buildMessages(accent, isDark)),
-                    if (_canPost)
-                      _buildComposer(accent, isDark)
-                    else
-                      _buildReadOnlyBanner(isDark),
-                  ],
-                ),
+          ? _buildAccessDenied(accent)
+          : Column(
+              children: [
+                _buildMembershipBanner(accent, isDark),
+                _buildCategoryFilters(accent),
+                Expanded(child: _buildMessages(accent, isDark)),
+                if (_canPost)
+                  _buildComposer(accent, isDark)
+                else
+                  _buildReadOnlyBanner(isDark),
+              ],
+            ),
     );
   }
 
@@ -409,14 +422,16 @@ class _ClassGroupScreenState extends State<ClassGroupScreen> {
       stream: _authService.getAcademicClassesStream(activeOnly: true),
       initialData: initialClasses,
       builder: (context, snapshot) {
-        final classes = snapshot.data ?? const <AcademicClass>[];
+        final classes = (snapshot.data ?? const <AcademicClass>[])
+            .where((c) => ClassGroupAccess.canView(_profile, c.classId, c))
+            .toList();
         if (classes.isEmpty) {
           return Center(
             key: const Key('class_group_no_classes'),
             child: Padding(
               padding: const EdgeInsets.all(28),
               child: Text(
-                'No active classes are available. Create a class and assign a class teacher in the Admin Portal first.',
+                'No assigned class groups are available. Ask school administration to assign your classes.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 13,
@@ -466,8 +481,10 @@ class _ClassGroupScreenState extends State<ClassGroupScreen> {
                         ? 'No class teacher assigned'
                         : 'Class teacher: ${cls.classTeacher}',
                   ),
-                  trailing: const Icon(Icons.arrow_forward_ios_rounded,
-                      size: 15),
+                  trailing: const Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    size: 15,
+                  ),
                   onTap: () => _selectClass(cls),
                 ),
               ),
@@ -515,8 +532,10 @@ class _ClassGroupScreenState extends State<ClassGroupScreen> {
   }
 
   Widget _buildMembershipBanner(Color accent, bool isDark) {
-    final verifiedMember =
-        ClassGroupAccess.isVerifiedMember(_profile, _classId);
+    final verifiedMember = ClassGroupAccess.isVerifiedMember(
+      _profile,
+      _classId,
+    );
     final isLeadership = ClassGroupAccess.isSeniorAdmin(_profile);
     return Container(
       key: const Key('class_group_membership_banner'),
@@ -558,8 +577,8 @@ class _ClassGroupScreenState extends State<ClassGroupScreen> {
                   verifiedMember
                       ? 'Auto-joined via verified class · $_classId'
                       : isLeadership
-                          ? 'Admin, Head & Management access · $_classId'
-                          : 'Staff access via class assignment · $_classId',
+                      ? 'Admin, Head & Management access · $_classId'
+                      : 'Staff access via class assignment · $_classId',
                   style: const TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w900,
@@ -619,37 +638,41 @@ class _ClassGroupScreenState extends State<ClassGroupScreen> {
 
   Widget _buildMessages(Color accent, bool isDark) {
     return StreamBuilder<List<ClassGroupMessage>>(
+      key: ValueKey('class_messages_$_classId'),
       stream: _messagesStream,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
-        if (snapshot.hasError && !snapshot.hasData) {
+        if (snapshot.hasError) {
           return Center(
             child: Padding(
               padding: const EdgeInsets.all(24),
               child: Text(
                 'Unable to load class feed right now.',
-                style: TextStyle(color: isDark ? Colors.white60 : Colors.grey[700]),
+                style: TextStyle(
+                  color: isDark ? Colors.white60 : Colors.grey[700],
+                ),
               ),
             ),
           );
         }
 
         final all = snapshot.data ?? const <ClassGroupMessage>[];
-        final visible = all.where((message) {
-          if (message.isHidden && !_canModerate) return false;
-          if (_filterCategory != 'all' &&
-              normalizeClassGroupCategory(message.category) !=
-                  _filterCategory) {
-            return false;
-          }
-          return true;
-        }).toList()
-          ..sort((a, b) {
-            if (a.isPinned != b.isPinned) return a.isPinned ? -1 : 1;
-            return 0;
-          });
+        final visible =
+            all.where((message) {
+              if (message.isHidden && !_canModerate) return false;
+              if (_filterCategory != 'all' &&
+                  normalizeClassGroupCategory(message.category) !=
+                      _filterCategory) {
+                return false;
+              }
+              return true;
+            }).toList()..sort((a, b) {
+              if (a.isPinned != b.isPinned) return a.isPinned ? -1 : 1;
+              return 0;
+            });
 
         if (visible.isEmpty) {
           return Center(
@@ -704,7 +727,8 @@ class _ClassGroupScreenState extends State<ClassGroupScreen> {
     Color accent,
     bool isDark,
   ) {
-    final mine = message.senderId.isNotEmpty &&
+    final mine =
+        message.senderId.isNotEmpty &&
         message.senderId == _service.currentUserId;
     final cardColor = mine
         ? accent.withValues(alpha: isDark ? 0.28 : 0.12)
@@ -780,8 +804,10 @@ class _ClassGroupScreenState extends State<ClassGroupScreen> {
                 if (message.isHidden)
                   Container(
                     margin: const EdgeInsets.only(left: 6),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.orange.withValues(alpha: 0.18),
                       borderRadius: BorderRadius.circular(6),
@@ -821,8 +847,10 @@ class _ClassGroupScreenState extends State<ClassGroupScreen> {
             Row(
               children: [
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: accent.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(6),
@@ -898,8 +926,11 @@ class _ClassGroupScreenState extends State<ClassGroupScreen> {
         top: false,
         child: Row(
           children: [
-            const Icon(Icons.lock_outline_rounded,
-                size: 18, color: Colors.grey),
+            const Icon(
+              Icons.lock_outline_rounded,
+              size: 18,
+              color: Colors.grey,
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
@@ -943,8 +974,7 @@ class _ClassGroupScreenState extends State<ClassGroupScreen> {
                 height: 54,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(10),
-                  border:
-                      Border.all(color: accent.withValues(alpha: 0.4)),
+                  border: Border.all(color: accent.withValues(alpha: 0.4)),
                 ),
                 child: Row(
                   children: [
@@ -963,7 +993,9 @@ class _ClassGroupScreenState extends State<ClassGroupScreen> {
                     IconButton(
                       key: const Key('class_group_remove_attachment'),
                       tooltip: 'Remove attachment',
-                      onPressed: _isSending ? null : () => setState(() => _pendingAttachment = ''),
+                      onPressed: _isSending
+                          ? null
+                          : () => setState(() => _pendingAttachment = ''),
                       icon: const Icon(Icons.close_rounded, size: 16),
                     ),
                   ],

@@ -1,0 +1,18 @@
+{
+  "checked_at": "2026-11-28T17:06:54.106Z",
+  "ruleset": "projects/asb-house-hub/rulesets/41a3cb6c-f062-4f62-88b6-beb92a048dc8",
+  "release_time": "2026-11-28T17:06:27.831431Z",
+  "local_bytes": 120174,
+  "live_bytes": 120174,
+  "local_sha256": "78616495044cb8a9922b98527252f99b71bec8e30c0374a719d07c7196a1f764",
+  "live_sha256": "78616495044cb8a9922b98527252f99b71bec8e30c0374a719d07c7196a1f764",
+  "exact_match": true,
+  "normalized_match": true,
+  "indexes": {
+    "live": 8,
+    "local": 8,
+    "all_ready": false,
+    "same": true
+  },
+  "storage_bucket_count": 0
+}

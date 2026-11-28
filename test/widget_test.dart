@@ -8965,7 +8965,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // 1. Title verification
-    expect(find.text('1-on-1 Student Chats'), findsOneWidget);
+    expect(find.text('1-on-1 Chats'), findsOneWidget);
 
     // 2. Tab Navigation
     expect(find.text('💬 Active Conversations'), findsOneWidget);

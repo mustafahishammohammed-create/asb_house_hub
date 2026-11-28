@@ -1924,7 +1924,7 @@ class _HomeScreenState extends State<HomeScreen>
                               Text(
                                 isSuperAdmin
                                     ? '👑 Super Admin & Council Portal'
-                                    : 'Verify Pending Claims',
+                                    : (isFaculty ? 'Teacher Workspace' : 'Verify Pending Claims'),
                                 style: const TextStyle(
                                   fontSize: 18,
                                   fontWeight: FontWeight.w900,
@@ -1934,7 +1934,7 @@ class _HomeScreenState extends State<HomeScreen>
                               Text(
                                 isSuperAdmin
                                     ? 'Full Master Access: Roster & Claims Review'
-                                    : 'Council Review: Visually check certificates',
+                                    : (isFaculty ? 'My class groups, medical reports & private chats' : 'Council Review: Visually check certificates'),
                                 style: const TextStyle(
                                   fontSize: 13,
                                   color: Colors.white70,
@@ -6706,7 +6706,7 @@ class _HomeScreenState extends State<HomeScreen>
                       title: Text(
                         isSuperAdmin
                             ? '👑 Super Admin Portal'
-                            : '🛡️ Verify Claims (Council)',
+                            : (HierarchyService.isTeacherOrFaculty(role: _profile?['role']?.toString()) ? 'Teacher Workspace' : '🛡️ Verify Claims (Council)'),
                         style: const TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 15,

@@ -4,57 +4,116 @@
       "collectionGroup": "events",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "house_scope", "order": "ASCENDING" }
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "house_scope",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "medical_leaves",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "scholar_no", "order": "ASCENDING" },
-        { "fieldPath": "submitted_at", "order": "DESCENDING" }
+        {
+          "fieldPath": "scholar_no",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "submitted_at",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "users",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "class_id", "order": "ASCENDING" },
-        { "fieldPath": "class_verified", "order": "ASCENDING" }
+        {
+          "fieldPath": "class_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "class_verified",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "timetable_versions",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "class_id", "order": "ASCENDING" },
-        { "fieldPath": "day_of_week", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" }
+        {
+          "fieldPath": "class_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "day_of_week",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "timetable_versions",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "day_of_week", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" }
+        {
+          "fieldPath": "day_of_week",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "timetable_versions",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "class_id", "order": "ASCENDING" }
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "class_id",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "timetable_audit",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "class_id", "order": "ASCENDING" },
-        { "fieldPath": "action", "order": "ASCENDING" }
+        {
+          "fieldPath": "class_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "action",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "medical_leaves",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "class_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "submitted_at",
+          "order": "DESCENDING"
+        }
       ]
     }
   ],
